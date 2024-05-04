@@ -1,0 +1,4 @@
+*.swp
+build/
+main/build
+managed_components
