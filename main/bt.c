@@ -1,16 +1,8 @@
 #include <stdint.h>
-#include <stdbool.h>
-#include <inttypes.h>
-#include <string.h>
-#include <sys/unistd.h>
-#include <sdkconfig.h>
+
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <esp_system.h>
 #include <esp_log.h>
-#include <esp_check.h>
-#include <nvs.h>
-#include <nvs_flash.h>
 
 #include <nimble/nimble_port_freertos.h>
 #include <nimble/nimble_port.h>
@@ -21,11 +13,12 @@
 #include <services/gatt/ble_svc_gatt.h>
 
 #include "bt.h"
+#include "cli.h"
 
 void ble_store_config_init(void);
 
 static int gap_event(struct ble_gap_event *event, void *arg);
-static int gatt_event(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
+static int gatt_event(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *context, void *arg);
 
 enum
 {
@@ -73,7 +66,7 @@ static char *conn_info_to_str(const struct ble_gap_conn_desc *desc, char *buffer
 	char addr[64];
 	char line[128];
 
-	ESP_LOGI("stack", "3 %d", uxTaskGetStackHighWaterMark(0));
+	ESP_LOGI("bt", "stack conn_info_to_str: %d", uxTaskGetStackHighWaterMark(0));
 
 	snprintf(buffer, buffer_length, "handle: %d our_ota_addr_type: %d our_ota_addr: %s",
 		desc->conn_handle,
@@ -106,59 +99,43 @@ static char *conn_info_to_str(const struct ble_gap_conn_desc *desc, char *buffer
 	return(buffer);
 }
 
-static unsigned int osmbuf_to_buffer(const struct os_mbuf *om, char *buffer, unsigned int size)
-{
-	uint16_t length;
-
-	ble_hs_mbuf_to_flat(om, buffer, size - 1, &length);
-
-	return((unsigned int)length);
-}
-
 static void nimble_port_task(void *param)
 {
 	nimble_port_run();
 	nimble_port_freertos_deinit();
 }
 
-static int gatt_event(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg)
+static int gatt_event(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *context, void *arg)
 {
-	char buffer[256];
-	unsigned int ix, length;
-	int rc;
+	struct os_mbuf *txom;
+	uint8_t *contents;
+	unsigned int size;
+	uint16_t length;
 
-	ESP_LOGI("stack", "5 %d", uxTaskGetStackHighWaterMark(0));
+	ESP_LOGI("bt", "stack gatt_event: %d", uxTaskGetStackHighWaterMark(0));
 
-	switch (ctxt->op)
+	switch (context->op)
 	{
 		case(BLE_GATT_ACCESS_OP_WRITE_CHR):
 		{
 			ESP_LOGW("bt", "gatt handler: data received in write event,conn_handle = 0x%x,attr_handle = 0x%x", conn_handle, attr_handle);
 
-			length = osmbuf_to_buffer(ctxt->om, buffer, sizeof(buffer));
+			size = os_mbuf_len(context->om);
+			contents = heap_caps_malloc(size + 1, MALLOC_CAP_SPIRAM);
+			ble_hs_mbuf_to_flat(context->om, contents, size, &length);
+			contents[size] = '\0';
+			ESP_LOGW("bt", "gatt write: %.*s", length, contents);
+			cli_receive_from_bt_queue_push(length, contents);
 
-			for(ix = 0; ix < length; ix++)
-				ESP_LOGW("bt", "gatt write: 0x%0x", buffer[ix]);
-
-			static char catbuf[512];
-
-			memcpy(catbuf + 0     , buffer, length);
-			memcpy(catbuf + length, buffer, length);
-
-			struct os_mbuf *txom;
-			txom = ble_hs_mbuf_from_flat(catbuf, length * 2);
-
-			if((rc = ble_gatts_indicate_custom(conn_handle, attr_handle, txom)) != 0)
-				ESP_LOGE("bt", "gatt write: notify returns %d\n", rc);
-			else
-				ESP_LOGI("bt", "gatt write: notify ok\n");
+			txom = ble_hs_mbuf_from_flat("ok", 2);
+			ESP_ERROR_CHECK(ble_gatts_indicate_custom(conn_handle, attr_handle, txom));
 
 			break;
 		}
 
 		default:
 		{
-			ESP_LOGW("bt", "gatt handler: default callback: %d", ctxt->op);
+			ESP_LOGW("bt", "gatt handler: default callback: %d", context->op);
 			break;
 		}
 	}
@@ -211,10 +188,7 @@ static void server_advertise(void)
 	adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
 
 	if(((rc = ble_gap_adv_start(own_addr_type, NULL, BLE_HS_FOREVER, &adv_params, gap_event, NULL)) != 0) && (rc != BLE_HS_EALREADY))
-	{
-		ESP_LOGE("bt", "adv_start returns: %d", rc);
-		abort();
-	}
+		ESP_ERROR_CHECK(rc);
 }
 
 static void callback_reset(int reason)
@@ -249,7 +223,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 	int rc;
 	char buffer[512];
 
-	ESP_LOGI("stack", "4 %d", uxTaskGetStackHighWaterMark(0));
+	ESP_LOGI("bt", "stack gap_event: %d", uxTaskGetStackHighWaterMark(0));
 
 	switch(event->type)
 	{
@@ -394,32 +368,32 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 	return(0);
 }
 
-static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg)
+static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *context, void *arg)
 {
 	char buf[BLE_UUID_STR_LEN];
 
-	switch (ctxt->op)
+	switch (context->op)
 	{
 		case(BLE_GATT_REGISTER_OP_SVC):
 		{
 			ESP_LOGI("bt", "gatt svc: registered service %s with handle=%d",
-					ble_uuid_to_str(ctxt->svc.svc_def->uuid, buf),
-					ctxt->svc.handle);
+					ble_uuid_to_str(context->svc.svc_def->uuid, buf),
+					context->svc.handle);
 			break;
 		}
 
 		case(BLE_GATT_REGISTER_OP_CHR):
 		{
 			ESP_LOGI("bt", "gatt chr: registering characteristic %s with def_handle=%d val_handle=%d",
-					ble_uuid_to_str(ctxt->chr.chr_def->uuid, buf),
-					ctxt->chr.def_handle,
-					ctxt->chr.val_handle);
+					ble_uuid_to_str(context->chr.chr_def->uuid, buf),
+					context->chr.def_handle,
+					context->chr.val_handle);
 			break;
 		}
 
 		default:
 		{
-			ESP_LOGE("bt", "gatt unknown: event: %d", ctxt->op);
+			ESP_LOGE("bt", "gatt unknown: event: %d", context->op);
 			abort();
 
 			break;
@@ -429,9 +403,9 @@ static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg)
 
 esp_err_t bt_init(void)
 {
-	ESP_LOGI("stack", "1 %d", uxTaskGetStackHighWaterMark(0));
+	ESP_LOGI("bt", "stack init 1: %d", uxTaskGetStackHighWaterMark(0));
 
-	ESP_RETURN_ON_ERROR(nimble_port_init(), "bt", "nimble_port_init");
+	ESP_ERROR_CHECK(nimble_port_init());
 
 	ble_hs_cfg.reset_cb = callback_reset;
 	ble_hs_cfg.sync_cb = callback_sync;
@@ -445,12 +419,12 @@ esp_err_t bt_init(void)
 	ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
 	ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
 
-	ESP_RETURN_ON_ERROR(gatt_init(), "bt", "gatt_init");
-	ESP_RETURN_ON_ERROR(ble_svc_gap_device_name_set("nimble-ble-spp-svr"), "bt", "ble_svc_gap_device_name_set");
+	ESP_ERROR_CHECK(gatt_init());
+	ESP_ERROR_CHECK(ble_svc_gap_device_name_set("nimble-ble-spp-svr"));
 	ble_store_config_init();
 	nimble_port_freertos_init(nimble_port_task);
 
-	ESP_LOGI("stack", "2 %d", uxTaskGetStackHighWaterMark(0));
+	ESP_LOGI("bt", "stack init: 2 %d", uxTaskGetStackHighWaterMark(0));
 
 	return(0);
 }
