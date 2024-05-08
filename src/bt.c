@@ -1,3 +1,7 @@
+#include "cli.h"
+#include "bt.h"
+#include "util.h"
+
 #include <stdint.h>
 
 #include <freertos/FreeRTOS.h>
@@ -11,9 +15,6 @@
 #include <host/util/util.h>
 #include <services/gap/ble_svc_gap.h>
 #include <services/gatt/ble_svc_gatt.h>
-
-#include "bt.h"
-#include "cli.h"
 
 void ble_store_config_init(void);
 
@@ -66,8 +67,6 @@ static char *conn_info_to_str(const struct ble_gap_conn_desc *desc, char *buffer
 	char addr[64];
 	char line[128];
 
-	ESP_LOGI("bt", "stack conn_info_to_str: %d", uxTaskGetStackHighWaterMark(0));
-
 	snprintf(buffer, buffer_length, "handle: %d our_ota_addr_type: %d our_ota_addr: %s",
 		desc->conn_handle,
 		desc->our_ota_addr.type,
@@ -96,6 +95,8 @@ static char *conn_info_to_str(const struct ble_gap_conn_desc *desc, char *buffer
 			desc->sec_state.bonded);
 	strncat(buffer, line, buffer_length - 1);
 
+	util_stack_usage_update("conninfotostr");
+
 	return(buffer);
 }
 
@@ -105,30 +106,24 @@ static void nimble_port_task(void *param)
 	nimble_port_freertos_deinit();
 }
 
-static int gatt_event(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *context, void *arg)
+static int gatt_event(uint16_t connection_handle, uint16_t attribute_handle, struct ble_gatt_access_ctxt *context, void *arg)
 {
-	struct os_mbuf *txom;
-	uint8_t *contents;
-	unsigned int size;
-	uint16_t length;
-
-	ESP_LOGI("bt", "stack gatt_event: %d", uxTaskGetStackHighWaterMark(0));
-
 	switch (context->op)
 	{
 		case(BLE_GATT_ACCESS_OP_WRITE_CHR):
 		{
-			ESP_LOGW("bt", "gatt handler: data received in write event,conn_handle = 0x%x,attr_handle = 0x%x", conn_handle, attr_handle);
+			cli_buffer_t cli_buffer;
+			uint16_t length;
 
-			size = os_mbuf_len(context->om);
-			contents = heap_caps_malloc(size + 1, MALLOC_CAP_SPIRAM);
-			ble_hs_mbuf_to_flat(context->om, contents, size, &length);
-			contents[size] = '\0';
-			ESP_LOGW("bt", "gatt write: %.*s", length, contents);
-			cli_receive_from_bt_queue_push(length, contents);
-
-			txom = ble_hs_mbuf_from_flat("ok", 2);
-			ESP_ERROR_CHECK(ble_gatts_indicate_custom(conn_handle, attr_handle, txom));
+			//ESP_LOGW("bt", "gatt handler: data received in write event,connection_handle = 0x%x,attribute_handle = 0x%x", connection_handle, attribute_handle);
+			cli_buffer.source = cli_source_bt;
+			cli_buffer.length = os_mbuf_len(context->om);
+			cli_buffer.data_from_malloc = 1;
+			assert((cli_buffer.data = heap_caps_malloc(cli_buffer.length, MALLOC_CAP_SPIRAM)));
+			ble_hs_mbuf_to_flat(context->om, cli_buffer.data, cli_buffer.length, &length);
+			cli_buffer.bt.connection_handle = connection_handle;
+			cli_buffer.bt.attribute_handle = attribute_handle;
+			cli_receive_queue_push(&cli_buffer);
 
 			break;
 		}
@@ -139,6 +134,8 @@ static int gatt_event(uint16_t conn_handle, uint16_t attr_handle, struct ble_gat
 			break;
 		}
 	}
+
+	util_stack_usage_update("gatt_event");
 
 	return(0);
 }
@@ -222,8 +219,6 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 	struct ble_gap_conn_desc desc;
 	int rc;
 	char buffer[512];
-
-	ESP_LOGI("bt", "stack gap_event: %d", uxTaskGetStackHighWaterMark(0));
 
 	switch(event->type)
 	{
@@ -365,6 +360,8 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 		}
 	}
 
+	util_stack_usage_update("gap_event");
+
 	return(0);
 }
 
@@ -401,10 +398,16 @@ static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *context, void *a
 	}
 }
 
+esp_err_t bt_send(cli_buffer_t *cli_buffer)
+{
+	static struct os_mbuf *txom; // FIXME
+	txom = ble_hs_mbuf_from_flat(cli_buffer->data, cli_buffer->length);
+
+	return(ble_gatts_indicate_custom(cli_buffer->bt.connection_handle, cli_buffer->bt.attribute_handle, txom));
+}
+
 esp_err_t bt_init(void)
 {
-	ESP_LOGI("bt", "stack init 1: %d", uxTaskGetStackHighWaterMark(0));
-
 	ESP_ERROR_CHECK(nimble_port_init());
 
 	ble_hs_cfg.reset_cb = callback_reset;
@@ -424,7 +427,7 @@ esp_err_t bt_init(void)
 	ble_store_config_init();
 	nimble_port_freertos_init(nimble_port_task);
 
-	ESP_LOGI("bt", "stack init: 2 %d", uxTaskGetStackHighWaterMark(0));
+	util_stack_usage_update("bt_init");
 
 	return(0);
 }

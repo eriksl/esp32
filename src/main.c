@@ -1,3 +1,6 @@
+#include "main.h"
+#include "util.h"
+
 #include <stdint.h>
 
 #include <freertos/FreeRTOS.h>
@@ -23,7 +26,7 @@ static led_strip_handle_t led_strip_handle;
 
 void run_main(void)
 {
-	ESP_LOGI("stack", "main 1: %d", uxTaskGetStackHighWaterMark(0));
+	unsigned int ix;
 
 	ESP_ERROR_CHECK(led_strip_new_rmt_device(&led_string_config, &led_strip_rmt_config, &led_strip_handle));
 	led_strip_clear(led_strip_handle);
@@ -74,15 +77,19 @@ void run_main(void)
 	led_strip_set_pixel(led_strip_handle, 0, 0x00, 0xff, 0x00);
 	led_strip_refresh(led_strip_handle);
 
-	ESP_LOGI("stack", "main 2: %d", uxTaskGetStackHighWaterMark(0));
-
 	for(;;)
 	{
-		vTaskDelay(500 / portTICK_PERIOD_MS);
-		led_strip_set_pixel(led_strip_handle, 0, 0xff, 0x00, 0x00);
-		led_strip_refresh(led_strip_handle);
-		vTaskDelay(500 / portTICK_PERIOD_MS);
-		led_strip_set_pixel(led_strip_handle, 0, 0x00, 0x00, 0xff);
-		led_strip_refresh(led_strip_handle);
+		util_stack_usage_update("main");
+		util_stack_usage_show();
+
+		for(ix = 0; ix < 60; ix++)
+		{
+			vTaskDelay(500 / portTICK_PERIOD_MS);
+			led_strip_set_pixel(led_strip_handle, 0, 0xff, 0x00, 0x00);
+			led_strip_refresh(led_strip_handle);
+			vTaskDelay(500 / portTICK_PERIOD_MS);
+			led_strip_set_pixel(led_strip_handle, 0, 0x00, 0x00, 0xff);
+			led_strip_refresh(led_strip_handle);
+		}
 	}
 }
