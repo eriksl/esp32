@@ -1,6 +1,7 @@
 #include "cli.h"
 #include "util.h"
 #include "bt.h"
+#include "packet.h"
 
 #include <errno.h>
 #include <string.h>
@@ -241,7 +242,7 @@ static void receive_queue_pop(cli_buffer_t *cli_buffer)
 
 	xQueueReceive(receive_queue_handle, cli_buffer, portMAX_DELAY);
 
-	//ESP_LOGI("cli", "receive_queue_pop: %u", cli_buffer->length);
+	//ESP_LOGI("cli", "receive_queue_pop: %u: %.*s", cli_buffer->length, cli_buffer->length, cli_buffer->data);
 }
 
 static void send_queue_push(cli_buffer_t *cli_buffer)
@@ -262,34 +263,6 @@ static void send_queue_pop(cli_buffer_t *cli_buffer)
 	//ESP_LOGI("cli", "send pop item: \"%.*s\"", (int)cli_buffer->length, cli_buffer->data);
 }
 
-static void decapsulate(const cli_buffer_t *cli_buffer, char **data, unsigned int *oob_data_length, uint8_t **oob_data)
-{
-	// FIXME: implement proper packet handling and OOB data
-	assert(inited);
-
-	assert((*data = heap_caps_malloc(cli_buffer->length + 1, MALLOC_CAP_SPIRAM)));
-	memcpy(*data, cli_buffer->data, cli_buffer->length);
-	(*data)[cli_buffer->length] = '\0';
-	*oob_data = (uint8_t *)0;
-	*oob_data_length = 0;
-}
-
-static void encapsulate(cli_buffer_t *cli_buffer, const char *data, unsigned int oob_data_length, const uint8_t *oob_data)
-										
-{
-	// FIXME: implement proper packet handling and OOB data
-	unsigned int length;
-
-	assert(inited);
-
-	length = strlen((const char *)data);
-
-	cli_buffer->length = length;
-	cli_buffer->data_from_malloc = 1;
-	cli_buffer->data = heap_caps_malloc(cli_buffer->length + 1, MALLOC_CAP_SPIRAM);
-	snprintf((char *)cli_buffer->data, cli_buffer->length + 1, "%s\n", data);
-}
-
 static void run_receive_queue(void *)
 {
 	cli_buffer_t						cli_buffer;
@@ -297,7 +270,7 @@ static void run_receive_queue(void *)
 	unsigned int						oob_data_length;
 	char								*data;
 	uint8_t								*oob_data;
-	unsigned int						count, current;
+	unsigned int						count, current, ix;
 	char								*token, *saveptr;
 	const cli_function_t				*cli_function;
 	const cli_parameter_description_t	*parameter_description;
@@ -315,7 +288,7 @@ static void run_receive_queue(void *)
 		util_stack_usage_update("run_receive_queue");
 
 		receive_queue_pop(&cli_buffer);
-		decapsulate(&cli_buffer, &data, &oob_data_length, &oob_data);
+		packet_decapsulate(&cli_buffer, &data, &oob_data_length, &oob_data);
 
 		if(cli_buffer.data_from_malloc)
 			free(cli_buffer.data);
@@ -329,13 +302,20 @@ static void run_receive_queue(void *)
 		if(!(token = strtok_r((char *)data, " \r\n", &saveptr)))
 		{
 			snprintf(error, sizeof(error), "ERROR: empty line");
-			encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
+			packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 			send_queue_push(&cli_buffer);
 			goto error;
 		}
 
-		for(cli_function = cli_functions; cli_function->name; cli_function++)
+		//ESP_LOGI("cli", "token: \"%s\"", token);
+
+		for(ix = 0;; ix++)
 		{
+			cli_function = &cli_functions[ix];
+
+			if(!cli_function->name)
+				break;
+
 			//ESP_LOGW("cli", "compare name: \"%s\" \"%s\"", token, cli_function->name);
 
 			if(!strcmp(cli_function->name, token))
@@ -356,10 +336,12 @@ static void run_receive_queue(void *)
 			}
 		}
 
+		//ESP_LOGI("cli", "function: %u %p\n", ix, cli_function->name);
+
 		if(!cli_function->name)
 		{
 			snprintf(error, sizeof(error), "ERROR: unknown command \"%s\"", token);
-			encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
+			packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 			send_queue_push(&cli_buffer);
 			goto error;
 		}
@@ -391,7 +373,7 @@ static void run_receive_queue(void *)
 				else
 				{
 					snprintf(error, sizeof(error), "ERROR: missing required parameter %u", current + 1);
-					encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
+					packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 					send_queue_push(&cli_buffer);
 					goto error;
 				}
@@ -406,7 +388,7 @@ static void run_receive_queue(void *)
 					case(cli_parameter_size):
 					{
 						snprintf(error, sizeof(error), "ERROR: parameter with invalid type %u", parameter_description->type);
-						encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
+						packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 						send_queue_push(&cli_buffer);
 						goto error;
 					}
@@ -422,7 +404,7 @@ static void run_receive_queue(void *)
 						if(errno || !*token || *endptr)
 						{
 							snprintf(error, sizeof(error), "ERROR: invalid unsigned integer value: %s", token);
-							encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
+							packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 							send_queue_push(&cli_buffer);
 							goto error;
 						}
@@ -430,7 +412,7 @@ static void run_receive_queue(void *)
 						if((parameter_description->lower_bound_required) && (value < parameter_description->unsigned_int.lower_bound))
 						{
 							snprintf(error, sizeof(error), "ERROR: invalid unsigned integer value: %u, smaller than lower bound: %u", value, parameter_description->unsigned_int.lower_bound);
-							encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
+							packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 							send_queue_push(&cli_buffer);
 							goto error;
 						}
@@ -438,7 +420,7 @@ static void run_receive_queue(void *)
 						if((parameter_description->upper_bound_required) && (value > parameter_description->unsigned_int.upper_bound))
 						{
 							snprintf(error, sizeof(error), "ERROR: invalid unsigned integer value: %u, larger than upper bound: %u", value, parameter_description->unsigned_int.upper_bound);
-							encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
+							packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 							send_queue_push(&cli_buffer);
 							goto error;
 						}
@@ -461,7 +443,7 @@ static void run_receive_queue(void *)
 						if(errno || !*token || *endptr)
 						{
 							snprintf(error, sizeof(error), "ERROR: invalid signed integer value: %s", token);
-							encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
+							packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 							send_queue_push(&cli_buffer);
 							goto error;
 						}
@@ -469,7 +451,7 @@ static void run_receive_queue(void *)
 						if((parameter_description->lower_bound_required) && (value < parameter_description->signed_int.lower_bound))
 						{
 							snprintf(error, sizeof(error), "ERROR: invalid signed integer value: %d, smaller than lower bound: %d", value, parameter_description->signed_int.lower_bound);
-							encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
+							packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 							send_queue_push(&cli_buffer);
 							goto error;
 						}
@@ -477,7 +459,7 @@ static void run_receive_queue(void *)
 						if((parameter_description->upper_bound_required) && (value > parameter_description->signed_int.upper_bound))
 						{
 							snprintf(error, sizeof(error), "ERROR: invalid signed integer value: %d, larger than upper bound: %d", value, parameter_description->signed_int.upper_bound);
-							encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
+							packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 							send_queue_push(&cli_buffer);
 							goto error;
 						}
@@ -500,7 +482,7 @@ static void run_receive_queue(void *)
 						if(errno || !*token || *endptr)
 						{
 							snprintf(error, sizeof(error), "ERROR: invalid float value: %s", token);
-							encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
+							packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 							send_queue_push(&cli_buffer);
 							goto error;
 						}
@@ -508,7 +490,7 @@ static void run_receive_queue(void *)
 						if((parameter_description->lower_bound_required) && (value < parameter_description->fp.lower_bound))
 						{
 							snprintf(error, sizeof(error), "ERROR: invalid float value: %f, smaller than lower bound: %f", value, parameter_description->fp.lower_bound);
-							encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
+							packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 							send_queue_push(&cli_buffer);
 							goto error;
 						}
@@ -516,7 +498,7 @@ static void run_receive_queue(void *)
 						if((parameter_description->upper_bound_required) && (value > parameter_description->fp.upper_bound))
 						{
 							snprintf(error, sizeof(error), "ERROR: invalid float value: %f, larger than upper bound: %f", value, parameter_description->fp.upper_bound);
-							encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
+							packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 							send_queue_push(&cli_buffer);
 							goto error;
 						}
@@ -537,7 +519,7 @@ static void run_receive_queue(void *)
 						if((parameter_description->lower_bound_required) && (length < parameter_description->string.lower_length_bound))
 						{
 							snprintf(error, sizeof(error), "ERROR: invalid string length: %u, smaller than lower bound: %u", length, parameter_description->string.lower_length_bound);
-							encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
+							packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 							send_queue_push(&cli_buffer);
 							goto error;
 						}
@@ -545,7 +527,7 @@ static void run_receive_queue(void *)
 						if((parameter_description->upper_bound_required) && (length > parameter_description->string.upper_length_bound))
 						{
 							snprintf(error, sizeof(error), "ERROR: invalid string length: %u, larger than upper bound: %u", length, parameter_description->string.upper_length_bound);
-							encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
+							packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 							send_queue_push(&cli_buffer);
 							goto error;
 						}
@@ -563,7 +545,7 @@ static void run_receive_queue(void *)
 		if(current >= parameters_size)
 		{
 			snprintf(error, sizeof(error), "ERROR: too many parameters: %u", current);
-			encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
+			packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 			send_queue_push(&cli_buffer);
 			goto error;
 		}
@@ -571,7 +553,7 @@ static void run_receive_queue(void *)
 		if(current < cli_function->parameters.count)
 		{
 			snprintf(error, sizeof(error), "ERROR: missing paramters");
-			encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
+			packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 			send_queue_push(&cli_buffer);
 			goto error;
 		}
@@ -579,7 +561,7 @@ static void run_receive_queue(void *)
 		if(strtok_r((char *)0, " \r\n", &saveptr))
 		{
 			snprintf(error, sizeof(error), "ERROR: too many parameters");
-			encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
+			packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 			send_queue_push(&cli_buffer);
 			goto error;
 		}
@@ -597,7 +579,7 @@ static void run_receive_queue(void *)
 
 		cli_function->function(&call);
 
-		encapsulate(&cli_buffer, call.result, call.result_oob_length, call.result_oob);
+		packet_encapsulate(&cli_buffer, call.result, call.result_oob_length, call.result_oob);
 		send_queue_push(&cli_buffer);
 
 		free(call.result);

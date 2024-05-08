@@ -17,7 +17,13 @@ typedef struct
 	cli_source_t	source;
 	unsigned int	length;
 	uint8_t			*data;
-	unsigned int	data_from_malloc;
+
+	struct
+	{
+		unsigned int data_from_malloc:1;
+		unsigned int packetised:1;
+		unsigned int checksum_requested:1;
+	};
 
 	union
 	{
@@ -26,6 +32,12 @@ typedef struct
 			unsigned int connection_handle;
 			unsigned int attribute_handle;
 		} bt;
+
+		struct
+		{
+			uint8_t address[4];
+			uint16_t port;
+		} ipv4;
 	};
 } cli_buffer_t;
 
