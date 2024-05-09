@@ -241,15 +241,11 @@ static void receive_queue_pop(cli_buffer_t *cli_buffer)
 	assert(inited);
 
 	xQueueReceive(receive_queue_handle, cli_buffer, portMAX_DELAY);
-
-	//ESP_LOGI("cli", "receive_queue_pop: %u: %.*s", cli_buffer->length, cli_buffer->length, cli_buffer->data);
 }
 
 static void send_queue_push(cli_buffer_t *cli_buffer)
 {
 	assert(inited);
-
-	ESP_LOGI("cli", "send push item: \"%.*s\"", (int)cli_buffer->length, cli_buffer->data);
 
 	xQueueSend(send_queue_handle, cli_buffer, portMAX_DELAY);
 }
@@ -259,8 +255,6 @@ static void send_queue_pop(cli_buffer_t *cli_buffer)
 	assert(inited);
 
 	xQueueReceive(send_queue_handle, cli_buffer, portMAX_DELAY);
-
-	//ESP_LOGI("cli", "send pop item: \"%.*s\"", (int)cli_buffer->length, cli_buffer->data);
 }
 
 static void run_receive_queue(void *)
@@ -280,9 +274,6 @@ static void run_receive_queue(void *)
 
 	assert(inited);
 
-	//ESP_LOGI("cli", "cli run_receive_queue started");
-	//ESP_LOGI("cli", "sizeof(parameters): %u", sizeof(parameters));
-
 	for(;;)
 	{
 		util_stack_usage_update("run_receive_queue");
@@ -296,8 +287,6 @@ static void run_receive_queue(void *)
 		cli_buffer.data = (uint8_t *)0;
 		cli_buffer.data_from_malloc = 0;
 
-		//ESP_LOGI("cli", "pop item: \"%s\"", data);
-
 		saveptr = (char *)0;
 		if(!(token = strtok_r((char *)data, " \r\n", &saveptr)))
 		{
@@ -307,36 +296,16 @@ static void run_receive_queue(void *)
 			goto error;
 		}
 
-		//ESP_LOGI("cli", "token: \"%s\"", token);
-
 		for(ix = 0;; ix++)
 		{
 			cli_function = &cli_functions[ix];
 
-			if(!cli_function->name)
+			if(!cli_function->name || !strcmp(cli_function->name, token))
 				break;
 
-			//ESP_LOGW("cli", "compare name: \"%s\" \"%s\"", token, cli_function->name);
-
-			if(!strcmp(cli_function->name, token))
-			{
-				//ESP_LOGW("cli", "match name");
+			if(cli_function->alias && !strcmp(cli_function->alias, token))
 				break;
-			}
-
-			if(cli_function->alias)
-			{
-				//ESP_LOGW("cli", "compare alias: \"%s\" \"%s\"", token, cli_function->alias);
-
-				if(!strcmp(cli_function->alias, token))
-				{
-					//ESP_LOGW("cli", "match alias");
-					break;
-				}
-			}
 		}
-
-		//ESP_LOGI("cli", "function: %u %p\n", ix, cli_function->name);
 
 		if(!cli_function->name)
 		{
@@ -361,13 +330,10 @@ static void run_receive_queue(void *)
 
 			token = strtok_r((char *)0, " \r\n", &saveptr);
 
-			//ESP_LOGI("cli", "expect parameter type: %s, required: %d", parameter_type_to_string(parameter_description->type), parameter_description->value_required);
-
 			if(!token)
 			{
 				if(!parameter_description->value_required)
 				{
-					//ESP_LOGI("cli", "parameter not required, continue");
 					continue;
 				}
 				else
@@ -380,8 +346,6 @@ static void run_receive_queue(void *)
 			}
 			else
 			{
-				//ESP_LOGI("cli", "parameter: \"%s\"", token);
-
 				switch(parameter_description->type)
 				{
 					case(cli_parameter_none):
@@ -620,14 +584,11 @@ static void run_send_queue(void *)
 
 	assert(inited);
 
-	ESP_LOGI("cli", "cli run_send_queue started");
-
 	for(;;)
 	{
 		util_stack_usage_update("run_send_queue");
 
 		send_queue_pop(&cli_buffer);
-		ESP_LOGI("cli", "send queue pop item[%u]: \"%.*s\"", cli_buffer.length, cli_buffer.length, cli_buffer.data);
 
 		switch(cli_buffer.source)
 		{
@@ -672,8 +633,6 @@ static void run_send_queue(void *)
 void cli_receive_queue_push(const cli_buffer_t *buffer)
 {
 	assert(inited);
-
-	//ESP_LOGI("cli", "push item[%u]: \"%.*s\"", buffer->length, (int)buffer->length, buffer->data);
 
 	xQueueSend(receive_queue_handle, buffer, portMAX_DELAY);
 }

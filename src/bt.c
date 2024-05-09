@@ -321,15 +321,15 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
 		case(BLE_GAP_EVENT_SUBSCRIBE):
 		{
-			ESP_LOGI("bt", "EVENT SUBSCRIBE: subscribe event; conn_handle=%d attr_handle=%d "
-					"reason=%d prevn=%d curn=%d previ=%d curi=%d",
-					event->subscribe.conn_handle,
-					event->subscribe.attr_handle,
-					event->subscribe.reason,
-					event->subscribe.prev_notify,
-					event->subscribe.cur_notify,
-					event->subscribe.prev_indicate,
-					event->subscribe.cur_indicate);
+			//ESP_LOGI("bt", "EVENT SUBSCRIBE: subscribe event; conn_handle=%d attr_handle=%d "
+					//"reason=%d prevn=%d curn=%d previ=%d curi=%d",
+					//event->subscribe.conn_handle,
+					//event->subscribe.attr_handle,
+					//event->subscribe.reason,
+					//event->subscribe.prev_notify,
+					//event->subscribe.cur_notify,
+					//event->subscribe.prev_indicate,
+					//event->subscribe.cur_indicate);
 
 			break;
 		}
@@ -343,11 +343,8 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
 		case(BLE_GAP_EVENT_NOTIFY_TX):
 		{
-			ESP_LOGI("bt", "EVENT NOTIFY TX, status: 0x%x, conn_handle: 0x%x, attr_handle: 0x%x, indication: 0x%x",
-					event->notify_tx.status,
-					event->notify_tx.conn_handle,
-					event->notify_tx.attr_handle,
-					event->notify_tx.indication);
+			/* NOTE: this event doesn't mean the notification is actually sent! */
+			/* it's just called synchronously from within ble_gatts_indicate_custom */
 
 			break;
 		}

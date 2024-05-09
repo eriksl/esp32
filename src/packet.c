@@ -15,7 +15,6 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob
 	unsigned int data_length;
 	unsigned int our_checksum, their_checksum;
 
-	// FIXME: implement proper packet handling and OOB data
 	// FIXME: broadcast groups
 	// FIXME: transaction id
 	// FIXME: incomplete buffers
@@ -26,7 +25,7 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob
 
 		if((packet->soh == packet_header_soh) && (packet->version == packet_header_version) && (packet->id == packet_header_id))
 		{
-			if(packet->length != cli_buffer->length) // FIXME
+			if(packet->length != cli_buffer->length)
 			{
 				ESP_LOGW("packet", "packet incomplete: %u / %u", cli_buffer->length, packet->length);
 				goto error;
@@ -78,8 +77,6 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob
 	cli_buffer->checksum_requested = 0;
 	cli_buffer->packetised = 0;
 
-	ESP_LOGI("packet", "return raw data");
-
 	return;
 
 error: // FIXME
@@ -91,7 +88,6 @@ error: // FIXME
 
 void packet_encapsulate(cli_buffer_t *cli_buffer, const char *data, unsigned int oob_data_length, const uint8_t *oob_data)
 {
-	// FIXME: implement proper packet handling and OOB data
 	packet_header_t *packet;
 	unsigned int data_length;
 	unsigned int data_offset;
@@ -105,9 +101,6 @@ void packet_encapsulate(cli_buffer_t *cli_buffer, const char *data, unsigned int
 	{
 		data_offset = sizeof(*packet);
 		oob_data_offset = data_offset + ((data_length + 1 /* \n */ + 3) & ~0x03);
-
-		ESP_LOGI("packet", "data: %s, oob_data_length: %u, oob_data: %p", data, oob_data_length, oob_data);
-		ESP_LOGI("packet", "data_length: %u, data_offset: %u, oob_data_offset: %u", data_length, data_offset, oob_data_offset);
 
 		cli_buffer->length = oob_data_offset + oob_data_length;
 		cli_buffer->data_from_malloc = 1;
@@ -132,10 +125,6 @@ void packet_encapsulate(cli_buffer_t *cli_buffer, const char *data, unsigned int
 		packet->transaction_id = 0;
 		packet->checksum = util_md5_32(cli_buffer->length, cli_buffer->data);
 
-		//ESP_LOGI("packet", "cli_buffer->length: %u, cli_buffer->data: %.*s", cli_buffer->length, cli_buffer->length, cli_buffer->data);
-		//ESP_LOG_BUFFER_HEXDUMP("packet", cli_buffer->data, cli_buffer->length, ESP_LOG_INFO);
-		ESP_LOGI("packet", "sent packetised reply");
-
 		return;
 	}
 
@@ -144,6 +133,4 @@ void packet_encapsulate(cli_buffer_t *cli_buffer, const char *data, unsigned int
 	cli_buffer->data = heap_caps_malloc(cli_buffer->length, MALLOC_CAP_SPIRAM);
 	memcpy(cli_buffer->data, data, data_length);
 	cli_buffer->data[data_length] = '\n';
-
-	ESP_LOGI("packet", "sent raw reply");
 }
