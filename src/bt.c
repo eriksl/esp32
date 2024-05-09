@@ -259,7 +259,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 				ESP_LOGI("bt", "%s", "passkey: BLE_SM_IOACT_DISP");
 				ESP_LOGI("bt", "Enter passkey %lu on the peer side", pkey.passkey);
 				pkey.action = BLE_SM_IOACT_DISP;
-				pkey.passkey = 1234;
+				pkey.passkey = 28022;
 
 				if((rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey)) != 0)
 					ESP_LOGW("bt", "passkey error: ble_sm_inject_io result: %d", rc);
