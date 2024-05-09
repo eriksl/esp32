@@ -33,27 +33,6 @@ uint32_t util_md5_32(unsigned int length, const uint8_t *data)
 
 	mbedtls_md5(data, length, hash);
 
-#if 0
-	ESP_LOGI("md5", "%u: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
-			length,
-			hash[0],
-			hash[1],
-			hash[2],
-			hash[3],
-			hash[4],
-			hash[5],
-			hash[6],
-			hash[7],
-			hash[8],
-			hash[9],
-			hash[10],
-			hash[11],
-			hash[12],
-			hash[13],
-			hash[14],
-			hash[15]);
-#endif
-
 	return((hash[0] << 24) | (hash[1] << 16) | (hash[2] << 8) | (hash[3] << 0));
 }
 
