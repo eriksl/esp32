@@ -97,30 +97,33 @@ void packet_encapsulate(cli_buffer_t *cli_buffer, const char *data, unsigned int
 	unsigned int data_offset;
 	unsigned int oob_data_offset;
 
-	data_length = strlen((const char *)data) + 1;
+	assert(!cli_buffer->data);
+
+	data_length = strlen((const char *)data);
 
 	if(cli_buffer->packetised)
 	{
 		data_offset = sizeof(*packet);
-		oob_data_offset = data_offset + ((data_length + 3) & ~0x03);
+		oob_data_offset = data_offset + ((data_length + 1 /* \n */ + 3) & ~0x03);
 
-		//ESP_LOGI("packet", "data: %s, oob_data_length: %u, oob_data: %p", data, oob_data_length, oob_data);
-		//ESP_LOGI("packet", "data_length: %u, data_offset: %u, oob_data_offset: %u", data_length, data_offset, oob_data_offset);
+		ESP_LOGI("packet", "data: %s, oob_data_length: %u, oob_data: %p", data, oob_data_length, oob_data);
+		ESP_LOGI("packet", "data_length: %u, data_offset: %u, oob_data_offset: %u", data_length, data_offset, oob_data_offset);
 
 		cli_buffer->length = oob_data_offset + oob_data_length;
 		cli_buffer->data_from_malloc = 1;
 		cli_buffer->data = heap_caps_malloc(cli_buffer->length, MALLOC_CAP_SPIRAM);
-		packet = (packet_header_t *)cli_buffer->data;
-		snprintf((char *)&cli_buffer->data[data_offset], cli_buffer->length, "%s\n", data);
-		memcpy((char *)&cli_buffer->data[oob_data_offset], oob_data, oob_data_length);
+		memcpy(&cli_buffer->data[data_offset], data, data_length);
+		cli_buffer->data[data_offset + data_length] = '\n';
+		memcpy(&cli_buffer->data[oob_data_offset], oob_data, oob_data_length);
 
+		packet = (packet_header_t *)cli_buffer->data;
 		memset(packet, 0, sizeof(*packet));
 		packet->soh = packet_header_soh;
 		packet->version = packet_header_version;
 		packet->id = packet_header_id;
 		packet->length = cli_buffer->length;
 		packet->data_offset = data_offset;
-		packet->data_pad_offset = data_offset + data_length;
+		packet->data_pad_offset = data_offset + data_length + 1;
 		packet->oob_data_offset = oob_data_offset;
 		packet->broadcast_groups = 0;
 		packet->flag.md5_32_requested = 0;
@@ -138,8 +141,9 @@ void packet_encapsulate(cli_buffer_t *cli_buffer, const char *data, unsigned int
 
 	cli_buffer->length = data_length + 1;
 	cli_buffer->data_from_malloc = 1;
-	cli_buffer->data = heap_caps_malloc(cli_buffer->length + 2, MALLOC_CAP_SPIRAM);
-	snprintf((char *)cli_buffer->data, cli_buffer->length + 1, "%s\n", data);
+	cli_buffer->data = heap_caps_malloc(cli_buffer->length, MALLOC_CAP_SPIRAM);
+	memcpy(cli_buffer->data, data, data_length);
+	cli_buffer->data[data_length] = '\n';
 
 	ESP_LOGI("packet", "sent raw reply");
 }

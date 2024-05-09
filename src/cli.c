@@ -290,7 +290,7 @@ static void run_receive_queue(void *)
 		receive_queue_pop(&cli_buffer);
 		packet_decapsulate(&cli_buffer, &data, &oob_data_length, &oob_data);
 
-		if(cli_buffer.data_from_malloc)
+		if(cli_buffer.data_from_malloc && cli_buffer.data)
 			free(cli_buffer.data);
 		cli_buffer.length = 0;
 		cli_buffer.data = (uint8_t *)0;
@@ -582,8 +582,17 @@ static void run_receive_queue(void *)
 		packet_encapsulate(&cli_buffer, call.result, call.result_oob_length, call.result_oob);
 		send_queue_push(&cli_buffer);
 
-		free(call.result);
-		free(call.result_oob);
+		if(call.result)
+		{
+			free(call.result);
+			call.result = (char *)0;
+		}
+
+		if(call.result_oob)
+		{
+			free(call.result_oob);
+			call.result_oob = (uint8_t *)0;
+		}
 
 error:
 		cli_buffer.source = cli_source_none;
@@ -591,8 +600,17 @@ error:
 		cli_buffer.data_from_malloc = 0;
 		cli_buffer.data = (uint8_t *)0;
 
-		free(data);
-		free(oob_data);
+		if(data)
+		{
+			free(data);
+			data = (char *)0;
+		}
+
+		if(oob_data)
+		{
+			free(oob_data);
+			oob_data = (uint8_t *)0;
+		}
 	}
 }
 
@@ -642,7 +660,7 @@ static void run_send_queue(void *)
 			}
 		}
 
-		if(cli_buffer.data_from_malloc)
+		if(cli_buffer.data_from_malloc && cli_buffer.data)
 			free(cli_buffer.data);
 		cli_buffer.source = cli_source_none;
 		cli_buffer.length = 0;
