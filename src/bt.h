@@ -6,6 +6,6 @@
 #include <esp_check.h>
 
 esp_err_t bt_init(void);
-esp_err_t bt_send(cli_buffer_t *);
+void bt_send(cli_buffer_t *);
 
 #endif

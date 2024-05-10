@@ -6,7 +6,9 @@
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+
 #include <esp_log.h>
+#include <esp_err.h>
 
 #include <nimble/nimble_port_freertos.h>
 #include <nimble/nimble_port.h>
@@ -18,15 +20,14 @@
 
 void ble_store_config_init(void);
 
-static int gap_event(struct ble_gap_event *event, void *arg);
-static int gatt_event(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *context, void *arg);
-
 enum
 {
 	SERVICE_HANDLE = 0xabf0,
 	CHARACTERISTICS_HANDLE = 0xabf1,
 };
 
+static int gap_event(struct ble_gap_event *event, void *arg);
+static int gatt_event(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *context, void *arg);
 static uint16_t attribute_handle;
 static uint8_t own_addr_type;
 
@@ -395,12 +396,49 @@ static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *context, void *a
 	}
 }
 
-esp_err_t bt_send(cli_buffer_t *cli_buffer)
+void bt_send(cli_buffer_t *cli_buffer)
 {
-	static struct os_mbuf *txom; // FIXME
-	txom = ble_hs_mbuf_from_flat(cli_buffer->data, cli_buffer->length);
+	static const unsigned int max_chunk = /* netto data */ 512 + /* sizeof(packet_header_t) */ 32 + /* HCI headers */ 8;
+	struct os_mbuf *txom;
+	unsigned int offset, chunk, length, attempt;
+	int rv;
 
-	return(ble_gatts_indicate_custom(cli_buffer->bt.connection_handle, cli_buffer->bt.attribute_handle, txom));
+	offset = 0;
+	length = cli_buffer->length;
+
+	ESP_LOGI("bt", "bt_send(%u, %u)", offset, length);
+
+	while(length > 0)
+	{
+		chunk = length;
+
+		if(chunk > max_chunk)
+			chunk = max_chunk;
+
+		ESP_LOGI("bt", "sending chunk from %u length %u from %u", offset, chunk, length);
+
+		for(attempt = 32; attempt > 0; attempt--)
+		{
+			ESP_LOGI("bt", "bt_send: attempt: %u", attempt);
+
+			txom = ble_hs_mbuf_from_flat(&cli_buffer->data[offset], chunk);
+			assert(txom);
+
+			ESP_LOGI("bt", "bt_send: call indicate");
+
+			if(!(rv = ble_gatts_indicate_custom(cli_buffer->bt.connection_handle, cli_buffer->bt.attribute_handle, txom)))
+				break;
+
+			ESP_LOGI("bt", "bt_send: wait: %lu", 10 / portTICK_PERIOD_MS);
+			vTaskDelay(10 / portTICK_PERIOD_MS);
+		}
+
+		if(attempt == 0)
+			ESP_LOGW("bt", "bt_send: no more attempts");
+
+		length -= chunk;
+		offset += chunk;
+	}
 }
 
 esp_err_t bt_init(void)

@@ -600,7 +600,7 @@ static void run_send_queue(void *)
 
 			case(cli_source_bt):
 			{
-				ESP_ERROR_CHECK(bt_send(&cli_buffer));
+				bt_send(&cli_buffer);
 
 				break;
 			}
