@@ -96,8 +96,6 @@ static char *conn_info_to_str(const struct ble_gap_conn_desc *desc, char *buffer
 			desc->sec_state.bonded);
 	strncat(buffer, line, buffer_length - 1);
 
-	util_stack_usage_update("conninfotostr");
-
 	return(buffer);
 }
 
@@ -135,8 +133,6 @@ static int gatt_event(uint16_t connection_handle, uint16_t attribute_handle, str
 			break;
 		}
 	}
-
-	util_stack_usage_update("gatt_event");
 
 	return(0);
 }
@@ -358,8 +354,6 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 		}
 	}
 
-	util_stack_usage_update("gap_event");
-
 	return(0);
 }
 
@@ -461,8 +455,6 @@ esp_err_t bt_init(void)
 	ESP_ERROR_CHECK(ble_svc_gap_device_name_set("nimble-ble-spp-svr"));
 	ble_store_config_init();
 	nimble_port_freertos_init(nimble_port_task);
-
-	util_stack_usage_update("bt_init");
 
 	return(0);
 }

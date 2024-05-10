@@ -27,7 +27,5 @@ void app_main(void)
 	cli_init();
 	bt_init();
 
-	util_stack_usage_update("init");
-
 	run_main();
 }

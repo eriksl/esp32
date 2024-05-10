@@ -77,8 +77,6 @@ void run_main(void)
 
 	for(;;)
 	{
-		util_stack_usage_update("main");
-
 		vTaskDelay(500 / portTICK_PERIOD_MS);
 		led_strip_set_pixel(led_strip_handle, 0, 0xff, 0x00, 0x00);
 		led_strip_refresh(led_strip_handle);

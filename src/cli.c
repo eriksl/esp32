@@ -241,10 +241,6 @@ static void process_stat_process(cli_function_call_t *call)
 	}
 
 	free(process_info);
-
-	length = snprintf(call->result + position, call->result_size - position, "stack size:\n");
-	position += length;
-	util_stack_usage_get(call->result_size - position, call->result + position);
 }
 
 static const cli_function_t cli_functions[] =
@@ -309,8 +305,6 @@ static void run_receive_queue(void *)
 
 	for(;;)
 	{
-		util_stack_usage_update("run_receive_queue");
-
 		receive_queue_pop(&cli_buffer);
 		packet_decapsulate(&cli_buffer, &data, &oob_data_length, &oob_data);
 
@@ -619,8 +613,6 @@ static void run_send_queue(void *)
 
 	for(;;)
 	{
-		util_stack_usage_update("run_send_queue");
-
 		send_queue_pop(&cli_buffer);
 
 		switch(cli_buffer.source)
@@ -699,6 +691,4 @@ void cli_init(void)
 		ESP_LOGE("cli", "xTaskCreatePinnedToNode run_send_queue");
 		abort();
 	}
-
-	util_stack_usage_update("cli_init");
 }
