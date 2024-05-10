@@ -9,6 +9,7 @@
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include <freertos/task.h>
 
 #include <esp_log.h>
 #include <esp_check.h>
@@ -145,10 +146,6 @@ static const char *parameter_type_to_string(unsigned int type)
 }
 #endif
 
-static void process_stat(cli_function_call_t *)
-{
-}
-
 static void process_test(cli_function_call_t *call)
 {
 	unsigned int ix, at;
@@ -214,17 +211,53 @@ static void process_test(cli_function_call_t *call)
 	}
 }
 
+static void process_stat_process(cli_function_call_t *call)
+{
+	unsigned int ix, length, position, processes;
+	unsigned long runtime;
+	TaskStatus_t *process_info;
+	const TaskStatus_t *pip;
+	const char *name;
+
+	processes = uxTaskGetNumberOfTasks();
+	process_info = heap_caps_malloc(sizeof(*process_info) * processes , MALLOC_CAP_SPIRAM);
+	assert(uxTaskGetSystemState(process_info, processes, &runtime) == processes);
+
+	position = 0;
+	length = snprintf(call->result + position, call->result_size - position, "processes: %u\n", processes);
+	position += length;
+
+	for(ix = 0; ix < processes; ix++)
+	{
+		pip = &process_info[ix];
+		name = pip->pcTaskName ? pip->pcTaskName : "(null)";
+
+		length = snprintf(call->result + position, call->result_size - position, "  %2u: %-12s %2u %4u\n",
+				pip->xTaskNumber,
+				name,
+				pip->uxCurrentPriority,
+				(unsigned int)pip->usStackHighWaterMark);
+		position += length;
+	}
+
+	free(process_info);
+
+	length = snprintf(call->result + position, call->result_size - position, "stack size:\n");
+	position += length;
+	util_stack_usage_get(call->result_size - position, call->result + position);
+}
+
 static const cli_function_t cli_functions[] =
 {
-	{ "stat",		"s",		process_stat, {} },
-	{ "test",		"t",		process_test,	{ 4,
-													{
-														{ cli_parameter_unsigned_int,	0, 1, 1, 1, .unsigned_int =	{ 1, 10 }},
-														{ cli_parameter_signed_int,		0, 1, 1, 1, .signed_int =		{ 1, 10 }},
-														{ cli_parameter_float,			0, 1, 1, 1, .fp =				{ 1, 10 }},
-														{ cli_parameter_string,			0, 1, 1, 1, .string =			{ 1, 10 }},
-													}
-												}},
+	{ "stat-process",	"sp",		process_stat_process, {} },
+	{ "test",			"t",		process_test,			{ 4,
+																{
+																	{ cli_parameter_unsigned_int,	0, 1, 1, 1, .unsigned_int =	{ 1, 10 }},
+																	{ cli_parameter_signed_int,		0, 1, 1, 1, .signed_int =		{ 1, 10 }},
+																	{ cli_parameter_float,			0, 1, 1, 1, .fp =				{ 1, 10 }},
+																	{ cli_parameter_string,			0, 1, 1, 1, .string =			{ 1, 10 }},
+																}
+															}},
 	{ (char *)0,	(char *)0,	(cli_process_function_t *)0, {} },
 };
 

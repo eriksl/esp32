@@ -89,12 +89,14 @@ error:
 	xSemaphoreGive(stack_usage_semaphore);
 }
 
-void util_stack_usage_show(void)
+void util_stack_usage_get(unsigned int size, char *data)
 {
-	unsigned int ix;
+	unsigned int ix, length, add_length;
 	stack_usage_t *sup;
 
 	assert(inited);
+
+	length = 0;
 
 	xSemaphoreTake(stack_usage_semaphore, portMAX_DELAY);
 
@@ -103,7 +105,12 @@ void util_stack_usage_show(void)
 		sup = &stack_usage[ix];
 
 		if(*sup->tag)
-			ESP_LOGI("util", "stack usage[%2u]: %-12s %-24s %4u", ix, pcTaskGetName(sup->task), sup->tag, sup->current);
+		{
+			if((add_length = snprintf(data + length, size - length, "  %2u: %-12s %-24s %4u\n", ix, pcTaskGetName(sup->task), sup->tag, sup->current)) == 0)
+				break;
+
+			length += add_length;
+		}
 	}
 
 	xSemaphoreGive(stack_usage_semaphore);
