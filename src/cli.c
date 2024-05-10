@@ -17,8 +17,8 @@ enum
 {
 	receive_queue_size = 8,
 	send_queue_size = 8,
-	result_size = 1024,
-	result_oob_size = 0,
+	result_size = 4096,
+	result_oob_size = 4096,
 };
 
 enum
