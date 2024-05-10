@@ -13,6 +13,8 @@
 
 #include <esp_log.h>
 #include <esp_check.h>
+#include <esp_chip_info.h>
+#include <esp_flash.h>
 
 enum
 {
@@ -138,7 +140,7 @@ static const char *parameter_type_to_string(unsigned int type)
 		"float",
 		"string",
 	};
-		
+
 	if(type >= cli_parameter_size)
 		type = cli_parameter_none;
 
@@ -211,41 +213,137 @@ static void process_test(cli_function_call_t *call)
 	}
 }
 
+static void process_stat_memory(cli_function_call_t *call)
+{
+	unsigned offset;
+
+	offset = 0;
+
+	offset += snprintf(call->result + offset, call->result_size - offset, "%-30s %-4s\n", "Type of memory", "kB");
+	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %lu\n", "free heap total",			esp_get_free_heap_size() / 1024);
+	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %lu\n", "minimum free heap",			esp_get_minimum_free_heap_size() / 1024);
+	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap executable",			heap_caps_get_free_size(MALLOC_CAP_EXEC) / 1024);
+	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap 32 bit addressable",	heap_caps_get_free_size(MALLOC_CAP_32BIT) / 1024);
+	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap 8 bit addressable",		heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024);
+	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap DMA adressable",		heap_caps_get_free_size(MALLOC_CAP_DMA) / 1024);
+	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap SPI RAM",				heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024);
+	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap internal RAM",			heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024);
+	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap default",				heap_caps_get_free_size(MALLOC_CAP_DEFAULT) / 1024);
+	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap IRAM 8 bit adressable",	heap_caps_get_free_size(MALLOC_CAP_IRAM_8BIT) / 1024);
+	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap retention",				heap_caps_get_free_size(MALLOC_CAP_RETENTION) / 1024);
+	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap RTC RAM",				heap_caps_get_free_size(MALLOC_CAP_RTCRAM) / 1024);
+	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap TCM",					heap_caps_get_free_size(MALLOC_CAP_TCM) / 1024);
+}
+
 static void process_stat_process(cli_function_call_t *call)
 {
-	unsigned int ix, length, position, processes;
+	unsigned int ix, length, offset, processes;
 	unsigned long runtime;
 	TaskStatus_t *process_info;
 	const TaskStatus_t *pip;
 	const char *name;
+	const char *state;
+
+	offset = 0;
 
 	processes = uxTaskGetNumberOfTasks();
 	process_info = heap_caps_malloc(sizeof(*process_info) * processes , MALLOC_CAP_SPIRAM);
 	assert(uxTaskGetSystemState(process_info, processes, &runtime) == processes);
 
-	position = 0;
-	length = snprintf(call->result + position, call->result_size - position, "processes: %u\n", processes);
-	position += length;
+	length = snprintf(call->result + offset, call->result_size - offset, "processes: %u\n", processes);
+	offset += length;
+	length = snprintf(call->result + offset, call->result_size - offset, "  %2s  %-12s %-10s %-4s %-5s\n", "#", "name", "state", "prio", "stack");
+	offset += length;
 
 	for(ix = 0; ix < processes; ix++)
 	{
 		pip = &process_info[ix];
 		name = pip->pcTaskName ? pip->pcTaskName : "(null)";
 
-		length = snprintf(call->result + position, call->result_size - position, "  %2u: %-12s %2u %4u\n",
+		switch(pip->eCurrentState)
+		{
+			case(eRunning):
+			{
+				state = "running";
+				break;
+			}
+
+			case(eReady):
+			{
+				state = "ready";
+				break;
+			}
+
+			case(eBlocked):
+			{
+				state = "block";
+				break;
+			}
+
+			case(eSuspended):
+			{
+				state = "suspended";
+				break;
+			}
+
+			case(eDeleted):
+			{
+				state = "deleted";
+				break;
+			}
+
+			default:
+			{
+				state = "invalid";
+				break;
+			}
+		}
+
+		length = snprintf(call->result + offset, call->result_size - offset, "  %2u: %-12s %-10s %4u %5u\n",
 				pip->xTaskNumber,
 				name,
+				state,
 				pip->uxCurrentPriority,
 				(unsigned int)pip->usStackHighWaterMark);
-		position += length;
+		offset += length;
 	}
 
 	free(process_info);
 }
 
+static void process_stat_system(cli_function_call_t *call)
+{
+	esp_chip_info_t chip_info;
+	uint32_t flash_size;
+	unsigned int offset;
+
+	offset = 0;
+
+	esp_chip_info(&chip_info);
+
+	offset += snprintf(call->result + offset, call->result_size - offset, "SoC: %s with %d cores\nRF: %s%s%s%s\n",
+		CONFIG_IDF_TARGET,
+		chip_info.cores,
+		(chip_info.features & CHIP_FEATURE_WIFI_BGN) ? "WiFi/" : "",
+		(chip_info.features & CHIP_FEATURE_BT) ? "BT" : "",
+		(chip_info.features & CHIP_FEATURE_BLE) ? "BLE" : "",
+		(chip_info.features & CHIP_FEATURE_IEEE802154) ? ", 802.15.4 (Zigbee/Thread)" : "");
+
+	unsigned major_rev = chip_info.revision / 100;
+	unsigned minor_rev = chip_info.revision % 100;
+	offset += snprintf(call->result + offset, call->result_size - offset, "Revision: %d.%d\n", major_rev, minor_rev);
+
+	esp_flash_get_size(NULL, &flash_size);
+
+	offset += snprintf(call->result + offset, call->result_size - offset, "Flash: %lu MB %s\n", flash_size / (1024 * 1024),
+		(chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
+}
+
 static const cli_function_t cli_functions[] =
 {
-	{ "stat-process",	"sp",		process_stat_process, {} },
+	{ "stat-memory",	"sm",		process_stat_memory,	{} },
+	{ "stat-process",	"sp",		process_stat_process,	{} },
+	{ "stat-system",	"ss",		process_stat_system,	{} },
 	{ "test",			"t",		process_test,			{ 4,
 																{
 																	{ cli_parameter_unsigned_int,	0, 1, 1, 1, .unsigned_int =	{ 1, 10 }},
