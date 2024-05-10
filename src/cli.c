@@ -276,7 +276,7 @@ static void process_stat_process(cli_function_call_t *call)
 
 			case(eBlocked):
 			{
-				state = "block";
+				state = "blocked";
 				break;
 			}
 
