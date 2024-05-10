@@ -23,7 +23,7 @@ static int gatt_event(uint16_t conn_handle, uint16_t attr_handle, struct ble_gat
 
 enum
 {
-	SERVICE__HANDLE = 0xabf0,
+	SERVICE_HANDLE = 0xabf0,
 	CHARACTERISTICS_HANDLE = 0xabf1,
 };
 
@@ -34,7 +34,7 @@ static const struct ble_gatt_svc_def gatt_definitions[] =
 {
 	{
 		.type = BLE_GATT_SVC_TYPE_PRIMARY,
-		.uuid = BLE_UUID16_DECLARE(SERVICE__HANDLE),
+		.uuid = BLE_UUID16_DECLARE(SERVICE_HANDLE),
 		.characteristics = (struct ble_gatt_chr_def[])
 		{
 			{
@@ -166,7 +166,7 @@ static void server_advertise(void)
 
 	fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
 
-	fields.uuids16 = (ble_uuid16_t[]) { BLE_UUID16_INIT(SERVICE__HANDLE) };
+	fields.uuids16 = (ble_uuid16_t[]) { BLE_UUID16_INIT(SERVICE_HANDLE) };
 	fields.num_uuids16 = 1;
 	fields.uuids16_is_complete = 1;
 
