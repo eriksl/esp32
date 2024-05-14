@@ -503,13 +503,9 @@ static const cli_function_t cli_functions[] =
 	{ (char *)0,	(char *)0,	(cli_process_function_t *)0,	{}	},
 };
 
-static bool inited = false;
 static QueueHandle_t receive_queue_handle;
 static QueueHandle_t send_queue_handle;
-static cli_buffer_t receive_queue_data[receive_queue_size];
-static cli_buffer_t send_queue_data[send_queue_size];
-static StaticQueue_t receive_queue;
-static StaticQueue_t send_queue;
+static bool inited = false;
 
 static void receive_queue_pop(cli_buffer_t *cli_buffer)
 {
@@ -912,15 +908,30 @@ void cli_init(void)
 {
 	assert(!inited);
 
-	if(!(receive_queue_handle = xQueueCreateStatic(receive_queue_size, sizeof(cli_buffer_t), (void *)&receive_queue_data, &receive_queue)))
+	cli_buffer_t *queue_data;
+	StaticQueue_t *queue;
+
+	queue_data = heap_caps_malloc(receive_queue_size * sizeof(cli_buffer_t) , MALLOC_CAP_SPIRAM);
+	assert(queue_data);
+
+	queue = heap_caps_malloc(sizeof(StaticQueue_t), MALLOC_CAP_SPIRAM);
+	assert(queue);
+
+	if(!(receive_queue_handle = xQueueCreateStatic(receive_queue_size, sizeof(cli_buffer_t), (void *)queue_data, queue)))
 	{
 		ESP_LOGE("cli", "xQueueCreateStatic receive queue init");
 		abort();
 	}
 
-	if(!(send_queue_handle = xQueueCreateStatic(send_queue_size, sizeof(cli_buffer_t), (void *)&send_queue_data, &send_queue)))
+	queue_data = heap_caps_malloc(send_queue_size * sizeof(cli_buffer_t) , MALLOC_CAP_SPIRAM);
+	assert(queue_data);
+
+	queue = heap_caps_malloc(sizeof(StaticQueue_t), MALLOC_CAP_SPIRAM);
+	assert(queue);
+
+	if(!(send_queue_handle = xQueueCreateStatic(send_queue_size, sizeof(cli_buffer_t), (void *)queue_data, queue)))
 	{
-		ESP_LOGE("cli", "xQueueCreateStatic receive queue init");
+		ESP_LOGE("cli", "xQueueCreateStatic send queue init");
 		abort();
 	}
 
