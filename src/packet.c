@@ -90,6 +90,7 @@ void packet_encapsulate(cli_buffer_t *cli_buffer, const char *data, unsigned int
 	unsigned int data_length;
 	unsigned int data_offset;
 	unsigned int oob_data_offset;
+	unsigned int ix;
 
 	assert(!cli_buffer->data);
 
@@ -105,6 +106,8 @@ void packet_encapsulate(cli_buffer_t *cli_buffer, const char *data, unsigned int
 		cli_buffer->data = heap_caps_malloc(cli_buffer->length, MALLOC_CAP_SPIRAM);
 		memcpy(&cli_buffer->data[data_offset], data, data_length);
 		cli_buffer->data[data_offset + data_length] = '\n';
+		for(ix = data_offset + data_length + 1; ix < oob_data_offset; ix++)
+			cli_buffer->data[ix] = '\0';
 		memcpy(&cli_buffer->data[oob_data_offset], oob_data, oob_data_length);
 
 		packet = (packet_header_t *)cli_buffer->data;
