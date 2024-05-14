@@ -62,8 +62,6 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob
 			cli_buffer->checksum_requested = packet->flag.md5_32_requested ? 1 : 0;
 			cli_buffer->packetised = 1;
 
-			ESP_LOGI("packet", "return valid packet");
-
 			return;
 		}
 	}

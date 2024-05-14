@@ -110,6 +110,8 @@ static void nimble_port_task(void *param)
 
 static int gatt_event(uint16_t connection_handle, uint16_t attribute_handle, struct ble_gatt_access_ctxt *context, void *arg)
 {
+	//ESP_LOGD("bt", "gatt_event");
+
 	assert(inited);
 
 	switch (context->op)
@@ -409,7 +411,7 @@ void bt_send(cli_buffer_t *cli_buffer)
 	offset = 0;
 	length = cli_buffer->length;
 
-	ESP_LOGI("bt", "bt_send(%u, %u)", offset, length);
+	//ESP_LOGD("bt", "bt_send(%u, %u)", offset, length);
 
 	while(length > 0)
 	{
@@ -418,21 +420,21 @@ void bt_send(cli_buffer_t *cli_buffer)
 		if(chunk > max_chunk)
 			chunk = max_chunk;
 
-		ESP_LOGI("bt", "sending chunk from %u length %u from %u", offset, chunk, length);
+		//ESP_LOGD("bt", "sending chunk from %u length %u from %u", offset, chunk, length);
 
 		for(attempt = 32; attempt > 0; attempt--)
 		{
-			ESP_LOGI("bt", "bt_send: attempt: %u", attempt);
+			//ESP_LOGD("bt", "bt_send: attempt: %u", attempt);
 
 			txom = ble_hs_mbuf_from_flat(&cli_buffer->data[offset], chunk);
 			assert(txom);
 
-			ESP_LOGI("bt", "bt_send: call indicate");
+			//ESP_LOGD("bt", "bt_send: call indicate(%u, %u, %p)", cli_buffer->bt.connection_handle, cli_buffer->bt.attribute_handle, txom);
 
 			if(!(rv = ble_gatts_indicate_custom(cli_buffer->bt.connection_handle, cli_buffer->bt.attribute_handle, txom)))
 				break;
 
-			ESP_LOGI("bt", "bt_send: wait: %lu", 10 / portTICK_PERIOD_MS);
+			//ESP_LOGD("bt", "bt_send: wait: %lu", 10 / portTICK_PERIOD_MS);
 			vTaskDelay(10 / portTICK_PERIOD_MS);
 		}
 
