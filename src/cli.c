@@ -11,10 +11,15 @@
 #include <freertos/queue.h>
 #include <freertos/task.h>
 
+#include <mbedtls/sha1.h>
+
 #include <esp_log.h>
 #include <esp_check.h>
 #include <esp_chip_info.h>
 #include <esp_flash.h>
+#include <esp_ota_ops.h>
+#include <esp_system.h>
+#include <esp_timer.h>
 
 enum
 {
@@ -148,69 +153,129 @@ static const char *parameter_type_to_string(unsigned int type)
 }
 #endif
 
-static void process_test(cli_function_call_t *call)
+static void process_flash_bench(cli_function_call_t *call)
 {
-	unsigned int ix, at;
-	const cli_parameter_t *parameter;
+	unsigned int length;
 
-	at = 0;
+	assert(call->result_oob_size >= 4096);
+	assert(call->parameters->count == 1);
 
-	for(ix = 0; ix < call->parameters->count; ix++)
+	if((length = call->parameters->parameters[0].unsigned_int) > 4096)
 	{
-		parameter = &call->parameters->parameters[ix];
+		snprintf(call->result, call->result_size, "ERROR: flash-bench: length %d should be <= 4096", length);
+		return;
+	}
 
-		if(!parameter->has_value)
+	memset(call->result_oob, 0, length);
+	call->result_oob_length = length;
+
+	snprintf(call->result, call->result_size, "OK flash-bench: sending %u bytes", length);
+}
+
+static void process_flash_checksum(cli_function_call_t *call)
+{
+	int rv;
+	unsigned int start_sector, offset, length, current;
+	mbedtls_sha1_context ctx;
+	uint8_t output[20];
+
+	assert(call->result_oob_size >= 4096);
+	assert(call->parameters->count == 2);
+
+	mbedtls_sha1_init(&ctx);
+	mbedtls_sha1_starts(&ctx);
+
+	start_sector = call->parameters->parameters[0].unsigned_int;
+	length = call->parameters->parameters[1].unsigned_int;
+
+	for(current = start_sector; current < (start_sector + length); current++)
+	{
+		if((rv = esp_flash_read((esp_flash_t *)0, call->result_oob, current, 4096)) != 0)
 		{
-			if(at < call->result_size)
-				at += snprintf(call->result + at, call->result_size - at, "ERROR: parameter %u has no value\n", ix);
-
-			continue;
+			snprintf(call->result, call->result_size, "ERROR: esp_flash_read from %u returned error %d", start_sector, rv);
+			return;
 		}
 
-		switch(parameter->type)
+		if((rv = mbedtls_sha1_update(&ctx, call->result_oob, 4096)) < 0)
 		{
-			case(cli_parameter_none):
-			case(cli_parameter_size):
-			{
-				if(at < call->result_size)
-					at += snprintf(call->result + at, call->result_size - at, "ERROR: invalid parameter %u\n", ix);
-
-				break;
-			}
-
-			case(cli_parameter_unsigned_int):
-			{
-				if(at < call->result_size)
-					at += snprintf(call->result + at, call->result_size - at, "unsigned int parameter: %u\n", parameter->unsigned_int);
-
-				break;
-			}
-
-			case(cli_parameter_signed_int):
-			{
-				if(at < call->result_size)
-					at += snprintf(call->result + at, call->result_size - at, "signed int parameter: %d\n", parameter->signed_int);
-
-				break;
-			}
-
-			case(cli_parameter_float):
-			{
-				if(at < call->result_size)
-					at += snprintf(call->result + at, call->result_size - at, "float parameter: %f\n", parameter->fp);
-
-				break;
-			}
-
-			case(cli_parameter_string):
-			{
-				if(at < call->result_size)
-					at += snprintf(call->result + at, call->result_size - at, "string parameter: \"%s\"\n", parameter->string);
-
-				break;
-			}
+			snprintf(call->result, call->result_size, "ERROR: mbedtls_sha1_update on sector %u returned error %d", start_sector, rv);
+			return;
 		}
 	}
+
+	if((rv = mbedtls_sha1_finish(&ctx, output)) < 0)
+	{
+		snprintf(call->result, call->result_size, "ERROR: mbedtls_sha1_finish returned error %d", rv);
+		return;
+	}
+
+	snprintf(call->result, call->result_size, "OK flash-checksum: checksummed %u sectors from sector %u, checksum: ", current - start_sector, start_sector);
+
+	offset = strlen(call->result);
+
+	for(current = 0; current < sizeof(output); current++)
+	{
+		length = snprintf(call->result + offset, call->result_size - offset, "%02x", output[current]);
+		offset += length;
+	}
+}
+
+static void process_flash_info(cli_function_call_t *call)
+{
+	const esp_partition_t *running;
+	const esp_partition_t *next;
+
+	assert((running = esp_ota_get_running_partition()));
+	assert((next = esp_ota_get_next_update_partition((const esp_partition_t *)0)));
+
+	snprintf(call->result, call->result_size, "OK esp32 ota available, "
+			"slots: %u, "
+			"current: %u, "
+			"next: %u, "
+			"sectors: [ %u, %u ], "
+			"display: %ux%upx@%u\n",
+			esp_ota_get_app_partition_count(),
+			running->address ==	0x100000 ? 0 : 1, // FIXME
+			next->address ==	0x100000 ? 0 : 1, // FIXME
+			(unsigned int)running->address / 0x1000, (unsigned int)next->address / 0x1000,
+			0, 0, 0); // FIXME
+}
+
+static void process_flash_read(cli_function_call_t *call)
+{
+	esp_err_t rv;
+	unsigned int sector;
+
+	assert(call->result_oob_size >= 4096);
+	assert(call->parameters->count == 1);
+
+	sector = call->parameters->parameters[0].unsigned_int;
+
+	if((rv = esp_flash_read((esp_flash_t *)0, call->result_oob, sector, 4096)) != 0)
+	{
+		snprintf(call->result, call->result_size, "ERROR: esp_flash_read from %u returned error %u", sector, rv);
+		return;
+	}
+
+	call->result_oob_length = 4096;
+	snprintf(call->result, call->result_size, "OK flash-read: read sector %u", sector);
+}
+
+static void process_stat_firmware(cli_function_call_t *call)
+{
+	const esp_app_desc_t *desc;
+
+	if(!(desc = esp_app_get_description()))
+	{
+		snprintf(call->result, call->result_size, "ERROR: esp_app_get_description failed");
+		return;
+	}
+
+	snprintf(call->result, call->result_size,
+			"> firmware\n"
+			">   date: %s %s\n"
+			">   build start: %s %s\n",
+			__DATE__, __TIME__, desc->date, desc->time);
 }
 
 static void process_stat_memory(cli_function_call_t *call)
@@ -339,20 +404,103 @@ static void process_stat_system(cli_function_call_t *call)
 		(chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
 }
 
+static void process_test(cli_function_call_t *call)
+{
+	unsigned int ix, at;
+	const cli_parameter_t *parameter;
+
+	at = 0;
+
+	for(ix = 0; ix < call->parameters->count; ix++)
+	{
+		parameter = &call->parameters->parameters[ix];
+
+		if(!parameter->has_value)
+		{
+			if(at < call->result_size)
+				at += snprintf(call->result + at, call->result_size - at, "ERROR: parameter %u has no value\n", ix);
+
+			continue;
+		}
+
+		switch(parameter->type)
+		{
+			case(cli_parameter_none):
+			case(cli_parameter_size):
+			{
+				if(at < call->result_size)
+					at += snprintf(call->result + at, call->result_size - at, "ERROR: invalid parameter %u\n", ix);
+
+				break;
+			}
+
+			case(cli_parameter_unsigned_int):
+			{
+				if(at < call->result_size)
+					at += snprintf(call->result + at, call->result_size - at, "unsigned int parameter: %u\n", parameter->unsigned_int);
+
+				break;
+			}
+
+			case(cli_parameter_signed_int):
+			{
+				if(at < call->result_size)
+					at += snprintf(call->result + at, call->result_size - at, "signed int parameter: %d\n", parameter->signed_int);
+
+				break;
+			}
+
+			case(cli_parameter_float):
+			{
+				if(at < call->result_size)
+					at += snprintf(call->result + at, call->result_size - at, "float parameter: %f\n", parameter->fp);
+
+				break;
+			}
+
+			case(cli_parameter_string):
+			{
+				if(at < call->result_size)
+					at += snprintf(call->result + at, call->result_size - at, "string parameter: \"%s\"\n", parameter->string);
+
+				break;
+			}
+		}
+	}
+}
+
 static const cli_function_t cli_functions[] =
 {
-	{ "stat-memory",	"sm",		process_stat_memory,	{} },
-	{ "stat-process",	"sp",		process_stat_process,	{} },
-	{ "stat-system",	"ss",		process_stat_system,	{} },
-	{ "test",			"t",		process_test,			{ 4,
-																{
-																	{ cli_parameter_unsigned_int,	0, 1, 1, 1, .unsigned_int =	{ 1, 10 }},
-																	{ cli_parameter_signed_int,		0, 1, 1, 1, .signed_int =		{ 1, 10 }},
-																	{ cli_parameter_float,			0, 1, 1, 1, .fp =				{ 1, 10 }},
-																	{ cli_parameter_string,			0, 1, 1, 1, .string =			{ 1, 10 }},
-																}
-															}},
-	{ (char *)0,	(char *)0,	(cli_process_function_t *)0, {} },
+	{ "flash-checksum",	(const char*)0,	process_flash_checksum,	{	2,
+																	{
+																		{ cli_parameter_unsigned_int,	0,	1,	0,	0, {} },
+																		{ cli_parameter_unsigned_int,	0,	1,	0,	0, {} },
+																	},
+																}},
+	{ "flash-bench",	(const char*)0,	process_flash_bench,	{	1,
+																	{
+																		{ cli_parameter_unsigned_int,	0,	1,	1,	1, .unsigned_int = { 0, 4096 }},
+																	},
+																}},
+	{ "flash-info",		(const char*)0,	process_flash_info,		{}	},
+	{ "flash-read",		(const char*)0,	process_flash_read,		{	1,
+																	{
+																		{ cli_parameter_unsigned_int,	0,	1,	0,	0, {} },
+																	},
+																}},
+	{ "stats",			"s",			process_stat_firmware,	{}	},
+	{ "stat-memory",	"sm",			process_stat_memory,	{}	},
+	{ "stat-process",	"sp",			process_stat_process,	{}	},
+	{ "stat-system",	"ss",			process_stat_system,	{}	},
+	{ "test",			"t",			process_test,			{	4,
+																	{
+																		{ cli_parameter_unsigned_int,	0,	1,	1,	1,	.unsigned_int =	{ 1, 10 }},
+																		{ cli_parameter_signed_int,		0,	1,	1,	1,	.signed_int =	{ 1, 10 }},
+																		{ cli_parameter_float,			0,	1,	1,	1,	.fp =			{ 1, 10 }},
+																		{ cli_parameter_string,			0,	1,	1,	1,	.string =		{ 1, 10 }},
+																	}
+																}},
+	{ (char *)0,	(char *)0,	(cli_process_function_t *)0,	{}	},
 };
 
 static bool inited = false;
