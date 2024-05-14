@@ -4,6 +4,7 @@
 #include "cli.h"
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <stddef.h>
 
 // for packet_header_t
@@ -16,6 +17,8 @@
 #undef assert_field
 #undef attr_packed
 
+bool packet_is_packet(unsigned int length, const void *buffer);
+unsigned int packet_length(unsigned int length, const void *buffer);
 void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob_data_length, uint8_t **oob_data);
 void packet_encapsulate(cli_buffer_t *cli_buffer, const char *data, unsigned int oob_data_length, const uint8_t *oob_data);
 

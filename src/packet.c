@@ -132,3 +132,30 @@ void packet_encapsulate(cli_buffer_t *cli_buffer, const char *data, unsigned int
 	memcpy(cli_buffer->data, data, data_length);
 	cli_buffer->data[data_length] = '\n';
 }
+
+bool packet_is_packet(unsigned int length, const void *buffer)
+{
+	packet_header_t *packet;
+
+	if(length < sizeof(*packet))
+		return(false);
+
+	packet = (packet_header_t *)buffer;
+
+	if((packet->soh != packet_header_soh) || (packet->version != packet_header_version) || (packet->id != packet_header_id))
+		return(false);
+
+	return(true);
+}
+
+unsigned int packet_length(unsigned int length, const void *buffer)
+{
+	packet_header_t *packet;
+
+	if(!packet_is_packet(length, buffer))
+		return(0);
+
+	packet = (packet_header_t *)buffer;
+
+	return(packet->length);
+}
