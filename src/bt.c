@@ -30,6 +30,7 @@ static int gap_event(struct ble_gap_event *event, void *arg);
 static int gatt_event(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *context, void *arg);
 static uint16_t attribute_handle;
 static uint8_t own_addr_type;
+static bool inited = false;
 
 static const struct ble_gatt_svc_def gatt_definitions[] =
 {
@@ -101,12 +102,16 @@ static char *conn_info_to_str(const struct ble_gap_conn_desc *desc, char *buffer
 
 static void nimble_port_task(void *param)
 {
+	assert(inited);
+
 	nimble_port_run();
 	nimble_port_freertos_deinit();
 }
 
 static int gatt_event(uint16_t connection_handle, uint16_t attribute_handle, struct ble_gatt_access_ctxt *context, void *arg)
 {
+	assert(inited);
+
 	switch (context->op)
 	{
 		case(BLE_GATT_ACCESS_OP_WRITE_CHR):
@@ -216,6 +221,8 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 	struct ble_gap_conn_desc desc;
 	int rc;
 	char buffer[512];
+
+	assert(inited);
 
 	switch(event->type)
 	{
@@ -397,6 +404,8 @@ void bt_send(cli_buffer_t *cli_buffer)
 	unsigned int offset, chunk, length, attempt;
 	int rv;
 
+	assert(inited);
+
 	offset = 0;
 	length = cli_buffer->length;
 
@@ -437,7 +446,11 @@ void bt_send(cli_buffer_t *cli_buffer)
 
 esp_err_t bt_init(void)
 {
+	assert(!inited);
+
 	ESP_ERROR_CHECK(nimble_port_init());
+
+	inited = true;
 
 	ble_hs_cfg.reset_cb = callback_reset;
 	ble_hs_cfg.sync_cb = callback_sync;
