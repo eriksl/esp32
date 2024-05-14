@@ -188,8 +188,13 @@ static void server_advertise(void)
 	adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
 	adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
 
-	if(((rc = ble_gap_adv_start(own_addr_type, NULL, BLE_HS_FOREVER, &adv_params, gap_event, NULL)) != 0) && (rc != BLE_HS_EALREADY))
-		ESP_ERROR_CHECK(rc);
+	rc = ble_gap_adv_start(own_addr_type, NULL, BLE_HS_FOREVER, &adv_params, gap_event, NULL);
+
+	if((rc != 0) && (rc != BLE_HS_EALREADY))
+	{
+		ESP_LOGE("bt", "ble_gap_adv_start, error: %x", rc);
+		abort();
+	}
 }
 
 static void callback_reset(int reason)
