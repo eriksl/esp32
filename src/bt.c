@@ -427,7 +427,7 @@ void bt_send(cli_buffer_t *cli_buffer)
 
 		//ESP_LOGD("bt", "sending chunk from %u length %u from %u", offset, chunk, length);
 
-		for(attempt = 32; attempt > 0; attempt--)
+		for(attempt = 128; attempt > 0; attempt--)
 		{
 			//ESP_LOGD("bt", "bt_send: attempt: %u", attempt);
 
