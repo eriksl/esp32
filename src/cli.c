@@ -67,7 +67,7 @@ typedef struct
 {
 	cli_parameter_type_description_t type:4;
 
-	unsigned int base:4;
+	unsigned int base:5;
 	unsigned int value_required:1;
 	unsigned int lower_bound_required:1;
 	unsigned int upper_bound_required:1;
