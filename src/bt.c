@@ -32,6 +32,8 @@ enum
 {
 	reassembly_buffer_size = 4096 + sizeof(packet_header_t) + 32,
 	reassembly_timeout_ms = 2000,
+	reassembly_raw_stream_fragmented_size = 512,
+	reassembly_expected_length_unknown = ~0UL,
 };
 
 static int gap_event(struct ble_gap_event *event, void *arg);
@@ -131,8 +133,6 @@ static void nimble_port_task(void *param)
 
 static int gatt_event(uint16_t connection_handle, uint16_t attribute_handle, struct ble_gatt_access_ctxt *context, void *arg)
 {
-	//ESP_LOGD("bt", "gatt_event");
-
 	assert(inited);
 
 	switch (context->op)
@@ -359,7 +359,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
 		case(BLE_GAP_EVENT_PHY_UPDATE_COMPLETE):
 		{
-			ESP_LOGI("bt", "%s", "EVENT PHY UPDATE COMPLETE");
+			//ESP_LOGD("bt", "%s", "EVENT PHY UPDATE COMPLETE");
 
 			break;
 		}
@@ -433,8 +433,6 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 		return(reassemble_reset());
 	}
 
-	//ESP_LOGD("bt", "received from bt: %u", chunk_length);
-
 	reassembly_timestamp_now = esp_timer_get_time();
 
 	if(!reassembly_offset || !reassembly_expected_length || !reassembly_timestamp_start)
@@ -443,8 +441,6 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 		assert(!reassembly_expected_length);
 		assert(!reassembly_timestamp_start);
 
-		//ESP_LOGD("bt", "no reassembly is in progress");
-
 		ble_hs_mbuf_to_flat(mbuf, reassembly_buffer, chunk_length, &om_length);
 		assert(om_length == chunk_length);
 
@@ -452,22 +448,21 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 
 		if(packet_is_packet(chunk_length, reassembly_buffer) && (chunk_length < (reassembled_packet_length = packet_length(chunk_length, reassembly_buffer))))
 		{
-			//ESP_LOGD("bt", "new fragment is valid packet and is start from fragmented packet, offset: %u", reassembly_offset);
-
 			if(!reassembled_packet_length)
-			{
-				ESP_LOGW("bt", "reassembly: packet length is zero");
 				return(reassemble_reset());
-			}
 
 			reassembly_expected_length = reassembled_packet_length;
 			reassembly_timestamp_start = reassembly_timestamp_now;
 			return;
 		}
-		else // FIXME
+		else
 		{
-			/* packet standalone, push */
-			//ESP_LOGD("bt", "new fragment is standalone");
+			if(!packet_is_packet(chunk_length, reassembly_buffer) && (chunk_length == reassembly_raw_stream_fragmented_size))
+			{
+				reassembly_expected_length = reassembly_expected_length_unknown;
+				reassembly_timestamp_start = reassembly_timestamp_now;
+				return;
+			}
 		}
 	}
 	else
@@ -476,58 +471,52 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 		assert(reassembly_expected_length);
 		assert(reassembly_timestamp_start);
 
-		//ESP_LOGD("bt", "new fragment belongs to existing reassembly");
+		current_write_offset = reassembly_offset;
+		reassembly_offset += chunk_length;
+
+		if(reassembly_offset > reassembly_buffer_size)
+		{
+			ESP_LOGW("bt", "reassembly: buffer overrun: %u + %u = %u (> %u), dropped chunk",
+					current_write_offset, chunk_length, reassembly_offset, reassembly_buffer_size);
+			return(reassemble_reset());
+		}
+
+		ble_hs_mbuf_to_flat(mbuf, &reassembly_buffer[current_write_offset], chunk_length, &om_length);
+		assert(om_length == chunk_length);
 
 		if(((reassembly_timestamp_now - reassembly_timestamp_start) / 1000) >= reassembly_timeout_ms)
 		{
-			ESP_LOGW("bt", "reassembly: timeout: %llu ms, dropped chunk", (reassembly_timestamp_now - reassembly_timestamp_start) / 1000U);
-			return(reassemble_reset());
+			if(reassembly_expected_length != reassembly_expected_length_unknown)
+				return(reassemble_reset());
 		}
 		else
 		{
-			current_write_offset = reassembly_offset;
-			reassembly_offset += chunk_length;
-
-			//ESP_LOGD("bt", "reassembly: writing %u bytes to %u-%u", chunk_length, current_write_offset, reassembly_offset - 1);
-
-			if(reassembly_offset > reassembly_buffer_size)
+			if(reassembly_expected_length == reassembly_expected_length_unknown)
 			{
-				ESP_LOGW("bt", "reassembly: buffer overrun: %u + %u = %u (> %u), dropped chunk",
-						current_write_offset, chunk_length, reassembly_offset, reassembly_buffer_size);
-				return(reassemble_reset());
-			}
-
-			ble_hs_mbuf_to_flat(mbuf, &reassembly_buffer[current_write_offset], chunk_length, &om_length);
-			assert(om_length == chunk_length);
-
-			if(reassembly_offset > reassembly_expected_length)
-			{
-				ESP_LOGW("bt", "reassembly: length unexpected: %u (>  %u), dropped chunk", reassembly_offset, reassembly_expected_length);
-				return(reassemble_reset());
+				if(chunk_length == reassembly_raw_stream_fragmented_size)
+					return;
 			}
 			else
 			{
-				if(reassembly_offset < reassembly_expected_length)
+				if(reassembly_offset > reassembly_expected_length)
+					return(reassemble_reset());
+				else
 				{
-					//ESP_LOGD("bt", "reassembly: added %u to buffer to %u", chunk_length, reassembly_offset);
-					return;
-				}
-				else // FIXME
-				{
-					//ESP_LOGD("bt", "reassembly: complete, length: %u, expected length: %u", reassembly_offset, reassembly_expected_length);
+					if(reassembly_offset < reassembly_expected_length)
+						return;
 				}
 			}
 		}
 	}
 
-	assert(reassembly_offset);
 	cli_buffer.source = cli_source_bt;
 	cli_buffer.length = reassembly_offset;
 	cli_buffer.data_from_malloc = 1;
-	assert((cli_buffer.data = heap_caps_malloc(cli_buffer.length, MALLOC_CAP_SPIRAM)));
+	assert((cli_buffer.data = heap_caps_malloc(cli_buffer.length ? cli_buffer.length : cli_buffer.length + 1, MALLOC_CAP_SPIRAM)));
 	memcpy(cli_buffer.data, reassembly_buffer, cli_buffer.length);
 	cli_buffer.bt.connection_handle = connection_handle;
 	cli_buffer.bt.attribute_handle = attribute_handle;
+
 	cli_receive_queue_push(&cli_buffer);
 	reassemble_reset();
 }
@@ -544,8 +533,6 @@ void bt_send(cli_buffer_t *cli_buffer)
 	offset = 0;
 	length = cli_buffer->length;
 
-	//ESP_LOGD("bt", "bt_send(%u, %u)", offset, length);
-
 	while(length > 0)
 	{
 		chunk = length;
@@ -553,22 +540,23 @@ void bt_send(cli_buffer_t *cli_buffer)
 		if(chunk > max_chunk)
 			chunk = max_chunk;
 
-		//ESP_LOGD("bt", "sending chunk from %u length %u from %u", offset, chunk, length);
-
-		for(attempt = 128; attempt > 0; attempt--)
+		for(attempt = 16; attempt > 0; attempt--)
 		{
-			//ESP_LOGD("bt", "bt_send: attempt: %u", attempt);
-
 			txom = ble_hs_mbuf_from_flat(&cli_buffer->data[offset], chunk);
 			assert(txom);
 
-			//ESP_LOGD("bt", "bt_send: call indicate(%u, %u, %p)", cli_buffer->bt.connection_handle, cli_buffer->bt.attribute_handle, txom);
+			rv = ble_gatts_indicate_custom(cli_buffer->bt.connection_handle, cli_buffer->bt.attribute_handle, txom);
 
-			if(!(rv = ble_gatts_indicate_custom(cli_buffer->bt.connection_handle, cli_buffer->bt.attribute_handle, txom)))
+			if(!rv)
 				break;
 
-			//ESP_LOGD("bt", "bt_send: wait: %lu", 10 / portTICK_PERIOD_MS);
-			vTaskDelay(10 / portTICK_PERIOD_MS);
+			if(rv != BLE_HS_ENOMEM)
+			{
+				ESP_LOGW("bt", "indicate: error: %x", rv);
+				return;
+			}
+
+			vTaskDelay(100 / portTICK_PERIOD_MS);
 		}
 
 		if(attempt == 0)

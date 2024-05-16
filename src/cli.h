@@ -17,12 +17,15 @@ typedef struct
 	cli_source_t	source;
 	unsigned int	length;
 	uint8_t			*data;
+	unsigned int	transaction_id;
+	unsigned int	broadcast_groups;
 
 	struct
 	{
 		unsigned int data_from_malloc:1;
 		unsigned int packetised:1;
 		unsigned int checksum_requested:1;
+		unsigned int transaction_id_valid:1;
 	};
 
 	union
