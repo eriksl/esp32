@@ -234,9 +234,7 @@ static void callback_sync(void)
 
 static int gap_event(struct ble_gap_event *event, void *arg)
 {
-	struct ble_gap_conn_desc desc;
 	int rc;
-	char buffer[512];
 
 	assert(inited);
 
@@ -244,19 +242,9 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 	{
 		case(BLE_GAP_EVENT_CONNECT):
 		{
-			ESP_LOGI("bt", "EVENT CONNECT: connection %s; status=%d ",
-				event->connect.status == 0 ? "established" : "failed",
-				event->connect.status);
-
-			if (event->connect.status == 0)
-			{
-				ESP_ERROR_CHECK(ble_gap_conn_find(event->connect.conn_handle, &desc));
-				ESP_LOGI("bt", "new connection: %s", conn_info_to_str(&desc, buffer, sizeof(buffer)));
-			}
-
 			reassemble_reset();
 
-			if((event->connect.status != 0) || (CONFIG_BT_NIMBLE_MAX_CONNECTIONS > 1))
+			if(event->connect.status != 0)
 				server_advertise();
 
 			break;
@@ -264,7 +252,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
 		case(BLE_GAP_EVENT_REPEAT_PAIRING):
 		{
-			ESP_LOGI("bt", "%s", "EVENT REPEAT_PAIRING started");
+			struct ble_gap_conn_desc desc;
 
 			ESP_ERROR_CHECK(ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc));
 			ble_store_util_delete_peer(&desc.peer_id_addr);
@@ -278,8 +266,6 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 			 {
 				struct ble_sm_io pkey = {0};
 
-				ESP_LOGI("bt", "%s", "passkey: BLE_SM_IOACT_DISP");
-				ESP_LOGI("bt", "Enter passkey %lu on the peer side", pkey.passkey);
 				pkey.action = BLE_SM_IOACT_DISP;
 				pkey.passkey = 28022;
 
@@ -294,72 +280,17 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 			break;
 		}
 
-		case(BLE_GAP_EVENT_ENC_CHANGE):
-		{
-			ESP_ERROR_CHECK(ble_gap_conn_find(event->enc_change.conn_handle, &desc));
-			ESP_LOGI("bt", "EVENT ENC CHANGE: status: %d, %s", event->enc_change.status, conn_info_to_str(&desc, buffer, sizeof(buffer)));
-
-			break;
-		}
-
 		case(BLE_GAP_EVENT_DISCONNECT):
 		{
-			ESP_LOGI("bt", "EVENT DISCONNECT: reason: 0x%x\n%s",
-					event->disconnect.reason,
-					conn_info_to_str(&event->disconnect.conn, buffer, sizeof(buffer)));
-
 			reassemble_reset();
 			server_advertise();
 
 			break;
 		}
 
-		case(BLE_GAP_EVENT_CONN_UPDATE):
-		{
-			ESP_LOGI("bt", "EVENT CONN UPDATE: connection updated; status=%d\n%s",
-					event->conn_update.status,
-					conn_info_to_str(&desc, buffer, sizeof(buffer)));
-			ESP_ERROR_CHECK(ble_gap_conn_find(event->conn_update.conn_handle, &desc));
-
-			break;
-		}
-
 		case(BLE_GAP_EVENT_ADV_COMPLETE):
 		{
-			ESP_LOGI("bt", "EVENT ADV COMPLETE: advertise complete; reason=%d", event->adv_complete.reason);
 			server_advertise();
-
-			break;
-		}
-
-		case(BLE_GAP_EVENT_MTU):
-		{
-			ESP_LOGI("bt", "EVENT MTU: mtu update event; conn_handle=%d cid=%d mtu=%d",
-					event->mtu.conn_handle,
-					event->mtu.channel_id,
-					event->mtu.value);
-
-			break;
-		}
-
-		case(BLE_GAP_EVENT_SUBSCRIBE):
-		{
-			//ESP_LOGI("bt", "EVENT SUBSCRIBE: subscribe event; conn_handle=%d attr_handle=%d "
-					//"reason=%d prevn=%d curn=%d previ=%d curi=%d",
-					//event->subscribe.conn_handle,
-					//event->subscribe.attr_handle,
-					//event->subscribe.reason,
-					//event->subscribe.prev_notify,
-					//event->subscribe.cur_notify,
-					//event->subscribe.prev_indicate,
-					//event->subscribe.cur_indicate);
-
-			break;
-		}
-
-		case(BLE_GAP_EVENT_PHY_UPDATE_COMPLETE):
-		{
-			//ESP_LOGD("bt", "%s", "EVENT PHY UPDATE COMPLETE");
 
 			break;
 		}
@@ -369,6 +300,15 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 			/* NOTE: this event doesn't mean the notification is actually sent! */
 			/* it's just called synchronously from within ble_gatts_indicate_custom */
 
+			break;
+		}
+
+		case(BLE_GAP_EVENT_ENC_CHANGE):
+		case(BLE_GAP_EVENT_CONN_UPDATE):
+		case(BLE_GAP_EVENT_MTU):
+		case(BLE_GAP_EVENT_SUBSCRIBE):
+		case(BLE_GAP_EVENT_PHY_UPDATE_COMPLETE):
+		{
 			break;
 		}
 
@@ -385,30 +325,21 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
 static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *context, void *arg)
 {
-	char buf[BLE_UUID_STR_LEN];
-
 	switch (context->op)
 	{
 		case(BLE_GATT_REGISTER_OP_SVC):
 		{
-			ESP_LOGI("bt", "gatt svc: registered service %s with handle=%d",
-					ble_uuid_to_str(context->svc.svc_def->uuid, buf),
-					context->svc.handle);
 			break;
 		}
 
 		case(BLE_GATT_REGISTER_OP_CHR):
 		{
-			ESP_LOGI("bt", "gatt chr: registering characteristic %s with def_handle=%d val_handle=%d",
-					ble_uuid_to_str(context->chr.chr_def->uuid, buf),
-					context->chr.def_handle,
-					context->chr.val_handle);
 			break;
 		}
 
 		default:
 		{
-			ESP_LOGE("bt", "gatt unknown: event: %d", context->op);
+			ESP_LOGE("bt", "gatt unknown event: %d", context->op);
 			abort();
 
 			break;

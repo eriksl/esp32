@@ -27,7 +27,7 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob
 	{
 		if(packet->length != cli_buffer->length)
 		{
-			ESP_LOGW("packet", "incomplete packet: %u / %u", cli_buffer->length, packet->length);
+			ESP_LOGI("packet", "incomplete packet: %u / %u", cli_buffer->length, packet->length);
 			goto error;
 		}
 
@@ -47,7 +47,7 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob
 
 			if(our_checksum != their_checksum)
 			{
-				ESP_LOGW("packet", "invalid checksum: 0x%08x[%d] / 0x%08x", our_checksum, packet->length, their_checksum);
+				ESP_LOGI("packet", "invalid checksum: 0x%08x[%d] / 0x%08x", our_checksum, packet->length, their_checksum);
 				goto error;
 			}
 		}
@@ -82,8 +82,6 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob
 	}
 	else
 	{
-		ESP_LOGI("packet", "decap raw %u", cli_buffer->length);
-
 		if((data_pad = memchr(cli_buffer->data, 0, cli_buffer->length)))
 		{
 			if((data_pad_offset = data_pad - cli_buffer->data) >= cli_buffer->length)
@@ -97,8 +95,6 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob
 				ESP_LOGW("packet", "invalid oob data offset: %u/%u", oob_data_offset, cli_buffer->length);
 				goto error;
 			}
-
-			ESP_LOGI("packet", "contains oob at %u/%u", data_pad_offset, oob_data_offset);
 
 			*oob_data_length = cli_buffer->length - oob_data_offset;
 
@@ -202,8 +198,6 @@ void packet_encapsulate(cli_buffer_t *cli_buffer, const char *data, unsigned int
 		data_pad_offset = data_length + /* \n */ 1;
 		oob_data_offset = oob_data_length ? ((data_pad_offset + 3 + /* \0 */ 1) & ~0x03) : data_pad_offset;
 		assert(oob_data_offset >= data_pad_offset);
-
-		ESP_LOGI("packet", "raw encapsulation: \"%s\" %u %u %u %u %u", data, data_length, data_pad_offset, oob_data_offset, oob_data_length, oob_data_offset + oob_data_length);
 
 		cli_buffer->length = oob_data_offset + oob_data_length;
 		cli_buffer->data_from_malloc = 1;

@@ -18,7 +18,7 @@ void app_main(void)
 
 	if((rv == ESP_ERR_NVS_NO_FREE_PAGES) || (rv == ESP_ERR_NVS_NEW_VERSION_FOUND))
 	{
-		ESP_LOGE("init", "erase and reinit flash");
+		ESP_LOGW("init", "erase and reinit flash");
 		ESP_ERROR_CHECK(nvs_flash_erase());
 		ESP_ERROR_CHECK(nvs_flash_init());
 	}
