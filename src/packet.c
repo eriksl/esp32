@@ -92,7 +92,7 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob
 				goto error;
 			}
 
-			if((oob_data_offset = ((data_pad_offset + 3) & ~0x03) + 1) >= cli_buffer->length)
+			if((oob_data_offset = ((data_pad_offset + 3 + 1) & ~0x03)) >= cli_buffer->length)
 			{
 				ESP_LOGW("packet", "invalid oob data offset: %u/%u", oob_data_offset, cli_buffer->length);
 				goto error;
