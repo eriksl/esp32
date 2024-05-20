@@ -357,13 +357,13 @@ static void process_flash_ota_start(cli_function_call_t *call)
 
 	if(address != partition->address)
 	{
-		snprintf(call->result, call->result_size, "ERROR: start address unexpected: %u vs. %lu", address, partition->address);
+		snprintf(call->result, call->result_size, "error: start address unexpected: %u vs. %lu", address, partition->address);
 		return;
 	}
 
 	if(length > partition->size)
 	{
-		snprintf(call->result, call->result_size, "ERROR: ota partition too small for image: %u vs. %lu", length, partition->size);
+		snprintf(call->result, call->result_size, "error: ota partition too small for image: %u vs. %lu", length, partition->size);
 		return;
 	}
 
@@ -377,7 +377,7 @@ static void process_flash_ota_start(cli_function_call_t *call)
 	{
 		if((rv = esp_ota_begin(partition, length, &ota_handle)))
 		{
-			snprintf(call->result, call->result_size, "ERROR: esp_ota_begin: %x", rv);
+			snprintf(call->result, call->result_size, "ERROR: esp_ota_begin: %s (0x%x)", esp_err_to_name(rv), rv);
 			return(ota_abort());
 		}
 
