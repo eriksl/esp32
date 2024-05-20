@@ -342,6 +342,7 @@ static void process_flash_ota_start(cli_function_call_t *call)
 	esp_err_t rv;
 	unsigned int address, length, simulate;
 	const esp_partition_t *partition;
+	unsigned int slot;
 
 	assert(call->parameters->count == 3);
 
@@ -354,6 +355,23 @@ static void process_flash_ota_start(cli_function_call_t *call)
 		snprintf(call->result, call->result_size, "ERROR: no valid OTA partition");
 		return;
 	}
+
+	if(partition->type != ESP_PARTITION_TYPE_APP)
+	{
+		snprintf(call->result, call->result_size, "error: partition %s is not APP", partition->label);
+		return;
+	}
+
+	if(partition->subtype == ESP_PARTITION_SUBTYPE_APP_OTA_0)
+		slot = 0;
+	else
+		if(partition->subtype == ESP_PARTITION_SUBTYPE_APP_OTA_1)
+			slot = 1;
+		else
+		{
+			snprintf(call->result, call->result_size, "error: partition %s is not OTA", partition->label);
+			return;
+		}
 
 	if(address != partition->address)
 	{
@@ -390,7 +408,7 @@ static void process_flash_ota_start(cli_function_call_t *call)
 
 	ota_length = length;
 
-	snprintf(call->result, call->result_size, "OK start flash ota partition %s", partition->label);
+	snprintf(call->result, call->result_size, "OK start flash ota partition %s %u", partition->label, slot);
 }
 
 static void process_flash_ota_write(cli_function_call_t *call)
