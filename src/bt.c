@@ -80,42 +80,6 @@ static char *bt_addr_to_str(const void *addr, char *str, unsigned int size)
 	return(str);
 }
 
-static char *conn_info_to_str(const struct ble_gap_conn_desc *desc, char *buffer, unsigned int buffer_length)
-{
-	char addr[64];
-	char line[128];
-
-	snprintf(buffer, buffer_length, "handle: %d our_ota_addr_type: %d our_ota_addr: %s",
-		desc->conn_handle,
-		desc->our_ota_addr.type,
-		bt_addr_to_str(desc->our_ota_addr.val, addr, sizeof(addr)));
-
-	snprintf(line, sizeof(line), " our_id_addr_type: %d our_id_addr: %s",
-		desc->our_id_addr.type,
-		bt_addr_to_str(desc->our_id_addr.val, addr, sizeof(addr)));
-	strncat(buffer, line, buffer_length - 1);
-
-	snprintf(line, sizeof(line), " peer_ota_addr_type: %d peer_ota_addr: %s",
-		desc->peer_ota_addr.type,
-		bt_addr_to_str(desc->peer_ota_addr.val, addr, sizeof(addr)));
-	strncat(buffer, line, buffer_length - 1);
-
-	snprintf(line, sizeof(line), " peer_id_addr_type: %d peer_id_addr: %s",
-		desc->peer_id_addr.type,
-		bt_addr_to_str(desc->peer_id_addr.val, addr, sizeof(addr)));
-	strncat(buffer, line, buffer_length - 1);
-
-	snprintf(line, sizeof(line), " conn_itvl: %d conn_latency: %d supervision_timeout: %d encrypted: %d authenticated: %d bonded: %d\n",
-			desc->conn_itvl, desc->conn_latency,
-			desc->supervision_timeout,
-			desc->sec_state.encrypted,
-			desc->sec_state.authenticated,
-			desc->sec_state.bonded);
-	strncat(buffer, line, buffer_length - 1);
-
-	return(buffer);
-}
-
 static inline void reassemble_reset(void)
 {
 	reassembly_offset = 0;
