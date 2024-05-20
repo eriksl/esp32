@@ -44,6 +44,27 @@ void util_hash_to_text(unsigned int hash_size, const uint8_t *hash, unsigned int
 	data[out] = '\0';
 }
 
+unsigned int util_partition_to_slot(const esp_partition_t *partition)
+{
+	unsigned int slot;
+
+	assert(partition);
+	assert(partition->type == ESP_PARTITION_TYPE_APP);
+
+	if(partition->subtype == ESP_PARTITION_SUBTYPE_APP_OTA_0)
+		slot = 0;
+	else
+		if(partition->subtype == ESP_PARTITION_SUBTYPE_APP_OTA_1)
+			slot = 1;
+		else
+		{
+			ESP_LOGE("cli", "util_partition_to_slot: unknown OTA partition type");
+			abort();
+		}
+
+	return(slot);
+}
+
 void util_init(void)
 {
 	assert(!inited);
