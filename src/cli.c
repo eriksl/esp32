@@ -300,7 +300,7 @@ static void process_flash_read(cli_function_call_t *call)
 
 	sector = call->parameters->parameters[0].unsigned_int;
 
-	if((rv = esp_flash_read((esp_flash_t *)0, call->result_oob, sector, 4096)) != 0)
+	if((rv = esp_flash_read((esp_flash_t *)0, call->result_oob, sector * 4096, 4096)))
 	{
 		snprintf(call->result, call->result_size, "ERROR: esp_flash_read from %u returned error %u", sector, rv);
 		return;
