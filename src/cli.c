@@ -776,17 +776,17 @@ static void process_stat_flash(cli_function_call_t *call)
 			{
 				switch(ota_state)
 				{
-					case(ESP_OTA_IMG_NEW):				{ ota_state_text = "new"; break; }
-					case(ESP_OTA_IMG_PENDING_VERIFY):	{ ota_state_text = "pending verify"; break; }
-					case(ESP_OTA_IMG_VALID):			{ ota_state_text = "valid"; break; }
-					case(ESP_OTA_IMG_INVALID):			{ ota_state_text = "invalid"; break; }
-					case(ESP_OTA_IMG_ABORTED):			{ ota_state_text = "aborted"; break; }
-					case(ESP_OTA_IMG_UNDEFINED):		{ ota_state_text = "undefined"; break; }
-					default:							{ ota_state_text = "unknown"; break; }
+					case(ESP_OTA_IMG_NEW):				{ ota_state_text = "N"; break; }
+					case(ESP_OTA_IMG_PENDING_VERIFY):	{ ota_state_text = "P"; break; }
+					case(ESP_OTA_IMG_VALID):			{ ota_state_text = "V"; break; }
+					case(ESP_OTA_IMG_INVALID):			{ ota_state_text = "I"; break; }
+					case(ESP_OTA_IMG_ABORTED):			{ ota_state_text = "A"; break; }
+					case(ESP_OTA_IMG_UNDEFINED):		{ ota_state_text = "U"; break; }
+					default:							{ ota_state_text = "?"; break; }
 				}
 			}
 			else
-				ota_state_text = "not found";
+				ota_state_text = "X";
 		}
 
 		if((rv = esp_partition_get_sha256(partition, sha256_hash)))
@@ -797,12 +797,13 @@ static void process_stat_flash(cli_function_call_t *call)
 
 		util_hash_to_text(sizeof(sha256_hash), sha256_hash, sizeof(sha256_hash_text), sha256_hash_text);
 
-		offset += snprintf(call->result + offset, call->result_size - offset, "%s  %2u %1s %1s %-8s %06lx %4lu %-7s %-8s %-64s %s",
+		offset += snprintf(call->result + offset, call->result_size - offset, "%s  %2u %1s%1s%1s %-8s %06lx %4lu %-7s %-8s %-64s",
 				(index > 0) ? "\n" : "",
 				index,
+				ota_state_text,
 				(partition->address == boot_partition->address) ? "b" : " ",
 				(partition->address == running_partition->address) ? "r" : " ",
-				partition->label, partition->address, partition->size / 1024, type, subtype, sha256_hash_text, ota_state_text);
+				partition->label, partition->address, partition->size / 1024, type, subtype, sha256_hash_text);
 	}
 
 	esp_partition_iterator_release(partition_iterator);
