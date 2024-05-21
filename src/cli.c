@@ -3,6 +3,7 @@
 #include "otacli.h"
 #include "flash.h"
 #include "info.h"
+#include "log.h"
 #include "util.h"
 #include "bt.h"
 #include "packet.h"
@@ -179,6 +180,10 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
+	{ "info-log", "il", "show information about the log", command_info_log,
+		{}
+	},
+
 	{ "info-memory", "im", "show information about memory", command_info_memory,
 		{}
 	},
@@ -191,6 +196,13 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
+	{ "log", "l", "show log", command_log,
+		{}
+	},
+
+	{ "log-clear", "lc", "show log and clear it", command_log_clear,
+		{}
+	},
 
 	{ "ota-start", (const char*)0, "start ota session", command_ota_start,
 		{	1,

@@ -1,6 +1,7 @@
 #include "cli.h"
 #include "bt.h"
 #include "main.h"
+#include "log.h"
 #include "util.h"
 
 #include <freertos/FreeRTOS.h>
@@ -23,6 +24,7 @@ void app_main(void)
 		ESP_ERROR_CHECK(nvs_flash_init());
 	}
 
+	log_init();
 	util_init();
 	cli_init();
 	bt_init();
