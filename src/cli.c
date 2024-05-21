@@ -2,7 +2,7 @@
 #include "cli.h"
 #include "otacli.h"
 #include "flash.h"
-#include "stat.h"
+#include "info.h"
 #include "util.h"
 #include "bt.h"
 #include "packet.h"
@@ -167,6 +167,27 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
+	{ "info", "i", "show some general information", command_info_firmware,
+		{}
+	},
+
+	{ "info-flash", "if", "show information about the flash", command_info_flash,
+		{}
+	},
+
+	{ "info-memory", "im", "show information about memory", command_info_memory,
+		{}
+	},
+
+	{ "info-process", "ip", "show information about running processes", command_info_process,
+		{}
+	},
+
+	{ "info-system", "is", "show information about the system", command_info_system,
+		{}
+	},
+
+
 	{ "ota-start", (const char*)0, "start ota session", command_ota_start,
 		{	1,
 			{
@@ -208,23 +229,7 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
-	{ "stats", "s", "show some general information", command_stat_firmware,
-		{}
-	},
-
-	{ "stat-flash", "sf", "show information about the flash", command_stat_flash,
-		{}
-	},
-
-	{ "stat-memory", "sm", "show information about memory", command_stat_memory,
-		{}
-	},
-
-	{ "stat-process", "sp", "show information about running processes", command_stat_process,
-		{}
-	},
-
-	{ "stat-system", "ss", "show information about the system", command_stat_system,
+	{ "stat", "s", "show some general information", command_info_firmware,
 		{}
 	},
 
