@@ -1,3 +1,4 @@
+#include "cli-command.h"
 #include "cli.h"
 #include "bt.h"
 #include "util.h"
@@ -40,6 +41,7 @@ static int gap_event(struct ble_gap_event *event, void *arg);
 static int gatt_event(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *context, void *arg);
 static void bt_received(unsigned int connection_handle, unsigned int attribute_handle, const struct os_mbuf *mbuf);
 
+static uint8_t bt_host_address[6] = {0};
 static uint16_t attribute_handle;
 static uint8_t own_addr_type;
 static bool inited = false;
@@ -47,6 +49,20 @@ static uint8_t *reassembly_buffer = (uint8_t *)0;
 static unsigned int reassembly_offset = 0;
 static unsigned int reassembly_expected_length = 0;
 static uint64_t reassembly_timestamp_start = 0;
+
+static unsigned int bt_stats_reassembly_oversize_chunk;
+static unsigned int bt_stats_reassembly_buffer_overrun;
+
+static unsigned int bt_stats_indication_error;
+static unsigned int bt_stats_indication_timeout;
+
+static unsigned int bt_stats_sent_bytes;
+static unsigned int bt_stats_sent_fragments;
+static unsigned int bt_stats_sent_packets;
+
+static unsigned int bt_stats_received_bytes;
+static unsigned int bt_stats_received_fragments;
+static unsigned int bt_stats_received_packets;
 
 static const struct ble_gatt_svc_def gatt_definitions[] =
 {
@@ -109,7 +125,7 @@ static int gatt_event(uint16_t connection_handle, uint16_t attribute_handle, str
 
 		default:
 		{
-			ESP_LOGW("bt", "gatt handler: default callback: %d", context->op);
+			ESP_LOGW("bt", "gatt_event: default callback: 0x%x", context->op);
 			break;
 		}
 	}
@@ -165,34 +181,34 @@ static void server_advertise(void)
 
 	if((rc != 0) && (rc != BLE_HS_EALREADY))
 	{
-		ESP_LOGE("bt", "ble_gap_adv_start, error: %x", rc);
+		ESP_LOGE("bt", "server_advertise: ble_gap_adv_start, error: 0x%x", rc);
 		abort();
 	}
 }
 
 static void callback_reset(int reason)
 {
-	ESP_LOGW("bt", "resetting state; reason=0x%x", reason);
+	ESP_LOGW("bt", "resetting state, reason: 0x%x", reason);
 }
 
 static void callback_sync(void)
 {
-	int rc;
-	char addr[64];
-	uint8_t addr_val[6] = {0};
+	unsigned int rc;
 
 	ESP_ERROR_CHECK(ble_hs_util_ensure_addr(0));
 
 	if((rc = ble_hs_id_infer_auto(0, &own_addr_type)) != 0)
 	{
-		ESP_LOGW("bt", "sync: error determining address type; rc=%d", rc);
-		return;
+		ESP_LOGE("bt", "callback_sync: ble_hs_id_infer_auto: error 0x%x", rc);
+		abort();
 	}
 
-	rc = ble_hs_id_copy_addr(own_addr_type, addr_val, NULL);
+	if((rc = ble_hs_id_copy_addr(own_addr_type, bt_host_address, NULL)))
+	{
+		ESP_LOGE("bt", "callback_sync: ble_hs_id_copy_addr: error 0x%x", rc);
+		abort();
+	}
 
-	ESP_LOGI("bt", "sync: device address: %s", bt_addr_to_str(addr_val, addr, sizeof(addr)));
-	
 	server_advertise();
 }
 
@@ -278,7 +294,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
 		default:
 		{
-			ESP_LOGW("bt", "EVENT unknown: 0x%x", event->type);
+			ESP_LOGW("bt", "gap event unknown: 0x%x", event->type);
 
 			break;
 		}
@@ -303,7 +319,7 @@ static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *context, void *a
 
 		default:
 		{
-			ESP_LOGE("bt", "gatt unknown event: %d", context->op);
+			ESP_LOGE("bt", "gatt event unknown: 0x%x", context->op);
 			abort();
 
 			break;
@@ -324,7 +340,7 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 
 	if((chunk_length = os_mbuf_len(mbuf)) > reassembly_buffer_size)
 	{
-		ESP_LOGW("bt", "reassembly: chunk too large: %u (> %u), drop chunk", chunk_length, reassembly_buffer_size);
+		bt_stats_reassembly_oversize_chunk++;
 		return(reassemble_reset());
 	}
 
@@ -338,6 +354,8 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 
 		ble_hs_mbuf_to_flat(mbuf, reassembly_buffer, chunk_length, &om_length);
 		assert(om_length == chunk_length);
+		bt_stats_received_bytes += chunk_length;
+		bt_stats_received_fragments++;
 
 		reassembly_offset = chunk_length;
 
@@ -371,13 +389,14 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 
 		if(reassembly_offset > reassembly_buffer_size)
 		{
-			ESP_LOGW("bt", "reassembly: buffer overrun: %u + %u = %u (> %u), dropped chunk",
-					current_write_offset, chunk_length, reassembly_offset, reassembly_buffer_size);
+			bt_stats_reassembly_buffer_overrun++;
 			return(reassemble_reset());
 		}
 
 		ble_hs_mbuf_to_flat(mbuf, &reassembly_buffer[current_write_offset], chunk_length, &om_length);
 		assert(om_length == chunk_length);
+		bt_stats_received_bytes += chunk_length;
+		bt_stats_received_fragments++;
 
 		if(((reassembly_timestamp_now - reassembly_timestamp_start) / 1000) >= reassembly_timeout_ms)
 		{
@@ -414,6 +433,8 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 
 	cli_receive_queue_push(&cli_buffer);
 	reassemble_reset();
+
+	bt_stats_received_packets++;
 }
 
 void bt_send(cli_buffer_t *cli_buffer)
@@ -447,7 +468,7 @@ void bt_send(cli_buffer_t *cli_buffer)
 
 			if(rv != BLE_HS_ENOMEM)
 			{
-				ESP_LOGW("bt", "indicate: error: %x", rv);
+				bt_stats_indication_error++;
 				return;
 			}
 
@@ -455,11 +476,19 @@ void bt_send(cli_buffer_t *cli_buffer)
 		}
 
 		if(attempt == 0)
-			ESP_LOGW("bt", "bt_send: no more attempts");
+		{
+			bt_stats_indication_timeout++;
+			break;
+		}
+
+		bt_stats_sent_fragments++;
+		bt_stats_sent_bytes += chunk;
 
 		length -= chunk;
 		offset += chunk;
 	}
+
+	bt_stats_sent_packets++;
 }
 
 esp_err_t bt_init(void)
@@ -486,9 +515,39 @@ esp_err_t bt_init(void)
 	ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
 
 	ESP_ERROR_CHECK(gatt_init());
-	ESP_ERROR_CHECK(ble_svc_gap_device_name_set("nimble-ble-spp-svr"));
+	ESP_ERROR_CHECK(ble_svc_gap_device_name_set("nimble-ble-spp-svr")); // FIXME hostname
 	ble_store_config_init();
 	nimble_port_freertos_init(nimble_port_task);
 
 	return(0);
+}
+
+void command_info_bluetooth(cli_command_call_t *call)
+{
+	unsigned int offset;
+	char string_addr[32];
+
+	assert(call->parameters->count == 0);
+
+	offset = snprintf(call->result, call->result_size, "bluetooth information");
+
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  address: %s", bt_addr_to_str(bt_host_address, string_addr, sizeof(string_addr)));
+
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  data sent:");
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - packets: %u", bt_stats_sent_packets);
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - fragments: %u", bt_stats_sent_fragments);
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - bytes: %u", bt_stats_sent_bytes);
+
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  data received:");
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - packets: %u", bt_stats_received_packets);
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - fragments: %u", bt_stats_received_fragments);
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - bytes: %u", bt_stats_received_bytes);
+
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  reassembly:");
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - oversized chunks: %u", bt_stats_reassembly_oversize_chunk);
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - buffer overruns: %u", bt_stats_reassembly_buffer_overrun);
+
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  indication:");
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - errors: %u", bt_stats_indication_error);
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - timeouts: %u", bt_stats_indication_timeout);
 }

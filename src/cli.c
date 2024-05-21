@@ -171,6 +171,10 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
+	{ "info-bt", "ib", "show information about bluetooth", command_info_bluetooth,
+		{}
+	},
+
 	{ "info-flash", "if", "show information about the flash", command_info_flash,
 		{}
 	},
