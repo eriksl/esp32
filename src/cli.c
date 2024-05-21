@@ -225,7 +225,11 @@ static const cli_command_t cli_commands[] =
 	},
 
 	{ "log", "l", "show log", command_log,
-		{}
+		{	1,
+			{
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "start entry", { .unsigned_int = { 0, 128 }} },
+			},
+		}
 	},
 
 	{ "log-clear", "lc", "show log and clear it", command_log_clear,
