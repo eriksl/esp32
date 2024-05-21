@@ -16,13 +16,14 @@ enum
 {
 	log_buffer_size = 7 * 1024,
 	log_buffer_entries = 110,
+	log_buffer_data_size = 56,
 	log_buffer_magic_word = 0x4afbcafe,
 };
 
 typedef struct
 {
 	uint64_t timestamp;
-	char data[56];
+	char data[log_buffer_data_size];
 } log_entry_t;
 
 static_assert(sizeof(log_entry_t) == 64);
@@ -33,7 +34,8 @@ typedef struct
 	uint32_t random_salt;
 	uint32_t magic_word_salted;
 	unsigned int entries;
-	unsigned int current_entry;
+	unsigned int in;
+	unsigned int out;
 	log_entry_t entry[log_buffer_entries];
 } log_t;
 
@@ -42,6 +44,21 @@ static_assert(sizeof(log_t) == 7064);
 
 static bool inited = false;
 static log_t *log_buffer = (log_t *)0;
+static int(*esp_logging_function)(const char *, va_list) = (void *)0;
+
+static void log_clear(void)
+{
+	uint32_t random_value;
+
+	random_value = esp_random();
+
+	log_buffer->magic_word = log_buffer_magic_word;
+	log_buffer->random_salt = random_value;
+	log_buffer->magic_word_salted = log_buffer_magic_word ^ random_value;
+	log_buffer->entries = log_buffer_entries;
+	log_buffer->in = 0;
+	log_buffer->out = 0;
+}
 
 void log_simple(const char *string)
 {
@@ -49,14 +66,14 @@ void log_simple(const char *string)
 
 	assert(inited);
 
-	entry = &log_buffer->entry[log_buffer->current_entry];
+	entry = &log_buffer->entry[log_buffer->in];
 
 	entry->timestamp = esp_timer_get_time();
-	strncpy(entry->data, string, sizeof(entry->data));
-	entry->data[sizeof(entry->timestamp) - 1] = '\0';
+	strncpy(entry->data, string, log_buffer_data_size);
+	entry->data[log_buffer_data_size - 1] = '\0';
 
-	if(log_buffer->current_entry++ >= log_buffer_entries)
-		log_buffer->current_entry = 0;
+	if(log_buffer->in++ >= log_buffer_entries)
+		log_buffer->in = 0;
 }
 
 void log_vargs(const char *fmt, ...)
@@ -66,7 +83,7 @@ void log_vargs(const char *fmt, ...)
 
 	assert(inited);
 
-	entry = &log_buffer->entry[log_buffer->current_entry];
+	entry = &log_buffer->entry[log_buffer->in];
 
 	entry->timestamp = esp_timer_get_time();
 
@@ -74,35 +91,53 @@ void log_vargs(const char *fmt, ...)
 	vsnprintf(entry->data, sizeof(entry->data), fmt, ap);
 	va_end(ap);
 
-	if(log_buffer->current_entry++ >= log_buffer_entries)
-		log_buffer->current_entry = 0;
+	if(log_buffer->in++ >= log_buffer_entries)
+		log_buffer->in = 0;
+}
+
+static int logging_function(const char *fmt, va_list ap)
+{
+	char buffer[log_buffer_data_size];
+	char *start;
+	char *end;
+
+	assert(inited);
+
+	vsnprintf(buffer, sizeof(buffer), fmt, ap);
+
+	if((start = strchr(buffer, ':')))
+		start++;
+	else
+		start = buffer;
+
+	if(*start == ' ')
+		start++;
+
+	if((end = strchr(start, '\n')))
+		*end = '\0';
+
+	log_simple(start);
+
+	return(esp_logging_function(fmt, ap));
 }
 
 void log_init(void)
 {
-	uint32_t random_value;
-
 	assert((log_buffer = (log_t *)heap_caps_malloc(sizeof(log_t), MALLOC_CAP_RTCRAM)));
 	assert(log_buffer == (log_t *)0x600fe198);
 
 	if((log_buffer->magic_word != log_buffer_magic_word) ||
 		(log_buffer->magic_word_salted != (log_buffer_magic_word ^ log_buffer->random_salt)))
 	{
-		random_value = esp_random();
-
-		ESP_LOGW("log", "log buffer corrupt, using random value 0x%lx to reinit", random_value); // FIXME
-
-		log_buffer->magic_word = log_buffer_magic_word;
-		log_buffer->random_salt = random_value;
-		log_buffer->magic_word_salted = log_buffer_magic_word ^ random_value;
-		log_buffer->entries = log_buffer_entries;
-		log_buffer->current_entry = 0;
+		ESP_LOGW("log", "log buffer corrupt, reinit");
+		log_clear();
 	}
 
 	inited = true;
 
+	esp_logging_function = esp_log_set_vprintf(logging_function);
+
 	log("boot");
-	log("boot %u", 2);
 }
 
 void command_info_log(cli_command_call_t *call)
@@ -113,26 +148,45 @@ void command_info_log(cli_command_call_t *call)
 
 	offset = snprintf(call->result, call->result_size, "logging");
 
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  buffer: 0x%lx", (uint32_t)log_buffer);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  magic word: %04lx", log_buffer->magic_word);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  random salt: %04lx", log_buffer->random_salt);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  magic word salted: %04lx", log_buffer->magic_word_salted);
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  buffer: 0x%08lx", (uint32_t)log_buffer);
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  magic word: %08lx", log_buffer->magic_word);
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  random salt: %08lx", log_buffer->random_salt);
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  magic word salted: %08lx", log_buffer->magic_word_salted);
 	offset += snprintf(call->result + offset, call->result_size - offset, "\n  entries: %u", log_buffer->entries);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  current entry: %u", log_buffer->current_entry);
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  last entry added: %u", log_buffer->in);
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n  last entry viewed: %u", log_buffer->out);
 }
 
 void command_log(cli_command_call_t *call)
 {
-	unsigned int offset, current;
+	unsigned int entries, offset, amount;
 
 	assert(inited);
 
-	offset = snprintf(call->result, call->result_size, "%u entries:", log_buffer->current_entry);
+	if(log_buffer->in > log_buffer->out)
+		entries = log_buffer->in - log_buffer->out;
+	else
+		entries = log_buffer->in + (log_buffer_entries - log_buffer->out);
 
-	for(current = 0; (current < log_buffer->current_entry) && (offset < call->result_size); current++)
-		offset += snprintf(call->result + offset, call->result_size - offset, "\n%llu %s",
-				log_buffer->entry[current].timestamp,
-				log_buffer->entry[current].data);
+	if(entries == log_buffer_entries)
+		entries = 0;
+
+	offset = snprintf(call->result, call->result_size, "%u entries:", entries);
+	amount = 0;
+
+	for(amount = 0; (amount < 24) && (amount < entries) && (offset < call->result_size); amount++)
+	{
+		offset += snprintf(call->result + offset, call->result_size - offset, "\n%3d %llu %s",
+				log_buffer->out,
+				log_buffer->entry[log_buffer->out].timestamp,
+				log_buffer->entry[log_buffer->out].data);
+
+		if(++log_buffer->out >= log_buffer_entries)
+			log_buffer->out = 0;
+	}
+
+	if(amount != entries)
+		snprintf(call->result + offset, call->result_size - offset, "\n[%u more]", entries - amount);
 }
 
 void command_log_clear(cli_command_call_t *call)
@@ -142,7 +196,9 @@ void command_log_clear(cli_command_call_t *call)
 	assert(inited);
 
 	command_log(call);
+
+	log_clear();
+
 	offset = strlen(call->result);
-	memset(log_buffer, 0, sizeof(log_t));
 	snprintf(call->result + offset, call->result_size - offset, "\nlog cleared");
 }
