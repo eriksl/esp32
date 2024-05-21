@@ -1,5 +1,5 @@
 #include "cli-command.h"
-#include "cli-ota.h"
+#include "otacli.h"
 #include "util.h"
 
 #include <string.h>
@@ -29,7 +29,7 @@ static void ota_abort(void)
 	if(ota_handle_active)
 	{
 		if((rv = esp_ota_abort(ota_handle)))
-			ESP_LOGE("cli-ota", "ota_abort: esp_ota_abort returns error: %x", rv);
+			ESP_LOGE("otacli", "ota_abort: esp_ota_abort returns error: %x", rv);
 
 		ota_partition = (const esp_partition_t *)0;
 		ota_handle_active = false;
@@ -74,7 +74,7 @@ void command_ota_start(cli_function_call_t *call)
 
 	if(ota_handle_active || ota_sha256_ctx_active)
 	{
-		ESP_LOGW("cli-ota", "ota-start: ota already active, first aborting session");
+		ESP_LOGW("otacli", "ota-start: ota already active, first aborting session");
 		ota_abort();
 	}
 

@@ -1,5 +1,5 @@
-#ifndef _cli_ota_h_
-#define _cli_ota_h_
+#ifndef _otacli_h_
+#define _otacli_h_
 
 void command_ota_start(cli_function_call_t *call);
 void command_ota_write(cli_function_call_t *call);

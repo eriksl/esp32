@@ -1,6 +1,6 @@
 #include "cli.h"
 #include "cli-command.h"
-#include "cli-ota.h"
+#include "otacli.h"
 #include "util.h"
 #include "bt.h"
 #include "packet.h"
