@@ -14,7 +14,7 @@
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 
-void command_stat_firmware(cli_function_call_t *call)
+void command_stat_firmware(cli_command_call_t *call)
 {
 	const esp_app_desc_t *desc;
 
@@ -31,7 +31,7 @@ void command_stat_firmware(cli_function_call_t *call)
 			__DATE__, __TIME__, desc->date, desc->time);
 }
 
-void command_stat_flash(cli_function_call_t *call)
+void command_stat_flash(cli_command_call_t *call)
 {
 	esp_err_t rv;
 	esp_partition_iterator_t partition_iterator;
@@ -175,7 +175,7 @@ void command_stat_flash(cli_function_call_t *call)
 	esp_partition_iterator_release(partition_iterator);
 }
 
-void command_stat_memory(cli_function_call_t *call)
+void command_stat_memory(cli_command_call_t *call)
 {
 	unsigned offset;
 
@@ -197,7 +197,7 @@ void command_stat_memory(cli_function_call_t *call)
 	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap TCM",					heap_caps_get_free_size(MALLOC_CAP_TCM) / 1024);
 }
 
-void command_stat_process(cli_function_call_t *call)
+void command_stat_process(cli_command_call_t *call)
 {
 	unsigned int ix, length, offset, processes;
 	unsigned long runtime;
@@ -273,7 +273,7 @@ void command_stat_process(cli_function_call_t *call)
 	free(process_info);
 }
 
-void command_stat_system(cli_function_call_t *call)
+void command_stat_system(cli_command_call_t *call)
 {
 	esp_chip_info_t chip_info;
 	uint32_t flash_size;

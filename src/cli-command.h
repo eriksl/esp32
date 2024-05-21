@@ -48,9 +48,9 @@ typedef struct
 	unsigned int				result_oob_size;
 	unsigned int				result_oob_length;
 	uint8_t *					result_oob;
-} cli_function_call_t;
+} cli_command_call_t;
 
 
-typedef void(cli_command_function_t)(cli_function_call_t *);
+typedef void(cli_command_function_t)(cli_command_call_t *);
 
 #endif

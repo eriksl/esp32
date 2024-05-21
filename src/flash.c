@@ -13,7 +13,7 @@
 #include <esp_flash.h>
 #include <esp_ota_ops.h>
 
-void command_flash_bench(cli_function_call_t *call)
+void command_flash_bench(cli_command_call_t *call)
 {
 	unsigned int length;
 
@@ -32,7 +32,7 @@ void command_flash_bench(cli_function_call_t *call)
 	snprintf(call->result, call->result_size, "OK flash-bench: sending %u bytes", length);
 }
 
-void command_flash_checksum(cli_function_call_t *call)
+void command_flash_checksum(cli_command_call_t *call)
 {
 	int rv;
 	unsigned int start_sector, offset, length, current;
@@ -80,7 +80,7 @@ void command_flash_checksum(cli_function_call_t *call)
 	}
 }
 
-void command_flash_info(cli_function_call_t *call)
+void command_flash_info(cli_command_call_t *call)
 {
 	esp_partition_iterator_t partition_iterator;
 	const esp_partition_t *partition;
@@ -143,7 +143,7 @@ void command_flash_info(cli_function_call_t *call)
 			0, 0, 0); // FIXME
 }
 
-void command_flash_read(cli_function_call_t *call)
+void command_flash_read(cli_command_call_t *call)
 {
 	esp_err_t rv;
 	unsigned int sector;
@@ -163,7 +163,7 @@ void command_flash_read(cli_function_call_t *call)
 	snprintf(call->result, call->result_size, "OK flash-read: read sector %u", sector);
 }
 
-void command_flash_write(cli_function_call_t *call)
+void command_flash_write(cli_command_call_t *call)
 {
 	//esp_err_t rv;
 	unsigned int simulate;

@@ -58,6 +58,8 @@ typedef struct
 	unsigned int lower_bound_required:1;
 	unsigned int upper_bound_required:1;
 
+	const char *description;
+
 	union
 	{
 		cli_unsigned_int_description_t	unsigned_int;
@@ -77,22 +79,22 @@ typedef struct
 {
 	const char *name;
 	const char *alias;
+	const char *help;
 	cli_command_function_t *function;
 	cli_parameters_description_t parameters;
-} cli_function_t;
+} cli_command_t;
 
 static QueueHandle_t receive_queue_handle;
 static QueueHandle_t send_queue_handle;
 static bool inited = false;
 
-#if 0
 static const char *parameter_type_to_string(unsigned int type)
 {
 	static const char *type_string[cli_parameter_size] =
 	{
 		"invalid parameter type",
-		"unsigned int",
-		"signed int",
+		"u_int",
+		"s_int",
 		"float",
 		"string",
 	};
@@ -102,143 +104,184 @@ static const char *parameter_type_to_string(unsigned int type)
 
 	return(type_string[type]);
 }
-#endif
 
-static void command_reset(cli_function_call_t *call)
+static void help(cli_command_call_t *call);
+
+static void command_help(cli_command_call_t *call)
+{
+	return(help(call));
+}
+
+static void command_reset(cli_command_call_t *call)
 {
 	assert(call->parameters->count == 0);
 
 	esp_restart();
 }
 
-static void command_test(cli_function_call_t *call)
+static const cli_command_t cli_commands[] =
 {
-	unsigned int ix, at;
-	const cli_parameter_t *parameter;
-
-	at = 0;
-
-	for(ix = 0; ix < call->parameters->count; ix++)
-	{
-		parameter = &call->parameters->parameters[ix];
-
-		if(!parameter->has_value)
-		{
-			if(at < call->result_size)
-				at += snprintf(call->result + at, call->result_size - at, "ERROR: parameter %u has no value\n", ix);
-
-			continue;
+	{ "flash-bench", (const char*)0, "benchmark flash+transport", command_flash_bench,
+		{	1,
+			{
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length", .unsigned_int = { 0, 4096 }},
+			},
 		}
+	},
 
-		switch(parameter->type)
+	{ "flash-checksum", (const char*)0, "obtain checksum of sectors in flash", command_flash_checksum,
+		{	2,
+			{
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "start sector", {} },
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "length", {} },
+			},
+		}
+	},
+
+	{ "flash-info", (const char*)0, "show info about flash memory", command_flash_info,
+		{}
+	},
+
+	{ "flash-read", (const char*)0, "read sectors from flash", command_flash_read,
+		{	1,
+			{
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "sector", {} },
+			},
+		}
+	},
+
+	{ "flash-write", (const char*)0, "write sectors to flash", command_flash_write,
+		{	2,
+			{
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "simulate", .unsigned_int = { 0, 1 }},
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "sector", {} },
+			}
+		}
+	},
+
+	{ "help", "?", "this help", command_help,
+		{	1,
+			{
+				{ cli_parameter_string, 0, 0, 0, 0, "command to show help about", {} },
+			},
+		}
+	},
+
+	{ "ota-start", (const char*)0, "start ota session", command_ota_start,
+		{	1,
+			{
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "length", {} },
+			},
+		}
+	},
+
+	{ "ota-write", (const char*)0, "write one sector of ota data", command_ota_write,
+		{	2,
+			{
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "length", {} },
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "checksum flag", .unsigned_int = { 0, 1 }},
+			},
+		}
+	},
+
+	{ "ota-finish", (const char*)0, "finish ota session", command_ota_finish,
+		{}
+	},
+
+	{ "ota-commit", (const char*)0, "verify and select finished ota session", command_ota_commit,
+		{	1,
+			{
+				{ cli_parameter_string, 0, 1, 1, 1, "checksum", .string = { 64, 64 }},
+			},
+		}
+	},
+
+	{ "ota-confirm", (const char*)0, "confirm ota image runs correctly", command_ota_confirm,
+		{	1,
+			{
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "slot", .unsigned_int = { 0, 1 }},
+			},
+		}
+	},
+
+	{ "reset", "r", "reset", command_reset,
+		{}
+	},
+
+	{ "stats", "s", "show some general information", command_stat_firmware,
+		{}
+	},
+
+	{ "stat-flash", "sf", "show information about the flash", command_stat_flash,
+		{}
+	},
+
+	{ "stat-memory", "sm", "show information about memory", command_stat_memory,
+		{}
+	},
+
+	{ "stat-process", "sp", "show information about running processes", command_stat_process,
+		{}
+	},
+
+	{ "stat-system", "ss", "show information about the system", command_stat_system,
+		{}
+	},
+
+	{ (const char *)0, (const char *)0, (const char *)0, (cli_command_function_t *)0,
+		{}
+	},
+};
+
+static void help(cli_command_call_t *call)
+{
+	unsigned int offset, command_index, parameter_index;
+	const cli_command_t *command;
+	const cli_parameter_description_t *parameter;
+	const char *delimiter[2];
+	const char *command_name;
+
+	offset = snprintf(call->result, call->result_size, "help");
+
+	if(call->parameters->count == 0)
+		command_name = (const char *)0;
+	else
+		command_name = call->parameters->parameters[0].string;
+
+	for(command_index = 0; cli_commands[command_index].name; command_index++)
+	{
+		command = &cli_commands[command_index];
+
+		if(command_name && strcmp(command_name, command->name) && (!command->alias || strcmp(command_name, command->alias)))
+			continue;
+
+		offset += snprintf(call->result + offset, call->result_size - offset, "\n  %-16s %-4s %s", command->name,
+				command->alias ? command->alias : "",
+				command->help ? command->help : "");
+
+		for(parameter_index = 0; parameter_index < command->parameters.count; parameter_index++)
 		{
-			case(cli_parameter_none):
-			case(cli_parameter_size):
-			{
-				if(at < call->result_size)
-					at += snprintf(call->result + at, call->result_size - at, "ERROR: invalid parameter %u\n", ix);
+			parameter = &command->parameters.parameters[parameter_index];
 
-				break;
+			if(parameter->value_required)
+			{
+				delimiter[0] = "[";
+				delimiter[1] = "]";
+			}
+			else
+			{
+				delimiter[0] = "(";
+				delimiter[1] = ")";
 			}
 
-			case(cli_parameter_unsigned_int):
-			{
-				if(at < call->result_size)
-					at += snprintf(call->result + at, call->result_size - at, "unsigned int parameter: %u\n", parameter->unsigned_int);
-
-				break;
-			}
-
-			case(cli_parameter_signed_int):
-			{
-				if(at < call->result_size)
-					at += snprintf(call->result + at, call->result_size - at, "signed int parameter: %d\n", parameter->signed_int);
-
-				break;
-			}
-
-			case(cli_parameter_float):
-			{
-				if(at < call->result_size)
-					at += snprintf(call->result + at, call->result_size - at, "float parameter: %f\n", parameter->fp);
-
-				break;
-			}
-
-			case(cli_parameter_string):
-			{
-				if(at < call->result_size)
-					at += snprintf(call->result + at, call->result_size - at, "string parameter: \"%s\"\n", parameter->string);
-
-				break;
-			}
+			offset += snprintf(call->result + offset, call->result_size - offset, " %s%s %s%s",
+					delimiter[0],
+					parameter_type_to_string(parameter->type),
+					parameter->description ? parameter->description : "",
+					delimiter[1]);
 		}
 	}
 }
-
-static const cli_function_t cli_functions[] =
-{
-	{ "flash-checksum",	(const char*)0,	command_flash_checksum,		{	2,
-																		{
-																			{ cli_parameter_unsigned_int,	0,	1,	0,	0, {} },
-																			{ cli_parameter_unsigned_int,	0,	1,	0,	0, {} },
-																		},
-																	}},
-	{ "flash-bench",	(const char*)0,	command_flash_bench,		{	1,
-																		{
-																			{ cli_parameter_unsigned_int,	0,	1,	1,	1, .unsigned_int = { 0, 4096 }},
-																		},
-																	}},
-	{ "flash-info",		(const char*)0,	command_flash_info,			{}	},
-	{ "flash-read",		(const char*)0,	command_flash_read,			{	1,
-																		{
-																			{ cli_parameter_unsigned_int,	0,	1,	0,	0, {} },
-																		},
-																	}},
-	{ "ota-start",		(const char*)0,	command_ota_start,			{	1,
-																		{
-																			{ cli_parameter_unsigned_int,	0,	1,	0,	0, {} },
-																		},
-																	}},
-	{ "ota-write",		(const char*)0,	command_ota_write,			{	2,
-																		{
-																			{ cli_parameter_unsigned_int,	0,	1,	0,	0, {} },
-																			{ cli_parameter_unsigned_int,	0,	1,	1,	1, .unsigned_int = { 0, 1 }},
-																		},
-																	}},
-	{ "ota-finish",		(const char*)0, command_ota_finish,			{}	},
-	{ "ota-commit",		(const char*)0, command_ota_commit,			{	1,
-																		{
-																			{ cli_parameter_string,			0,	1,	1,	1, .string = { 64, 64 }},
-																		},
-																	}},
-	{ "ota-confirm",	(const char*)0, command_ota_confirm,		{	1,
-																		{
-																			{ cli_parameter_unsigned_int,	0,	1,	1,	1, .unsigned_int = { 0, 1 }},
-																		},
-																	}},
-	{ "flash-write",	(const char*)0,	command_flash_write,		{	2,
-																		{
-																			{ cli_parameter_unsigned_int,	0,	1,	1,	1, .unsigned_int = { 0, 1 }},
-																			{ cli_parameter_unsigned_int,	0,	1,	0,	0, {} },
-																	},
-																	}},
-	{ "reset",			"r",			command_reset,				{}	},
-	{ "stats",			"s",			command_stat_firmware,		{}	},
-	{ "stat-flash",		"sf",			command_stat_flash,			{}	},
-	{ "stat-memory",	"sm",			command_stat_memory,		{}	},
-	{ "stat-process",	"sp",			command_stat_process,		{}	},
-	{ "stat-system",	"ss",			command_stat_system,		{}	},
-	{ "test",			"t",			command_test,				{	4,
-																		{
-																			{ cli_parameter_unsigned_int,	0,	1,	1,	1,	.unsigned_int =	{ 1, 10 }},
-																			{ cli_parameter_signed_int,		0,	1,	1,	1,	.signed_int =	{ 1, 10 }},
-																			{ cli_parameter_float,			0,	1,	1,	1,	.fp =			{ 1, 10 }},
-																			{ cli_parameter_string,			0,	1,	1,	1,	.string =		{ 1, 10 }},
-																		}
-																	}},
-	{ (char *)0,		(char *)0,		(cli_command_function_t *)0,{}	},
-};
 
 static void receive_queue_pop(cli_buffer_t *cli_buffer)
 {
@@ -270,10 +313,11 @@ static void run_receive_queue(void *)
 	uint8_t								*oob_data;
 	unsigned int						count, current, ix;
 	char								*token, *saveptr;
-	const cli_function_t				*cli_function;
+	const cli_command_t					*cli_command;
+	unsigned int						parameter_count;
 	const cli_parameter_description_t	*parameter_description;
 	cli_parameter_t						*parameter;
-	static cli_function_call_t			call;
+	static cli_command_call_t			call;
 	static char							error[128];
 
 	assert(inited);
@@ -300,16 +344,16 @@ static void run_receive_queue(void *)
 
 		for(ix = 0;; ix++)
 		{
-			cli_function = &cli_functions[ix];
+			cli_command = &cli_commands[ix];
 
-			if(!cli_function->name || !strcmp(cli_function->name, token))
+			if(!cli_command->name || !strcmp(cli_command->name, token))
 				break;
 
-			if(cli_function->alias && !strcmp(cli_function->alias, token))
+			if(cli_command->alias && !strcmp(cli_command->alias, token))
 				break;
 		}
 
-		if(!cli_function->name)
+		if(!cli_command->name)
 		{
 			snprintf(error, sizeof(error), "ERROR: unknown command \"%s\"", token);
 			packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
@@ -317,14 +361,16 @@ static void run_receive_queue(void *)
 			goto error;
 		}
 
-		count = cli_function->parameters.count;
+		count = cli_command->parameters.count;
 
 		if(count > parameters_size)
 			count = parameters_size;
 
+		parameter_count = 0;
+
 		for(current = 0; current < count; current++)
 		{
-			parameter_description = &cli_function->parameters.parameters[current];
+			parameter_description = &cli_command->parameters.parameters[current];
 			parameter = &parameters.parameters[current];
 
 			parameter->type = cli_parameter_none;
@@ -348,6 +394,8 @@ static void run_receive_queue(void *)
 			}
 			else
 			{
+				parameter_count++;
+
 				switch(parameter_description->type)
 				{
 					case(cli_parameter_none):
@@ -516,9 +564,9 @@ static void run_receive_queue(void *)
 			goto error;
 		}
 
-		if(current < cli_function->parameters.count)
+		if(current < cli_command->parameters.count)
 		{
-			snprintf(error, sizeof(error), "ERROR: missing paramters");
+			snprintf(error, sizeof(error), "ERROR: missing parameters");
 			packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
 			send_queue_push(&cli_buffer);
 			goto error;
@@ -532,7 +580,7 @@ static void run_receive_queue(void *)
 			goto error;
 		}
 
-		parameters.count = current;
+		parameters.count = parameter_count;
 
 		call.parameters =			&parameters;
 		call.oob_data_length =		oob_data_length;
@@ -543,7 +591,7 @@ static void run_receive_queue(void *)
 		call.result_oob_length =	0;
 		call.result_oob =			heap_caps_malloc(call.result_oob_size, MALLOC_CAP_SPIRAM);
 
-		cli_function->function(&call);
+		cli_command->function(&call);
 
 		packet_encapsulate(&cli_buffer, call.result, call.result_oob_length, call.result_oob);
 		send_queue_push(&cli_buffer);
