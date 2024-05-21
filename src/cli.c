@@ -87,6 +87,12 @@ typedef struct
 
 static QueueHandle_t receive_queue_handle;
 static QueueHandle_t send_queue_handle;
+static unsigned int cli_stats_commands_received;
+static unsigned int cli_stats_commands_received_packet;
+static unsigned int cli_stats_commands_received_raw;
+static unsigned int cli_stats_replies_sent;
+static unsigned int cli_stats_replies_sent_packet;
+static unsigned int cli_stats_replies_sent_raw;
 static bool inited = false;
 
 static const char *parameter_type_to_string(unsigned int type)
@@ -118,6 +124,24 @@ static void command_reset(cli_command_call_t *call)
 	assert(call->parameters->count == 0);
 
 	esp_restart();
+}
+
+static void command_info_cli(cli_command_call_t *call)
+{
+	unsigned int offset;
+
+	assert(call->parameters->count == 0);
+
+	offset = 0;
+
+	offset += snprintf(call->result + offset, call->result_size - offset, "commands received:");
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n- total: %u", cli_stats_commands_received);
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n- packetised: %u", cli_stats_commands_received_packet);
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n- raw: %u", cli_stats_commands_received_raw);
+	offset += snprintf(call->result + offset, call->result_size - offset, "\nreplies sent:");
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n- total: %u", cli_stats_replies_sent);
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n- packetised: %u", cli_stats_replies_sent_packet);
+	offset += snprintf(call->result + offset, call->result_size - offset, "\n- raw: %u", cli_stats_replies_sent_raw);
 }
 
 static const cli_command_t cli_commands[] =
@@ -173,6 +197,10 @@ static const cli_command_t cli_commands[] =
 	},
 
 	{ "info-bt", "ib", "show information about bluetooth", command_info_bluetooth,
+		{}
+	},
+
+	{ "info-cli", "ic", "show information about the cli", command_info_cli,
 		{}
 	},
 
@@ -309,6 +337,7 @@ static void receive_queue_pop(cli_buffer_t *cli_buffer)
 	assert(inited);
 
 	xQueueReceive(receive_queue_handle, cli_buffer, portMAX_DELAY);
+	cli_stats_commands_received++;
 }
 
 static void send_queue_push(cli_buffer_t *cli_buffer)
@@ -316,6 +345,13 @@ static void send_queue_push(cli_buffer_t *cli_buffer)
 	assert(inited);
 
 	xQueueSend(send_queue_handle, cli_buffer, portMAX_DELAY);
+
+	if(cli_buffer->packetised)
+		cli_stats_replies_sent_packet++;
+	else
+		cli_stats_replies_sent_raw++;
+
+	cli_stats_replies_sent++;
 }
 
 static void send_queue_pop(cli_buffer_t *cli_buffer)
@@ -347,6 +383,11 @@ static void run_receive_queue(void *)
 	{
 		receive_queue_pop(&cli_buffer);
 		packet_decapsulate(&cli_buffer, &data, &oob_data_length, &oob_data);
+
+		if(cli_buffer.packetised)
+			cli_stats_commands_received_packet++;
+		else
+			cli_stats_commands_received_raw++;
 
 		if(cli_buffer.data_from_malloc && cli_buffer.data)
 			free(cli_buffer.data);
