@@ -2,6 +2,7 @@
 #include "bt.h"
 #include "main.h"
 #include "log.h"
+#include "console.h"
 #include "util.h"
 
 #include <freertos/FreeRTOS.h>
@@ -28,6 +29,7 @@ void app_main(void)
 	util_init();
 	cli_init();
 	bt_init();
+	console_init();
 
 	run_main();
 }

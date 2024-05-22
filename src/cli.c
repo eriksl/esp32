@@ -4,9 +4,10 @@
 #include "flash.h"
 #include "info.h"
 #include "log.h"
-#include "util.h"
 #include "bt.h"
+#include "console.h"
 #include "packet.h"
+#include "util.h"
 
 #include <stdio.h>
 #include <stdbool.h>
@@ -201,6 +202,10 @@ static const cli_command_t cli_commands[] =
 	},
 
 	{ "info-cli", "ic", "show information about the cli", command_info_cli,
+		{}
+	},
+
+	{ "info-console", "icon", "show information about the console", command_info_console,
 		{}
 	},
 
@@ -731,6 +736,8 @@ static void run_send_queue(void *)
 
 			case(cli_source_console):
 			{
+				console_send(&cli_buffer);
+
 				break;
 			}
 		}
