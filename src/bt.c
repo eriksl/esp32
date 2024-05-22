@@ -437,7 +437,7 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 	bt_stats_received_packets++;
 }
 
-void bt_send(cli_buffer_t *cli_buffer)
+void bt_send(const cli_buffer_t *cli_buffer)
 {
 	static const unsigned int max_chunk = /* netto data */ 512 + /* sizeof(packet_header_t) */ 32 + /* HCI headers */ 8;
 	struct os_mbuf *txom;
