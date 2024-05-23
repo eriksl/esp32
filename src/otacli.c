@@ -8,11 +8,8 @@
 
 #include <mbedtls/sha256.h>
 
-#include <esp_log.h>
-#include <esp_check.h>
 #include <esp_ota_ops.h>
 #include <esp_image_format.h>
-#include <esp_err.h>
 
 static bool ota_handle_active = false;
 static const esp_partition_t *ota_partition = (const esp_partition_t *)0;
@@ -24,12 +21,9 @@ static unsigned int ota_length = 0;
 
 static void ota_abort(void)
 {
-	esp_err_t rv;
-
 	if(ota_handle_active)
 	{
-		if((rv = esp_ota_abort(ota_handle)))
-			ESP_LOGE("otacli", "ota_abort: esp_ota_abort returns error: %x", rv);
+		util_warn_on_esp_err("otacli: ota_abort: esp_ota_abort returns error", esp_ota_abort(ota_handle));
 
 		ota_partition = (const esp_partition_t *)0;
 		ota_handle_active = false;
@@ -46,7 +40,7 @@ static void ota_abort(void)
 
 void command_ota_start(cli_command_call_t *call)
 {
-	esp_err_t rv;
+	int rv;
 	unsigned int length;
 	const esp_partition_t *partition;
 
@@ -74,7 +68,7 @@ void command_ota_start(cli_command_call_t *call)
 
 	if(ota_handle_active || ota_sha256_ctx_active)
 	{
-		ESP_LOGW("otacli", "ota-start: ota already active, first aborting session");
+		log("otacli: ota-start: ota already active, first aborting session");
 		ota_abort();
 	}
 
@@ -98,7 +92,7 @@ void command_ota_start(cli_command_call_t *call)
 
 void command_ota_write(cli_command_call_t *call)
 {
-	esp_err_t rv;
+	int rv;
 	unsigned length, checksum_chunk;
 
 	assert(call->parameters->count == 2);
@@ -144,7 +138,7 @@ void command_ota_write(cli_command_call_t *call)
 
 void command_ota_finish(cli_command_call_t *call)
 {
-	esp_err_t rv;
+	int rv;
 	unsigned char ota_sha256_hash[32];
 	char ota_sha256_hash_text[(sizeof(ota_sha256_hash) * 2) + 1];
 
@@ -240,7 +234,7 @@ void command_ota_commit(cli_command_call_t *call)
 
 void command_ota_confirm(cli_command_call_t *call)
 {
-	esp_err_t rv;
+	int rv;
 	const esp_partition_t *boot_partition, *running_partition;
 	unsigned int slot;
 
@@ -269,7 +263,7 @@ void command_ota_confirm(cli_command_call_t *call)
 
 	if(!(boot_partition = esp_ota_get_boot_partition()))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_ota_get_boot_partition failed: %u", rv);
+		snprintf(call->result, call->result_size, "ERROR: esp_ota_get_boot_partition failed");
 		return;
 	}
 

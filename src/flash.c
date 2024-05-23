@@ -145,7 +145,7 @@ void command_flash_info(cli_command_call_t *call)
 
 void command_flash_read(cli_command_call_t *call)
 {
-	esp_err_t rv;
+	int rv;
 	unsigned int sector;
 
 	assert(call->parameters->count == 1);
@@ -155,7 +155,7 @@ void command_flash_read(cli_command_call_t *call)
 
 	if((rv = esp_flash_read((esp_flash_t *)0, call->result_oob, sector * 4096, 4096)))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_flash_read from %u returned error %u", sector, rv);
+		snprintf(call->result, call->result_size, "ERROR: esp_flash_read from %u returned error 0x%x", sector, rv);
 		return;
 	}
 
@@ -165,7 +165,6 @@ void command_flash_read(cli_command_call_t *call)
 
 void command_flash_write(cli_command_call_t *call)
 {
-	//esp_err_t rv;
 	unsigned int simulate;
 	unsigned int sector;
 	unsigned int same, erased;

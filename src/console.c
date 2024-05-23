@@ -13,8 +13,6 @@
 #include <errno.h>
 #include <fcntl.h>
 
-#include <esp_log.h>
-
 enum
 {
 	line_size = 64,
@@ -47,7 +45,6 @@ typedef struct
 static_assert(sizeof(lines_t) == 584);
 
 static lines_t *lines;
-
 static bool inited = false;
 static unsigned int console_stats_lines_received;
 static unsigned int console_stats_bytes_received;
@@ -309,12 +306,15 @@ void console_init()
 	inited = true;
 
 	if(xTaskCreatePinnedToCore(run_console, "console", 4096, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
-	{
-		ESP_LOGE("console", "xTaskCreatePinnedToNode run_console");
-		abort();
-	}
+		util_abort("console: xTaskCreatePinnedToNode run_console");
 }
 
+void console_write_line(const char *string)
+{
+	write(1, string, strlen(string));
+	write(1, "\n", 1);
+	fsync(1);
+}
 
 void console_send(const cli_buffer_t *cli_buffer)
 {

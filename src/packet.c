@@ -5,9 +5,6 @@
 
 #include <freertos/FreeRTOS.h>
 
-#include <esp_log.h>
-#include <esp_check.h>
-
 void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob_data_length, uint8_t **oob_data)
 {
 	static const char *error = "<error>";
@@ -27,7 +24,7 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob
 	{
 		if(packet->length != cli_buffer->length)
 		{
-			ESP_LOGI("packet", "incomplete packet: %u / %u", cli_buffer->length, packet->length);
+			log("packet: incomplete packet: %u / %u", cli_buffer->length, packet->length);
 			goto error;
 		}
 
@@ -35,7 +32,7 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob
 				(packet->data_pad_offset < packet->data_offset) || (packet->data_pad_offset > packet->length) ||
 				(packet->oob_data_offset < packet->data_pad_offset) || (packet->oob_data_offset > packet->length))
 		{
-			ESP_LOGW("packet", "invalid offset in packet header");
+			log("packet: invalid offset in packet header");
 			goto error;
 		}
 
@@ -47,7 +44,7 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob
 
 			if(our_checksum != their_checksum)
 			{
-				ESP_LOGI("packet", "invalid checksum: 0x%08x[%d] / 0x%08x", our_checksum, packet->length, their_checksum);
+				log("packet: invalid checksum: 0x%08x[%d] / 0x%08x", our_checksum, packet->length, their_checksum);
 				goto error;
 			}
 		}
@@ -86,13 +83,13 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob
 		{
 			if((data_pad_offset = data_pad - cli_buffer->data) >= cli_buffer->length)
 			{
-				ESP_LOGW("packet", "invalid data pad offset: %u/%u", data_pad_offset, cli_buffer->length);
+				log("packet: invalid data pad offset: %u/%u", data_pad_offset, cli_buffer->length);
 				goto error;
 			}
 
 			if((oob_data_offset = ((data_pad_offset + 3 + 1) & ~0x03)) >= cli_buffer->length)
 			{
-				ESP_LOGW("packet", "invalid oob data offset: %u/%u", oob_data_offset, cli_buffer->length);
+				log("packet: invalid oob data offset: %u/%u", oob_data_offset, cli_buffer->length);
 				goto error;
 			}
 

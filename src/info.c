@@ -33,7 +33,7 @@ void command_info_firmware(cli_command_call_t *call)
 
 void command_info_flash(cli_command_call_t *call)
 {
-	esp_err_t rv;
+	int rv;
 	esp_partition_iterator_t partition_iterator;
 	const esp_partition_t *partition;
 	const char *type, *subtype;
@@ -157,7 +157,7 @@ void command_info_flash(cli_command_call_t *call)
 
 		if((rv = esp_partition_get_sha256(partition, sha256_hash)))
 		{
-			snprintf(call->result, call->result_size, "ERROR: esp_partition_get_sha256 failed: %u", rv);
+			snprintf(call->result, call->result_size, "ERROR: esp_partition_get_sha256 failed: 0x%x", rv);
 			return;
 		}
 

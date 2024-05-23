@@ -7,9 +7,6 @@
 #include <mbedtls/base64.h>
 #include <mbedtls/md5.h>
 
-#include <esp_log.h>
-#include <esp_check.h>
-
 static bool inited;
 
 uint32_t util_md5_32(unsigned int length, const uint8_t *data)
@@ -57,10 +54,7 @@ unsigned int util_partition_to_slot(const esp_partition_t *partition)
 		if(partition->subtype == ESP_PARTITION_SUBTYPE_APP_OTA_1)
 			slot = 1;
 		else
-		{
-			ESP_LOGE("cli", "util_partition_to_slot: unknown OTA partition type");
-			abort();
-		}
+			util_abort("util_partition_to_slot: unknown OTA partition type");
 
 	return(slot);
 }

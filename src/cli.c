@@ -17,8 +17,6 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 
-#include <esp_log.h>
-
 enum
 {
 	receive_queue_size = 8,
@@ -713,7 +711,7 @@ static void run_send_queue(void *)
 		{
 			case(cli_source_none):
 			{
-				ESP_LOGE("cli", "invalid source type: %u", cli_buffer.source);
+				log("cli: invalid source type: %u", cli_buffer.source);
 				break;
 			}
 
@@ -772,10 +770,7 @@ void cli_init(void)
 	assert(queue);
 
 	if(!(receive_queue_handle = xQueueCreateStatic(receive_queue_size, sizeof(cli_buffer_t), (void *)queue_data, queue)))
-	{
-		ESP_LOGE("cli", "xQueueCreateStatic receive queue init");
-		abort();
-	}
+		util_abort("cli: xQueueCreateStatic receive queue init");
 
 	queue_data = heap_caps_malloc(send_queue_size * sizeof(cli_buffer_t) , MALLOC_CAP_SPIRAM);
 	assert(queue_data);
@@ -784,22 +779,13 @@ void cli_init(void)
 	assert(queue);
 
 	if(!(send_queue_handle = xQueueCreateStatic(send_queue_size, sizeof(cli_buffer_t), (void *)queue_data, queue)))
-	{
-		ESP_LOGE("cli", "xQueueCreateStatic send queue init");
-		abort();
-	}
+		util_abort("cli: xQueueCreateStatic send queue init");
 
 	inited = true;
 
 	if(xTaskCreatePinnedToCore(run_receive_queue, "cli-recv", 4096, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
-	{
-		ESP_LOGE("cli", "xTaskCreatePinnedToNode run_receive_queue");
-		abort();
-	}
+		util_abort("cli: xTaskCreatePinnedToNode run_receive_queue");
 
 	if(xTaskCreatePinnedToCore(run_send_queue, "cli-send", 4096, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
-	{
-		ESP_LOGE("cli", "xTaskCreatePinnedToNode run_send_queue");
-		abort();
-	}
+		util_abort("cli: xTaskCreatePinnedToNode run_send_queue");
 }

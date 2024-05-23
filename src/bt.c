@@ -3,15 +3,13 @@
 #include "bt.h"
 #include "util.h"
 #include "packet.h"
+#include "log.h"
 
 #include <stdint.h>
 #include <stdbool.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-
-#include <esp_log.h>
-#include <esp_err.h>
 
 #include <nimble/nimble_port_freertos.h>
 #include <nimble/nimble_port.h>
@@ -125,7 +123,7 @@ static int gatt_event(uint16_t connection_handle, uint16_t attribute_handle, str
 
 		default:
 		{
-			ESP_LOGW("bt", "gatt_event: default callback: 0x%x", context->op);
+			log("bt: gatt_event: default callback: 0x%x", context->op);
 			break;
 		}
 	}
@@ -171,7 +169,7 @@ static void server_advertise(void)
 	fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
 	fields.tx_pwr_lvl_is_present = 1;
 
-	ESP_ERROR_CHECK(ble_gap_adv_set_fields(&fields));
+	util_abort_on_esp_err("ble_gap_adv_set_fields", ble_gap_adv_set_fields(&fields));
 
 	memset(&adv_params, 0, sizeof(adv_params));
 	adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
@@ -180,34 +178,19 @@ static void server_advertise(void)
 	rc = ble_gap_adv_start(own_addr_type, NULL, BLE_HS_FOREVER, &adv_params, gap_event, NULL);
 
 	if((rc != 0) && (rc != BLE_HS_EALREADY))
-	{
-		ESP_LOGE("bt", "server_advertise: ble_gap_adv_start, error: 0x%x", rc);
-		abort();
-	}
+		util_abort_on_esp_err("bt: ble_gap_adv_start", rc);
 }
 
 static void callback_reset(int reason)
 {
-	ESP_LOGW("bt", "resetting state, reason: 0x%x", reason);
+	log("bt: resetting state, reason: 0x%x", reason);
 }
 
 static void callback_sync(void)
 {
-	unsigned int rc;
-
-	ESP_ERROR_CHECK(ble_hs_util_ensure_addr(0));
-
-	if((rc = ble_hs_id_infer_auto(0, &own_addr_type)) != 0)
-	{
-		ESP_LOGE("bt", "callback_sync: ble_hs_id_infer_auto: error 0x%x", rc);
-		abort();
-	}
-
-	if((rc = ble_hs_id_copy_addr(own_addr_type, bt_host_address, NULL)))
-	{
-		ESP_LOGE("bt", "callback_sync: ble_hs_id_copy_addr: error 0x%x", rc);
-		abort();
-	}
+	util_abort_on_esp_err("bt: ble_hs_util_ensure_addr", ble_hs_util_ensure_addr(0));
+	util_abort_on_esp_err("bt: ble_hs_id_infer_auto", ble_hs_id_infer_auto(0, &own_addr_type));
+	util_abort_on_esp_err("bt: ble_hId_copy_addr", ble_hs_id_copy_addr(own_addr_type, bt_host_address, NULL));
 
 	server_advertise();
 }
@@ -234,7 +217,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 		{
 			struct ble_gap_conn_desc desc;
 
-			ESP_ERROR_CHECK(ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc));
+			util_abort_on_esp_err("ble_gap_conn_find", ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc));
 			ble_store_util_delete_peer(&desc.peer_id_addr);
 
 			return(BLE_GAP_REPEAT_PAIRING_RETRY);
@@ -250,10 +233,10 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 				pkey.passkey = 28022;
 
 				if((rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey)) != 0)
-					ESP_LOGW("bt", "passkey error: ble_sm_inject_io result: %d", rc);
+					log("bt: passkey error: ble_sm_inject_io result: %d", rc);
 			}
 			else
-				ESP_LOGW("bt", "passkey: unknown op: %d", event->passkey.params.action);
+				log("bt: passkey: unknown op: %d", event->passkey.params.action);
 
 			ble_gap_terminate(event->connect.conn_handle, BLE_ERR_CONN_LIMIT);
 
@@ -294,7 +277,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
 		default:
 		{
-			ESP_LOGW("bt", "gap event unknown: 0x%x", event->type);
+			log("bt: gap event unknown: 0x%x", event->type);
 
 			break;
 		}
@@ -319,7 +302,7 @@ static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *context, void *a
 
 		default:
 		{
-			ESP_LOGE("bt", "gatt event unknown: 0x%x", context->op);
+			log("bt: gatt event unknown: 0x%x", context->op);
 			abort();
 
 			break;
@@ -491,14 +474,14 @@ void bt_send(const cli_buffer_t *cli_buffer)
 	bt_stats_sent_packets++;
 }
 
-esp_err_t bt_init(void)
+int bt_init(void)
 {
 	assert(!inited);
 
 	assert((reassembly_buffer = heap_caps_malloc(reassembly_buffer_size, MALLOC_CAP_SPIRAM)));
 	reassemble_reset();
 
-	ESP_ERROR_CHECK(nimble_port_init());
+	util_abort_on_esp_err("nimble_port_init", nimble_port_init());
 
 	inited = true;
 
@@ -514,8 +497,8 @@ esp_err_t bt_init(void)
 	ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
 	ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
 
-	ESP_ERROR_CHECK(gatt_init());
-	ESP_ERROR_CHECK(ble_svc_gap_device_name_set("nimble-ble-spp-svr")); // FIXME hostname
+	util_abort_on_esp_err("gatt_init", gatt_init());
+	util_abort_on_esp_err("ble_svc_gap_device_name_set", ble_svc_gap_device_name_set("nimble-ble-spp-svr")); // FIXME hostname
 	ble_store_config_init();
 	nimble_port_freertos_init(nimble_port_task);
 

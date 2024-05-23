@@ -1,5 +1,6 @@
 #include "cli-command.h"
 #include "log.h"
+#include "console.h"
 #include "util.h"
 
 #include <freertos/FreeRTOS.h>
@@ -8,8 +9,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include <esp_timer.h>
 #include <esp_log.h>
+#include <esp_timer.h>
 #include <esp_random.h>
 
 enum
@@ -44,7 +45,6 @@ static_assert(sizeof(log_t) == 7064);
 
 static bool inited = false;
 static log_t *log_buffer = (log_t *)0;
-static int(*esp_logging_function)(const char *, va_list) = (void *)0;
 
 static void log_clear(void)
 {
@@ -74,6 +74,8 @@ void log_simple(const char *string)
 
 	if(log_buffer->in++ >= log_buffer_entries)
 		log_buffer->in = 0;
+
+	console_write_line(string);
 }
 
 void log_vargs(const char *fmt, ...)
@@ -93,6 +95,8 @@ void log_vargs(const char *fmt, ...)
 
 	if(log_buffer->in++ >= log_buffer_entries)
 		log_buffer->in = 0;
+
+	console_write_line(entry->data);
 }
 
 static int logging_function(const char *fmt, va_list ap)
@@ -118,7 +122,7 @@ static int logging_function(const char *fmt, va_list ap)
 
 	log_simple(start);
 
-	return(esp_logging_function(fmt, ap));
+	return(strlen(start));
 }
 
 void log_init(void)
@@ -129,13 +133,13 @@ void log_init(void)
 	if((log_buffer->magic_word != log_buffer_magic_word) ||
 		(log_buffer->magic_word_salted != (log_buffer_magic_word ^ log_buffer->random_salt)))
 	{
-		ESP_LOGW("log", "log buffer corrupt, reinit");
+		log("log: log buffer corrupt, reinit");
 		log_clear();
 	}
 
 	inited = true;
 
-	esp_logging_function = esp_log_set_vprintf(logging_function);
+	esp_log_set_vprintf(logging_function);
 
 	log("boot");
 }
