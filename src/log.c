@@ -13,6 +13,8 @@
 #include <esp_timer.h>
 #include <esp_random.h>
 
+/* NOTE: log cannot use config because log needs to be inited before config */
+
 enum
 {
 	log_buffer_size = 7 * 1024,
