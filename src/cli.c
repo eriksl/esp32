@@ -119,6 +119,52 @@ static void command_help(cli_command_call_t *call)
 	return(help(call));
 }
 
+static void command_hostname(cli_command_call_t *call)
+{
+	char description[32];
+	unsigned int ix, count, offset;
+	char byte;
+
+	offset = 0;
+
+	assert(call->parameters->count < 3);
+
+	if(call->parameters->count > 1)
+	{
+		count = strlen(call->parameters->parameters[1].string);
+
+		for(ix = 0; (ix < count) && (ix < sizeof(description)); ix++)
+		{
+			byte = call->parameters->parameters[1].string[ix];
+			description[ix] = byte == '_' ? ' ' : byte;
+		}
+
+		if(ix >= sizeof(description))
+			ix = sizeof(description) - 1;
+
+		description[ix] = '\0';
+
+		config_set_string("hostname_desc", description);
+	}
+
+	if(call->parameters->count > 0)
+		config_set_string("hostname", call->parameters->parameters[0].string);
+
+	offset += snprintf(call->result + offset, call->result_size - offset, "hostname: ");
+
+	if(config_get_string("hostname", sizeof(description), description))
+		offset += snprintf(call->result + offset, call->result_size - offset, "%s", description);
+	else
+		offset += snprintf(call->result + offset, call->result_size - offset, "%s", "<unset>");
+
+	offset += snprintf(call->result + offset, call->result_size - offset, "\ndescription: ");
+
+	if(config_get_string("hostname_desc", sizeof(description), description))
+		offset += snprintf(call->result + offset, call->result_size - offset, "%s", description);
+	else
+		offset += snprintf(call->result + offset, call->result_size - offset, "%s", "<unset>");
+}
+
 static void command_reset(cli_command_call_t *call)
 {
 	assert(call->parameters->count == 0);
@@ -228,6 +274,15 @@ static const cli_command_t cli_commands[] =
 		{	1,
 			{
 				{ cli_parameter_string, 0, 0, 0, 0, "command to show help about", {} },
+			},
+		}
+	},
+
+	{ "hostname", (const char*)0, "set hostname and description", command_hostname,
+		{	2,
+			{
+				{ cli_parameter_string, 0, 0, 1, 1, "hostname", .string = { 0, 12 }},
+				{ cli_parameter_string, 0, 0, 1, 1, "description", .string = { 0, 32 }},
 			},
 		}
 	},
