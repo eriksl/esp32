@@ -13,8 +13,6 @@
 #include <esp_timer.h>
 #include <esp_random.h>
 
-/* NOTE: log cannot use config because log needs to be inited before config */
-
 enum
 {
 	log_buffer_size = 7 * 1024,
@@ -64,18 +62,19 @@ static void log_clear(void)
 
 void log_simple(const char *string)
 {
-	log_entry_t *entry;
+	if(inited)
+	{
+		log_entry_t *entry;
 
-	assert(inited);
+		entry = &log_buffer->entry[log_buffer->in];
 
-	entry = &log_buffer->entry[log_buffer->in];
+		entry->timestamp = esp_timer_get_time();
+		strncpy(entry->data, string, log_buffer_data_size);
+		entry->data[log_buffer_data_size - 1] = '\0';
 
-	entry->timestamp = esp_timer_get_time();
-	strncpy(entry->data, string, log_buffer_data_size);
-	entry->data[log_buffer_data_size - 1] = '\0';
-
-	if(log_buffer->in++ >= log_buffer_entries)
-		log_buffer->in = 0;
+		if(log_buffer->in++ >= log_buffer_entries)
+			log_buffer->in = 0;
+	}
 
 	console_write_line(string);
 }
@@ -83,22 +82,26 @@ void log_simple(const char *string)
 void log_vargs(const char *fmt, ...)
 {
 	va_list ap;
-	log_entry_t *entry;
 
-	assert(inited);
+	if(inited)
+	{
+		log_entry_t *entry;
 
-	entry = &log_buffer->entry[log_buffer->in];
+		entry = &log_buffer->entry[log_buffer->in];
 
-	entry->timestamp = esp_timer_get_time();
+		entry->timestamp = esp_timer_get_time();
 
-	va_start(ap, fmt);
-	vsnprintf(entry->data, sizeof(entry->data), fmt, ap);
-	va_end(ap);
+		va_start(ap, fmt);
+		vsnprintf(entry->data, sizeof(entry->data), fmt, ap);
+		va_end(ap);
 
-	if(log_buffer->in++ >= log_buffer_entries)
-		log_buffer->in = 0;
+		if(log_buffer->in++ >= log_buffer_entries)
+			log_buffer->in = 0;
 
-	console_write_line(entry->data);
+		console_write_line(entry->data);
+	}
+	else
+		console_write_line(fmt);
 }
 
 static int logging_function(const char *fmt, va_list ap)
@@ -129,17 +132,18 @@ static int logging_function(const char *fmt, va_list ap)
 
 void log_init(void)
 {
+	assert(!inited);
 	assert((log_buffer = (log_t *)heap_caps_malloc(sizeof(log_t), MALLOC_CAP_RTCRAM)));
 	assert(log_buffer == (log_t *)0x600fe198);
+
+	inited = true;
 
 	if((log_buffer->magic_word != log_buffer_magic_word) ||
 		(log_buffer->magic_word_salted != (log_buffer_magic_word ^ log_buffer->random_salt)))
 	{
-		log("log: log buffer corrupt, reinit");
 		log_clear();
+		log("log: log buffer corrupt, reinit");
 	}
-
-	inited = true;
 
 	esp_log_set_vprintf(logging_function);
 
