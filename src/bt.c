@@ -217,6 +217,8 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 		{
 			struct ble_gap_conn_desc desc;
 
+			log("bt: GAP EVENT repeat pairing");
+
 			util_abort_on_esp_err("ble_gap_conn_find", ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc));
 			ble_store_util_delete_peer(&desc.peer_id_addr);
 
@@ -225,6 +227,8 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
 		case(BLE_GAP_EVENT_PASSKEY_ACTION):
 		{
+			log("bt: GAP EVENT passkey action");
+
 			 if(event->passkey.params.action == BLE_SM_IOACT_DISP)
 			 {
 				struct ble_sm_io pkey = {0};
@@ -238,7 +242,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 			else
 				log("bt: passkey: unknown op: %d", event->passkey.params.action);
 
-			ble_gap_terminate(event->connect.conn_handle, BLE_ERR_CONN_LIMIT);
+			//ble_gap_terminate(event->connect.conn_handle, BLE_ERR_CONN_LIMIT); // FIXME does this need to be here?
 
 			break;
 		}
