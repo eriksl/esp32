@@ -6,6 +6,7 @@
 #include "log.h"
 #include "bt.h"
 #include "console.h"
+#include "config.h"
 #include "packet.h"
 #include "util.h"
 
@@ -145,6 +146,46 @@ static void command_info_cli(cli_command_call_t *call)
 
 static const cli_command_t cli_commands[] =
 {
+	{ "config-dump", "cd", "dump all nvs keys", command_config_dump,
+		{}
+	},
+
+	{ "config-set-int", "csi", "set a signed int config value", command_config_set_int,
+		{	2,
+			{
+				{ cli_parameter_string, 0, 1, 0, 0, "key", {} },
+				{ cli_parameter_signed_int, 0, 1, 0, 0, "value", {} },
+			},
+		}
+	},
+
+	{ "config-set-uint", "csu", "set an unsigned int config value", command_config_set_uint,
+		{	2,
+			{
+				{ cli_parameter_string, 0, 1, 0, 0, "key", {} },
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "value", {} },
+			},
+		}
+	},
+
+	{ "config-set-string", "css", "set a string config value", command_config_set_string,
+		{	2,
+			{
+				{ cli_parameter_string, 0, 1, 0, 0, "key", {} },
+				{ cli_parameter_string, 0, 1, 0, 0, "value", {} },
+			},
+		}
+	},
+
+	{ "config-erase", "ce", "erase a config entry", command_config_erase,
+		{	1,
+			{
+				{ cli_parameter_string, 0, 1, 0, 0, "key", {} },
+			},
+		}
+	},
+
+
 	{ "flash-bench", (const char*)0, "benchmark flash+transport", command_flash_bench,
 		{	1,
 			{
@@ -204,6 +245,10 @@ static const cli_command_t cli_commands[] =
 	},
 
 	{ "info-console", "icon", "show information about the console", command_info_console,
+		{}
+	},
+
+	{ "info-config", "icf", "show information about the configuration", command_info_config,
 		{}
 	},
 
@@ -277,6 +322,10 @@ static const cli_command_t cli_commands[] =
 	},
 
 	{ "reset", "r", "reset", command_reset,
+		{}
+	},
+
+	{ "show-config", "sc", "show config", command_config_show,
 		{}
 	},
 
