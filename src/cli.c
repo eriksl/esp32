@@ -360,7 +360,7 @@ static void help(cli_command_call_t *call)
 		if(command_name && strcmp(command_name, command->name) && (!command->alias || strcmp(command_name, command->alias)))
 			continue;
 
-		offset += snprintf(call->result + offset, call->result_size - offset, "\n  %-16s %-4s %s", command->name,
+		offset += snprintf(call->result + offset, call->result_size - offset, "\n  %-18s %-4s %s", command->name,
 				command->alias ? command->alias : "",
 				command->help ? command->help : "");
 
