@@ -4,6 +4,7 @@
 #include "util.h"
 #include "packet.h"
 #include "log.h"
+#include "config.h"
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -480,7 +481,12 @@ void bt_send(const cli_buffer_t *cli_buffer)
 
 int bt_init(void)
 {
+	char hostname[16];
+
 	assert(!inited);
+
+	if(!config_get_string("hostname", sizeof(hostname), hostname))
+		strncpy(hostname, "esp32", sizeof(hostname));
 
 	assert((reassembly_buffer = heap_caps_malloc(reassembly_buffer_size, MALLOC_CAP_SPIRAM)));
 	reassemble_reset();
@@ -502,7 +508,7 @@ int bt_init(void)
 	ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
 
 	util_abort_on_esp_err("gatt_init", gatt_init());
-	util_abort_on_esp_err("ble_svc_gap_device_name_set", ble_svc_gap_device_name_set("nimble-ble-spp-svr")); // FIXME hostname
+	util_abort_on_esp_err("ble_svc_gap_device_name_set", ble_svc_gap_device_name_set(hostname));
 	ble_store_config_init();
 	nimble_port_freertos_init(nimble_port_task);
 
