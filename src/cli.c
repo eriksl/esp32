@@ -656,6 +656,7 @@ static void run_receive_queue(void *)
 		call.oob_data =				oob_data;
 		call.result_size =			result_size;
 		call.result =				heap_caps_malloc(call.result_size, MALLOC_CAP_SPIRAM);
+		call.result[0] =			'\0';
 		call.result_oob_size =		result_oob_size;
 		call.result_oob_length =	0;
 		call.result_oob =			heap_caps_malloc(call.result_oob_size, MALLOC_CAP_SPIRAM);
