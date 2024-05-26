@@ -373,11 +373,11 @@ void command_info_console(cli_command_call_t *call)
 
 	offset = 0;
 
-	offset += snprintf(call->result + offset, call->result_size - offset, "received:");
+	offset += snprintf(call->result + offset, call->result_size - offset, "entered:");
 	offset += snprintf(call->result + offset, call->result_size - offset, "\n- lines: %u", console_stats_lines_received);
 	offset += snprintf(call->result + offset, call->result_size - offset, "\n- bytes: %u", console_stats_bytes_received);
 	offset += snprintf(call->result + offset, call->result_size - offset, "\n- errors: %u", console_stats_bytes_received_error);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\nsent:");
+	offset += snprintf(call->result + offset, call->result_size - offset, "\nreplies:");
 	offset += snprintf(call->result + offset, call->result_size - offset, "\n- lines: %u", console_stats_lines_sent);
 	offset += snprintf(call->result + offset, call->result_size - offset, "\n- bytes: %u", console_stats_bytes_sent);
 }
