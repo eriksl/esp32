@@ -150,7 +150,7 @@ static void run_console(void *)
 							for(ix = 0; ix < line->length; ix++)
 								write(1, backspace_string, sizeof(backspace_string));
 
-							if(lines->current < lines->size)
+							if((lines->current + 1) < lines->size)
 								lines->current++;
 							else
 								lines->current = 0;
@@ -295,7 +295,7 @@ static void run_console(void *)
 			memcpy(cli_buffer.data, line->data, line->length);
 			cli_receive_queue_push(&cli_buffer);
 
-			if(lines->current < lines->size)
+			if((lines->current + 1) < lines->size)
 				lines->current++;
 			else
 				lines->current = 0;
