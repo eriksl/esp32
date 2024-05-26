@@ -70,7 +70,7 @@ void log_simple(const char *string)
 		entry = &log_buffer->entry[log_buffer->in];
 
 		entry->timestamp = esp_timer_get_time();
-		strncpy(entry->data, string, log_buffer_data_size);
+		strlcpy(entry->data, string, log_buffer_data_size);
 		entry->data[log_buffer_data_size - 1] = '\0';
 
 		if(log_buffer->in++ >= log_buffer_entries)

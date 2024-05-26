@@ -126,8 +126,11 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob
 	return;
 
 error:
-	assert((*data = heap_caps_malloc(sizeof(error), MALLOC_CAP_SPIRAM)));
-	strcpy(*data, error);
+	data_length = strlen(error);
+	*data = heap_caps_malloc(data_length + 1, MALLOC_CAP_SPIRAM);
+	assert(*data);
+	memcpy(*data, error, data_length);
+	(*data)[data_length] = '\0';
 	*oob_data = (uint8_t *)0;
 	*oob_data_length = 0;
 }

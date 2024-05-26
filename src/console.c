@@ -294,7 +294,7 @@ void console_init()
 	assert(!inited);
 
 	if(!config_get_string("hostname", sizeof(hostname), hostname))
-		strncpy(hostname, "esp32", sizeof(hostname));
+		strlcpy(hostname, "esp32", sizeof(hostname));
 
 	lines = (lines_t *)heap_caps_malloc(sizeof(lines_t) , MALLOC_CAP_SPIRAM);
 	assert(lines);

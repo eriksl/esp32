@@ -1,14 +1,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "cli-command.h"
-#include "cli.h"
-#include "bt.h"
-#include "log.h"
-#include "util.h"
-#include "packet.h"
-#include "config.h"
-
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
@@ -19,6 +11,14 @@
 #include <host/util/util.h>
 #include <services/gap/ble_svc_gap.h>
 #include <services/gatt/ble_svc_gatt.h>
+
+#include "cli-command.h"
+#include "cli.h"
+#include "bt.h"
+#include "log.h"
+#include "util.h"
+#include "packet.h"
+#include "config.h"
 
 void ble_store_config_init(void);
 
@@ -486,7 +486,7 @@ int bt_init(void)
 	assert(!inited);
 
 	if(!config_get_string("hostname", sizeof(hostname), hostname))
-		strncpy(hostname, "esp32", sizeof(hostname));
+		strlcpy(hostname, "esp32", sizeof(hostname));
 
 	assert((reassembly_buffer = heap_caps_malloc(reassembly_buffer_size, MALLOC_CAP_SPIRAM)));
 	reassemble_reset();
