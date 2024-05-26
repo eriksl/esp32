@@ -1,5 +1,4 @@
-#ifndef _log_h_
-#define _log_h_
+#pragma once
 
 // ugly workaround to get #define argument number overloading
 #define _GET_MACRO_(_1, _2, _3, _4, _5, _NAME_, ...) _NAME_
@@ -37,5 +36,3 @@ void log_vargs(const char *f, ...) __attribute__ ((format (printf, 1, 2)));
 void command_info_log(cli_command_call_t *call);
 void command_log(cli_command_call_t *call);
 void command_log_clear(cli_command_call_t *call);
-
-#endif

@@ -1,6 +1,3 @@
-#ifndef _main_c_
-#define _main_c_
+#pragma once
 
 void run_main(void);
-
-#endif

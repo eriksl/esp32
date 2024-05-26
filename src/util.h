@@ -1,5 +1,4 @@
-#ifndef _util_h_
-#define _util_h_
+#pragma once
 
 #include <esp_ota_ops.h>
 
@@ -36,5 +35,3 @@ static inline void util_abort(const char *what)
 	log("abort: %s", what);
 	abort();
 }
-
-#endif

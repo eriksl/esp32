@@ -1,5 +1,4 @@
-#ifndef _cli_command_h_
-#define _cli_command_h_
+#pragma once
 
 enum
 {
@@ -48,7 +47,4 @@ typedef struct
 	uint8_t *					result_oob;
 } cli_command_call_t;
 
-
 typedef void(cli_command_function_t)(cli_command_call_t *);
-
-#endif

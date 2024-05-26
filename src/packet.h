@@ -1,5 +1,4 @@
-#ifndef _packet_h_
-#define _packet_h_
+#pragma once
 
 // for packet_header_t
 #define __esp32__
@@ -15,5 +14,3 @@ bool packet_is_packet(unsigned int length, const void *buffer);
 unsigned int packet_length(unsigned int length, const void *buffer);
 void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob_data_length, uint8_t **oob_data);
 void packet_encapsulate(cli_buffer_t *cli_buffer, const char *data, unsigned int oob_data_length, const uint8_t *oob_data);
-
-#endif

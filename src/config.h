@@ -1,5 +1,4 @@
-#ifndef _config_h_
-#define _config_h_
+#pragma once
 
 void config_init(void);
 bool config_get_uint(const char *key, uint32_t *value);
@@ -21,5 +20,3 @@ void command_config_set_uint(cli_command_call_t *call);
 void command_config_set_string(cli_command_call_t *call);
 
 void command_config_erase(cli_command_call_t *call);
-
-#endif
