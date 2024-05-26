@@ -1,7 +1,12 @@
-#include "packet.h"
-#include "util.h"
-
+#include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
+
+#include "cli-command.h"
+#include "cli.h"
+#include "packet.h"
+#include "log.h"
+#include "util.h"
 
 #include <freertos/FreeRTOS.h>
 

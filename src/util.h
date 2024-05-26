@@ -1,12 +1,7 @@
 #ifndef _util_h_
 #define _util_h_
 
-#include <stdint.h>
-
-#include <esp_err.h>
 #include <esp_ota_ops.h>
-
-#include "log.h"
 
 void util_init(void);
 uint32_t util_md5_32(unsigned int length, const uint8_t *data);

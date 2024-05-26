@@ -1,8 +1,6 @@
 #ifndef _log_h_
 #define _log_h_
 
-#include "cli-command.h"
-
 // ugly workaround to get #define argument number overloading
 #define _GET_MACRO_(_1, _2, _3, _4, _5, _NAME_, ...) _NAME_
 #define log(...) _GET_MACRO_(__VA_ARGS__, _log_4_, _log_3_, _log_2_, _log_1_, _log_0_)(__VA_ARGS__)

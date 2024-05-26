@@ -1,8 +1,6 @@
 #ifndef _cli_command_h_
 #define _cli_command_h_
 
-#include <stdint.h>
-
 enum
 {
 	parameters_size = 16,

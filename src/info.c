@@ -1,8 +1,9 @@
+#include <stdint.h>
+
 #include "cli-command.h"
 #include "info.h"
+#include "log.h"
 #include "util.h"
-
-#include <stdio.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -13,6 +14,8 @@
 #include <esp_ota_ops.h>
 #include <esp_system.h>
 #include <esp_heap_caps.h>
+
+#include <stdio.h>
 
 void command_info_firmware(cli_command_call_t *call)
 {

@@ -1,10 +1,6 @@
 #ifndef _config_h_
 #define _config_h_
 
-#include <stdbool.h>
-
-#include "cli-command.h"
-
 void config_init(void);
 bool config_get_uint(const char *key, uint32_t *value);
 bool config_get_int(const char *key, int32_t *value);

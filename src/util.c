@@ -1,6 +1,8 @@
-#include "util.h"
-
 #include <string.h>
+
+#include "cli-command.h"
+#include "log.h"
+#include "util.h"
 
 #include <freertos/FreeRTOS.h>
 

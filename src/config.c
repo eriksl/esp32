@@ -1,3 +1,7 @@
+#include <stdbool.h>
+#include <string.h>
+
+#include "cli-command.h"
 #include "config.h"
 #include "log.h"
 #include "util.h"
@@ -6,9 +10,6 @@
 #include <esp_err.h>
 #include <nvs.h>
 #include <nvs_flash.h>
-
-#include <stdbool.h>
-#include <string.h>
 
 static bool inited = false;
 

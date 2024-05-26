@@ -1,11 +1,3 @@
-#include "cli-command.h"
-#include "console.h"
-#include "log.h"
-#include "config.h"
-#include "util.h"
-
-#include <freertos/FreeRTOS.h>
-
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -13,6 +5,15 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
+
+#include "cli-command.h"
+#include "cli.h"
+#include "console.h"
+#include "log.h"
+#include "config.h"
+#include "util.h"
+
+#include <freertos/FreeRTOS.h>
 
 enum
 {

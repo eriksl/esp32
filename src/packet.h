@@ -1,12 +1,6 @@
 #ifndef _packet_h_
 #define _packet_h_
 
-#include "cli.h"
-
-#include <stdint.h>
-#include <stdbool.h>
-#include <stddef.h>
-
 // for packet_header_t
 #define __esp32__
 #define assert_size(type, size) _Static_assert(sizeof(type) == size, "sizeof(" #type ") != " #size)

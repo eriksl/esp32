@@ -1,11 +1,13 @@
-#include "ledpixel.h"
-
-#include <led_strip.h>
-
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "string.h"
+#include "cli-command.h"
+#include "ledpixel.h"
+#include "log.h"
 #include "util.h"
+
+#include <led_strip.h>
 
 typedef struct
 {

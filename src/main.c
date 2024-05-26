@@ -1,8 +1,11 @@
+#include <stdint.h>
+
+#include "string.h"
+#include "cli-command.h"
 #include "main.h"
 #include "ledpixel.h"
+#include "log.h"
 #include "util.h"
-
-#include <stdint.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>

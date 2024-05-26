@@ -1,10 +1,11 @@
-#include "cli-command.h"
-#include "otacli.h"
-#include "util.h"
-
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
+
+#include "cli-command.h"
+#include "otacli.h"
+#include "log.h"
+#include "util.h"
 
 #include <mbedtls/sha256.h>
 

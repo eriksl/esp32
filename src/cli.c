@@ -1,3 +1,8 @@
+#include <stdio.h>
+#include <stdbool.h>
+#include <string.h>
+#include <errno.h>
+
 #include "cli-command.h"
 #include "cli.h"
 #include "otacli.h"
@@ -9,11 +14,6 @@
 #include "config.h"
 #include "packet.h"
 #include "util.h"
-
-#include <stdio.h>
-#include <stdbool.h>
-#include <string.h>
-#include <errno.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>

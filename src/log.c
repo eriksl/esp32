@@ -1,13 +1,14 @@
+#include <string.h>
+#include <stdint.h>
+#include <stdbool.h>
+
 #include "cli-command.h"
+#include "cli.h"
 #include "log.h"
 #include "console.h"
 #include "util.h"
 
 #include <freertos/FreeRTOS.h>
-
-#include <string.h>
-#include <stdint.h>
-#include <stdbool.h>
 
 #include <esp_log.h>
 #include <esp_timer.h>

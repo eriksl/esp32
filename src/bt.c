@@ -1,13 +1,13 @@
+#include <stdint.h>
+#include <stdbool.h>
+
 #include "cli-command.h"
 #include "cli.h"
 #include "bt.h"
+#include "log.h"
 #include "util.h"
 #include "packet.h"
-#include "log.h"
 #include "config.h"
-
-#include <stdint.h>
-#include <stdbool.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>

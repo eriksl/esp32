@@ -1,8 +1,6 @@
 #ifndef _cli_h_
 #define _cli_h_
 
-#include <stdint.h>
-
 typedef enum
 {
 	cli_source_none = 0,

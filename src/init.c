@@ -1,3 +1,7 @@
+#include <stdint.h>
+#include <stdbool.h>
+
+#include "cli-command.h"
 #include "cli.h"
 #include "bt.h"
 #include "main.h"
