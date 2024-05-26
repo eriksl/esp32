@@ -65,6 +65,7 @@ error:
 
 static bool get_value_as_integer(const char *namespace, const char *key, const nvs_entry_info_t *their_info, const char **type, int64_t *value)
 {
+	esp_err_t rv;
 	nvs_entry_info_t info;
 	nvs_handle_t handle;
 
@@ -158,36 +159,43 @@ static bool get_value_as_integer(const char *namespace, const char *key, const n
 		}
 		case(NVS_TYPE_STR):
 		{
-			char *raw_value;
+			char raw_value[32];
 			char *endptr;
 			unsigned length;
 
 			if(type)
 				*type = "string";
-			util_abort_on_esp_err("nvs_get_str", nvs_get_str(handle, info.key, (char *)0, &length));
-			assert(length > 0);
-			assert((raw_value = heap_caps_malloc(length + 1, MALLOC_CAP_SPIRAM)));
-			util_abort_on_esp_err("nvs_get_str", nvs_get_str(handle, info.key, raw_value, &length));
-			raw_value[length] = '\0';
-			*value = strtoll(raw_value, &endptr, 0);
-			free(raw_value);
+
+			rv = nvs_get_str(handle, info.key, raw_value, &length);
+
+			if(rv == ESP_ERR_NVS_INVALID_LENGTH)
+				*value = 0;
+			else
+			{
+				util_abort_on_esp_err("nvs_get_str", rv);
+				*value = strtoll(raw_value, &endptr, 0);
+			}
+
 			break;
 		}
 		case(NVS_TYPE_BLOB):
 		{
-			char *raw_value;
+			char raw_value[32];
 			char *endptr;
 			unsigned length;
 
 			if(type)
 				*type = "blob";
-			util_abort_on_esp_err("nvs_get_blob", nvs_get_blob(handle, info.key, (char *)0, &length));
-			assert(length > 0);
-			assert((raw_value = heap_caps_malloc(length + 1, MALLOC_CAP_SPIRAM)));
-			util_abort_on_esp_err("nvs_get_blob", nvs_get_blob(handle, info.key, raw_value, &length));
-			raw_value[length] = '\0';
-			*value = strtoll(raw_value, &endptr, 0);
-			free(raw_value);
+
+			rv = nvs_get_blob(handle, info.key, raw_value, &length);
+
+			if(rv == ESP_ERR_NVS_INVALID_LENGTH)
+				*value = 0;
+			else
+			{
+				util_abort_on_esp_err("nvs_get_blob", rv);
+				*value = strtoll(raw_value, &endptr, 0);
+			}
 			break;
 		}
 		default:
@@ -207,6 +215,7 @@ static bool get_value_as_integer(const char *namespace, const char *key, const n
 static bool get_value_as_string(const char *namespace, const char *key, const nvs_entry_info_t *their_info, const char **type, unsigned int string_size, char *string)
 {
 	nvs_entry_info_t info;
+	esp_err_t rv;
 	nvs_handle_t handle;
 
 	if(!namespace)
@@ -302,34 +311,42 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 		}
 		case(NVS_TYPE_STR):
 		{
-			char *raw_value;
+			char raw_value[32];
 			unsigned length;
 
 			if(type)
 				*type = "string";
-			util_abort_on_esp_err("nvs_get_str", nvs_get_str(handle, info.key, (char *)0, &length));
-			assert(length > 0);
-			assert((raw_value = heap_caps_malloc(length + 1, MALLOC_CAP_SPIRAM)));
-			util_abort_on_esp_err("nvs_get_str", nvs_get_str(handle, info.key, raw_value, &length));
+
+			length = sizeof(raw_value);
+			rv = nvs_get_str(handle, info->key, raw_value, &length);
+
+			if(rv == ESP_ERR_NVS_INVALID_LENGTH)
+				length = 0;
+			else
+				util_abort_on_esp_err("nvs_get_str", rv);
+
 			snprintf(string, string_size, "%.*s", length, raw_value);
-			free(raw_value);
 			break;
 		}
 		case(NVS_TYPE_BLOB):
 		{
-			char *raw_value;
+			char raw_value[32];
 			unsigned length, ix, offset;
 
 			if(type)
 				*type = "blob";
-			util_abort_on_esp_err("nvs_get_blob", nvs_get_blob(handle, info.key, (char *)0, &length));
-			assert(length > 0);
-			assert((raw_value = heap_caps_malloc(length + 1, MALLOC_CAP_SPIRAM)));
-			util_abort_on_esp_err("nvs_get_blob", nvs_get_blob(handle, info.key, raw_value, &length));
+
+			length = sizeof(raw_value);
+			rv = nvs_get_blob(handle, info->key, raw_value, &length);
+
+			if(rv == ESP_ERR_NVS_INVALID_LENGTH)
+				length = 0;
+			else
+				util_abort_on_esp_err("nvs_get_blob", rv);
+
 			offset = snprintf(string, string_size, "[%d]", length);
 			for(ix = 0; ix < length; ix++)
 				offset += snprintf(string + offset, string_size - offset, " %02x", (uint8_t)raw_value[ix]);
-			free(raw_value);
 			break;
 		}
 		default:
