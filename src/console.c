@@ -1,6 +1,7 @@
 #include "cli-command.h"
 #include "console.h"
 #include "log.h"
+#include "config.h"
 #include "util.h"
 
 #include <freertos/FreeRTOS.h>
@@ -44,19 +45,20 @@ typedef struct
 
 static_assert(sizeof(lines_t) == 584);
 
-static lines_t *lines;
 static bool inited = false;
+static lines_t *lines;
+static char hostname[16];
 static unsigned int console_stats_lines_received;
 static unsigned int console_stats_bytes_received;
 static unsigned int console_stats_bytes_received_error;
 static unsigned int console_stats_lines_sent;
 static unsigned int console_stats_bytes_sent;
 
-static void prompt(unsigned int index) // FIXME hostname
+static void prompt(unsigned int index)
 {
 	char prompt[32];
 
-	snprintf(prompt, sizeof(prompt), "esp32 [%u]> ", index);
+	snprintf(prompt, sizeof(prompt), "%s [%u]> ", hostname, index);
 	write(1, prompt, strlen(prompt));
 }
 
@@ -289,6 +291,9 @@ void console_init()
 	line_t *line;
 
 	assert(!inited);
+
+	if(!config_get_string("hostname", sizeof(hostname), hostname))
+		strncpy(hostname, "esp32", sizeof(hostname));
 
 	lines = (lines_t *)heap_caps_malloc(sizeof(lines_t) , MALLOC_CAP_SPIRAM);
 	assert(lines);
