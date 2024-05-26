@@ -55,11 +55,11 @@ static unsigned int console_stats_bytes_received_error;
 static unsigned int console_stats_lines_sent;
 static unsigned int console_stats_bytes_sent;
 
-static void prompt(unsigned int index)
+static void prompt()
 {
 	char prompt[32];
 
-	snprintf(prompt, sizeof(prompt), "%s [%u]> ", hostname, index);
+	snprintf(prompt, sizeof(prompt), "%s [%u]> ", hostname, lines->current);
 	write(1, prompt, strlen(prompt));
 }
 
@@ -67,6 +67,7 @@ static void run_console(void *)
 {
 	static const char backspace_string[] = { 0x08, 0x20, 0x08 };
 	static const char reprint_string[] = "^R\n";
+	static const char history_string[] = "^@\n";
 	static const char interrupt_string[] = "^C\n";
 	static const char newline_string[] = "\n";
 
@@ -76,8 +77,10 @@ static void run_console(void *)
 	char character;
 	unsigned int ix;
 	bool whitespace;
+	unsigned int length;
+	char tmp[16];
 
-	prompt(lines->current);
+	prompt();
 	fsync(1);
 
 	for(;;)
@@ -213,6 +216,7 @@ static void run_console(void *)
 			if(character == /* ^R */ 0x12)
 			{
 				write(1, reprint_string, sizeof(reprint_string));
+				prompt();
 				write(1, line->data, line->length);
 				fsync(1);
 				continue;
@@ -224,6 +228,33 @@ static void run_console(void *)
 				fsync(1);
 				line->length = 0;
 				break;
+			}
+
+			if(character == /* ^@ */ 0x00)
+			{
+				write(1, history_string, sizeof(history_string));
+
+				for(ix = lines->current + 1; ix < lines->size; ix++)
+				{
+					length = snprintf(tmp, sizeof(tmp), "[%u] ", ix);
+					write(1, tmp, length);
+					write(1, lines->line[ix].data, lines->line[ix].length);
+					write(1, newline_string, sizeof(newline_string));
+				}
+
+				for(ix = 0; ix < lines->current; ix++)
+				{
+					length = snprintf(tmp, sizeof(tmp), "[%u] ", ix);
+					write(1, tmp, length);
+					write(1, lines->line[ix].data, lines->line[ix].length);
+					write(1, newline_string, sizeof(newline_string));
+				}
+
+				prompt();
+				write(1, line->data, line->length);
+				fsync(1);
+
+				continue;
 			}
 
 			if((character < ' ') || (character > '~'))
@@ -278,7 +309,7 @@ static void run_console(void *)
 		else
 		{
 			write(1, newline_string, sizeof(newline_string));
-			prompt(lines->current);
+			prompt();
 			fsync(1);
 		}
 
@@ -327,7 +358,7 @@ void console_send(const cli_buffer_t *cli_buffer)
 	assert(inited);
 
 	write(1, cli_buffer->data, cli_buffer->length);
-	prompt(lines->current);
+	prompt();
 	fsync(1);
 
 	console_stats_bytes_sent += cli_buffer->length;
