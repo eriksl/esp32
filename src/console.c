@@ -47,7 +47,7 @@ static_assert(sizeof(lines_t) == 584);
 
 static bool inited = false;
 static lines_t *lines;
-static char hostname[16];
+static char hostname[16] = "<>";
 static unsigned int console_stats_lines_received;
 static unsigned int console_stats_bytes_received;
 static unsigned int console_stats_bytes_received_error;
