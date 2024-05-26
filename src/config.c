@@ -214,35 +214,38 @@ static bool get_value_as_integer(const char *namespace, const char *key, const n
 
 static bool get_value_as_string(const char *namespace, const char *key, const nvs_entry_info_t *their_info, const char **type, unsigned int string_size, char *string)
 {
-	nvs_entry_info_t info;
 	esp_err_t rv;
+	nvs_entry_info_t our_info;
+	const nvs_entry_info_t *info;
 	nvs_handle_t handle;
 
 	if(!namespace)
 		namespace = "config";
 
 	if(their_info)
-		info = *their_info;
+		info = their_info;
 	else
 	{
-		if(!find_key(namespace, key, &info) && !find_key((const char *)0, key, &info))
+		if(!find_key(namespace, key, &our_info) && !find_key((const char *)0, key, &our_info))
 		{
 			if(type)
 				*type = "not found";
 			return(false);
 		}
+
+		info = &our_info;
 	}
 
 	util_abort_on_esp_err("nvs_open", nvs_open(namespace, NVS_READONLY, &handle));
 
-	switch(info.type)
+	switch(info->type)
 	{
 		case(NVS_TYPE_U8):
 		{
 			uint8_t raw_value;
 			if(type)
 				*type = "uint8";
-			util_abort_on_esp_err("nvs_get_u8", nvs_get_u8(handle, info.key, &raw_value));
+			util_abort_on_esp_err("nvs_get_u8", nvs_get_u8(handle, info->key, &raw_value));
 			snprintf(string, string_size, "%u (%#02x)", raw_value, raw_value);
 			break;
 		}
@@ -251,7 +254,7 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 			int8_t raw_value;
 			if(type)
 				*type = "int8";
-			util_abort_on_esp_err("nvs_get_i8", nvs_get_i8(handle, info.key, &raw_value));
+			util_abort_on_esp_err("nvs_get_i8", nvs_get_i8(handle, info->key, &raw_value));
 			snprintf(string, string_size, "%d (%#02x)", raw_value, raw_value);
 			break;
 		}
@@ -260,7 +263,7 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 			uint16_t raw_value;
 			if(type)
 				*type = "uint16";
-			util_abort_on_esp_err("nvs_get_u16", nvs_get_u16(handle, info.key, &raw_value));
+			util_abort_on_esp_err("nvs_get_u16", nvs_get_u16(handle, info->key, &raw_value));
 			snprintf(string, string_size, "%u (%#04x)", raw_value, raw_value);
 			break;
 		}
@@ -269,7 +272,7 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 			int16_t raw_value;
 			if(type)
 				*type = "int16";
-			util_abort_on_esp_err("nvs_get_i16", nvs_get_i16(handle, info.key, &raw_value));
+			util_abort_on_esp_err("nvs_get_i16", nvs_get_i16(handle, info->key, &raw_value));
 			snprintf(string, string_size, "%d (%#04x)", raw_value, raw_value);
 			break;
 		}
@@ -278,7 +281,7 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 			uint32_t raw_value;
 			if(type)
 				*type = "uint32";
-			util_abort_on_esp_err("nvs_get_u32", nvs_get_u32(handle, info.key, &raw_value));
+			util_abort_on_esp_err("nvs_get_u32", nvs_get_u32(handle, info->key, &raw_value));
 			snprintf(string, string_size, "%lu (%#08lx)", raw_value, raw_value);
 			break;
 		}
@@ -287,7 +290,7 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 			int32_t raw_value;
 			if(type)
 				*type = "int32";
-			util_abort_on_esp_err("nvs_get_i32", nvs_get_i32(handle, info.key, &raw_value));
+			util_abort_on_esp_err("nvs_get_i32", nvs_get_i32(handle, info->key, &raw_value));
 			snprintf(string, string_size, "%ld (%#08lx)", raw_value, raw_value);
 			break;
 		}
@@ -296,7 +299,7 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 			uint64_t raw_value;
 			if(type)
 				*type = "uint64";
-			util_abort_on_esp_err("nvs_get_u64", nvs_get_u64(handle, info.key, &raw_value));
+			util_abort_on_esp_err("nvs_get_u64", nvs_get_u64(handle, info->key, &raw_value));
 			snprintf(string, string_size, "%llu (%#016llx)", raw_value, raw_value);
 			break;
 		}
@@ -305,7 +308,7 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 			int64_t raw_value;
 			if(type)
 				*type = "int64";
-			util_abort_on_esp_err("nvs_get_i64", nvs_get_i64(handle, info.key, &raw_value));
+			util_abort_on_esp_err("nvs_get_i64", nvs_get_i64(handle, info->key, &raw_value));
 			snprintf(string, string_size, "%lld (%#016llx)", raw_value, raw_value);
 			break;
 		}
@@ -546,8 +549,6 @@ static void config_dump(cli_command_call_t *call, const char *namespace)
 
 	assert(inited);
 
-	iterator = (nvs_iterator_t)0;
-
 	offset = snprintf(call->result, call->result_size, "SHOW CONFIG namespace %s", namespace ? namespace : "ALL");
 
 	if((rv = nvs_entry_find("nvs", namespace, NVS_TYPE_ANY, &iterator)) == ESP_ERR_NVS_NOT_FOUND)
@@ -560,7 +561,7 @@ static void config_dump(cli_command_call_t *call, const char *namespace)
 		util_abort_on_esp_err("nvs_entry_info", nvs_entry_info(iterator, &info));
 
 		if(!get_value_as_string(info.namespace_name, info.key, &info, &type, sizeof(value), value))
-			snprintf(value, sizeof(value), "<not found>");
+			snprintf(value, sizeof(value), "%s", "<not found>");
 
 		if(namespace)
 			offset += snprintf(call->result + offset, call->result_size - offset, "\n- %-7s %-14s %s", type, info.key, value);
