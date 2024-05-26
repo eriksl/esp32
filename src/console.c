@@ -365,7 +365,7 @@ void console_send(const cli_buffer_t *cli_buffer)
 	console_stats_lines_sent++;
 }
 
-void command_info_console(cli_command_call_t *call)
+void console_command_info(cli_command_call_t *call)
 {
 	unsigned int offset;
 

@@ -299,7 +299,7 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
-	{ "info-console", "icon", "show information about the console", command_info_console,
+	{ "info-console", "icon", "show information about the console", console_command_info,
 		{}
 	},
 
