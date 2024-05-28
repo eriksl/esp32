@@ -14,11 +14,13 @@
 #include <esp_flash.h>
 #include <esp_ota_ops.h>
 
+static uint8_t flash_buffer[4096];
+
 void command_flash_bench(cli_command_call_t *call)
 {
 	unsigned int length;
 
-	assert(call->result_oob_size >= 4096);
+	assert(string_size(call->result_oob) > 4096);
 	assert(call->parameter_count == 1);
 
 	if((length = call->parameters[0].unsigned_int) > 4096)
@@ -27,9 +29,7 @@ void command_flash_bench(cli_command_call_t *call)
 		return;
 	}
 
-	memset(call->result_oob, 0, length);
-	call->result_oob_length = length;
-
+	string_fill(call->result_oob, length, '\0');
 	string_format(call->result, "OK flash-bench: sending %u bytes", length);
 }
 
@@ -40,7 +40,7 @@ void command_flash_checksum(cli_command_call_t *call)
 	mbedtls_sha1_context ctx;
 	uint8_t output[20];
 
-	assert(call->result_oob_size >= 4096);
+	assert(string_size(call->result_oob) > 4096);
 	assert(call->parameter_count == 2);
 
 	mbedtls_sha1_init(&ctx);
@@ -51,13 +51,13 @@ void command_flash_checksum(cli_command_call_t *call)
 
 	for(current = start_sector; current < (start_sector + length); current++)
 	{
-		if((rv = esp_flash_read((esp_flash_t *)0, call->result_oob, current, 4096)) != 0)
+		if((rv = esp_flash_read((esp_flash_t *)0, flash_buffer, current, sizeof(flash_buffer))) != 0)
 		{
 			string_format(call->result, "ERROR: esp_flash_read from %u returned error %d", start_sector, rv);
 			return;
 		}
 
-		if((rv = mbedtls_sha1_update(&ctx, call->result_oob, 4096)) < 0)
+		if((rv = mbedtls_sha1_update(&ctx, flash_buffer, sizeof(flash_buffer))) < 0)
 		{
 			string_format(call->result, "ERROR: mbedtls_sha1_update on sector %u returned error %d", start_sector, rv);
 			return;
@@ -138,17 +138,18 @@ void command_flash_read(cli_command_call_t *call)
 	unsigned int sector;
 
 	assert(call->parameter_count == 1);
-	assert(call->result_oob_size >= 4096);
+	assert(string_size(call->result_oob) > 4096);
 
 	sector = call->parameters[0].unsigned_int;
 
-	if((rv = esp_flash_read((esp_flash_t *)0, call->result_oob, sector * 4096, 4096)))
+	if((rv = esp_flash_read((esp_flash_t *)0, flash_buffer, sector * sizeof(flash_buffer), sizeof(flash_buffer))))
 	{
 		string_format(call->result, "ERROR: esp_flash_read from %u returned error 0x%x", sector, rv);
 		return;
 	}
 
-	call->result_oob_length = 4096;
+	string_assign_data(call->result_oob, sizeof(flash_buffer), flash_buffer);
+
 	string_format(call->result, "OK flash-read: read sector %u", sector);
 }
 
@@ -159,7 +160,7 @@ void command_flash_write(cli_command_call_t *call)
 	unsigned int same, erased;
 
 	assert(call->parameter_count == 2);
-	assert(call->result_oob_size >= 4096);
+	assert(string_size(call->result_oob) > 4096);
 
 	simulate = call->parameters[0].unsigned_int;
 	sector = call->parameters[1].unsigned_int;
@@ -172,7 +173,6 @@ void command_flash_write(cli_command_call_t *call)
 		//return;
 	//}
 
-	call->result_oob_length = 0;
 	string_format(call->result, "OK flash-write: written mode %u, sector %u, same %u, erased %u",
 			simulate, sector, same, erased);
 }

@@ -38,11 +38,9 @@ typedef struct
 	unsigned int		oob_data_length;
 	uint8_t *			oob_data;
 	string_t			result;
-	unsigned int		result_oob_size;
-	unsigned int		result_oob_length;
-	uint8_t *			result_oob;
+	string_t			result_oob;
 } cli_command_call_t;
 
-_Static_assert(sizeof(cli_command_call_t) == 156);
+_Static_assert(sizeof(cli_command_call_t) == 148);
 
 typedef void(cli_command_function_t)(cli_command_call_t *);

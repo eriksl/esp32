@@ -152,6 +152,18 @@ unsigned int string_length(const string_t src)
 	return(_src->length);
 }
 
+unsigned int string_size(const string_t src)
+{
+	_string_t *_src = (_string_t *)src;
+
+	assert(_src);
+	assert(_src->magic_word == string_magic_word);
+	assert(_src->length < _src->size);
+	assert(_src->size > 0);
+
+	return(_src->size);
+}
+
 void string_clear(string_t dst)
 {
 	_string_t *_dst = (_string_t *)dst;
@@ -165,6 +177,28 @@ void string_clear(string_t dst)
 
 	_dst->length = 0;
 	_dst->data[_dst->length] = '\0';
+}
+
+void string_fill(string_t dst, unsigned int length, char byte)
+{
+	_string_t *_dst = (_string_t *)dst;
+
+	assert(_dst);
+	assert(_dst->magic_word == string_magic_word);
+	assert(!_dst->header_const);
+	assert(!_dst->data_const);
+	assert(_dst->length < _dst->size);
+	assert(_dst->size > 0);
+
+	if((length + null_byte) > _dst->size)
+		length = _dst->size - null_byte;
+
+	memset(_dst->data, byte, length);
+
+	_dst->length = length;
+	_dst->data[_dst->length] = '\0';
+
+	assert(_dst->length < _dst->size);
 }
 
 void string_append_string(string_t dst, const string_t src)
@@ -218,6 +252,31 @@ void string_assign_cstr(string_t dst, const char *cstr)
 {
 	string_clear(dst);
 	string_append_cstr(dst, cstr);
+}
+
+void string_assign_data(string_t dst, unsigned int length, const uint8_t *src)
+{
+	_string_t *_dst = (_string_t *)dst;
+
+	assert(_dst);
+	assert(_dst->magic_word == string_magic_word);
+	assert(_dst->length < _dst->size);
+	assert(_dst->size > 0);
+	assert(!_dst->header_const);
+	assert(!_dst->data_const);
+
+	if((_dst->length + null_byte) >= _dst->size)
+		return;
+
+	if((length + null_byte) > _dst->size)
+		length = _dst->size - null_byte;
+
+	memcpy(_dst->data, src, length);
+
+	_dst->length = length;
+	_dst->data[_dst->length] = '\0';
+
+	assert(_dst->length < _dst->size);
 }
 
 static void _string_format(string_t dst, bool append, const char *fmt, va_list ap)
@@ -281,6 +340,18 @@ const char *string_cstr(const string_t src)
 	assert(_src->data[_src->length] == '\0');
 
 	return(_src->data);
+}
+
+const uint8_t *string_data(const string_t src)
+{
+	_string_t *_src = (_string_t *)src;
+
+	assert(_src->magic_word == string_magic_word);
+	assert(_src->length < _src->size);
+	assert(_src->size > 0);
+	assert(_src->data[_src->length] == '\0');
+
+	return((const uint8_t *)_src->data);
 }
 
 void string_to_cstr(const string_t src, unsigned int dst_size, char *dst)
