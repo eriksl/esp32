@@ -47,7 +47,7 @@ void command_info_flash(cli_command_call_t *call)
 	unsigned char sha256_hash[32];
 	char sha256_hash_text[(sizeof(sha256_hash) * 2) + 1];
 
-	assert(call->parameters->count == 0);
+	assert(call->parameter_count == 0);
 
 	if(!(boot_partition = esp_ota_get_boot_partition()))
 	{

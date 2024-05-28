@@ -19,9 +19,9 @@ void command_flash_bench(cli_command_call_t *call)
 	unsigned int length;
 
 	assert(call->result_oob_size >= 4096);
-	assert(call->parameters->count == 1);
+	assert(call->parameter_count == 1);
 
-	if((length = call->parameters->parameters[0].unsigned_int) > 4096)
+	if((length = call->parameters[0].unsigned_int) > 4096)
 	{
 		string_format(call->result, "ERROR: flash-bench: length %d should be <= 4096", length);
 		return;
@@ -41,13 +41,13 @@ void command_flash_checksum(cli_command_call_t *call)
 	uint8_t output[20];
 
 	assert(call->result_oob_size >= 4096);
-	assert(call->parameters->count == 2);
+	assert(call->parameter_count == 2);
 
 	mbedtls_sha1_init(&ctx);
 	mbedtls_sha1_starts(&ctx);
 
-	start_sector = call->parameters->parameters[0].unsigned_int;
-	length = call->parameters->parameters[1].unsigned_int;
+	start_sector = call->parameters[0].unsigned_int;
+	length = call->parameters[1].unsigned_int;
 
 	for(current = start_sector; current < (start_sector + length); current++)
 	{
@@ -83,7 +83,7 @@ void command_flash_info(cli_command_call_t *call)
 	const esp_partition_t *next;
 	unsigned int slot[2];
 
-	assert(call->parameters->count == 0);
+	assert(call->parameter_count == 0);
 
 	slot[0] = slot[1] = 0;
 
@@ -137,10 +137,10 @@ void command_flash_read(cli_command_call_t *call)
 	int rv;
 	unsigned int sector;
 
-	assert(call->parameters->count == 1);
+	assert(call->parameter_count == 1);
 	assert(call->result_oob_size >= 4096);
 
-	sector = call->parameters->parameters[0].unsigned_int;
+	sector = call->parameters[0].unsigned_int;
 
 	if((rv = esp_flash_read((esp_flash_t *)0, call->result_oob, sector * 4096, 4096)))
 	{
@@ -158,11 +158,11 @@ void command_flash_write(cli_command_call_t *call)
 	unsigned int sector;
 	unsigned int same, erased;
 
-	assert(call->parameters->count == 2);
+	assert(call->parameter_count == 2);
 	assert(call->result_oob_size >= 4096);
 
-	simulate = call->parameters->parameters[0].unsigned_int;
-	sector = call->parameters->parameters[1].unsigned_int;
+	simulate = call->parameters[0].unsigned_int;
+	sector = call->parameters[1].unsigned_int;
 
 	same = erased = 0; // FIXME
 

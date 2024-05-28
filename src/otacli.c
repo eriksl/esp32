@@ -46,9 +46,9 @@ void command_ota_start(cli_command_call_t *call)
 	unsigned int length;
 	const esp_partition_t *partition;
 
-	assert(call->parameters->count == 1);
+	assert(call->parameter_count == 1);
 
-	length = call->parameters->parameters[0].unsigned_int;
+	length = call->parameters[0].unsigned_int;
 
 	if(!(partition = esp_ota_get_next_update_partition((const esp_partition_t *)0)))
 	{
@@ -97,10 +97,10 @@ void command_ota_write(cli_command_call_t *call)
 	int rv;
 	unsigned length, checksum_chunk;
 
-	assert(call->parameters->count == 2);
+	assert(call->parameter_count == 2);
 
-	length = call->parameters->parameters[0].unsigned_int;
-	checksum_chunk = call->parameters->parameters[1].unsigned_int;
+	length = call->parameters[0].unsigned_int;
+	checksum_chunk = call->parameters[1].unsigned_int;
 
 	if(!ota_sha256_ctx_active)
 	{
@@ -144,7 +144,7 @@ void command_ota_finish(cli_command_call_t *call)
 	unsigned char ota_sha256_hash[32];
 	char ota_sha256_hash_text[(sizeof(ota_sha256_hash) * 2) + 1];
 
-	assert(call->parameters->count == 0);
+	assert(call->parameter_count == 0);
 
 	if(!ota_sha256_ctx_active)
 	{
@@ -184,9 +184,9 @@ void command_ota_commit(cli_command_call_t *call)
 	esp_partition_pos_t partition_pos;
 	esp_image_metadata_t image_metadata;
 
-	assert(call->parameters->count == 1);
+	assert(call->parameter_count == 1);
 
-	remote_sha256_hash_text = call->parameters->parameters[0].string;
+	remote_sha256_hash_text = call->parameters[0].string;
 
 	if(!ota_partition)
 	{
@@ -240,9 +240,9 @@ void command_ota_confirm(cli_command_call_t *call)
 	const esp_partition_t *boot_partition, *running_partition;
 	unsigned int slot;
 
-	assert(call->parameters->count == 1);
+	assert(call->parameter_count == 1);
 
-	slot = call->parameters->parameters[0].unsigned_int;
+	slot = call->parameters[0].unsigned_int;
 
 	if(!(running_partition = esp_ota_get_running_partition()))
 	{

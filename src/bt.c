@@ -516,7 +516,7 @@ void command_info_bluetooth(cli_command_call_t *call)
 {
 	string_auto(string_addr, 32);
 
-	assert(call->parameters->count == 0);
+	assert(call->parameter_count == 0);
 
 	bt_addr_to_str(string_addr, bt_host_address);
 

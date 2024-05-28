@@ -465,7 +465,7 @@ void command_info_config(cli_command_call_t *call)
 	nvs_stats_t stats;
 
 	assert(inited);
-	assert(call->parameters->count == 0);
+	assert(call->parameter_count == 0);
 
 	util_abort_on_esp_err("nvs_get_stats", nvs_get_stats((const char *)0, &stats));
 
@@ -483,14 +483,14 @@ void command_config_set_uint(cli_command_call_t *call)
 	int64_t value;
 	const char *type;
 	assert(inited);
-	assert(call->parameters->count == 2);
+	assert(call->parameter_count == 2);
 
-	config_set_uint(call->parameters->parameters[0].string, call->parameters->parameters[1].unsigned_int);
+	config_set_uint(call->parameters[0].string, call->parameters[1].unsigned_int);
 
-	if(get_value_as_integer("config", call->parameters->parameters[0].string, (const nvs_entry_info_t *)0, &type, &value))
-		string_format(call->result, "%s[%s]=%lld", call->parameters->parameters[0].string, type, value);
+	if(get_value_as_integer("config", call->parameters[0].string, (const nvs_entry_info_t *)0, &type, &value))
+		string_format(call->result, "%s[%s]=%lld", call->parameters[0].string, type, value);
 	else
-		string_format(call->result, "ERROR: %s not found", call->parameters->parameters[0].string);
+		string_format(call->result, "ERROR: %s not found", call->parameters[0].string);
 }
 
 void command_config_set_int(cli_command_call_t *call)
@@ -498,14 +498,14 @@ void command_config_set_int(cli_command_call_t *call)
 	int64_t value;
 	const char *type;
 	assert(inited);
-	assert(call->parameters->count == 2);
+	assert(call->parameter_count == 2);
 
-	config_set_int(call->parameters->parameters[0].string, call->parameters->parameters[1].signed_int);
+	config_set_int(call->parameters[0].string, call->parameters[1].signed_int);
 
-	if(get_value_as_integer("config", call->parameters->parameters[0].string, (const nvs_entry_info_t *)0, &type, &value))
-		string_format(call->result, "%s[%s]=%lld", call->parameters->parameters[0].string, type, value);
+	if(get_value_as_integer("config", call->parameters[0].string, (const nvs_entry_info_t *)0, &type, &value))
+		string_format(call->result, "%s[%s]=%lld", call->parameters[0].string, type, value);
 	else
-		string_format(call->result, "ERROR: %s not found", call->parameters->parameters[0].string);
+		string_format(call->result, "ERROR: %s not found", call->parameters[0].string);
 }
 
 void command_config_set_string(cli_command_call_t *call)
@@ -514,26 +514,26 @@ void command_config_set_string(cli_command_call_t *call)
 	const char *type;
 
 	assert(inited);
-	assert(call->parameters->count == 2);
+	assert(call->parameter_count == 2);
 
-	string_assign_cstr(dst, call->parameters->parameters[1].string); // FIXME
-	config_set_string(call->parameters->parameters[0].string, dst);
+	string_assign_cstr(dst, call->parameters[1].string); // FIXME
+	config_set_string(call->parameters[0].string, dst);
 
-	if(get_value_as_string((const char *)0, call->parameters->parameters[0].string, (nvs_entry_info_t *)0, &type, dst))
-		string_format(call->result, "%s[%s]=%s", call->parameters->parameters[0].string, type, string_cstr(dst));
+	if(get_value_as_string((const char *)0, call->parameters[0].string, (nvs_entry_info_t *)0, &type, dst))
+		string_format(call->result, "%s[%s]=%s", call->parameters[0].string, type, string_cstr(dst));
 	else
-		string_format(call->result, "ERROR: %s not found", call->parameters->parameters[0].string);
+		string_format(call->result, "ERROR: %s not found", call->parameters[0].string);
 }
 
 void command_config_erase(cli_command_call_t *call)
 {
 	assert(inited);
-	assert(call->parameters->count == 1);
+	assert(call->parameter_count == 1);
 
-	if(config_erase(call->parameters->parameters[0].string))
-		string_format(call->result, "erase %s OK", call->parameters->parameters[0].string);
+	if(config_erase(call->parameters[0].string))
+		string_format(call->result, "erase %s OK", call->parameters[0].string);
 	else
-		string_format(call->result, "erase %s not found", call->parameters->parameters[0].string);
+		string_format(call->result, "erase %s not found", call->parameters[0].string);
 }
 
 static void config_dump(cli_command_call_t *call, const char *namespace)
@@ -576,14 +576,14 @@ static void config_dump(cli_command_call_t *call, const char *namespace)
 
 void command_config_dump(cli_command_call_t *call)
 {
-	assert(call->parameters->count == 0);
+	assert(call->parameter_count == 0);
 
 	return(config_dump(call, (const char *)0));
 }
 
 void command_config_show(cli_command_call_t *call)
 {
-	assert(call->parameters->count == 0);
+	assert(call->parameter_count == 0);
 
 	return(config_dump(call, "config"));
 }

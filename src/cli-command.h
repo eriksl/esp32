@@ -29,21 +29,20 @@ typedef struct
 	};
 } cli_parameter_t;
 
-typedef struct
-{
-	unsigned int count;
-	cli_parameter_t parameters[parameters_size];
-} cli_parameters_t;
+_Static_assert(sizeof(cli_parameter_t) == 8);
 
 typedef struct
 {
-	const cli_parameters_t *	parameters;
-	unsigned int				oob_data_length;
-	uint8_t *					oob_data;
-	string_t					result;
-	unsigned int				result_oob_size;
-	unsigned int				result_oob_length;
-	uint8_t *					result_oob;
+	unsigned int		parameter_count;
+	cli_parameter_t		parameters[parameters_size];
+	unsigned int		oob_data_length;
+	uint8_t *			oob_data;
+	string_t			result;
+	unsigned int		result_oob_size;
+	unsigned int		result_oob_length;
+	uint8_t *			result_oob;
 } cli_command_call_t;
+
+_Static_assert(sizeof(cli_command_call_t) == 156);
 
 typedef void(cli_command_function_t)(cli_command_call_t *);

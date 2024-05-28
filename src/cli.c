@@ -75,7 +75,7 @@ typedef struct
 typedef struct
 {
 	unsigned int count;
-	cli_parameter_description_t parameters[parameters_size];
+	cli_parameter_description_t entries[parameters_size];
 } cli_parameters_description_t;
 
 typedef struct
@@ -84,7 +84,7 @@ typedef struct
 	const char *alias;
 	const char *help;
 	cli_command_function_t *function;
-	cli_parameters_description_t parameters;
+	cli_parameters_description_t parameters_description;
 } cli_command_t;
 
 static QueueHandle_t receive_queue_handle;
@@ -126,11 +126,11 @@ static void command_hostname(cli_command_call_t *call)
 	unsigned int ix, length;
 	string_auto(description, 64);
 
-	assert(call->parameters->count < 3);
+	assert(call->parameter_count < 3);
 
-	if(call->parameters->count > 1)
+	if(call->parameter_count > 1)
 	{
-		string_assign_cstr(description, call->parameters->parameters[1].string); // FIXME
+		string_assign_cstr(description, call->parameters[1].string); // FIXME
 
 		length = string_length(description);
 
@@ -141,9 +141,9 @@ static void command_hostname(cli_command_call_t *call)
 		config_set_string("hostname_desc", description);
 	}
 
-	if(call->parameters->count > 0)
+	if(call->parameter_count > 0)
 	{
-		string_assign_cstr(description, call->parameters->parameters[0].string); // FIXME
+		string_assign_cstr(description, call->parameters[0].string); // FIXME
 		config_set_string("hostname", description);
 	}
 
@@ -163,14 +163,14 @@ static void command_hostname(cli_command_call_t *call)
 
 static void command_reset(cli_command_call_t *call)
 {
-	assert(call->parameters->count == 0);
+	assert(call->parameter_count == 0);
 
 	esp_restart();
 }
 
 static void command_info_cli(cli_command_call_t *call)
 {
-	assert(call->parameters->count == 0);
+	assert(call->parameter_count == 0);
 
 	string_format(call->result, "commands received:");
 	string_format_append(call->result, "\n- total: %u", cli_stats_commands_received);
@@ -395,10 +395,10 @@ static void help(cli_command_call_t *call)
 
 	string_format(call->result, "help");
 
-	if(call->parameters->count == 0)
+	if(call->parameter_count == 0)
 		command_name = (const char *)0;
 	else
-		command_name = call->parameters->parameters[0].string;
+		command_name = call->parameters[0].string;
 
 	for(command_index = 0; cli_commands[command_index].name; command_index++)
 	{
@@ -411,9 +411,9 @@ static void help(cli_command_call_t *call)
 				command->alias ? command->alias : "",
 				command->help ? command->help : "");
 
-		for(parameter_index = 0; parameter_index < command->parameters.count; parameter_index++)
+		for(parameter_index = 0; parameter_index < command->parameters_description.count; parameter_index++)
 		{
-			parameter = &command->parameters.parameters[parameter_index];
+			parameter = &command->parameters_description.entries[parameter_index];
 
 			if(parameter->value_required)
 			{
@@ -467,7 +467,6 @@ static void send_queue_pop(cli_buffer_t *cli_buffer)
 static void run_receive_queue(void *)
 {
 	cli_buffer_t						cli_buffer;
-	cli_parameters_t					parameters;
 	unsigned int						oob_data_length;
 	char								*data;
 	uint8_t								*oob_data;
@@ -477,7 +476,7 @@ static void run_receive_queue(void *)
 	unsigned int						parameter_count;
 	const cli_parameter_description_t	*parameter_description;
 	cli_parameter_t						*parameter;
-	static cli_command_call_t			call;
+	cli_command_call_t					call;
 	string_auto(error, 128);
 
 	assert(inited);
@@ -526,7 +525,7 @@ static void run_receive_queue(void *)
 			goto error;
 		}
 
-		count = cli_command->parameters.count;
+		count = cli_command->parameters_description.count;
 
 		if(count > parameters_size)
 			count = parameters_size;
@@ -535,8 +534,8 @@ static void run_receive_queue(void *)
 
 		for(current = 0; current < count; current++)
 		{
-			parameter_description = &cli_command->parameters.parameters[current];
-			parameter = &parameters.parameters[current];
+			parameter_description = &cli_command->parameters_description.entries[current];
+			parameter = &call.parameters[current];
 
 			parameter->type = cli_parameter_none;
 			parameter->has_value = 0;
@@ -729,7 +728,7 @@ static void run_receive_queue(void *)
 			goto error;
 		}
 
-		if(current < cli_command->parameters.count)
+		if(current < cli_command->parameters_description.count)
 		{
 			string_format(error, "ERROR: missing parameters");
 			packet_encapsulate(&cli_buffer, error, 0, (uint8_t *)0);
@@ -745,9 +744,7 @@ static void run_receive_queue(void *)
 			goto error;
 		}
 
-		parameters.count = parameter_count;
-
-		call.parameters =			&parameters;
+		call.parameter_count =		parameter_count;
 		call.oob_data_length =		oob_data_length;
 		call.oob_data =				oob_data;
 		call.result =				string_new(result_size);

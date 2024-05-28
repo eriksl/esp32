@@ -370,7 +370,7 @@ void console_send(const cli_buffer_t *cli_buffer)
 
 void console_command_info(cli_command_call_t *call)
 {
-	assert(call->parameters->count == 0);
+	assert(call->parameter_count == 0);
 
 	string_format(call->result, "entered:");
 	string_format_append(call->result, "\n- lines: %u", console_stats_lines_received);

@@ -171,10 +171,10 @@ void command_log(cli_command_call_t *call)
 	unsigned int entries, amount;
 
 	assert(inited);
-	assert((call->parameters->count == 0) || (call->parameters->count == 1));
+	assert((call->parameter_count == 0) || (call->parameter_count == 1));
 
-	if(call->parameters->count == 1)
-		log_buffer->out = call->parameters->parameters[0].unsigned_int;
+	if(call->parameter_count == 1)
+		log_buffer->out = call->parameters[0].unsigned_int;
 
 	if(log_buffer->in > log_buffer->out)
 		entries = log_buffer->in - log_buffer->out;
