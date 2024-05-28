@@ -475,9 +475,17 @@ static void run_receive_queue(void *)
 	const cli_command_t					*cli_command;
 	unsigned int						parameter_count;
 	const cli_parameter_description_t	*parameter_description;
-	cli_parameter_t						*parameter;
 	cli_command_call_t					call;
+	cli_parameter_t						*parameter;
 	string_auto(error, 128);
+
+	call.parameter_count =		0;
+	call.oob_data_length =		0;
+	call.oob_data =				(uint8_t *)0;
+	call.result =				string_new(result_size);
+	call.result_oob_size =		result_oob_size; // FIXME
+	call.result_oob_length =	0;
+	call.result_oob =			heap_caps_malloc(call.result_oob_size, MALLOC_CAP_SPIRAM); // FIXME
 
 	assert(inited);
 
@@ -747,24 +755,14 @@ static void run_receive_queue(void *)
 		call.parameter_count =		parameter_count;
 		call.oob_data_length =		oob_data_length;
 		call.oob_data =				oob_data;
-		call.result =				string_new(result_size);
-		call.result_oob_size =		result_oob_size;
-		call.result_oob_length =	0;
-		call.result_oob =			heap_caps_malloc(call.result_oob_size, MALLOC_CAP_SPIRAM);
+		call.result_oob_length =	0; // FIXME
+
+		string_clear(call.result);
 
 		cli_command->function(&call);
 
 		packet_encapsulate(&cli_buffer, call.result, call.result_oob_length, call.result_oob);
 		send_queue_push(&cli_buffer);
-
-		string_free(call.result);
-		call.result = (string_t)0;
-
-		if(call.result_oob)
-		{
-			free(call.result_oob);
-			call.result_oob = (uint8_t *)0;
-		}
 
 error:
 		cli_buffer.source = cli_source_none;
