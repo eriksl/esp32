@@ -816,7 +816,7 @@ static void run_send_queue(void *)
 		{
 			case(cli_source_none):
 			{
-				log("cli: invalid source type: %u", cli_buffer.source);
+				log_format("cli: invalid source type: %u", cli_buffer.source);
 				break;
 			}
 

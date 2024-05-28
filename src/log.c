@@ -61,7 +61,7 @@ static void log_clear(void)
 	log_buffer->out = 0;
 }
 
-void log_simple(const char *string)
+void log_cstr(const char *string)
 {
 	if(inited)
 	{
@@ -80,7 +80,7 @@ void log_simple(const char *string)
 	console_write_line(string);
 }
 
-void log_vargs(const char *fmt, ...)
+void log_format(const char *fmt, ...)
 {
 	va_list ap;
 
@@ -126,7 +126,7 @@ static int logging_function(const char *fmt, va_list ap)
 	if((end = strchr(start, '\n')))
 		*end = '\0';
 
-	log_simple(start);
+	log_cstr(start);
 
 	return(strlen(start));
 }

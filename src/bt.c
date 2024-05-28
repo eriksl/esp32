@@ -124,7 +124,7 @@ static int gatt_event(uint16_t connection_handle, uint16_t attribute_handle, str
 
 		default:
 		{
-			log("bt: gatt_event: default callback: 0x%x", context->op);
+			log_format("bt: gatt_event: default callback: 0x%x", context->op);
 			break;
 		}
 	}
@@ -184,7 +184,7 @@ static void server_advertise(void)
 
 static void callback_reset(int reason)
 {
-	log("bt: resetting state, reason: 0x%x", reason);
+	log_format("bt: resetting state, reason: 0x%x", reason);
 }
 
 static void callback_sync(void)
@@ -238,10 +238,10 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 				pkey.passkey = 28022;
 
 				if((rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey)) != 0)
-					log("bt: passkey error: ble_sm_inject_io result: %d", rc);
+					log_format("bt: passkey error: ble_sm_inject_io result: %d", rc);
 			}
 			else
-				log("bt: passkey: unknown op: %d", event->passkey.params.action);
+				log_format("bt: passkey: unknown op: %d", event->passkey.params.action);
 
 			//ble_gap_terminate(event->connect.conn_handle, BLE_ERR_CONN_LIMIT); // FIXME does this need to be here?
 
@@ -282,7 +282,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
 		default:
 		{
-			log("bt: gap event unknown: 0x%x", event->type);
+			log_format("bt: gap event unknown: 0x%x", event->type);
 
 			break;
 		}
@@ -307,7 +307,7 @@ static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *context, void *a
 
 		default:
 		{
-			log("bt: gatt event unknown: 0x%x", context->op);
+			log_format("bt: gatt event unknown: 0x%x", context->op);
 			abort();
 
 			break;
