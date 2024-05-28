@@ -11,7 +11,7 @@
 
 #include <freertos/FreeRTOS.h>
 
-void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob_data_length, uint8_t **oob_data)
+void packet_decapsulate(cli_buffer_t *cli_buffer, string_t *data, unsigned int *oob_data_length, uint8_t **oob_data)
 {
 	static const char *error = "<error>";
 	packet_header_t *packet;
@@ -56,9 +56,8 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob
 		}
 
 		data_length = packet->data_pad_offset - packet->data_offset;
-		assert((*data = heap_caps_malloc(data_length + /* \0 */ 1, MALLOC_CAP_SPIRAM)));
-		memcpy(*data, cli_buffer->data + packet->data_offset, data_length);
-		(*data)[data_length] = '\0';
+		*data = string_new(data_length + 1);
+		string_assign_data(*data, data_length, cli_buffer->data + packet->data_offset);
 
 		if((*oob_data_length = packet->length - packet->oob_data_offset))
 		{
@@ -101,18 +100,16 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob
 
 			*oob_data_length = cli_buffer->length - oob_data_offset;
 
-			assert((*data = heap_caps_malloc(data_pad_offset + /* \0 */ 1, MALLOC_CAP_SPIRAM)));
-			memcpy(*data, &cli_buffer->data[0], data_pad_offset);
-			(*data)[data_pad_offset] = '\0';
+			*data = string_new(data_pad_offset + 1);
+			string_assign_data(*data, data_pad_offset, &cli_buffer->data[0]);
 
 			assert((*oob_data = heap_caps_malloc(*oob_data_length, MALLOC_CAP_SPIRAM)));
 			memcpy(*oob_data, &cli_buffer->data[oob_data_offset], *oob_data_length);
 		}
 		else
 		{
-			assert((*data = heap_caps_malloc(cli_buffer->length + /* \0 */ 1, MALLOC_CAP_SPIRAM)));
-			memcpy(*data, &cli_buffer->data[0], cli_buffer->length);
-			(*data)[cli_buffer->length] = '\0';
+			*data = string_new(cli_buffer->length + 1);
+			string_assign_data(*data, cli_buffer->length, &cli_buffer->data[0]);
 
 			*oob_data_length = 0;
 			*oob_data = (uint8_t *)0;
@@ -128,10 +125,8 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob
 
 error:
 	data_length = strlen(error);
-	*data = heap_caps_malloc(data_length + 1, MALLOC_CAP_SPIRAM);
-	assert(*data);
-	memcpy(*data, error, data_length);
-	(*data)[data_length] = '\0';
+	*data = string_new(data_length + 1);
+	string_assign_cstr(*data, error);
 	*oob_data = (uint8_t *)0;
 	*oob_data_length = 0;
 }

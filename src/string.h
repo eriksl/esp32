@@ -31,7 +31,6 @@ void string_format(string_t dst, const char *fmt, ...) __attribute__ ((format (p
 void string_format_append(string_t dst, const char *fmt, ...) __attribute__ ((format (printf, 2, 3)));;;
 char string_at(string_t dst, unsigned int offset);
 const char *string_cstr(const string_t src);
+char *string_cstr_nonconst(string_t src);
 const uint8_t *string_data(const string_t src);
 void string_to_cstr(const string_t src, unsigned int dst_size, char *dst);
-
-

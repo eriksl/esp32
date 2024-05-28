@@ -12,5 +12,5 @@
 
 bool packet_is_packet(unsigned int length, const void *buffer);
 unsigned int packet_length(unsigned int length, const void *buffer);
-void packet_decapsulate(cli_buffer_t *cli_buffer, char **data, unsigned int *oob_data_length, uint8_t **oob_data);
+void packet_decapsulate(cli_buffer_t *cli_buffer, string_t *data, unsigned int *oob_data_length, uint8_t **oob_data);
 void packet_encapsulate(cli_buffer_t *cli_buffer, const string_t data, const string_t oob_data);

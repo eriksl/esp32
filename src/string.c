@@ -342,6 +342,20 @@ const char *string_cstr(const string_t src)
 	return(_src->data);
 }
 
+char *string_cstr_nonconst(string_t src)
+{
+	_string_t *_src = (_string_t *)src;
+
+	assert(_src->magic_word == string_magic_word);
+	assert(_src->length < _src->size);
+	assert(_src->size > 0);
+	assert(_src->data[_src->length] == '\0');
+	assert(!_src->header_const);
+	assert(!_src->data_const);
+
+	return(_src->data);
+}
+
 const uint8_t *string_data(const string_t src)
 {
 	_string_t *_src = (_string_t *)src;

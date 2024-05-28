@@ -467,8 +467,8 @@ static void send_queue_pop(cli_buffer_t *cli_buffer)
 static void run_receive_queue(void *)
 {
 	cli_buffer_t						cli_buffer;
+	string_t							data;
 	unsigned int						oob_data_length;
-	char								*data;
 	uint8_t								*oob_data;
 	unsigned int						count, current, ix;
 	char								*token, *saveptr;
@@ -504,7 +504,7 @@ static void run_receive_queue(void *)
 		cli_buffer.data_from_malloc = 0;
 
 		saveptr = (char *)0;
-		if(!(token = strtok_r((char *)data, " \r\n", &saveptr)))
+		if(!(token = strtok_r(string_cstr_nonconst(data), " \r\n", &saveptr))) // FIXME strok in string_t
 		{
 			string_format(error, "ERROR: empty line");
 			packet_encapsulate(&cli_buffer, error, (string_t)0);
@@ -770,8 +770,8 @@ error:
 
 		if(data)
 		{
-			free(data);
-			data = (char *)0;
+			string_free(data);
+			data = (string_t)0;
 		}
 
 		if(oob_data)
