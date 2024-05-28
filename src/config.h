@@ -3,11 +3,11 @@
 void config_init(void);
 bool config_get_uint(const char *key, uint32_t *value);
 bool config_get_int(const char *key, int32_t *value);
-bool config_get_string(const char *key, unsigned int string_size, char *string);
+bool config_get_string(const char *key, string_t string);
 
 void config_set_uint(const char *key, uint32_t value);
 void config_set_int(const char *key, int32_t value);
-void config_set_string(const char *key, const char *value);
+void config_set_string(const char *key, string_t value);
 
 bool config_erase(const char *key);
 

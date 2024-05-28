@@ -1,7 +1,12 @@
-#include <string.h>
+#include <string.h> // FIXME
 #include <stdint.h>
 #include <stdbool.h>
 
+#include <esp_log.h>
+#include <esp_timer.h>
+#include <esp_random.h>
+
+#include "string.h"
 #include "cli-command.h"
 #include "cli.h"
 #include "log.h"
@@ -9,10 +14,6 @@
 #include "util.h"
 
 #include <freertos/FreeRTOS.h>
-
-#include <esp_log.h>
-#include <esp_timer.h>
-#include <esp_random.h>
 
 enum
 {
@@ -153,24 +154,21 @@ void log_init(void)
 
 void command_info_log(cli_command_call_t *call)
 {
-	unsigned int offset;
-
 	assert(inited);
 
-	offset = snprintf(call->result, call->result_size, "logging");
-
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  buffer: 0x%08lx", (uint32_t)log_buffer);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  magic word: %08lx", log_buffer->magic_word);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  random salt: %08lx", log_buffer->random_salt);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  magic word salted: %08lx", log_buffer->magic_word_salted);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  entries: %u", log_buffer->entries);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  last entry added: %u", log_buffer->in);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  last entry viewed: %u", log_buffer->out);
+	string_format(call->result, "logging");
+	string_format_append(call->result, "\n  buffer: 0x%08lx", (uint32_t)log_buffer);
+	string_format_append(call->result, "\n  magic word: %08lx", log_buffer->magic_word);
+	string_format_append(call->result, "\n  random salt: %08lx", log_buffer->random_salt);
+	string_format_append(call->result, "\n  magic word salted: %08lx", log_buffer->magic_word_salted);
+	string_format_append(call->result, "\n  entries: %u", log_buffer->entries);
+	string_format_append(call->result, "\n  last entry added: %u", log_buffer->in);
+	string_format_append(call->result, "\n  last entry viewed: %u", log_buffer->out);
 }
 
 void command_log(cli_command_call_t *call)
 {
-	unsigned int entries, offset, amount;
+	unsigned int entries, amount;
 
 	assert(inited);
 	assert((call->parameters->count == 0) || (call->parameters->count == 1));
@@ -186,12 +184,12 @@ void command_log(cli_command_call_t *call)
 	if(entries == log_buffer_entries)
 		entries = 0;
 
-	offset = snprintf(call->result, call->result_size, "%u entries:", entries);
+	string_format(call->result, "%u entries:", entries);
 	amount = 0;
 
-	for(amount = 0; (amount < 24) && (amount < entries) && (offset < call->result_size); amount++)
+	for(amount = 0; (amount < 24) && (amount < entries); amount++)
 	{
-		offset += snprintf(call->result + offset, call->result_size - offset, "\n%3d %llu %s",
+		string_format_append(call->result, "\n%3d %llu %s",
 				log_buffer->out,
 				log_buffer->entry[log_buffer->out].timestamp,
 				log_buffer->entry[log_buffer->out].data);
@@ -201,19 +199,16 @@ void command_log(cli_command_call_t *call)
 	}
 
 	if(amount != entries)
-		snprintf(call->result + offset, call->result_size - offset, "\n[%u more]", entries - amount);
+		string_format_append(call->result, "\n[%u more]", entries - amount);
 }
 
 void command_log_clear(cli_command_call_t *call)
 {
-	unsigned int offset;
-
 	assert(inited);
 
 	command_log(call);
 
 	log_clear();
 
-	offset = strlen(call->result);
-	snprintf(call->result + offset, call->result_size - offset, "\nlog cleared");
+	string_format_append(call->result, "\nlog cleared");
 }

@@ -1,6 +1,8 @@
 #include <stdbool.h>
-#include <string.h>
+#include <stdint.h>
+#include <string.h> // FIXME
 
+#include "string.h"
 #include "cli-command.h"
 #include "config.h"
 #include "log.h"
@@ -213,12 +215,14 @@ static bool get_value_as_integer(const char *namespace, const char *key, const n
 	return(true);
 }
 
-static bool get_value_as_string(const char *namespace, const char *key, const nvs_entry_info_t *their_info, const char **type, unsigned int string_size, char *string)
+static bool get_value_as_string(const char *namespace, const char *key, const nvs_entry_info_t *their_info, const char **type, string_t dst)
 {
 	esp_err_t rv;
 	nvs_entry_info_t our_info;
 	const nvs_entry_info_t *info;
 	nvs_handle_t handle;
+
+	assert(dst);
 
 	if(!namespace)
 		namespace = "config";
@@ -247,7 +251,7 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 			if(type)
 				*type = "uint8";
 			util_abort_on_esp_err("nvs_get_u8", nvs_get_u8(handle, info->key, &raw_value));
-			snprintf(string, string_size, "%u (%#02x)", raw_value, raw_value);
+			string_format(dst, "%u (%#02x)", raw_value, raw_value);
 			break;
 		}
 		case(NVS_TYPE_I8):
@@ -256,7 +260,7 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 			if(type)
 				*type = "int8";
 			util_abort_on_esp_err("nvs_get_i8", nvs_get_i8(handle, info->key, &raw_value));
-			snprintf(string, string_size, "%d (%#02x)", raw_value, raw_value);
+			string_format(dst, "%d (%#02x)", raw_value, raw_value);
 			break;
 		}
 		case(NVS_TYPE_U16):
@@ -265,7 +269,7 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 			if(type)
 				*type = "uint16";
 			util_abort_on_esp_err("nvs_get_u16", nvs_get_u16(handle, info->key, &raw_value));
-			snprintf(string, string_size, "%u (%#04x)", raw_value, raw_value);
+			string_format(dst, "%u (%#04x)", raw_value, raw_value);
 			break;
 		}
 		case(NVS_TYPE_I16):
@@ -274,7 +278,7 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 			if(type)
 				*type = "int16";
 			util_abort_on_esp_err("nvs_get_i16", nvs_get_i16(handle, info->key, &raw_value));
-			snprintf(string, string_size, "%d (%#04x)", raw_value, raw_value);
+			string_format(dst, "%d (%#04x)", raw_value, raw_value);
 			break;
 		}
 		case(NVS_TYPE_U32):
@@ -283,7 +287,7 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 			if(type)
 				*type = "uint32";
 			util_abort_on_esp_err("nvs_get_u32", nvs_get_u32(handle, info->key, &raw_value));
-			snprintf(string, string_size, "%lu (%#08lx)", raw_value, raw_value);
+			string_format(dst, "%lu (%#08lx)", raw_value, raw_value);
 			break;
 		}
 		case(NVS_TYPE_I32):
@@ -292,7 +296,7 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 			if(type)
 				*type = "int32";
 			util_abort_on_esp_err("nvs_get_i32", nvs_get_i32(handle, info->key, &raw_value));
-			snprintf(string, string_size, "%ld (%#08lx)", raw_value, raw_value);
+			string_format(dst, "%ld (%#08lx)", raw_value, raw_value);
 			break;
 		}
 		case(NVS_TYPE_U64):
@@ -301,7 +305,7 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 			if(type)
 				*type = "uint64";
 			util_abort_on_esp_err("nvs_get_u64", nvs_get_u64(handle, info->key, &raw_value));
-			snprintf(string, string_size, "%llu (%#016llx)", raw_value, raw_value);
+			string_format(dst, "%llu (%#016llx)", raw_value, raw_value);
 			break;
 		}
 		case(NVS_TYPE_I64):
@@ -310,7 +314,7 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 			if(type)
 				*type = "int64";
 			util_abort_on_esp_err("nvs_get_i64", nvs_get_i64(handle, info->key, &raw_value));
-			snprintf(string, string_size, "%lld (%#016llx)", raw_value, raw_value);
+			string_format(dst, "%lld (%#016llx)", raw_value, raw_value);
 			break;
 		}
 		case(NVS_TYPE_STR):
@@ -329,13 +333,13 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 			else
 				util_abort_on_esp_err("nvs_get_str", rv);
 
-			snprintf(string, string_size, "%.*s", length, raw_value);
+			string_format(dst, "%.*s", length, raw_value);
 			break;
 		}
 		case(NVS_TYPE_BLOB):
 		{
 			char raw_value[32];
-			unsigned length, ix, offset;
+			unsigned length, ix;
 
 			if(type)
 				*type = "blob";
@@ -348,9 +352,9 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 			else
 				util_abort_on_esp_err("nvs_get_blob", rv);
 
-			offset = snprintf(string, string_size, "[%d]", length);
+			string_format(dst, "[%d]", length);
 			for(ix = 0; ix < length; ix++)
-				offset += snprintf(string + offset, string_size - offset, " %02x", (uint8_t)raw_value[ix]);
+				string_format_append(dst, " %02x", (uint8_t)raw_value[ix]);
 			break;
 		}
 		default:
@@ -398,19 +402,12 @@ bool config_get_uint(const char *key, uint32_t *value)
 	return(true);
 }
 
-bool config_get_string(const char *key, unsigned int string_size, char *string)
+bool config_get_string(const char *key, string_t dst)
 {
 	assert(inited);
-	assert(string);
-	assert(string_size);
+	assert(dst);
 
-	if(!get_value_as_string((const char *)0, key, (nvs_entry_info_t *)0, (const char **)0, string_size, string))
-	{
-		string[0] = '\0';
-		return(false);
-	}
-
-	return(true);
+	return(get_value_as_string((const char *)0, key, (nvs_entry_info_t *)0, (const char **)0, dst));
 }
 
 void config_set_uint(const char *key, uint32_t value)
@@ -433,12 +430,12 @@ void config_set_int(const char *key, int32_t value)
 	nvs_close(handle);
 }
 
-void config_set_string(const char *key, const char *value)
+void config_set_string(const char *key, string_t value)
 {
 	nvs_handle_t handle;
 
 	util_abort_on_esp_err("nvs_open", nvs_open("config", NVS_READWRITE, &handle));
-	util_abort_on_esp_err("nvs_set_str", nvs_set_str(handle, key, value));
+	util_abort_on_esp_err("nvs_set_str", nvs_set_str(handle, key, string_cstr(value)));
 	util_abort_on_esp_err("nvs_commit", nvs_commit(handle));
 	nvs_close(handle);
 }
@@ -465,7 +462,6 @@ bool config_erase(const char *key)
 
 void command_info_config(cli_command_call_t *call)
 {
-	unsigned int offset;
 	nvs_stats_t stats;
 
 	assert(inited);
@@ -473,13 +469,13 @@ void command_info_config(cli_command_call_t *call)
 
 	util_abort_on_esp_err("nvs_get_stats", nvs_get_stats((const char *)0, &stats));
 
-	offset = snprintf(call->result, call->result_size, "CONFIG INFO");
-	offset += snprintf(call->result + offset, call->result_size - offset, "\nentries:");
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n- used: %u", stats.used_entries);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n- free: %u", stats.free_entries);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n- available: %u", stats.available_entries);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n- total: %u", stats.total_entries);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n- namespaces: %u", stats.namespace_count);
+	string_format(call->result, "CONFIG INFO");
+	string_format_append(call->result, "\nentries:");
+	string_format_append(call->result, "\n- used: %u", stats.used_entries);
+	string_format_append(call->result, "\n- free: %u", stats.free_entries);
+	string_format_append(call->result, "\n- available: %u", stats.available_entries);
+	string_format_append(call->result, "\n- total: %u", stats.total_entries);
+	string_format_append(call->result, "\n- namespaces: %u", stats.namespace_count);
 }
 
 void command_config_set_uint(cli_command_call_t *call)
@@ -492,9 +488,9 @@ void command_config_set_uint(cli_command_call_t *call)
 	config_set_uint(call->parameters->parameters[0].string, call->parameters->parameters[1].unsigned_int);
 
 	if(get_value_as_integer("config", call->parameters->parameters[0].string, (const nvs_entry_info_t *)0, &type, &value))
-		snprintf(call->result, call->result_size, "%s[%s]=%lld", call->parameters->parameters[0].string, type, value);
+		string_format(call->result, "%s[%s]=%lld", call->parameters->parameters[0].string, type, value);
 	else
-		snprintf(call->result, call->result_size, "ERROR: %s not found", call->parameters->parameters[0].string);
+		string_format(call->result, "ERROR: %s not found", call->parameters->parameters[0].string);
 }
 
 void command_config_set_int(cli_command_call_t *call)
@@ -507,25 +503,26 @@ void command_config_set_int(cli_command_call_t *call)
 	config_set_int(call->parameters->parameters[0].string, call->parameters->parameters[1].signed_int);
 
 	if(get_value_as_integer("config", call->parameters->parameters[0].string, (const nvs_entry_info_t *)0, &type, &value))
-		snprintf(call->result, call->result_size, "%s[%s]=%lld", call->parameters->parameters[0].string, type, value);
+		string_format(call->result, "%s[%s]=%lld", call->parameters->parameters[0].string, type, value);
 	else
-		snprintf(call->result, call->result_size, "ERROR: %s not found", call->parameters->parameters[0].string);
+		string_format(call->result, "ERROR: %s not found", call->parameters->parameters[0].string);
 }
 
 void command_config_set_string(cli_command_call_t *call)
 {
-	char value[64];
+	string_auto(dst, 64);
 	const char *type;
 
 	assert(inited);
 	assert(call->parameters->count == 2);
 
-	config_set_string(call->parameters->parameters[0].string, call->parameters->parameters[1].string);
+	string_assign_cstr(dst, call->parameters->parameters[1].string); // FIXME
+	config_set_string(call->parameters->parameters[0].string, dst);
 
-	if(get_value_as_string((const char *)0, call->parameters->parameters[0].string, (nvs_entry_info_t *)0, &type, sizeof(value), value))
-		snprintf(call->result, call->result_size, "%s[%s]=%s", call->parameters->parameters[0].string, type, value);
+	if(get_value_as_string((const char *)0, call->parameters->parameters[0].string, (nvs_entry_info_t *)0, &type, dst))
+		string_format(call->result, "%s[%s]=%s", call->parameters->parameters[0].string, type, string_cstr(dst));
 	else
-		snprintf(call->result, call->result_size, "ERROR: %s not found", call->parameters->parameters[0].string);
+		string_format(call->result, "ERROR: %s not found", call->parameters->parameters[0].string);
 }
 
 void command_config_erase(cli_command_call_t *call)
@@ -534,9 +531,9 @@ void command_config_erase(cli_command_call_t *call)
 	assert(call->parameters->count == 1);
 
 	if(config_erase(call->parameters->parameters[0].string))
-		snprintf(call->result, call->result_size, "erase %s OK", call->parameters->parameters[0].string);
+		string_format(call->result, "erase %s OK", call->parameters->parameters[0].string);
 	else
-		snprintf(call->result, call->result_size, "erase %s not found", call->parameters->parameters[0].string);
+		string_format(call->result, "erase %s not found", call->parameters->parameters[0].string);
 }
 
 static void config_dump(cli_command_call_t *call, const char *namespace)
@@ -544,13 +541,12 @@ static void config_dump(cli_command_call_t *call, const char *namespace)
 	int rv;
 	nvs_iterator_t iterator;
 	nvs_entry_info_t info;
-	unsigned int offset;
-	char value[64];
+	string_auto(dst, 64);
 	const char *type;
 
 	assert(inited);
 
-	offset = snprintf(call->result, call->result_size, "SHOW CONFIG namespace %s", namespace ? namespace : "ALL");
+	string_format(call->result, "SHOW CONFIG namespace %s", namespace ? namespace : "ALL");
 
 	if((rv = nvs_entry_find("nvs", namespace, NVS_TYPE_ANY, &iterator)) == ESP_ERR_NVS_NOT_FOUND)
 		return;
@@ -561,13 +557,13 @@ static void config_dump(cli_command_call_t *call, const char *namespace)
 	{
 		util_abort_on_esp_err("nvs_entry_info", nvs_entry_info(iterator, &info));
 
-		if(!get_value_as_string(info.namespace_name, info.key, &info, &type, sizeof(value), value))
-			snprintf(value, sizeof(value), "%s", "<not found>");
+		if(!get_value_as_string(info.namespace_name, info.key, &info, &type, dst))
+			string_assign_cstr(dst, "<not found");
 
 		if(namespace)
-			offset += snprintf(call->result + offset, call->result_size - offset, "\n- %-7s %-14s %s", type, info.key, value);
+			string_format_append(call->result, "\n- %-7s %-14s %s", type, info.key, string_cstr(dst));
 		else
-			offset += snprintf(call->result + offset, call->result_size - offset, "\n- %-12s %-7s %-14s %s", info.namespace_name, type, info.key, value);
+			string_format_append(call->result, "\n- %-12s %-7s %-14s %s", info.namespace_name, type, info.key, string_cstr(dst));
 
 		if((rv = nvs_entry_next(&iterator)) == ESP_ERR_NVS_NOT_FOUND)
 			break;

@@ -1,7 +1,8 @@
-#include <string.h>
+#include <string.h> // FIXME
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "string.h"
 #include "cli-command.h"
 #include "otacli.h"
 #include "log.h"
@@ -51,19 +52,19 @@ void command_ota_start(cli_command_call_t *call)
 
 	if(!(partition = esp_ota_get_next_update_partition((const esp_partition_t *)0)))
 	{
-		snprintf(call->result, call->result_size, "ERROR: no valid OTA partition");
+		string_format(call->result, "ERROR: no valid OTA partition");
 		return;
 	}
 
 	if(partition->type != ESP_PARTITION_TYPE_APP)
 	{
-		snprintf(call->result, call->result_size, "ERROR: partition %s is not APP", partition->label);
+		string_format(call->result, "ERROR: partition %s is not APP", partition->label);
 		return;
 	}
 
 	if(length > partition->size)
 	{
-		snprintf(call->result, call->result_size, "ERROR: ota partition too small for image: %u vs. %lu", length, partition->size);
+		string_format(call->result, "ERROR: ota partition too small for image: %u vs. %lu", length, partition->size);
 		return;
 	}
 
@@ -75,7 +76,7 @@ void command_ota_start(cli_command_call_t *call)
 
 	if((rv = esp_ota_begin(partition, length, &ota_handle)))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_ota_begin: %s (0x%x)", esp_err_to_name(rv), rv);
+		string_format(call->result, "ERROR: esp_ota_begin: %s (0x%x)", esp_err_to_name(rv), rv);
 		return(ota_abort());
 	}
 
@@ -88,7 +89,7 @@ void command_ota_start(cli_command_call_t *call)
 
 	ota_length = length;
 
-	snprintf(call->result, call->result_size, "OK start write ota partition %s %u", partition->label, util_partition_to_slot(partition));
+	string_format(call->result, "OK start write ota partition %s %u", partition->label, util_partition_to_slot(partition));
 }
 
 void command_ota_write(cli_command_call_t *call)
@@ -103,38 +104,38 @@ void command_ota_write(cli_command_call_t *call)
 
 	if(!ota_sha256_ctx_active)
 	{
-		snprintf(call->result, call->result_size, "ERROR: sha256 context not active");
+		string_format(call->result, "ERROR: sha256 context not active");
 		return(ota_abort());
 	}
 
 	if(!ota_handle_active)
 	{
-		snprintf(call->result, call->result_size, "ERROR: ota write context not active");
+		string_format(call->result, "ERROR: ota write context not active");
 		return(ota_abort());
 	}
 
 	if(call->oob_data_length != length)
 	{
-		snprintf(call->result, call->result_size, "ERROR: lengths do not match (%u vs. %u)", length, call->oob_data_length);
+		string_format(call->result, "ERROR: lengths do not match (%u vs. %u)", length, call->oob_data_length);
 		return(ota_abort());
 	}
 
 	if(checksum_chunk && (length != 32))
 	{
-		snprintf(call->result, call->result_size, "ERROR: invalid checksum chunk length (%u vs. %u)", length, 32);
+		string_format(call->result, "ERROR: invalid checksum chunk length (%u vs. %u)", length, 32);
 		return(ota_abort());
 	}
 
 	if((rv = esp_ota_write(ota_handle, call->oob_data, call->oob_data_length)))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_ota_write returned error %u", rv);
+		string_format(call->result, "ERROR: esp_ota_write returned error %u", rv);
 		return(ota_abort());
 	}
 
 	if(!checksum_chunk)
 		mbedtls_sha256_update(&ota_sha256_ctx, call->oob_data, call->oob_data_length);
 
-	snprintf(call->result, call->result_size, "OK write ota");
+	string_format(call->result, "OK write ota");
 }
 
 void command_ota_finish(cli_command_call_t *call)
@@ -147,13 +148,13 @@ void command_ota_finish(cli_command_call_t *call)
 
 	if(!ota_sha256_ctx_active)
 	{
-		snprintf(call->result, call->result_size, "ERROR: sha256 context not active");
+		string_format(call->result, "ERROR: sha256 context not active");
 		return(ota_abort());
 	}
 
 	if(!ota_handle_active)
 	{
-		snprintf(call->result, call->result_size, "ERROR: ota write context not active");
+		string_format(call->result, "ERROR: ota write context not active");
 		return(ota_abort());
 	}
 
@@ -164,13 +165,13 @@ void command_ota_finish(cli_command_call_t *call)
 
 	if((rv = esp_ota_end(ota_handle)))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_ota_end failed: %s (0x%x)", esp_err_to_name(rv), rv);
+		string_format(call->result, "ERROR: esp_ota_end failed: %s (0x%x)", esp_err_to_name(rv), rv);
 		return(ota_abort());
 	}
 
 	ota_handle_active = false;
 
-	snprintf(call->result, call->result_size, "OK finish ota, checksum: %s", ota_sha256_hash_text);
+	string_format(call->result, "OK finish ota, checksum: %s", ota_sha256_hash_text);
 }
 
 void command_ota_commit(cli_command_call_t *call)
@@ -189,13 +190,13 @@ void command_ota_commit(cli_command_call_t *call)
 
 	if(!ota_partition)
 	{
-		snprintf(call->result, call->result_size, "ERROR: commit: no active OTA partition");
+		string_format(call->result, "ERROR: commit: no active OTA partition");
 		return;
 	}
 
 	if((rv = esp_partition_get_sha256(ota_partition, local_sha256_hash)))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_partition_get_sha256 failed: %u", rv);
+		string_format(call->result, "ERROR: esp_partition_get_sha256 failed: %u", rv);
 		return;
 	}
 
@@ -203,13 +204,13 @@ void command_ota_commit(cli_command_call_t *call)
 
 	if(strcmp(local_sha256_hash_text, remote_sha256_hash_text))
 	{
-		snprintf(call->result, call->result_size, "ERROR: checksum mismatch: %s vs. %s", remote_sha256_hash_text, local_sha256_hash_text);
+		string_format(call->result, "ERROR: checksum mismatch: %s vs. %s", remote_sha256_hash_text, local_sha256_hash_text);
 		return;
 	}
 
 	if((rv = esp_ota_set_boot_partition(ota_partition)))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_ota_set_boot_partition failed: %u", rv);
+		string_format(call->result, "ERROR: esp_ota_set_boot_partition failed: %u", rv);
 		return;
 	}
 
@@ -217,7 +218,7 @@ void command_ota_commit(cli_command_call_t *call)
 
 	if(!(boot_partition = esp_ota_get_boot_partition()))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_ota_get_boot_partition");
+		string_format(call->result, "ERROR: esp_ota_get_boot_partition");
 		return;
 	}
 
@@ -226,11 +227,11 @@ void command_ota_commit(cli_command_call_t *call)
 
 	if((rv = esp_image_verify(ESP_IMAGE_VERIFY, &partition_pos, &image_metadata)))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_image_verify failed: %u", rv);
+		string_format(call->result, "ERROR: esp_image_verify failed: %u", rv);
 		return;
 	}
 
-	snprintf(call->result, call->result_size, "OK commit ota");
+	string_format(call->result, "OK commit ota");
 }
 
 void command_ota_confirm(cli_command_call_t *call)
@@ -245,35 +246,35 @@ void command_ota_confirm(cli_command_call_t *call)
 
 	if(!(running_partition = esp_ota_get_running_partition()))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_ota_get_running_partition failed");
+		string_format(call->result, "ERROR: esp_ota_get_running_partition failed");
 		return;
 	}
 
 	if(util_partition_to_slot(running_partition) != slot)
 	{
-		snprintf(call->result, call->result_size, "ERROR: address of running slot (%u) not equal to updated slot (%u), boot failed",
+		string_format(call->result, "ERROR: address of running slot (%u) not equal to updated slot (%u), boot failed",
 				util_partition_to_slot(running_partition), slot);
 		return;
 	}
 
 	if((rv = esp_ota_mark_app_valid_cancel_rollback()))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_ota_mark_app_valid_cancel_rollback failed: %u", rv);
+		string_format(call->result, "ERROR: esp_ota_mark_app_valid_cancel_rollback failed: %u", rv);
 		return;
 	}
 
 	if(!(boot_partition = esp_ota_get_boot_partition()))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_ota_get_boot_partition failed");
+		string_format(call->result, "ERROR: esp_ota_get_boot_partition failed");
 		return;
 	}
 
 	if(util_partition_to_slot(boot_partition) != slot)
 	{
-		snprintf(call->result, call->result_size, "ERROR: address of boot slot (%u) not equal to updated slot (%u), confirm failed",
+		string_format(call->result, "ERROR: address of boot slot (%u) not equal to updated slot (%u), confirm failed",
 				util_partition_to_slot(boot_partition), slot);
 		return;
 	}
 
-	snprintf(call->result, call->result_size, "OK confirm ota");
+	string_format(call->result, "OK confirm ota");
 }

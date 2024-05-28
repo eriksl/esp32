@@ -1,7 +1,8 @@
 #include <stdint.h>
 #include <stdbool.h>
-#include <string.h>
+#include <string.h> // FIXME
 
+#include "string.h"
 #include "cli-command.h"
 #include "cli.h"
 #include "packet.h"
@@ -135,7 +136,7 @@ error:
 	*oob_data_length = 0;
 }
 
-void packet_encapsulate(cli_buffer_t *cli_buffer, const char *data, unsigned int oob_data_length, const uint8_t *oob_data)
+void packet_encapsulate(cli_buffer_t *cli_buffer, string_t data, unsigned int oob_data_length, const uint8_t *oob_data)
 {
 	packet_header_t *packet;
 	unsigned int data_length;
@@ -147,7 +148,7 @@ void packet_encapsulate(cli_buffer_t *cli_buffer, const char *data, unsigned int
 	assert(!cli_buffer->data);
 	assert(data);
 
-	data_length = strlen((const char *)data);
+	data_length = string_length(data);
 
 	if(cli_buffer->packetised)
 	{
@@ -159,7 +160,7 @@ void packet_encapsulate(cli_buffer_t *cli_buffer, const char *data, unsigned int
 		cli_buffer->length = oob_data_offset + oob_data_length;
 		cli_buffer->data_from_malloc = 1;
 		cli_buffer->data = heap_caps_malloc(cli_buffer->length, MALLOC_CAP_SPIRAM);
-		memcpy(&cli_buffer->data[data_offset], data, data_length);
+		memcpy(&cli_buffer->data[data_offset], string_cstr(data), data_length);
 		cli_buffer->data[data_offset + data_length] = '\n';
 		memset(&cli_buffer->data[data_pad_offset], 0, oob_data_offset - data_pad_offset);
 		memcpy(&cli_buffer->data[oob_data_offset], oob_data, oob_data_length);
@@ -207,7 +208,7 @@ void packet_encapsulate(cli_buffer_t *cli_buffer, const char *data, unsigned int
 		cli_buffer->length = oob_data_offset + oob_data_length;
 		cli_buffer->data_from_malloc = 1;
 		cli_buffer->data = heap_caps_malloc(cli_buffer->length, MALLOC_CAP_SPIRAM);
-		memcpy(cli_buffer->data, data, data_length);
+		memcpy(cli_buffer->data, string_cstr(data), data_length);
 		cli_buffer->data[data_length] = '\n';
 		memset(&cli_buffer->data[data_pad_offset], 0, oob_data_offset - data_pad_offset);
 		memcpy(&cli_buffer->data[oob_data_offset], oob_data, oob_data_length);

@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "string.h"
 #include "cli-command.h"
 #include "flash.h"
 #include "log.h"
@@ -22,20 +23,20 @@ void command_flash_bench(cli_command_call_t *call)
 
 	if((length = call->parameters->parameters[0].unsigned_int) > 4096)
 	{
-		snprintf(call->result, call->result_size, "ERROR: flash-bench: length %d should be <= 4096", length);
+		string_format(call->result, "ERROR: flash-bench: length %d should be <= 4096", length);
 		return;
 	}
 
 	memset(call->result_oob, 0, length);
 	call->result_oob_length = length;
 
-	snprintf(call->result, call->result_size, "OK flash-bench: sending %u bytes", length);
+	string_format(call->result, "OK flash-bench: sending %u bytes", length);
 }
 
 void command_flash_checksum(cli_command_call_t *call)
 {
 	int rv;
-	unsigned int start_sector, offset, length, current;
+	unsigned int start_sector, length, current;
 	mbedtls_sha1_context ctx;
 	uint8_t output[20];
 
@@ -52,32 +53,25 @@ void command_flash_checksum(cli_command_call_t *call)
 	{
 		if((rv = esp_flash_read((esp_flash_t *)0, call->result_oob, current, 4096)) != 0)
 		{
-			snprintf(call->result, call->result_size, "ERROR: esp_flash_read from %u returned error %d", start_sector, rv);
+			string_format(call->result, "ERROR: esp_flash_read from %u returned error %d", start_sector, rv);
 			return;
 		}
 
 		if((rv = mbedtls_sha1_update(&ctx, call->result_oob, 4096)) < 0)
 		{
-			snprintf(call->result, call->result_size, "ERROR: mbedtls_sha1_update on sector %u returned error %d", start_sector, rv);
+			string_format(call->result, "ERROR: mbedtls_sha1_update on sector %u returned error %d", start_sector, rv);
 			return;
 		}
 	}
 
 	if((rv = mbedtls_sha1_finish(&ctx, output)) < 0)
 	{
-		snprintf(call->result, call->result_size, "ERROR: mbedtls_sha1_finish returned error %d", rv);
+		string_format(call->result, "ERROR: mbedtls_sha1_finish returned error %d", rv);
 		return;
 	}
 
-	snprintf(call->result, call->result_size, "OK flash-checksum: checksummed %u sectors from sector %u, checksum: ", current - start_sector, start_sector);
-
-	offset = strlen(call->result);
-
-	for(current = 0; current < sizeof(output); current++)
-	{
-		length = snprintf(call->result + offset, call->result_size - offset, "%02x", output[current]);
-		offset += length;
-	}
+	string_format(call->result, "OK flash-checksum: checksummed %u sectors from sector %u, checksum: ", current - start_sector, start_sector);
+	string_format_append(call->result, "%02x", output[current]);
 }
 
 void command_flash_info(cli_command_call_t *call)
@@ -95,25 +89,25 @@ void command_flash_info(cli_command_call_t *call)
 
 	if(!(boot = esp_ota_get_boot_partition()))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_ota_get_boot_partition failed");
+		string_format(call->result, "ERROR: esp_ota_get_boot_partition failed");
 		return;
 	}
 
 	if(!(running = esp_ota_get_running_partition()))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_ota_get_running_partition failed");
+		string_format(call->result, "ERROR: esp_ota_get_running_partition failed");
 		return;
 	}
 
 	if(!(next = esp_ota_get_next_update_partition((const esp_partition_t *)0)))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_ota_get_next_update_partition failed");
+		string_format(call->result, "ERROR: esp_ota_get_next_update_partition failed");
 		return;
 	}
 
 	if(!(partition_iterator = esp_partition_find(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, (const char *)0)))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_partition_find failed");
+		string_format(call->result, "ERROR: esp_partition_find failed");
 		return;
 	}
 
@@ -121,7 +115,7 @@ void command_flash_info(cli_command_call_t *call)
 	{
 		if(!(partition = esp_partition_get(partition_iterator)))
 		{
-			snprintf(call->result, call->result_size, "ERROR: esp_partition_get failed");
+			string_format(call->result, "ERROR: esp_partition_get failed");
 			return;
 		}
 
@@ -130,12 +124,7 @@ void command_flash_info(cli_command_call_t *call)
 
 	esp_partition_iterator_release(partition_iterator);
 
-	snprintf(call->result, call->result_size, "OK esp32 ota available, "
-			"slots: %u, "
-			"current: %u, "
-			"next: %u, "
-			"sectors: [ %u, %u ], "
-			"display: %ux%upx@%u\n",
+	string_format(call->result, "OK esp32 ota available, slots: %u, current: %u, next: %u, sectors: [ %u, %u ], display: %ux%upx@%u\n",
 			esp_ota_get_app_partition_count(),
 			util_partition_to_slot(running),
 			util_partition_to_slot(next),
@@ -155,12 +144,12 @@ void command_flash_read(cli_command_call_t *call)
 
 	if((rv = esp_flash_read((esp_flash_t *)0, call->result_oob, sector * 4096, 4096)))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_flash_read from %u returned error 0x%x", sector, rv);
+		string_format(call->result, "ERROR: esp_flash_read from %u returned error 0x%x", sector, rv);
 		return;
 	}
 
 	call->result_oob_length = 4096;
-	snprintf(call->result, call->result_size, "OK flash-read: read sector %u", sector);
+	string_format(call->result, "OK flash-read: read sector %u", sector);
 }
 
 void command_flash_write(cli_command_call_t *call)
@@ -179,11 +168,11 @@ void command_flash_write(cli_command_call_t *call)
 
 	//if((rv = esp_flash_read((esp_flash_t *)0, call->result_oob, sector, 4096)) != 0)
 	//{
-		//snprintf(call->result, call->result_size, "ERROR: esp_flash_read from %u returned error %u", sector, rv);
+		//string_format(call->result, "ERROR: esp_flash_read from %u returned error %u", sector, rv);
 		//return;
 	//}
 
 	call->result_oob_length = 0;
-	snprintf(call->result, call->result_size, "OK flash-write: written mode %u, sector %u, same %u, erased %u",
+	string_format(call->result, "OK flash-write: written mode %u, sector %u, same %u, erased %u",
 			simulate, sector, same, erased);
 }

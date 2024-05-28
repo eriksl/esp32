@@ -1,11 +1,12 @@
 #include <stdio.h>
-#include <string.h>
+#include <string.h> // FIXME
 #include <stdint.h>
 #include <stdbool.h>
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
 
+#include "string.h"
 #include "cli-command.h"
 #include "cli.h"
 #include "console.h"
@@ -57,10 +58,10 @@ static unsigned int console_stats_bytes_sent;
 
 static void prompt()
 {
-	char prompt[32];
+	string_auto(prompt, 32);
 
-	snprintf(prompt, sizeof(prompt), "%s [%u]> ", hostname, lines->current);
-	write(1, prompt, strlen(prompt));
+	string_format(prompt, "%s [%u]> ", hostname, lines->current);
+	write(1, string_cstr(prompt), string_length(prompt));
 }
 
 static void run_console(void *)
@@ -77,8 +78,7 @@ static void run_console(void *)
 	char character;
 	unsigned int ix;
 	bool whitespace;
-	unsigned int length;
-	char tmp[16];
+	string_auto(tmp, 16);
 
 	prompt();
 	fsync(1);
@@ -236,16 +236,16 @@ static void run_console(void *)
 
 				for(ix = lines->current + 1; ix < lines->size; ix++)
 				{
-					length = snprintf(tmp, sizeof(tmp), "[%u] ", ix);
-					write(1, tmp, length);
+					string_format(tmp, "[%u] ", ix);
+					write(1, string_cstr(tmp), string_length(tmp));
 					write(1, lines->line[ix].data, lines->line[ix].length);
 					write(1, newline_string, sizeof(newline_string));
 				}
 
 				for(ix = 0; ix < lines->current; ix++)
 				{
-					length = snprintf(tmp, sizeof(tmp), "[%u] ", ix);
-					write(1, tmp, length);
+					string_format(tmp, "[%u] ", ix);
+					write(1, string_cstr(tmp), string_length(tmp));
 					write(1, lines->line[ix].data, lines->line[ix].length);
 					write(1, newline_string, sizeof(newline_string));
 				}
@@ -319,12 +319,15 @@ static void run_console(void *)
 
 void console_init()
 {
+	string_auto(hostname_in, 16);
 	unsigned int ix;
 	line_t *line;
 
 	assert(!inited);
 
-	if(!config_get_string("hostname", sizeof(hostname), hostname))
+	if(config_get_string("hostname", hostname_in)) // FIXME
+		string_to_cstr(hostname_in, sizeof(hostname), hostname);
+	else
 		strlcpy(hostname, "esp32", sizeof(hostname));
 
 	lines = (lines_t *)heap_caps_malloc(sizeof(lines_t) , MALLOC_CAP_SPIRAM);
@@ -367,17 +370,13 @@ void console_send(const cli_buffer_t *cli_buffer)
 
 void console_command_info(cli_command_call_t *call)
 {
-	unsigned int offset;
-
 	assert(call->parameters->count == 0);
 
-	offset = 0;
-
-	offset += snprintf(call->result + offset, call->result_size - offset, "entered:");
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n- lines: %u", console_stats_lines_received);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n- bytes: %u", console_stats_bytes_received);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n- errors: %u", console_stats_bytes_received_error);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\nreplies:");
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n- lines: %u", console_stats_lines_sent);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n- bytes: %u", console_stats_bytes_sent);
+	string_format(call->result, "entered:");
+	string_format_append(call->result, "\n- lines: %u", console_stats_lines_received);
+	string_format_append(call->result, "\n- bytes: %u", console_stats_bytes_received);
+	string_format_append(call->result, "\n- errors: %u", console_stats_bytes_received_error);
+	string_format_append(call->result, "\nreplies:");
+	string_format_append(call->result, "\n- lines: %u", console_stats_lines_sent);
+	string_format_append(call->result, "\n- bytes: %u", console_stats_bytes_sent);
 }

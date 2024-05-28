@@ -1,13 +1,3 @@
-#include <stdint.h>
-
-#include "cli-command.h"
-#include "info.h"
-#include "log.h"
-#include "util.h"
-
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-
 #include <esp_log.h>
 #include <esp_chip_info.h>
 #include <esp_flash.h>
@@ -15,7 +5,17 @@
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+#include <stdint.h>
 #include <stdio.h>
+
+#include "string.h"
+#include "cli-command.h"
+#include "info.h"
+#include "log.h"
+#include "util.h"
 
 void command_info_firmware(cli_command_call_t *call)
 {
@@ -23,11 +23,11 @@ void command_info_firmware(cli_command_call_t *call)
 
 	if(!(desc = esp_app_get_description()))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_app_get_description failed");
+		string_format(call->result, "ERROR: esp_app_get_description failed");
 		return;
 	}
 
-	snprintf(call->result, call->result_size,
+	string_format(call->result,
 			"> firmware\n"
 			">   date: %s %s\n"
 			">   build start: %s %s\n",
@@ -40,7 +40,7 @@ void command_info_flash(cli_command_call_t *call)
 	esp_partition_iterator_t partition_iterator;
 	const esp_partition_t *partition;
 	const char *type, *subtype;
-	unsigned int index, offset;
+	unsigned int index;
 	const esp_partition_t *boot_partition, *running_partition;
 	esp_ota_img_states_t ota_state;
 	const char *ota_state_text;
@@ -51,29 +51,29 @@ void command_info_flash(cli_command_call_t *call)
 
 	if(!(boot_partition = esp_ota_get_boot_partition()))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_ota_get_boot_partition failed");
+		string_format(call->result, "ERROR: esp_ota_get_boot_partition failed");
 		return;
 	}
 
 	if(!(running_partition = esp_ota_get_running_partition()))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_ota_get_running_partition failed");
+		string_format(call->result, "ERROR: esp_ota_get_running_partition failed");
 		return;
 	}
 
 	if(!(partition_iterator = esp_partition_find(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, (const char *)0)))
 	{
-		snprintf(call->result, call->result_size, "ERROR: esp_partition_find failed");
+		string_format(call->result, "ERROR: esp_partition_find failed");
 		return;
 	}
 
-	offset = snprintf(call->result, call->result_size, "Partitions:\n");
+	string_format(call->result, "Partitions:\n");
 
 	for(index = 0; partition_iterator; index++, partition_iterator = esp_partition_next(partition_iterator))
 	{
 		if(!(partition = esp_partition_get(partition_iterator)))
 		{
-			snprintf(call->result, call->result_size, "ERROR: esp_partition_get failed");
+			string_format(call->result, "ERROR: esp_partition_get failed");
 			return;
 		}
 
@@ -160,13 +160,13 @@ void command_info_flash(cli_command_call_t *call)
 
 		if((rv = esp_partition_get_sha256(partition, sha256_hash)))
 		{
-			snprintf(call->result, call->result_size, "ERROR: esp_partition_get_sha256 failed: 0x%x", rv);
+			string_format(call->result, "ERROR: esp_partition_get_sha256 failed: 0x%x", rv);
 			return;
 		}
 
 		util_hash_to_text(sizeof(sha256_hash), sha256_hash, sizeof(sha256_hash_text), sha256_hash_text);
 
-		offset += snprintf(call->result + offset, call->result_size - offset, "%s  %2u %1s%1s%1s %-8s %06lx %4lu %-7s %-8s %-64s",
+		string_format_append(call->result, "%s  %2u %1s%1s%1s %-8s %06lx %4lu %-7s %-8s %-64s",
 				(index > 0) ? "\n" : "",
 				index,
 				ota_state_text,
@@ -180,45 +180,37 @@ void command_info_flash(cli_command_call_t *call)
 
 void command_info_memory(cli_command_call_t *call)
 {
-	unsigned offset;
-
-	offset = 0;
-
-	offset += snprintf(call->result + offset, call->result_size - offset, "%-30s %-4s\n", "Type of memory", "kB");
-	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %lu\n", "free heap total",			esp_get_free_heap_size() / 1024);
-	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %lu\n", "minimum free heap",			esp_get_minimum_free_heap_size() / 1024);
-	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap executable",			heap_caps_get_free_size(MALLOC_CAP_EXEC) / 1024);
-	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap 32 bit addressable",	heap_caps_get_free_size(MALLOC_CAP_32BIT) / 1024);
-	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap 8 bit addressable",		heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024);
-	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap DMA adressable",		heap_caps_get_free_size(MALLOC_CAP_DMA) / 1024);
-	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap SPI RAM",				heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024);
-	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap internal RAM",			heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024);
-	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap default",				heap_caps_get_free_size(MALLOC_CAP_DEFAULT) / 1024);
-	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap IRAM 8 bit adressable",	heap_caps_get_free_size(MALLOC_CAP_IRAM_8BIT) / 1024);
-	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap retention",				heap_caps_get_free_size(MALLOC_CAP_RETENTION) / 1024);
-	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap RTC RAM",				heap_caps_get_free_size(MALLOC_CAP_RTCRAM) / 1024);
-	offset += snprintf(call->result + offset, call->result_size - offset, "  %-28s %u\n",  "heap TCM",					heap_caps_get_free_size(MALLOC_CAP_TCM) / 1024);
+	string_format(call->result, "%-30s %-4s\n", "Type of memory", "kB");
+	string_format_append(call->result, "  %-28s %lu\n", "free heap total",			esp_get_free_heap_size() / 1024);
+	string_format_append(call->result, "  %-28s %lu\n", "minimum free heap",			esp_get_minimum_free_heap_size() / 1024);
+	string_format_append(call->result, "  %-28s %u\n",  "heap executable",			heap_caps_get_free_size(MALLOC_CAP_EXEC) / 1024);
+	string_format_append(call->result, "  %-28s %u\n",  "heap 32 bit addressable",	heap_caps_get_free_size(MALLOC_CAP_32BIT) / 1024);
+	string_format_append(call->result, "  %-28s %u\n",  "heap 8 bit addressable",		heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024);
+	string_format_append(call->result, "  %-28s %u\n",  "heap DMA adressable",		heap_caps_get_free_size(MALLOC_CAP_DMA) / 1024);
+	string_format_append(call->result, "  %-28s %u\n",  "heap SPI RAM",				heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024);
+	string_format_append(call->result, "  %-28s %u\n",  "heap internal RAM",			heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024);
+	string_format_append(call->result, "  %-28s %u\n",  "heap default",				heap_caps_get_free_size(MALLOC_CAP_DEFAULT) / 1024);
+	string_format_append(call->result, "  %-28s %u\n",  "heap IRAM 8 bit adressable",	heap_caps_get_free_size(MALLOC_CAP_IRAM_8BIT) / 1024);
+	string_format_append(call->result, "  %-28s %u\n",  "heap retention",				heap_caps_get_free_size(MALLOC_CAP_RETENTION) / 1024);
+	string_format_append(call->result, "  %-28s %u\n",  "heap RTC RAM",				heap_caps_get_free_size(MALLOC_CAP_RTCRAM) / 1024);
+	string_format_append(call->result, "  %-28s %u\n",  "heap TCM",					heap_caps_get_free_size(MALLOC_CAP_TCM) / 1024);
 }
 
 void command_info_process(cli_command_call_t *call)
 {
-	unsigned int ix, length, offset, processes;
+	unsigned int ix, processes;
 	unsigned long runtime;
 	TaskStatus_t *process_info;
 	const TaskStatus_t *pip;
 	const char *name;
 	const char *state;
 
-	offset = 0;
-
 	processes = uxTaskGetNumberOfTasks();
 	process_info = heap_caps_malloc(sizeof(*process_info) * processes , MALLOC_CAP_SPIRAM);
 	assert(uxTaskGetSystemState(process_info, processes, &runtime) == processes);
 
-	length = snprintf(call->result + offset, call->result_size - offset, "processes: %u\n", processes);
-	offset += length;
-	length = snprintf(call->result + offset, call->result_size - offset, "  %2s  %-12s %-10s %-4s %-5s\n", "#", "name", "state", "prio", "stack");
-	offset += length;
+	string_format_append(call->result, "processes: %u\n", processes);
+	string_format(call->result, "  %2s  %-12s %-10s %-4s %-5s\n", "#", "name", "state", "prio", "stack");
 
 	for(ix = 0; ix < processes; ix++)
 	{
@@ -264,13 +256,12 @@ void command_info_process(cli_command_call_t *call)
 			}
 		}
 
-		length = snprintf(call->result + offset, call->result_size - offset, "  %2u: %-12s %-10s %4u %5u\n",
+		string_format_append(call->result, "  %2u: %-12s %-10s %4u %5u\n",
 				pip->xTaskNumber,
 				name,
 				state,
 				pip->uxCurrentPriority,
 				(unsigned int)pip->usStackHighWaterMark);
-		offset += length;
 	}
 
 	free(process_info);
@@ -280,13 +271,10 @@ void command_info_system(cli_command_call_t *call)
 {
 	esp_chip_info_t chip_info;
 	uint32_t flash_size;
-	unsigned int offset;
-
-	offset = 0;
 
 	esp_chip_info(&chip_info);
 
-	offset += snprintf(call->result + offset, call->result_size - offset, "SoC: %s with %d cores\nRF: %s%s%s%s\n",
+	string_format(call->result, "SoC: %s with %d cores\nRF: %s%s%s%s\n",
 		CONFIG_IDF_TARGET,
 		chip_info.cores,
 		(chip_info.features & CHIP_FEATURE_WIFI_BGN) ? "WiFi/" : "",
@@ -296,10 +284,10 @@ void command_info_system(cli_command_call_t *call)
 
 	unsigned major_rev = chip_info.revision / 100;
 	unsigned minor_rev = chip_info.revision % 100;
-	offset += snprintf(call->result + offset, call->result_size - offset, "Revision: %d.%d\n", major_rev, minor_rev);
+	string_format_append(call->result, "Revision: %d.%d\n", major_rev, minor_rev);
 
 	esp_flash_get_size(NULL, &flash_size);
 
-	offset += snprintf(call->result + offset, call->result_size - offset, "Flash: %lu MB %s\n", flash_size / (1024 * 1024),
+	string_format_append(call->result, "Flash: %lu MB %s\n", flash_size / (1024 * 1024),
 		(chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
 }

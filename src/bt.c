@@ -12,6 +12,7 @@
 #include <services/gap/ble_svc_gap.h>
 #include <services/gatt/ble_svc_gatt.h>
 
+#include "string.h"
 #include "cli-command.h"
 #include "cli.h"
 #include "bt.h"
@@ -86,13 +87,9 @@ static const struct ble_gatt_svc_def gatt_definitions[] =
 	},
 };
 
-static char *bt_addr_to_str(const void *addr, char *str, unsigned int size)
+void bt_addr_to_str(string_t dst, const uint8_t src[6])
 {
-	const uint8_t *u8p = addr;
-
-	snprintf(str, size, "%02x:%02x:%02x:%02x:%02x:%02x", u8p[5], u8p[4], u8p[3], u8p[2], u8p[1], u8p[0]);
-
-	return(str);
+	string_format(dst, "%02x:%02x:%02x:%02x:%02x:%02x", src[5], src[4], src[3], src[2], src[1], src[0]);
 }
 
 static inline void reassemble_reset(void)
@@ -481,12 +478,12 @@ void bt_send(const cli_buffer_t *cli_buffer)
 
 int bt_init(void)
 {
-	char hostname[16];
+	string_auto(hostname, 16);
 
 	assert(!inited);
 
-	if(!config_get_string("hostname", sizeof(hostname), hostname))
-		strlcpy(hostname, "esp32", sizeof(hostname));
+	if(!config_get_string("hostname", hostname))
+		string_assign_cstr(hostname, "esp32");
 
 	assert((reassembly_buffer = heap_caps_malloc(reassembly_buffer_size, MALLOC_CAP_SPIRAM)));
 	reassemble_reset();
@@ -508,7 +505,7 @@ int bt_init(void)
 	ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
 
 	util_abort_on_esp_err("gatt_init", gatt_init());
-	util_abort_on_esp_err("ble_svc_gap_device_name_set", ble_svc_gap_device_name_set(hostname));
+	util_abort_on_esp_err("ble_svc_gap_device_name_set", ble_svc_gap_device_name_set(string_cstr(hostname)));
 	ble_store_config_init();
 	nimble_port_freertos_init(nimble_port_task);
 
@@ -517,30 +514,30 @@ int bt_init(void)
 
 void command_info_bluetooth(cli_command_call_t *call)
 {
-	unsigned int offset;
-	char string_addr[32];
+	string_auto(string_addr, 32);
 
 	assert(call->parameters->count == 0);
 
-	offset = snprintf(call->result, call->result_size, "bluetooth information");
+	bt_addr_to_str(string_addr, bt_host_address);
 
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  address: %s", bt_addr_to_str(bt_host_address, string_addr, sizeof(string_addr)));
+	string_format(call->result, "bluetooth information");
 
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  data sent:");
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - packets: %u", bt_stats_sent_packets);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - fragments: %u", bt_stats_sent_fragments);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - bytes: %u", bt_stats_sent_bytes);
+	string_format_append(call->result, "\n  address: %s", string_cstr(string_addr));
+	string_format_append(call->result, "\n  data sent:");
+	string_format_append(call->result, "\n  - packets: %u", bt_stats_sent_packets);
+	string_format_append(call->result, "\n  - fragments: %u", bt_stats_sent_fragments);
+	string_format_append(call->result, "\n  - bytes: %u", bt_stats_sent_bytes);
 
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  data received:");
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - packets: %u", bt_stats_received_packets);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - fragments: %u", bt_stats_received_fragments);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - bytes: %u", bt_stats_received_bytes);
+	string_format_append(call->result, "\n  data received:");
+	string_format_append(call->result, "\n  - packets: %u", bt_stats_received_packets);
+	string_format_append(call->result, "\n  - fragments: %u", bt_stats_received_fragments);
+	string_format_append(call->result, "\n  - bytes: %u", bt_stats_received_bytes);
 
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  reassembly:");
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - oversized chunks: %u", bt_stats_reassembly_oversize_chunk);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - buffer overruns: %u", bt_stats_reassembly_buffer_overrun);
+	string_format_append(call->result, "\n  reassembly:");
+	string_format_append(call->result, "\n  - oversized chunks: %u", bt_stats_reassembly_oversize_chunk);
+	string_format_append(call->result, "\n  - buffer overruns: %u", bt_stats_reassembly_buffer_overrun);
 
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  indication:");
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - errors: %u", bt_stats_indication_error);
-	offset += snprintf(call->result + offset, call->result_size - offset, "\n  - timeouts: %u", bt_stats_indication_timeout);
+	string_format_append(call->result, "\n  indication:");
+	string_format_append(call->result, "\n  - errors: %u", bt_stats_indication_error);
+	string_format_append(call->result, "\n  - timeouts: %u", bt_stats_indication_timeout);
 }

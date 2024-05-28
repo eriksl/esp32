@@ -40,8 +40,7 @@ typedef struct
 	const cli_parameters_t *	parameters;
 	unsigned int				oob_data_length;
 	uint8_t *					oob_data;
-	unsigned int				result_size;
-	char *						result;
+	string_t					result;
 	unsigned int				result_oob_size;
 	unsigned int				result_oob_length;
 	uint8_t *					result_oob;
