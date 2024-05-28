@@ -12,7 +12,7 @@
 
 void run_main(void)
 {
-	ledpixel_t *ledpixel;
+	ledpixel_t ledpixel;
 
 	ledpixel = ledpixel_new(1, 47);
 	ledpixel_set(ledpixel, 0, 0x00, 0x00, 0xff);

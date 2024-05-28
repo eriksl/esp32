@@ -25,7 +25,7 @@ void ledpixel_init(void)
 	inited = true;
 }
 
-ledpixel_t *ledpixel_new(unsigned int max_leds, unsigned int gpio)
+ledpixel_t ledpixel_new(unsigned int max_leds, unsigned int gpio)
 {
 	_ledpixel_t *_ledpixel = heap_caps_malloc(sizeof(_ledpixel_t), MALLOC_CAP_SPIRAM);
 	assert(_ledpixel);
@@ -44,17 +44,17 @@ ledpixel_t *ledpixel_new(unsigned int max_leds, unsigned int gpio)
 	util_abort_on_esp_err("led_strip_new_rmt_device", led_strip_new_rmt_device(&_ledpixel->config, &_ledpixel->rmt_config, &_ledpixel->handle));
 	util_abort_on_esp_err("led_strip_clear", led_strip_clear(_ledpixel->handle));
 
-	return((ledpixel_t *)_ledpixel);
+	return((ledpixel_t)_ledpixel);
 }
 
-void ledpixel_set(ledpixel_t *ledpixel, unsigned int index, unsigned int red, unsigned int green, unsigned int blue)
+void ledpixel_set(ledpixel_t ledpixel, unsigned int index, unsigned int red, unsigned int green, unsigned int blue)
 {
 	_ledpixel_t *_ledpixel = (_ledpixel_t *)ledpixel;
 
 	util_abort_on_esp_err("led_string_set_pixel", led_strip_set_pixel(_ledpixel->handle, index, red, green, blue));
 }
 
-void ledpixel_flush(ledpixel_t *ledpixel)
+void ledpixel_flush(ledpixel_t ledpixel)
 {
 	_ledpixel_t *_ledpixel = (_ledpixel_t *)ledpixel;
 
