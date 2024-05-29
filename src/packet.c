@@ -207,12 +207,15 @@ void packet_encapsulate(cli_buffer_t *cli_buffer, const string_t data, const str
 		cli_buffer->length = oob_data_offset + oob_data_length;
 		cli_buffer->data_from_malloc = 1;
 		cli_buffer->data = heap_caps_malloc(cli_buffer->length, MALLOC_CAP_SPIRAM);
+		assert(cli_buffer->data);
 		memcpy(cli_buffer->data, string_cstr(data), data_length);
 		cli_buffer->data[data_length] = '\n';
-		memset(&cli_buffer->data[data_pad_offset], 0, oob_data_offset - data_pad_offset);
 
 		if(oob_data)
+		{
+			memset(&cli_buffer->data[data_pad_offset], 0, oob_data_offset - data_pad_offset);
 			memcpy(&cli_buffer->data[oob_data_offset], string_data(oob_data), oob_data_length);
+		}
 	}
 }
 
