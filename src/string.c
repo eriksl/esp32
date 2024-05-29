@@ -472,7 +472,10 @@ string_t string_parse(const string_t src, unsigned int index)
 	for(current_index = 0; (offset < _src->length) && (current_index <= index); current_index++)
 	{
 		for(; offset < _src->length; offset++)
-			if((_src->data[offset] != ' ') && (_src->data[offset] != '\t'))
+			if((_src->data[offset] != ' ') &&
+					(_src->data[offset] != '\t') &&
+					(_src->data[offset] != '\n') &&
+					(_src->data[offset] != '\r'))
 				break;
 
 		if(offset >= _src->length)
@@ -481,7 +484,10 @@ string_t string_parse(const string_t src, unsigned int index)
 		start = offset;
 
 		for(; offset < _src->length; offset++)
-			if((_src->data[offset] == ' ') || (_src->data[offset] == '\t'))
+			if((_src->data[offset] == ' ') ||
+					(_src->data[offset] == '\t') ||
+					(_src->data[offset] == '\n') ||
+					(_src->data[offset] == '\r'))
 				break;
 
 		end = offset;
