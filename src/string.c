@@ -630,3 +630,28 @@ void string_hash(string_t dst, unsigned int hash_size, const uint8_t *hash)
 	}
 }
 
+void string_replace(string_t dst, unsigned int start_pos, unsigned int end_pos, char from, char to)
+{
+	unsigned int ix;
+	_string_t *_dst = (_string_t *)dst;
+
+	assert(_dst->magic_word == string_magic_word);
+	assert(_dst->length < _dst->size);
+	assert(_dst->size > 0);
+	assert(_dst->data[_dst->length] == '\0');
+	assert(!_dst->header_const);
+	assert(!_dst->data_const);
+
+	if(start_pos > _dst->length)
+		return;
+
+	if(_dst->length < 1)
+		return;
+
+	if(end_pos >= _dst->length)
+		end_pos = _dst->length - 1;
+
+	for(ix = start_pos; ix <= end_pos; ix++)
+		if(_dst->data[ix] == from)
+			_dst->data[ix] = to;
+}

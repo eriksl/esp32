@@ -155,7 +155,6 @@ static void command_test_parse(cli_command_call_t *call)
 
 static void command_hostname(cli_command_call_t *call)
 {
-	unsigned int ix, length;
 	string_auto(hostname, 64);
 	string_auto(description, 64);
 	string_auto_init(key_hostname, "hostname");
@@ -165,15 +164,8 @@ static void command_hostname(cli_command_call_t *call)
 
 	if(call->parameter_count > 1)
 	{
-		string_assign_string(description, call->parameters[1].string);
-
-		length = string_length(description);
-
-		for(ix = 0; ix < length; ix++) // FIXME -> string_replace
-			if(string_at(description, ix) == '_')
-				string_assign(description, ix, ' ');
-
-		config_set_string(key_description, description);
+		string_replace(call->parameters[1].string, 0, ~0, '_', ' ');
+		config_set_string(key_description, call->parameters[1].string);
 	}
 
 	if(call->parameter_count > 0)
