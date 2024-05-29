@@ -17,7 +17,10 @@ typedef struct string_opaque_t {} *string_t;
 	string_t _name = (string_t)_ ## _name ## _data; \
 	do { _string_auto(_name, sizeof(_string)); string_assign_cstr(_name, _string); } while(0)
 
+
 void _string_auto(string_t dst, unsigned int size);
+
+void string_module_init(void);
 string_t string_new(unsigned int length);
 string_t string_const(const char *const_string);
 string_t string_init(unsigned int size, const char *init_string);

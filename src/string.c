@@ -36,10 +36,13 @@ typedef struct
 	char data_start[];
 } _string_t;
 
+bool inited = false;
+
 static_assert(string_header_length == sizeof(_string_t));
 
 static void _string_init(_string_t *_dst, unsigned int size, bool header_const, bool header_from_malloc, bool data_const, bool data_from_malloc)
 {
+	assert(inited);
 	assert(_dst);
 
 	_dst->magic_word = string_magic_word;
@@ -56,6 +59,7 @@ void _string_auto(string_t dst, unsigned int size)
 {
 	_string_t *_dst = (_string_t *)dst;
 
+	assert(inited);
 	assert(_dst);
 	assert(size);
 
@@ -64,10 +68,18 @@ void _string_auto(string_t dst, unsigned int size)
 	string_clear((string_t)_dst);
 }
 
+void string_module_init(void)
+{
+	assert(!inited);
+
+	inited = true;
+}
+
 string_t string_new(unsigned int size)
 {
 	_string_t *_dst;
 
+	assert(inited);
 	assert(size);
 
 	_dst = heap_caps_malloc(sizeof(_string_t) + size, MALLOC_CAP_SPIRAM);
@@ -85,6 +97,7 @@ string_t string_const(const char *const_string)
 	_string_t *_dst;
 	unsigned int length;
 
+	assert(inited);
 	assert(const_string);
 
 	length = strlen(const_string);
@@ -103,6 +116,7 @@ string_t string_init(unsigned int size, const char *init_string)
 {
 	_string_t *_dst;
 
+	assert(inited);
 	assert(size > strlen(init_string));
 
 	_dst = heap_caps_malloc(sizeof(_string_t) + size, MALLOC_CAP_SPIRAM);
@@ -120,6 +134,7 @@ void string_free(string_t string)
 {
 	_string_t *_dst = (_string_t *)string;
 
+	assert(inited);
 	assert(_dst);
 	assert(_dst->magic_word == string_magic_word);
 	assert(_dst->length < _dst->size);
@@ -146,6 +161,7 @@ unsigned int string_length(const string_t src)
 {
 	_string_t *_src = (_string_t *)src;
 
+	assert(inited);
 	assert(_src);
 	assert(_src->magic_word == string_magic_word);
 	assert(_src->length < _src->size);
@@ -158,6 +174,7 @@ unsigned int string_size(const string_t src)
 {
 	_string_t *_src = (_string_t *)src;
 
+	assert(inited);
 	assert(_src);
 	assert(_src->magic_word == string_magic_word);
 	assert(_src->length < _src->size);
@@ -170,6 +187,7 @@ void string_clear(string_t dst)
 {
 	_string_t *_dst = (_string_t *)dst;
 
+	assert(inited);
 	assert(_dst);
 	assert(_dst->magic_word == string_magic_word);
 	assert(!_dst->header_const);
@@ -185,6 +203,7 @@ void string_fill(string_t dst, unsigned int length, char byte)
 {
 	_string_t *_dst = (_string_t *)dst;
 
+	assert(inited);
 	assert(_dst);
 	assert(_dst->magic_word == string_magic_word);
 	assert(!_dst->header_const);
@@ -208,6 +227,8 @@ void string_append_string(string_t dst, const string_t src)
 	unsigned int length;
 	_string_t *_src = (_string_t *)src;
 	_string_t *_dst = (_string_t *)dst;
+
+	assert(inited);
 
 	assert(_src);
 	assert(_src->magic_word == string_magic_word);
@@ -241,6 +262,7 @@ void string_append_cstr(string_t dst, const char *src)
 	_string_t *_dst = (_string_t *)dst;
 	unsigned int length;
 
+	assert(inited);
 	assert(_dst);
 	assert(_dst->magic_word == string_magic_word);
 	assert(_dst->length < _dst->size);
@@ -267,6 +289,7 @@ void string_append(string_t dst, char src)
 {
 	_string_t *_dst = (_string_t *)dst;
 
+	assert(inited);
 	assert(_dst->magic_word == string_magic_word);
 	assert(_dst->length < _dst->size);
 	assert(_dst->size > 0);
@@ -296,6 +319,7 @@ void string_assign_data(string_t dst, unsigned int length, const uint8_t *src)
 {
 	_string_t *_dst = (_string_t *)dst;
 
+	assert(inited);
 	assert(_dst);
 	assert(_dst->magic_word == string_magic_word);
 	assert(_dst->length < _dst->size);
@@ -323,6 +347,7 @@ static void _string_format(string_t dst, bool append, const char *fmt, va_list a
 	unsigned int size;
 	int length;
 
+	assert(inited);
 	assert(_dst);
 	assert(_dst->magic_word == string_magic_word);
 	assert(!_dst->header_const);
@@ -372,6 +397,8 @@ const char *string_cstr(const string_t src)
 {
 	_string_t *_src = (_string_t *)src;
 
+	assert(inited);
+	assert(_src);
 	assert(_src->magic_word == string_magic_word);
 	assert(_src->length < _src->size);
 	assert(_src->size > 0);
@@ -384,6 +411,8 @@ char *string_cstr_nonconst(string_t src)
 {
 	_string_t *_src = (_string_t *)src;
 
+	assert(inited);
+	assert(_src);
 	assert(_src->magic_word == string_magic_word);
 	assert(_src->length < _src->size);
 	assert(_src->size > 0);
@@ -398,6 +427,8 @@ const uint8_t *string_data(const string_t src)
 {
 	_string_t *_src = (_string_t *)src;
 
+	assert(inited);
+	assert(_src);
 	assert(_src->magic_word == string_magic_word);
 	assert(_src->length < _src->size);
 	assert(_src->size > 0);
@@ -411,6 +442,8 @@ void string_to_cstr(const string_t src, unsigned int dst_size, char *dst)
 	unsigned int length;
 	_string_t *_src = (_string_t *)src;
 
+	assert(inited);
+	assert(_src);
 	assert(_src->magic_word == string_magic_word);
 	assert(_src->length < _src->size);
 	assert(_src->size > 0);
@@ -428,6 +461,8 @@ char string_at(const string_t src, unsigned int offset)
 {
 	_string_t *_src = (_string_t *)src;
 
+	assert(inited);
+	assert(_src);
 	assert(_src->magic_word == string_magic_word);
 	assert(_src->length < _src->size);
 	assert(_src->size > 0);
@@ -442,6 +477,8 @@ void string_assign(string_t dst, unsigned int offset, char src)
 {
 	_string_t *_dst = (_string_t *)dst;
 
+	assert(inited);
+	assert(_dst);
 	assert(_dst->magic_word == string_magic_word);
 	assert(_dst->length < _dst->size);
 	assert(_dst->size > 0);
@@ -460,6 +497,8 @@ string_t string_parse(const string_t src, unsigned int index)
 	_string_t *_src = (_string_t *)src;
 	string_t dst;
 
+	assert(inited);
+	assert(_src);
 	assert(_src->magic_word == string_magic_word);
 	assert(_src->length < _src->size);
 	assert(_src->size > 0);
@@ -507,6 +546,8 @@ bool string_equal_string(const string_t dst, const string_t src)
 	_string_t *_src = (_string_t *)src;
 	_string_t *_dst = (_string_t *)dst;
 
+	assert(inited);
+
 	assert(_src);
 	assert(_src->magic_word == string_magic_word);
 	assert(_src->length < _src->size);
@@ -531,7 +572,9 @@ bool string_equal_cstr(const string_t dst, const char *src)
 	unsigned int length;
 	_string_t *_dst = (_string_t *)dst;
 
+	assert(inited);
 	assert(src);
+
 	assert(_dst->magic_word == string_magic_word);
 	assert(_dst->length < _dst->size);
 	assert(_dst->size > 0);
@@ -552,6 +595,9 @@ bool string_uint(const string_t src, unsigned int base, unsigned int *value)
 	_string_t *_src = (_string_t *)src;
 	char *endptr;
 
+	assert(inited);
+	assert(value);
+	assert(_src);
 	assert(_src->magic_word == string_magic_word);
 	assert(_src->length < _src->size);
 	assert(_src->size > 0);
@@ -580,6 +626,9 @@ bool string_int(const string_t src, unsigned int base, int *value)
 	_string_t *_src = (_string_t *)src;
 	char *endptr;
 
+	assert(inited);
+	assert(value);
+	assert(_src);
 	assert(_src->magic_word == string_magic_word);
 	assert(_src->length < _src->size);
 	assert(_src->size > 0);
@@ -608,6 +657,9 @@ bool string_float(const string_t src, float *value)
 	_string_t *_src = (_string_t *)src;
 	char *endptr;
 
+	assert(inited);
+	assert(value);
+	assert(_src);
 	assert(_src->magic_word == string_magic_word);
 	assert(_src->length < _src->size);
 	assert(_src->size > 0);
@@ -635,6 +687,10 @@ void string_hash(string_t dst, unsigned int hash_size, const uint8_t *hash)
 {
 	unsigned int in, out, value;
 
+	assert(inited);
+	assert(dst);
+	assert(hash);
+
 	string_clear(dst);
 
 	for(in = 0, out = 0; in < hash_size; out++)
@@ -659,6 +715,8 @@ void string_replace(string_t dst, unsigned int start_pos, unsigned int end_pos, 
 	unsigned int ix;
 	_string_t *_dst = (_string_t *)dst;
 
+	assert(inited);
+	assert(_dst);
 	assert(_dst->magic_word == string_magic_word);
 	assert(_dst->length < _dst->size);
 	assert(_dst->size > 0);

@@ -18,6 +18,7 @@
 
 void app_main(void)
 {
+	string_module_init();
 	log_init();
 	config_init();
 	util_init();
