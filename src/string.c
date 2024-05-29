@@ -5,10 +5,13 @@
 
 #include "string.h"
 #include "cli-command.h"
+#include "stringcli.h"
 #include "log.h"
 #include "util.h"
 
 #include <freertos/FreeRTOS.h>
+
+//#define DEBUG 1
 
 typedef enum
 {
@@ -37,10 +40,16 @@ typedef struct
 } _string_t;
 
 bool inited = false;
+unsigned int allocated = 0;
+unsigned int freed = 0;
+unsigned int auto_called = 0;
+unsigned int new_called = 0;
+unsigned int const_called = 0;
+unsigned int init_called = 0;
 
 static_assert(string_header_length == sizeof(_string_t));
 
-static void _string_init(_string_t *_dst, unsigned int size, bool header_const, bool header_from_malloc, bool data_const, bool data_from_malloc)
+static void _string_init_header(_string_t *_dst, unsigned int size, bool header_const, bool header_from_malloc, bool data_const, bool data_from_malloc)
 {
 	assert(inited);
 	assert(_dst);
@@ -63,7 +72,9 @@ void _string_auto(string_t dst, unsigned int size)
 	assert(_dst);
 	assert(size);
 
-	_string_init(_dst, size, false, false, false, false);
+	auto_called++;
+
+	_string_init_header(_dst, size, false, false, false, false);
 	_dst->data = _dst->data_start;
 	string_clear((string_t)_dst);
 }
@@ -75,24 +86,31 @@ void string_module_init(void)
 	inited = true;
 }
 
-string_t string_new(unsigned int size)
+string_t _string_new(unsigned int size, const char *file, unsigned int line)
 {
 	_string_t *_dst;
 
 	assert(inited);
 	assert(size);
 
+#ifdef DEBUG
+	log_format("string_new: %u @ %s:%u", size, file, line);
+#endif
+
 	_dst = heap_caps_malloc(sizeof(_string_t) + size, MALLOC_CAP_SPIRAM);
 	assert(_dst);
 
-	_string_init(_dst, size, false, true, false, false);
+	_string_init_header(_dst, size, false, true, false, false);
 	_dst->data = _dst->data_start;
 	string_clear((string_t)_dst);
+
+	new_called++;
+	allocated++;
 
 	return((string_t)_dst);
 }
 
-string_t string_const(const char *const_string)
+string_t _string_const(const char *const_string, const char *file, unsigned int line)
 {
 	_string_t *_dst;
 	unsigned int length;
@@ -100,37 +118,51 @@ string_t string_const(const char *const_string)
 	assert(inited);
 	assert(const_string);
 
+#ifdef DEBUG
+	log_format("string_const: \"%s\" @ %s:%u", const_string, file, line);
+#endif
+
 	length = strlen(const_string);
 
 	_dst = heap_caps_malloc(sizeof(_string_t), MALLOC_CAP_SPIRAM);
 	assert(_dst);
 
-	_string_init(_dst, length + null_byte, false, true, true, false);
+	_string_init_header(_dst, length + null_byte, false, true, true, false);
 	_dst->length = length;
 	_dst->const_data = const_string;
+
+	const_called++;
+	allocated++;
 
 	return((string_t)_dst);
 }
 
-string_t string_init(unsigned int size, const char *init_string)
+string_t _string_init(unsigned int size, const char *init_string, const char *file, unsigned int line)
 {
 	_string_t *_dst;
 
 	assert(inited);
 	assert(size > strlen(init_string));
 
+#ifdef DEBUG
+	log_format("string_init: \"%s\"[%u] @ %s:%u", init_string, size, file, line);
+#endif
+
 	_dst = heap_caps_malloc(sizeof(_string_t) + size, MALLOC_CAP_SPIRAM);
 	assert(_dst);
 
-	_string_init(_dst, size, false, true, false, false);
+	_string_init_header(_dst, size, false, true, false, false);
 	_dst->data = _dst->data_start;
 
 	string_assign_cstr((string_t)_dst, init_string);
 
+	init_called++;
+	allocated++;
+
 	return((string_t)_dst);
 }
 
-void string_free(string_t string)
+void _string_free(string_t string, const char *file, unsigned int line)
 {
 	_string_t *_dst = (_string_t *)string;
 
@@ -138,6 +170,10 @@ void string_free(string_t string)
 	assert(_dst);
 	assert(_dst->magic_word == string_magic_word);
 	assert(_dst->length < _dst->size);
+
+#ifdef DEBUG
+	log_format("string_free: %u @ %s:%u", _dst->size, file, line);
+#endif
 
 	if(_dst->header_const)
 		return;
@@ -155,6 +191,8 @@ void string_free(string_t string)
 
 	if(_dst->header_from_malloc)
 		free(_dst);
+
+	freed++;
 }
 
 unsigned int string_length(const string_t src)
@@ -736,4 +774,12 @@ void string_replace(string_t dst, unsigned int start_pos, unsigned int end_pos, 
 	for(ix = start_pos; ix <= end_pos; ix++)
 		if(_dst->data[ix] == from)
 			_dst->data[ix] = to;
+}
+
+void command_info_string(cli_command_call_t *call)
+{
+	assert(call->parameter_count == 0);
+
+	string_format(call->result, "STRING\nstats:\n- allocate events: %u\n- free events: %u\n- active: %u", allocated, freed, allocated - freed);
+	string_format_append(call->result, "\nmethods called:\n- auto: %u\n- new: %u\n- init: %u\n- const: %u", auto_called, new_called, init_called, const_called);
 }

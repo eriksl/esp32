@@ -4,6 +4,7 @@
 
 #include "string.h"
 #include "cli-command.h"
+#include "stringcli.h"
 #include "cli.h"
 #include "otacli.h"
 #include "flash.h"
@@ -335,6 +336,10 @@ static const cli_command_t cli_commands[] =
 	},
 
 	{ "info-system", "is", "show information about the system", command_info_system,
+		{}
+	},
+
+	{ "info-string", "istr", "show information about all string", command_info_string,
 		{}
 	},
 

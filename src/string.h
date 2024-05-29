@@ -17,14 +17,20 @@ typedef struct string_opaque_t {} *string_t;
 	string_t _name = (string_t)_ ## _name ## _data; \
 	do { _string_auto(_name, sizeof(_string)); string_assign_cstr(_name, _string); } while(0)
 
-
 void _string_auto(string_t dst, unsigned int size);
 
-void string_module_init(void);
-string_t string_new(unsigned int length);
-string_t string_const(const char *const_string);
-string_t string_init(unsigned int size, const char *init_string);
-void string_free(string_t string);
+#define string_new(l) _string_new(l, __FILE__, __LINE__)
+string_t _string_new(unsigned int length, const char *file, unsigned int line);
+
+#define string_free(s) do { _string_free(s, __FILE__, __LINE__); } while(0)
+void _string_free(string_t string, const char *file, unsigned int line);
+
+#define string_const(s) _string_const(s, __FILE__, __LINE__)
+string_t _string_const(const char *const_string, const char *file, unsigned int line);
+
+#define string_init(l, s) _string_init(l, s, __FILE__, __LINE__)
+string_t _string_init(unsigned int size, const char *init_string, const char *file, unsigned int line);
+
 void string_clear(string_t dst);
 void string_fill(string_t dst, unsigned int length, char byte);
 unsigned int string_length(const string_t src);
@@ -51,3 +57,5 @@ bool string_int(const string_t src, unsigned int base, int *value);
 bool string_float(const string_t src, float *value);
 void string_hash(string_t dst, unsigned int hash_length, const uint8_t *hash);
 void string_replace(string_t dst, unsigned int start_pos, unsigned int end_pos, char from, char to);
+
+void string_module_init(void);
