@@ -429,6 +429,7 @@ void bt_send(const cli_buffer_t *cli_buffer)
 	unsigned int offset, chunk, length, attempt;
 	int rv;
 
+	assert(max_chunk == 552); /* sync this value with espif */
 	assert(inited);
 
 	offset = 0;
