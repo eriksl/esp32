@@ -41,6 +41,7 @@ char *string_cstr_nonconst(string_t src);
 const uint8_t *string_data(const string_t src);
 void string_to_cstr(const string_t src, unsigned int dst_size, char *dst);
 string_t string_parse(const string_t src, unsigned int index);
+bool string_equal_string(const string_t dst, const string_t src);
 bool string_equal_cstr(const string_t dst, const char *src);
 bool string_uint(const string_t src, unsigned int base, unsigned int *value);
 bool string_int(const string_t src, unsigned int base, int *value);

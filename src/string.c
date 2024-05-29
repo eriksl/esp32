@@ -502,6 +502,30 @@ string_t string_parse(const string_t src, unsigned int index)
 	return(dst);
 }
 
+bool string_equal_string(const string_t dst, const string_t src)
+{
+	_string_t *_src = (_string_t *)src;
+	_string_t *_dst = (_string_t *)dst;
+
+	assert(_src);
+	assert(_src->magic_word == string_magic_word);
+	assert(_src->length < _src->size);
+	assert(_src->size > 0);
+
+	assert(_dst);
+	assert(_dst->magic_word == string_magic_word);
+	assert(_dst->length < _dst->size);
+	assert(_dst->size > 0);
+
+	if(_src->length != _dst->length)
+		return(false);
+
+	if(memcmp(_src->data, _dst->data, _src->length))
+		return(false);
+
+	return(true);
+}
+
 bool string_equal_cstr(const string_t dst, const char *src)
 {
 	unsigned int length;
