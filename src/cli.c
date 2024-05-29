@@ -403,7 +403,7 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
-	{ "stat", "s", "show some general information", command_info_firmware,
+	{ "stats", "s", "show some general information", command_info_firmware,
 		{}
 	},
 
