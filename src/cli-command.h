@@ -25,22 +25,22 @@ typedef struct
 		unsigned int	unsigned_int;
 		int				signed_int;
 		float			fp;
-		const char *	string;
 	};
+
+	string_t string;
 } cli_parameter_t;
 
-_Static_assert(sizeof(cli_parameter_t) == 8);
+_Static_assert(sizeof(cli_parameter_t) == 12);
 
 typedef struct
 {
 	unsigned int		parameter_count;
 	cli_parameter_t		parameters[parameters_size];
-	unsigned int		oob_data_length;
-	uint8_t *			oob_data;
+	string_t			oob;
 	string_t			result;
 	string_t			result_oob;
 } cli_command_call_t;
 
-_Static_assert(sizeof(cli_command_call_t) == 148);
+_Static_assert(sizeof(cli_command_call_t) == 208);
 
 typedef void(cli_command_function_t)(cli_command_call_t *);

@@ -1,4 +1,3 @@
-#include <string.h> // FIXME
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -114,9 +113,9 @@ void command_ota_write(cli_command_call_t *call)
 		return(ota_abort());
 	}
 
-	if(call->oob_data_length != length)
+	if(string_length(call->oob) != length)
 	{
-		string_format(call->result, "ERROR: lengths do not match (%u vs. %u)", length, call->oob_data_length);
+		string_format(call->result, "ERROR: lengths do not match (%u vs. %u)", length, string_length(call->oob));
 		return(ota_abort());
 	}
 
@@ -126,14 +125,14 @@ void command_ota_write(cli_command_call_t *call)
 		return(ota_abort());
 	}
 
-	if((rv = esp_ota_write(ota_handle, call->oob_data, call->oob_data_length)))
+	if((rv = esp_ota_write(ota_handle, string_data(call->oob), string_length(call->oob))))
 	{
 		string_format(call->result, "ERROR: esp_ota_write returned error %u", rv);
 		return(ota_abort());
 	}
 
 	if(!checksum_chunk)
-		mbedtls_sha256_update(&ota_sha256_ctx, call->oob_data, call->oob_data_length);
+		mbedtls_sha256_update(&ota_sha256_ctx, string_data(call->oob), string_length(call->oob));
 
 	string_format(call->result, "OK write ota");
 }
@@ -179,7 +178,7 @@ void command_ota_commit(cli_command_call_t *call)
 	esp_err_t rv;
 	unsigned char local_sha256_hash[32];
 	char local_sha256_hash_text[(sizeof(local_sha256_hash) * 2) + 1];
-	const char *remote_sha256_hash_text;
+	string_t remote_sha256_hash_text;
 	const esp_partition_t *boot_partition;
 	esp_partition_pos_t partition_pos;
 	esp_image_metadata_t image_metadata;
@@ -202,9 +201,9 @@ void command_ota_commit(cli_command_call_t *call)
 
 	util_hash_to_text(sizeof(local_sha256_hash), local_sha256_hash, sizeof(local_sha256_hash_text), local_sha256_hash_text);
 
-	if(strcmp(local_sha256_hash_text, remote_sha256_hash_text))
+	if(!string_equal_cstr(remote_sha256_hash_text, local_sha256_hash_text))
 	{
-		string_format(call->result, "ERROR: checksum mismatch: %s vs. %s", remote_sha256_hash_text, local_sha256_hash_text);
+		string_format(call->result, "ERROR: checksum mismatch: %s vs. %s", string_cstr(remote_sha256_hash_text), local_sha256_hash_text);
 		return;
 	}
 

@@ -1,5 +1,7 @@
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
+#include <errno.h>
 
 #include "string.h"
 #include "cli-command.h"
@@ -203,6 +205,7 @@ void string_fill(string_t dst, unsigned int length, char byte)
 
 void string_append_string(string_t dst, const string_t src)
 {
+	unsigned int length;
 	_string_t *_src = (_string_t *)src;
 	_string_t *_dst = (_string_t *)dst;
 
@@ -218,7 +221,19 @@ void string_append_string(string_t dst, const string_t src)
 	assert(!_dst->header_const);
 	assert(!_dst->data_const);
 
-	string_append_cstr(dst, string_cstr(src));
+	if((_dst->length + null_byte) >= _dst->size)
+		return;
+
+	length = _src->length;
+
+	if((_dst->length + length + null_byte) > _dst->size)
+		length = _dst->size - (_dst->length + null_byte);
+
+	memcpy(_dst->data + _dst->length, _src->data, length);
+	_dst->length += length;
+	_dst->data[_dst->length] = '\0';
+
+	assert(_dst->length < _dst->size);
 }
 
 void string_append_cstr(string_t dst, const char *src)
@@ -246,6 +261,29 @@ void string_append_cstr(string_t dst, const char *src)
 	_dst->data[_dst->length] = '\0';
 
 	assert(_dst->length < _dst->size);
+}
+
+void string_append(string_t dst, char src)
+{
+	_string_t *_dst = (_string_t *)dst;
+
+	assert(_dst->magic_word == string_magic_word);
+	assert(_dst->length < _dst->size);
+	assert(_dst->size > 0);
+	assert(!_dst->header_const);
+	assert(!_dst->data_const);
+
+	if((_dst->length + null_byte) < _dst->size)
+	{
+		_dst->data[_dst->length++] = src;
+		_dst->data[_dst->length] = '\0';
+	}
+}
+
+void string_assign_string(string_t dst, const string_t src)
+{
+	string_clear(dst);
+	string_append_string(dst, src);
 }
 
 void string_assign_cstr(string_t dst, const char *cstr)
@@ -416,19 +454,149 @@ void string_assign(string_t dst, unsigned int offset, char src)
 	_dst->data[offset] = src;
 }
 
-void string_append(string_t dst, char src)
+string_t string_parse(const string_t src, unsigned int index)
 {
+	unsigned int offset, current_index, start, end;
+	_string_t *_src = (_string_t *)src;
+	string_t dst;
+
+	assert(_src->magic_word == string_magic_word);
+	assert(_src->length < _src->size);
+	assert(_src->size > 0);
+	assert(_src->data[_src->length] == '\0');
+
+	offset = 0;
+	start = 0;
+	end = 0;
+
+	for(current_index = 0; (offset < _src->length) && (current_index <= index); current_index++)
+	{
+		for(; offset < _src->length; offset++)
+			if((_src->data[offset] != ' ') && (_src->data[offset] != '\t'))
+				break;
+
+		if(offset >= _src->length)
+			return((string_t)0);
+
+		start = offset;
+
+		for(; offset < _src->length; offset++)
+			if((_src->data[offset] == ' ') || (_src->data[offset] == '\t'))
+				break;
+
+		end = offset;
+	}
+
+	if(current_index != (index + 1))
+		return((string_t)0);
+
+	dst = string_new(end - start + null_byte);
+	string_assign_data(dst, end - start, (uint8_t *)&_src->data[start]);
+
+	return(dst);
+}
+
+bool string_equal_cstr(const string_t dst, const char *src)
+{
+	unsigned int length;
 	_string_t *_dst = (_string_t *)dst;
 
+	assert(src);
 	assert(_dst->magic_word == string_magic_word);
 	assert(_dst->length < _dst->size);
 	assert(_dst->size > 0);
-	assert(!_dst->header_const);
-	assert(!_dst->data_const);
 
-	if((_dst->length + null_byte) < _dst->size)
+	length = strlen(src);
+
+	if(length != _dst->length)
+		return(false);
+
+	if(memcmp(_dst->data, src, length))
+		return(false);
+
+	return(true);
+}
+
+bool string_uint(const string_t src, unsigned int base, unsigned int *value)
+{
+	_string_t *_src = (_string_t *)src;
+	char *endptr;
+
+	assert(_src->magic_word == string_magic_word);
+	assert(_src->length < _src->size);
+	assert(_src->size > 0);
+
+	if(_src->length == 0)
 	{
-		_dst->data[_dst->length++] = src;
-		_dst->data[_dst->length] = '\0';
+		*value = 0;
+		return(false);
 	}
+
+	errno = 0;
+
+	*value = strtoul(_src->data, &endptr, base);
+
+	if(errno || !endptr || (*endptr != '\0'))
+	{
+		*value = 0;
+		return(false);
+	}
+
+	return(true);
+}
+
+bool string_int(const string_t src, unsigned int base, int *value)
+{
+	_string_t *_src = (_string_t *)src;
+	char *endptr;
+
+	assert(_src->magic_word == string_magic_word);
+	assert(_src->length < _src->size);
+	assert(_src->size > 0);
+
+	if(_src->length == 0)
+	{
+		*value = 0;
+		return(false);
+	}
+
+	errno = 0;
+
+	*value = strtol(_src->data, &endptr, base);
+
+	if(errno || !endptr || (*endptr != '\0'))
+	{
+		*value = 0;
+		return(false);
+	}
+
+	return(true);
+}
+
+bool string_float(const string_t src, float *value)
+{
+	_string_t *_src = (_string_t *)src;
+	char *endptr;
+
+	assert(_src->magic_word == string_magic_word);
+	assert(_src->length < _src->size);
+	assert(_src->size > 0);
+
+	if(_src->length == 0)
+	{
+		*value = 0;
+		return(false);
+	}
+
+	errno = 0;
+
+	*value = strtof(_src->data, &endptr);
+
+	if(errno || !endptr || (*endptr != '\0'))
+	{
+		*value = 0;
+		return(false);
+	}
+
+	return(true);
 }

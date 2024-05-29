@@ -478,11 +478,12 @@ void bt_send(const cli_buffer_t *cli_buffer)
 
 int bt_init(void)
 {
+	string_auto_init(hostname_key, "hostname");
 	string_auto(hostname, 16);
 
 	assert(!inited);
 
-	if(!config_get_string("hostname", hostname))
+	if(!config_get_string(hostname_key, hostname))
 		string_assign_cstr(hostname, "esp32");
 
 	assert((reassembly_buffer = heap_caps_malloc(reassembly_buffer_size, MALLOC_CAP_SPIRAM)));

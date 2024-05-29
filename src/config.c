@@ -1,6 +1,5 @@
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h> // FIXME
 
 #include "string.h"
 #include "cli-command.h"
@@ -35,7 +34,7 @@ void config_init(void)
 	inited = true;
 }
 
-static bool find_key(const char *namespace, const char *key, nvs_entry_info_t *info)
+static bool find_key(const char *namespace, const string_t key, nvs_entry_info_t *info)
 {
 	int rv;
 	nvs_iterator_t iterator;
@@ -51,7 +50,7 @@ static bool find_key(const char *namespace, const char *key, nvs_entry_info_t *i
 	{
 		util_abort_on_esp_err("nvs_entry_info", nvs_entry_info(iterator, info));
 
-		if(!strcmp(info->key, key))
+		if(string_equal_cstr(key, info->key))
 			break;
 
 		util_abort_on_esp_err("nvs_entry_next", rv);
@@ -66,7 +65,7 @@ error:
 	return(false);
 }
 
-static bool get_value_as_integer(const char *namespace, const char *key, const nvs_entry_info_t *their_info, const char **type, int64_t *value)
+static bool get_value_as_integer(const char *namespace, const string_t key, const nvs_entry_info_t *their_info, const char **type, int64_t *value)
 {
 	esp_err_t rv;
 	nvs_entry_info_t info;
@@ -215,7 +214,7 @@ static bool get_value_as_integer(const char *namespace, const char *key, const n
 	return(true);
 }
 
-static bool get_value_as_string(const char *namespace, const char *key, const nvs_entry_info_t *their_info, const char **type, string_t dst)
+static bool get_value_as_string(const char *namespace, const string_t key, const nvs_entry_info_t *their_info, const char **type, string_t dst)
 {
 	esp_err_t rv;
 	nvs_entry_info_t our_info;
@@ -370,7 +369,7 @@ static bool get_value_as_string(const char *namespace, const char *key, const nv
 	return(true);
 }
 
-bool config_get_int(const char *key, int32_t *value)
+bool config_get_int(const string_t key, int32_t *value)
 {
 	int64_t raw_value;
 
@@ -386,7 +385,7 @@ bool config_get_int(const char *key, int32_t *value)
 	return(true);
 }
 
-bool config_get_uint(const char *key, uint32_t *value)
+bool config_get_uint(const string_t key, uint32_t *value)
 {
 	int64_t raw_value;
 
@@ -402,7 +401,7 @@ bool config_get_uint(const char *key, uint32_t *value)
 	return(true);
 }
 
-bool config_get_string(const char *key, string_t dst)
+bool config_get_string(const string_t key, string_t dst)
 {
 	assert(inited);
 	assert(dst);
@@ -410,44 +409,44 @@ bool config_get_string(const char *key, string_t dst)
 	return(get_value_as_string((const char *)0, key, (nvs_entry_info_t *)0, (const char **)0, dst));
 }
 
-void config_set_uint(const char *key, uint32_t value)
+void config_set_uint(const string_t key, uint32_t value)
 {
 	nvs_handle_t handle;
 
 	util_abort_on_esp_err("nvs_open", nvs_open("config", NVS_READWRITE, &handle));
-	util_abort_on_esp_err("nvs_set_u32", nvs_set_u32(handle, key, value));
+	util_abort_on_esp_err("nvs_set_u32", nvs_set_u32(handle, string_cstr(key), value));
 	util_abort_on_esp_err("nvs_commit", nvs_commit(handle));
 	nvs_close(handle);
 }
 
-void config_set_int(const char *key, int32_t value)
+void config_set_int(const string_t key, int32_t value)
 {
 	nvs_handle_t handle;
 
 	util_abort_on_esp_err("nvs_open", nvs_open("config", NVS_READWRITE, &handle));
-	util_abort_on_esp_err("nvs_set_i32", nvs_set_i32(handle, key, value));
+	util_abort_on_esp_err("nvs_set_i32", nvs_set_i32(handle, string_cstr(key), value));
 	util_abort_on_esp_err("nvs_commit", nvs_commit(handle));
 	nvs_close(handle);
 }
 
-void config_set_string(const char *key, string_t value)
+void config_set_string(const string_t key, string_t value)
 {
 	nvs_handle_t handle;
 
 	util_abort_on_esp_err("nvs_open", nvs_open("config", NVS_READWRITE, &handle));
-	util_abort_on_esp_err("nvs_set_str", nvs_set_str(handle, key, string_cstr(value)));
+	util_abort_on_esp_err("nvs_set_str", nvs_set_str(handle, string_cstr(key), string_cstr(value)));
 	util_abort_on_esp_err("nvs_commit", nvs_commit(handle));
 	nvs_close(handle);
 }
 
-bool config_erase(const char *key)
+bool config_erase(const string_t key)
 {
 	int rv;
 	nvs_handle_t handle;
 
 	util_abort_on_esp_err("nvs_open", nvs_open("config", NVS_READWRITE, &handle));
 
-	if((rv = nvs_erase_key(handle, key)) == ESP_ERR_NVS_NOT_FOUND)
+	if((rv = nvs_erase_key(handle, string_cstr(key))) == ESP_ERR_NVS_NOT_FOUND)
 	{
 		nvs_close(handle);
 		return(false);
@@ -488,9 +487,9 @@ void command_config_set_uint(cli_command_call_t *call)
 	config_set_uint(call->parameters[0].string, call->parameters[1].unsigned_int);
 
 	if(get_value_as_integer("config", call->parameters[0].string, (const nvs_entry_info_t *)0, &type, &value))
-		string_format(call->result, "%s[%s]=%lld", call->parameters[0].string, type, value);
+		string_format(call->result, "%s[%s]=%lld", string_cstr(call->parameters[0].string), type, value);
 	else
-		string_format(call->result, "ERROR: %s not found", call->parameters[0].string);
+		string_format(call->result, "ERROR: %s not found", string_cstr(call->parameters[0].string));
 }
 
 void command_config_set_int(cli_command_call_t *call)
@@ -503,9 +502,9 @@ void command_config_set_int(cli_command_call_t *call)
 	config_set_int(call->parameters[0].string, call->parameters[1].signed_int);
 
 	if(get_value_as_integer("config", call->parameters[0].string, (const nvs_entry_info_t *)0, &type, &value))
-		string_format(call->result, "%s[%s]=%lld", call->parameters[0].string, type, value);
+		string_format(call->result, "%s[%s]=%lld", string_cstr(call->parameters[0].string), type, value);
 	else
-		string_format(call->result, "ERROR: %s not found", call->parameters[0].string);
+		string_format(call->result, "ERROR: %s not found", string_cstr(call->parameters[0].string));
 }
 
 void command_config_set_string(cli_command_call_t *call)
@@ -516,13 +515,12 @@ void command_config_set_string(cli_command_call_t *call)
 	assert(inited);
 	assert(call->parameter_count == 2);
 
-	string_assign_cstr(dst, call->parameters[1].string); // FIXME
-	config_set_string(call->parameters[0].string, dst);
+	config_set_string(call->parameters[0].string, call->parameters[1].string);
 
 	if(get_value_as_string((const char *)0, call->parameters[0].string, (nvs_entry_info_t *)0, &type, dst))
-		string_format(call->result, "%s[%s]=%s", call->parameters[0].string, type, string_cstr(dst));
+		string_format(call->result, "%s[%s]=%s", string_cstr(call->parameters[0].string), type, string_cstr(dst));
 	else
-		string_format(call->result, "ERROR: %s not found", call->parameters[0].string);
+		string_format(call->result, "ERROR: %s not found", string_cstr(call->parameters[0].string));
 }
 
 void command_config_erase(cli_command_call_t *call)
@@ -531,9 +529,9 @@ void command_config_erase(cli_command_call_t *call)
 	assert(call->parameter_count == 1);
 
 	if(config_erase(call->parameters[0].string))
-		string_format(call->result, "erase %s OK", call->parameters[0].string);
+		string_format(call->result, "erase %s OK", string_cstr(call->parameters[0].string));
 	else
-		string_format(call->result, "erase %s not found", call->parameters[0].string);
+		string_format(call->result, "erase %s not found", string_cstr(call->parameters[0].string));
 }
 
 static void config_dump(cli_command_call_t *call, const char *namespace)
@@ -542,6 +540,7 @@ static void config_dump(cli_command_call_t *call, const char *namespace)
 	nvs_iterator_t iterator;
 	nvs_entry_info_t info;
 	string_auto(dst, 64);
+	string_auto(key, 16);
 	const char *type;
 
 	assert(inited);
@@ -557,13 +556,15 @@ static void config_dump(cli_command_call_t *call, const char *namespace)
 	{
 		util_abort_on_esp_err("nvs_entry_info", nvs_entry_info(iterator, &info));
 
-		if(!get_value_as_string(info.namespace_name, info.key, &info, &type, dst))
+		string_assign_cstr(key, info.key);
+
+		if(!get_value_as_string(info.namespace_name, key, &info, &type, dst))
 			string_assign_cstr(dst, "<not found");
 
 		if(namespace)
-			string_format_append(call->result, "\n- %-7s %-14s %s", type, info.key, string_cstr(dst));
+			string_format_append(call->result, "\n- %-7s %-14s %s", type, string_cstr(key), string_cstr(dst));
 		else
-			string_format_append(call->result, "\n- %-12s %-7s %-14s %s", info.namespace_name, type, info.key, string_cstr(dst));
+			string_format_append(call->result, "\n- %-12s %-7s %-14s %s", info.namespace_name, type, string_cstr(key), string_cstr(dst));
 
 		if((rv = nvs_entry_next(&iterator)) == ESP_ERR_NVS_NOT_FOUND)
 			break;

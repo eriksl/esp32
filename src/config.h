@@ -1,15 +1,15 @@
 #pragma once
 
 void config_init(void);
-bool config_get_uint(const char *key, uint32_t *value);
-bool config_get_int(const char *key, int32_t *value);
-bool config_get_string(const char *key, string_t string);
+bool config_get_uint(const string_t key, uint32_t *value);
+bool config_get_int(const string_t key, int32_t *value);
+bool config_get_string(const string_t key, string_t string);
 
-void config_set_uint(const char *key, uint32_t value);
-void config_set_int(const char *key, int32_t value);
-void config_set_string(const char *key, string_t value);
+void config_set_uint(const string_t key, uint32_t value);
+void config_set_int(const string_t key, int32_t value);
+void config_set_string(const string_t key, string_t value);
 
-bool config_erase(const char *key);
+bool config_erase(const string_t key);
 
 void command_info_config(cli_command_call_t *call);
 void command_config_dump(cli_command_call_t *call);

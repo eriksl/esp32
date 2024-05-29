@@ -1,4 +1,4 @@
-#include <string.h> // FIXME
+#include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
 

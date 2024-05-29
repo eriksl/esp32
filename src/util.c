@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "string.h"
 #include "cli-command.h"
@@ -21,7 +22,7 @@ uint32_t util_md5_32(unsigned int length, const uint8_t *data)
 	return((hash[0] << 24) | (hash[1] << 16) | (hash[2] << 8) | (hash[3] << 0));
 }
 
-void util_hash_to_text(unsigned int hash_size, const uint8_t *hash, unsigned int data_size, char *data)
+void util_hash_to_text(unsigned int hash_size, const uint8_t *hash, unsigned int data_size, char *data) // FIXME
 {
 	unsigned int in, out, value;
 

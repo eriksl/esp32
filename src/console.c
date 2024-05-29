@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <string.h> // FIXME
+#include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <unistd.h>
@@ -320,12 +320,13 @@ static void run_console(void *)
 void console_init()
 {
 	string_auto(hostname_in, 16);
+	string_auto_init(hostname_key, "hostname");
 	unsigned int ix;
 	line_t *line;
 
 	assert(!inited);
 
-	if(config_get_string("hostname", hostname_in)) // FIXME
+	if(config_get_string(hostname_key, hostname_in))
 		string_to_cstr(hostname_in, sizeof(hostname), hostname);
 	else
 		strlcpy(hostname, "esp32", sizeof(hostname));

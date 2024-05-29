@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdbool.h>
-#include <string.h> // FIXME
 #include <errno.h>
 
 #include "string.h"
@@ -121,16 +120,52 @@ static void command_help(cli_command_call_t *call)
 	return(help(call));
 }
 
+#if 0
+static void command_test_parse(cli_command_call_t *call)
+{
+	unsigned int ix, length;
+	string_t token;
+
+	string_auto(description, 512);
+
+	assert(call->parameter_count == 1);
+
+	string_assign_cstr(description, call->parameters[0].string);
+
+	length = string_length(description);
+
+	for(ix = 0; ix < length; ix++)
+		if(string_at(description, ix) == '_')
+			string_assign(description, ix, ' ');
+
+	string_assign_cstr(call->result, "line: \"");
+	string_append_string(call->result, description);
+	string_append_cstr(call->result, "\"");
+
+	for(ix = 0; ix < 16; ix++)
+	{
+		if(!(token = string_parse(description, ix)))
+			break;
+
+		string_format_append(call->result, "\n%2u \"%s\"", ix, string_cstr(token));
+		string_free(token);
+	}
+}
+#endif
+
 static void command_hostname(cli_command_call_t *call)
 {
 	unsigned int ix, length;
+	string_auto(hostname, 64);
 	string_auto(description, 64);
+	string_auto_init(key_hostname, "hostname");
+	string_auto_init(key_description, "hostname_desc");
 
 	assert(call->parameter_count < 3);
 
 	if(call->parameter_count > 1)
 	{
-		string_assign_cstr(description, call->parameters[1].string); // FIXME
+		string_assign_string(description, call->parameters[1].string);
 
 		length = string_length(description);
 
@@ -138,27 +173,19 @@ static void command_hostname(cli_command_call_t *call)
 			if(string_at(description, ix) == '_')
 				string_assign(description, ix, ' ');
 
-		config_set_string("hostname_desc", description);
+		config_set_string(key_description, description);
 	}
 
 	if(call->parameter_count > 0)
-	{
-		string_assign_cstr(description, call->parameters[0].string); // FIXME
-		config_set_string("hostname", description);
-	}
+		config_set_string(key_hostname, call->parameters[0].string);
 
-	string_format(call->result, "hostname: ");
+	if(!config_get_string(key_hostname, hostname))
+		string_assign_cstr(hostname, "<unset>");
 
-	if(!config_get_string("hostname", description))
+	if(!config_get_string(key_description, description))
 		string_assign_cstr(description, "<unset>");
 
-	string_append_string(call->result, description);
-	string_append_cstr(call->result, "\n");
-
-	if(!config_get_string("hostname_desc", description))
-		string_assign_cstr(description, "<unset>");
-
-	string_append_string(description, call->result);
+	string_format(call->result, "hostname: %s (%s)", string_cstr(hostname), string_cstr(description));
 }
 
 static void command_reset(cli_command_call_t *call)
@@ -380,6 +407,15 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
+#if 0
+	{ "test", "t", "test parsing", command_test_parse,
+		{	1,
+			{
+				{ cli_parameter_string, 0, 1, 0, 0, "line", {} },
+			},
+		}
+	},
+#endif
 	{ (const char *)0, (const char *)0, (const char *)0, (cli_command_function_t *)0,
 		{}
 	},
@@ -391,12 +427,12 @@ static void help(cli_command_call_t *call)
 	const cli_command_t *command;
 	const cli_parameter_description_t *parameter;
 	const char *delimiter[2];
-	const char *command_name;
+	string_t command_name;
 
 	string_format(call->result, "help");
 
 	if(call->parameter_count == 0)
-		command_name = (const char *)0;
+		command_name = (string_t)0;
 	else
 		command_name = call->parameters[0].string;
 
@@ -404,7 +440,7 @@ static void help(cli_command_call_t *call)
 	{
 		command = &cli_commands[command_index];
 
-		if(command_name && strcmp(command_name, command->name) && (!command->alias || strcmp(command_name, command->alias)))
+		if(command_name && !string_equal_cstr(command_name, command->name) && (!command->alias || !string_equal_cstr(command_name, command->alias)))
 			continue;
 
 		string_format_append(call->result, "\n  %-18s %-4s %s", command->name,
@@ -468,10 +504,10 @@ static void run_receive_queue(void *)
 {
 	cli_buffer_t						cli_buffer;
 	string_t							data;
-	unsigned int						oob_data_length;
-	uint8_t								*oob_data;
+	string_t							oob_data;
+	string_t							command;
+	string_t							token;
 	unsigned int						count, current, ix;
-	char								*token, *saveptr;
 	const cli_command_t					*cli_command;
 	unsigned int						parameter_count;
 	const cli_parameter_description_t	*parameter_description;
@@ -480,8 +516,7 @@ static void run_receive_queue(void *)
 	string_auto(error, 128);
 
 	call.parameter_count =		0;
-	call.oob_data_length =		0;
-	call.oob_data =				(uint8_t *)0;
+	call.oob =					(string_t)0;
 	call.result =				string_new(result_size);
 	call.result_oob =			string_new(result_oob_size);
 
@@ -489,8 +524,10 @@ static void run_receive_queue(void *)
 
 	for(;;)
 	{
+		command = (string_t)0;
+
 		receive_queue_pop(&cli_buffer);
-		packet_decapsulate(&cli_buffer, &data, &oob_data_length, &oob_data);
+		packet_decapsulate(&cli_buffer, &data, &oob_data);
 
 		if(cli_buffer.packetised)
 			cli_stats_commands_received_packet++;
@@ -503,8 +540,7 @@ static void run_receive_queue(void *)
 		cli_buffer.data = (uint8_t *)0;
 		cli_buffer.data_from_malloc = 0;
 
-		saveptr = (char *)0;
-		if(!(token = strtok_r(string_cstr_nonconst(data), " \r\n", &saveptr))) // FIXME strok in string_t
+		if(!(command = string_parse(data, 0)))
 		{
 			string_format(error, "ERROR: empty line");
 			packet_encapsulate(&cli_buffer, error, (string_t)0);
@@ -516,16 +552,16 @@ static void run_receive_queue(void *)
 		{
 			cli_command = &cli_commands[ix];
 
-			if(!cli_command->name || !strcmp(cli_command->name, token))
+			if(!cli_command->name || string_equal_cstr(command, cli_command->name))
 				break;
 
-			if(cli_command->alias && !strcmp(cli_command->alias, token))
+			if(cli_command->alias && string_equal_cstr(command, cli_command->alias))
 				break;
 		}
 
 		if(!cli_command->name)
 		{
-			string_format(error, "ERROR: unknown command \"%s\"", token);
+			string_format(error, "ERROR: unknown command \"%s\"", string_cstr(command)); // FIXME
 			packet_encapsulate(&cli_buffer, error, (string_t)0);
 			send_queue_push(&cli_buffer);
 			goto error;
@@ -546,14 +582,10 @@ static void run_receive_queue(void *)
 			parameter->type = cli_parameter_none;
 			parameter->has_value = 0;
 
-			token = strtok_r((char *)0, " \r\n", &saveptr);
-
-			if(!token)
+			if(!(token = string_parse(data, current + 1)))
 			{
 				if(!parameter_description->value_required)
-				{
 					continue;
-				}
 				else
 				{
 					string_format(error, "ERROR: missing required parameter %u", current + 1);
@@ -565,6 +597,8 @@ static void run_receive_queue(void *)
 			else
 			{
 				parameter_count++;
+				
+				parameter->string = token;
 
 				switch(parameter_description->type)
 				{
@@ -579,15 +613,11 @@ static void run_receive_queue(void *)
 
 					case(cli_parameter_unsigned_int):
 					{
-						char *endptr;
 						unsigned int value;
 
-						errno = 0;
-						value = strtoul(token, &endptr, parameter_description->base);
-
-						if(errno || !*token || *endptr)
+						if(!string_uint(parameter->string, parameter_description->base, &value))
 						{
-							string_format(error, "ERROR: invalid unsigned integer value: %s", token);
+							string_format(error, "ERROR: invalid unsigned integer value: %s", string_cstr(parameter->string)); // FIXME
 							packet_encapsulate(&cli_buffer, error, (string_t)0);
 							send_queue_push(&cli_buffer);
 							goto error;
@@ -618,15 +648,11 @@ static void run_receive_queue(void *)
 
 					case(cli_parameter_signed_int):
 					{
-						char *endptr;
 						int value;
 
-						errno = 0;
-						value = strtol(token, &endptr, parameter_description->base);
-
-						if(errno || !*token || *endptr)
+						if(!string_int(parameter->string, parameter_description->base, &value))
 						{
-							string_format(error, "ERROR: invalid signed integer value: %s", token);
+							string_format(error, "ERROR: invalid signed integer value: %s", string_cstr(parameter->string));
 							packet_encapsulate(&cli_buffer, error, (string_t)0);
 							send_queue_push(&cli_buffer);
 							goto error;
@@ -657,15 +683,11 @@ static void run_receive_queue(void *)
 
 					case(cli_parameter_float):
 					{
-						char *endptr;
 						float value;
 
-						errno = 0;
-						value = strtof(token, &endptr);
-
-						if(errno || !*token || *endptr)
+						if(!string_float(parameter->string, &value))
 						{
-							string_format(error, "ERROR: invalid float value: %s", token);
+							string_format(error, "ERROR: invalid float value: %s", string_cstr(parameter->string));
 							packet_encapsulate(&cli_buffer, error, (string_t)0);
 							send_queue_push(&cli_buffer);
 							goto error;
@@ -698,7 +720,7 @@ static void run_receive_queue(void *)
 					{
 						unsigned int length;
 
-						length = strlen(token);
+						length = string_length(parameter->string);
 
 						if((parameter_description->lower_bound_required) && (length < parameter_description->string.lower_length_bound))
 						{
@@ -718,7 +740,6 @@ static void run_receive_queue(void *)
 
 						parameter->type = cli_parameter_string;
 						parameter->has_value = 1;
-						parameter->string = token;
 
 						break;
 					}
@@ -742,17 +763,17 @@ static void run_receive_queue(void *)
 			goto error;
 		}
 
-		if(strtok_r((char *)0, " \r\n", &saveptr))
+		if((token = string_parse(data, current + 1)))
 		{
+			string_free(token);
 			string_format(error, "ERROR: too many parameters");
 			packet_encapsulate(&cli_buffer, error, (string_t)0);
 			send_queue_push(&cli_buffer);
 			goto error;
 		}
 
-		call.parameter_count =		parameter_count;
-		call.oob_data_length =		oob_data_length;
-		call.oob_data =				oob_data;
+		call.parameter_count =	parameter_count;
+		call.oob =				oob_data;
 
 		string_clear(call.result);
 		string_clear(call.result_oob);
@@ -763,6 +784,23 @@ static void run_receive_queue(void *)
 		send_queue_push(&cli_buffer);
 
 error:
+		if(command)
+		{
+			string_free(command);
+			command = (string_t)0;
+		}
+
+		for(ix = 0; ix < call.parameter_count; ix++)
+		{
+			parameter = &call.parameters[ix];
+
+			if(parameter->string)
+			{
+				string_free(parameter->string);
+				parameter->string = (string_t)0;
+			}
+		}
+
 		cli_buffer.source = cli_source_none;
 		cli_buffer.length = 0;
 		cli_buffer.data_from_malloc = 0;
@@ -776,8 +814,8 @@ error:
 
 		if(oob_data)
 		{
-			free(oob_data);
-			oob_data = (uint8_t *)0;
+			string_free(oob_data);
+			oob_data = (string_t)0;
 		}
 	}
 }

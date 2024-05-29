@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdbool.h>
-#include <string.h> // FIXME
+#include <stddef.h>
+#include <string.h>
 
 #include "string.h"
 #include "cli-command.h"
@@ -11,17 +12,16 @@
 
 #include <freertos/FreeRTOS.h>
 
-void packet_decapsulate(cli_buffer_t *cli_buffer, string_t *data, unsigned int *oob_data_length, uint8_t **oob_data)
+void packet_decapsulate(cli_buffer_t *cli_buffer, string_t *data, string_t *oob_data)
 {
-	static const char *error = "<error>";
+	string_auto_init(error_message, "<error");
 	packet_header_t *packet;
 	const uint8_t *data_pad;
-	unsigned int data_length, data_pad_offset, oob_data_offset;
+	unsigned int data_length, data_pad_offset, oob_data_offset, oob_data_length;
 	unsigned int our_checksum, their_checksum;
 
 	assert(cli_buffer);
 	assert(data);
-	assert(oob_data_length);
 	assert(oob_data);
 
 	packet = (packet_header_t *)cli_buffer->data;
@@ -59,13 +59,13 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, string_t *data, unsigned int *
 		*data = string_new(data_length + 1);
 		string_assign_data(*data, data_length, cli_buffer->data + packet->data_offset);
 
-		if((*oob_data_length = packet->length - packet->oob_data_offset))
+		if((oob_data_length = packet->length - packet->oob_data_offset))
 		{
-			assert((*oob_data = heap_caps_malloc(*oob_data_length, MALLOC_CAP_SPIRAM)));
-			memcpy(*oob_data, cli_buffer->data + packet->oob_data_offset, *oob_data_length);
+			*oob_data = string_new(oob_data_length + 1);
+			string_assign_data(*oob_data, oob_data_length, &cli_buffer->data[packet->oob_data_offset]);
 		}
 		else
-			*oob_data = (uint8_t *)0;
+			*oob_data = (string_t)0;
 
 		if(packet->flag.transaction_id_provided)
 		{
@@ -98,21 +98,20 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, string_t *data, unsigned int *
 				goto error;
 			}
 
-			*oob_data_length = cli_buffer->length - oob_data_offset;
+			oob_data_length = cli_buffer->length - oob_data_offset;
 
 			*data = string_new(data_pad_offset + 1);
 			string_assign_data(*data, data_pad_offset, &cli_buffer->data[0]);
 
-			assert((*oob_data = heap_caps_malloc(*oob_data_length, MALLOC_CAP_SPIRAM)));
-			memcpy(*oob_data, &cli_buffer->data[oob_data_offset], *oob_data_length);
+			*oob_data = string_new(oob_data_length + 1);
+			string_assign_data(*oob_data, oob_data_length, &cli_buffer->data[oob_data_offset]);
 		}
 		else
 		{
 			*data = string_new(cli_buffer->length + 1);
 			string_assign_data(*data, cli_buffer->length, &cli_buffer->data[0]);
 
-			*oob_data_length = 0;
-			*oob_data = (uint8_t *)0;
+			*oob_data = (string_t)0;
 		}
 
 		cli_buffer->transaction_id = 0;
@@ -124,11 +123,8 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, string_t *data, unsigned int *
 	return;
 
 error:
-	data_length = strlen(error);
-	*data = string_new(data_length + 1);
-	string_assign_cstr(*data, error);
-	*oob_data = (uint8_t *)0;
-	*oob_data_length = 0;
+	string_assign_string(*data, error_message);
+	*oob_data = (string_t)0;
 }
 
 void packet_encapsulate(cli_buffer_t *cli_buffer, const string_t data, const string_t oob_data)
