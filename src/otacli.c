@@ -141,7 +141,7 @@ void command_ota_finish(cli_command_call_t *call)
 {
 	int rv;
 	unsigned char ota_sha256_hash[32];
-	char ota_sha256_hash_text[(sizeof(ota_sha256_hash) * 2) + 1];
+	string_auto(ota_sha256_hash_text, (sizeof(ota_sha256_hash) * 2) + 1);
 
 	assert(call->parameter_count == 0);
 
@@ -160,7 +160,7 @@ void command_ota_finish(cli_command_call_t *call)
 	mbedtls_sha256_finish(&ota_sha256_ctx, ota_sha256_hash);
 	mbedtls_sha256_free(&ota_sha256_ctx);
 	ota_sha256_ctx_active = false;
-	util_hash_to_text(sizeof(ota_sha256_hash), ota_sha256_hash, sizeof(ota_sha256_hash_text), ota_sha256_hash_text);
+	string_hash(ota_sha256_hash_text, sizeof(ota_sha256_hash), ota_sha256_hash);
 
 	if((rv = esp_ota_end(ota_handle)))
 	{
@@ -170,14 +170,14 @@ void command_ota_finish(cli_command_call_t *call)
 
 	ota_handle_active = false;
 
-	string_format(call->result, "OK finish ota, checksum: %s", ota_sha256_hash_text);
+	string_format(call->result, "OK finish ota, checksum: %s", string_cstr(ota_sha256_hash_text));
 }
 
 void command_ota_commit(cli_command_call_t *call)
 {
 	esp_err_t rv;
 	unsigned char local_sha256_hash[32];
-	char local_sha256_hash_text[(sizeof(local_sha256_hash) * 2) + 1];
+	string_auto(local_sha256_hash_text, (sizeof(local_sha256_hash) * 2) + 1);
 	string_t remote_sha256_hash_text;
 	const esp_partition_t *boot_partition;
 	esp_partition_pos_t partition_pos;
@@ -199,11 +199,11 @@ void command_ota_commit(cli_command_call_t *call)
 		return;
 	}
 
-	util_hash_to_text(sizeof(local_sha256_hash), local_sha256_hash, sizeof(local_sha256_hash_text), local_sha256_hash_text);
+	string_hash(local_sha256_hash_text, sizeof(local_sha256_hash), local_sha256_hash);
 
-	if(!string_equal_cstr(remote_sha256_hash_text, local_sha256_hash_text))
+	if(!string_equal_string(remote_sha256_hash_text, local_sha256_hash_text))
 	{
-		string_format(call->result, "ERROR: checksum mismatch: %s vs. %s", string_cstr(remote_sha256_hash_text), local_sha256_hash_text);
+		string_format(call->result, "ERROR: checksum mismatch: %s vs. %s", string_cstr(remote_sha256_hash_text), string_cstr(local_sha256_hash_text));
 		return;
 	}
 

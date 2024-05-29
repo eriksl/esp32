@@ -45,7 +45,7 @@ void command_info_flash(cli_command_call_t *call)
 	esp_ota_img_states_t ota_state;
 	const char *ota_state_text;
 	unsigned char sha256_hash[32];
-	char sha256_hash_text[(sizeof(sha256_hash) * 2) + 1];
+	string_auto(sha256_hash_text, (sizeof(sha256_hash) * 2) + 1);
 
 	assert(call->parameter_count == 0);
 
@@ -159,12 +159,9 @@ void command_info_flash(cli_command_call_t *call)
 		}
 
 		if((rv = esp_partition_get_sha256(partition, sha256_hash)))
-		{
-			string_format(call->result, "ERROR: esp_partition_get_sha256 failed: 0x%x", rv);
-			return;
-		}
-
-		util_hash_to_text(sizeof(sha256_hash), sha256_hash, sizeof(sha256_hash_text), sha256_hash_text);
+			string_assign_cstr(sha256_hash_text, "<invalid>");
+		else
+			string_hash(sha256_hash_text, sizeof(sha256_hash), sha256_hash);
 
 		string_format_append(call->result, "%s  %2u %1s%1s%1s %-8s %06lx %4lu %-7s %-8s %-64s",
 				(index > 0) ? "\n" : "",
@@ -172,7 +169,7 @@ void command_info_flash(cli_command_call_t *call)
 				ota_state_text,
 				(partition->address == boot_partition->address) ? "b" : " ",
 				(partition->address == running_partition->address) ? "r" : " ",
-				partition->label, partition->address, partition->size / 1024, type, subtype, sha256_hash_text);
+				partition->label, partition->address, partition->size / 1024, type, subtype, string_cstr(sha256_hash_text));
 	}
 
 	esp_partition_iterator_release(partition_iterator);
