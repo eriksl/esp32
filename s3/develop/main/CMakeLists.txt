@@ -1,2 +1,19 @@
-idf_component_register(SRCS "init.c" "main.c" "bt.c" "cli.c" "console.c" "otacli.c" "flash.c" "info.c" "log.c" "packet.c" "config.c" "util.c" "ledpixel.c"
-                    INCLUDE_DIRS "")
+idf_component_register(
+	SRCS
+		"bt.c"
+		"cli.c"
+		"config.c"
+		"console.c"
+		"flash.c"
+		"fs.c"
+		"info.c"
+		"init.c"
+		"ledpixel.c"
+		"log.c"
+		"main.c"
+		"packet.c"
+		"otacli.c"
+		"string.c"
+		"util.c"
+	INCLUDE_DIRS
+		"")

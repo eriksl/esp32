@@ -208,6 +208,24 @@ unsigned int string_length(const string_t src)
 	return(_src->length);
 }
 
+void string_set_length(string_t dst, unsigned int length)
+{
+	_string_t *_dst = (_string_t *)dst;
+
+	assert(inited);
+	assert(_dst);
+	assert(_dst->magic_word == string_magic_word);
+	assert(_dst->size > 0);
+	assert(!_dst->header_const);
+	assert(!_dst->data_const);
+	
+	if(length > (_dst->size + null_byte))
+		length = _dst->size - null_byte;
+
+	_dst->length = length;
+	_dst->data[length] = '\0';
+}
+
 unsigned int string_size(const string_t src)
 {
 	_string_t *_src = (_string_t *)src;
@@ -473,6 +491,22 @@ const uint8_t *string_data(const string_t src)
 	assert(_src->data[_src->length] == '\0');
 
 	return((const uint8_t *)_src->data);
+}
+
+uint8_t *string_data_nonconst(string_t src)
+{
+	_string_t *_src = (_string_t *)src;
+
+	assert(inited);
+	assert(_src);
+	assert(_src->magic_word == string_magic_word);
+	assert(_src->length < _src->size);
+	assert(_src->size > 0);
+	assert(_src->data[_src->length] == '\0');
+	assert(!_src->header_const);
+	assert(!_src->data_const);
+
+	return((uint8_t *)_src->data);
 }
 
 void string_to_cstr(const string_t src, unsigned int dst_size, char *dst)

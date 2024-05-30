@@ -16,6 +16,7 @@
 #include "wlan.h"
 #include "packet.h"
 #include "util.h"
+#include "fs.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
@@ -280,6 +281,53 @@ static const cli_command_t cli_commands[] =
 				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "sector", {} },
 			}
 		}
+	},
+
+	{ "fs-read", (const char*)0, "read chunk from a file on the littlefs filesystem", command_fs_read,
+		{	3,
+			{
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length", .unsigned_int = { 0, 4096 }},
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "offset", {} },
+				{ cli_parameter_string, 0, 1, 1, 1, "file", .string = { 1, 64 }},
+			}
+		}
+	},
+
+	{ "fs-append", (const char*)0, "append chunk to file on the littlefs filesystem", command_fs_append,
+		{	2,
+			{
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length", .unsigned_int = { 0, 4096 }},
+				{ cli_parameter_string, 0, 1, 1, 1, "file", .string = { 1, 64 }},
+			}
+		}
+	},
+
+	{ "fs-checksum", (const char*)0, "checksum file on the littlefs filesystem", command_fs_checksum,
+		{	1,
+			{
+				{ cli_parameter_string, 0, 1, 1, 1, "file", .string = { 1, 64 }},
+			}
+		}
+	},
+
+	{ "fs-erase", (const char*)0, "erase file on the littlefs filesystem", command_fs_erase,
+		{	1,
+			{
+				{ cli_parameter_string, 0, 1, 1, 1, "file", .string = { 1, 64 }},
+			}
+		}
+	},
+
+	{ "fs-format", "fsf", "format the littlefs filesystem", command_fs_format,
+		{}
+	},
+
+	{ "fs-info", "fsi", "show info about the littlefs filesystem", command_fs_info,
+		{}
+	},
+
+	{ "fs-list", "ls", "show all files on the littlefs filesystem", command_fs_ls,
+		{}
 	},
 
 	{ "help", "?", "this help", command_help,

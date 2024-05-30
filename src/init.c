@@ -10,6 +10,7 @@
 #include "console.h"
 #include "config.h"
 #include "util.h"
+#include "fs.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -22,6 +23,7 @@ void app_main(void)
 	log_init();
 	config_init();
 	util_init();
+	fs_init();
 	cli_init();
 	bt_init();
 	console_init();

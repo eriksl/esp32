@@ -34,6 +34,7 @@ string_t _string_init(unsigned int size, const char *init_string, const char *fi
 void string_clear(string_t dst);
 void string_fill(string_t dst, unsigned int length, char byte);
 unsigned int string_length(const string_t src);
+void string_set_length(string_t dst, unsigned int length);
 unsigned int string_size(const string_t src);
 void string_append_string(string_t dst, const string_t src);
 void string_append_cstr(string_t dst, const char *src);
@@ -48,6 +49,7 @@ char string_at(string_t dst, unsigned int offset);
 const char *string_cstr(const string_t src);
 char *string_cstr_nonconst(string_t src);
 const uint8_t *string_data(const string_t src);
+uint8_t *string_data_nonconst(string_t src);
 void string_to_cstr(const string_t src, unsigned int dst_size, char *dst);
 string_t string_parse(const string_t src, unsigned int index);
 bool string_equal_string(const string_t dst, const string_t src);
