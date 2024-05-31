@@ -12,6 +12,7 @@
 #include <esp_event.h>
 #include <esp_wifi.h>
 #include <esp_netif.h>
+#include <esp_netif_sntp.h>
 
 static bool inited = false;
 
@@ -73,6 +74,8 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 
 			log_format("ip event: got ipv4: changed: %d, ip: %s, netmask: %s, gw: %s",
 					event->ip_changed, string_cstr(ip), string_cstr(netmask), string_cstr(gw));
+
+			util_abort_on_esp_err("esp_netif_sntp_start", esp_netif_sntp_start());
 
 			break;
 		}
@@ -176,6 +179,7 @@ void command_wlan_client_config(cli_command_call_t *call)
 void wlan_init(void)
 {
 	wifi_init_config_t init_config = WIFI_INIT_CONFIG_DEFAULT();
+	esp_sntp_config_t sntp_config = ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(0, {});
 	esp_netif_t *netif;
 
 	init_config.ampdu_rx_enable = 1;
@@ -183,6 +187,9 @@ void wlan_init(void)
 	init_config.amsdu_tx_enable = 1;
 	init_config.nvs_enable = 1;
 	init_config.wifi_task_core_id = 0;
+
+	sntp_config.start = false;
+	sntp_config.server_from_dhcp = true;
 
 	assert(!inited);
 
@@ -192,9 +199,9 @@ void wlan_init(void)
 	util_abort_on_esp_err("esp_event_handler_instance_register 2",
 			esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID, ip_event_handler, (void *)0, (esp_event_handler_instance_t *)0));
 
+	util_abort_on_esp_err("esp_netif_sntp_init", esp_netif_sntp_init(&sntp_config));
 	util_abort_on_esp_err("esp_netif_init", esp_netif_init());
 	netif = esp_netif_create_default_wifi_sta();
-
 	util_abort_on_esp_err("esp_wifi_init", esp_wifi_init(&init_config));
 	util_abort_on_esp_err("esp_wifi_set_mode", esp_wifi_set_mode(WIFI_MODE_STA));
 	util_abort_on_esp_err("esp_wifi_config_11b_rate", esp_wifi_config_11b_rate(WIFI_IF_STA, true));
