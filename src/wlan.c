@@ -61,9 +61,9 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 	{
 		case(IP_EVENT_STA_GOT_IP):
 		{
-			string_t ip = string_new(32);
-			string_t netmask = string_new(32);
-			string_t gw = string_new(32);
+			string_auto(ip, 32);
+			string_auto(netmask, 32);
+			string_auto(gw, 32);
 
 			ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
 
@@ -79,7 +79,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 
 		case(IP_EVENT_GOT_IP6):
 		{
-			string_t ip = string_new(128);
+			string_auto(ip, 128);
 
 			ip_event_got_ip6_t *event = (ip_event_got_ip6_t *)event_data;
 			util_esp_ipv6_addr_to_string(ip, &event->ip6_info.ip);
