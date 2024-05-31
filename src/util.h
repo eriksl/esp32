@@ -29,10 +29,7 @@ static inline void util_abort_on_esp_err(const char *what, int rv)
 static inline void util_warn_on_esp_err(const char *what, int rv)
 {
 	if(rv)
-	{
 		log_format("warning: %s (%s) [0x%x]", what, esp_err_to_name(rv), rv);
-		abort();
-	}
 }
 
 static inline void util_abort(const char *what)
