@@ -111,25 +111,31 @@ static int logging_function(const char *fmt, va_list ap)
 	char buffer[log_buffer_data_size];
 	char *start;
 	char *end;
+	int length;
 
 	assert(inited);
 
-	vsnprintf(buffer, sizeof(buffer), fmt, ap);
+	length = vsnprintf(buffer, sizeof(buffer), fmt, ap);
 
-	if((start = strchr(buffer, ':')))
-		start++;
+	for(start = buffer; *start; start++)
+		if(*start == ':')
+			break;
+
+	if((start[0] == ':') && (start[1]))
+		start = start + 1;
 	else
 		start = buffer;
 
-	if(*start == ' ')
-		start++;
+	for(end = start; *end; end++)
+		if(*end < ' ')
+			break;
 
-	if((end = strchr(start, '\n')))
-		*end = '\0';
+	*end = '\0';
 
-	log_cstr(start);
+	if(start != end)
+		log_cstr(start);
 
-	return(strlen(start));
+	return(length);
 }
 
 void log_init(void)
