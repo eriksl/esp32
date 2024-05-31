@@ -13,11 +13,18 @@
 
 #include <esp_netif_ip_addr.h>
 
+#include <stddef.h>
+#include <sys/time.h>
+
 static bool inited;
 
 void util_init(void)
 {
 	assert(!inited);
+
+	setenv("TZ", "CEST-1CET,M3.2.0/2:00:00,M11.1.0/2:00:00", 1);
+	tzset();
+
 	inited = true;
 }
 
@@ -56,4 +63,15 @@ void util_esp_ipv4_addr_to_string(string_t dst, const esp_ip4_addr_t *src)
 void util_esp_ipv6_addr_to_string(string_t dst, const esp_ip6_addr_t *src)
 {
 	string_format(dst, IPV6STR, IPV62STR(*src));
+}
+
+void util_time_to_string(string_t dst, const time_t *ticks)
+{
+	struct tm tm;
+	char timestring[64];
+
+	localtime_r(ticks, &tm);
+	strftime(timestring, sizeof(timestring), "%Y/%m/%d %H:%M:%S", &tm);
+
+	string_assign_cstr(dst, timestring);
 }

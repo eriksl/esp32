@@ -15,6 +15,8 @@
 
 #include <freertos/FreeRTOS.h>
 
+#include <sys/time.h>
+
 enum
 {
 	log_buffer_size = 7 * 1024,
@@ -25,7 +27,7 @@ enum
 
 typedef struct
 {
-	uint64_t timestamp;
+	time_t timestamp;
 	char data[log_buffer_data_size];
 } log_entry_t;
 
@@ -70,7 +72,7 @@ void log_cstr(const char *string)
 
 		entry = &log_buffer->entry[log_buffer->in];
 
-		entry->timestamp = esp_timer_get_time();
+		entry->timestamp = time((time_t *)0);
 		strlcpy(entry->data, string, log_buffer_data_size);
 		entry->data[log_buffer_data_size - 1] = '\0';
 
@@ -91,7 +93,7 @@ void log_format(const char *fmt, ...)
 
 		entry = &log_buffer->entry[log_buffer->in];
 
-		entry->timestamp = esp_timer_get_time();
+		entry->timestamp = time((time_t *)0);
 
 		va_start(ap, fmt);
 		vsnprintf(entry->data, sizeof(entry->data), fmt, ap);
@@ -174,6 +176,7 @@ void command_info_log(cli_command_call_t *call)
 
 void command_log(cli_command_call_t *call)
 {
+	string_auto(timestring, 64);
 	unsigned int entries, amount;
 
 	assert(inited);
@@ -195,9 +198,11 @@ void command_log(cli_command_call_t *call)
 
 	for(amount = 0; (amount < 24) && (amount < entries); amount++)
 	{
-		string_format_append(call->result, "\n%3d %llu %s",
+		util_time_to_string(timestring, &log_buffer->entry[log_buffer->out].timestamp);
+
+		string_format_append(call->result, "\n%3d %s %s",
 				log_buffer->out,
-				log_buffer->entry[log_buffer->out].timestamp,
+				string_cstr(timestring),
 				log_buffer->entry[log_buffer->out].data);
 
 		if(++log_buffer->out >= log_buffer_entries)
