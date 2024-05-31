@@ -461,6 +461,16 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 #endif
+
+	{ "wlan-client-config", "wcc", "set wireless ssid and password in client mode", command_wlan_client_config,
+		{	2,
+			{
+				{ cli_parameter_string, 0, 0, 1, 1, "ssid", .string = { 0, 63 }},
+				{ cli_parameter_string, 0, 0, 1, 1, "password", .string = { 0, 63 }},
+			},
+		}
+	},
+
 	{ (const char *)0, (const char *)0, (const char *)0, (cli_command_function_t *)0,
 		{}
 	},

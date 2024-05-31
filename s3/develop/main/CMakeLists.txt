@@ -15,5 +15,6 @@ idf_component_register(
 		"otacli.c"
 		"string.c"
 		"util.c"
+		"wlan.c"
 	INCLUDE_DIRS
 		"")
