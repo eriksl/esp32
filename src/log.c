@@ -18,8 +18,8 @@
 enum
 {
 	log_buffer_size = 7 * 1024,
-	log_buffer_entries = 110,
-	log_buffer_data_size = 56,
+	log_buffer_entries = 55,
+	log_buffer_data_size = 120,
 	log_buffer_magic_word = 0x4afbcafe,
 };
 
@@ -29,7 +29,7 @@ typedef struct
 	char data[log_buffer_data_size];
 } log_entry_t;
 
-static_assert(sizeof(log_entry_t) == 64);
+static_assert(sizeof(log_entry_t) == 128);
 
 typedef struct
 {
