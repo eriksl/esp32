@@ -148,9 +148,6 @@ void command_wlan_client_config(cli_command_call_t *call)
 		config.sta.channel = 0;
 		config.sta.listen_interval = 3;
 		config.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
-		config.sta.threshold.rssi = -80;
-		config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-		config.sta.failure_retry_cnt = 3;
 		config.sta.pmf_cfg.capable = false;
 		config.sta.pmf_cfg.required = false;
 
