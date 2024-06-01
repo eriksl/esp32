@@ -15,6 +15,7 @@
 #include <esp_netif_sntp.h>
 
 static bool inited = false;
+static esp_netif_t *netif;
 
 static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
@@ -75,6 +76,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 			log_format("ip event: got ipv4: changed: %d, ip: %s, netmask: %s, gw: %s",
 					event->ip_changed, string_cstr(ip), string_cstr(netmask), string_cstr(gw));
 
+			util_abort_on_esp_err("esp_netif_create_ip6_linklocal", esp_netif_create_ip6_linklocal(netif));
 			util_abort_on_esp_err("esp_netif_sntp_start", esp_netif_sntp_start());
 
 			break;
@@ -180,7 +182,6 @@ void wlan_init(void)
 {
 	wifi_init_config_t init_config = WIFI_INIT_CONFIG_DEFAULT();
 	esp_sntp_config_t sntp_config = ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(0, {});
-	esp_netif_t *netif;
 
 	init_config.ampdu_rx_enable = 1;
 	init_config.ampdu_tx_enable = 1;
