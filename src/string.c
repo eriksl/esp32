@@ -219,7 +219,7 @@ void string_set_length(string_t dst, unsigned int length)
 	assert(!_dst->header_const);
 	assert(!_dst->data_const);
 	
-	if(length > (_dst->size + null_byte))
+	if(length > (_dst->size - null_byte))
 		length = _dst->size - null_byte;
 
 	_dst->length = length;
