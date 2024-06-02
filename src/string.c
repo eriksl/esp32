@@ -224,6 +224,8 @@ void string_set_length(string_t dst, unsigned int length)
 
 	_dst->length = length;
 	_dst->data[length] = '\0';
+
+	assert(_dst->length < _dst->size);
 }
 
 unsigned int string_size(const string_t src)
@@ -357,6 +359,8 @@ void string_append(string_t dst, char src)
 		_dst->data[_dst->length++] = src;
 		_dst->data[_dst->length] = '\0';
 	}
+
+	assert(_dst->length < _dst->size);
 }
 
 void string_assign_string(string_t dst, const string_t src)
