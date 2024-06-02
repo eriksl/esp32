@@ -267,7 +267,7 @@ void string_fill(string_t dst, unsigned int length, char byte)
 	assert(_dst->length < _dst->size);
 	assert(_dst->size > 0);
 
-	if((length + null_byte) > _dst->size)
+	if(length > (_dst->size - null_byte))
 		length = _dst->size - null_byte;
 
 	memset(_dst->data, byte, length);
@@ -298,13 +298,13 @@ void string_append_string(string_t dst, const string_t src)
 	assert(!_dst->header_const);
 	assert(!_dst->data_const);
 
-	if((_dst->length + null_byte) >= _dst->size)
+	if(_dst->length >= (_dst->size - null_byte))
 		return;
 
 	length = _src->length;
 
-	if((_dst->length + length + null_byte) > _dst->size)
-		length = _dst->size - (_dst->length + null_byte);
+	if((_dst->length + length) > (_dst->size - null_byte))
+		length = _dst->size - null_byte - _dst->length;
 
 	memcpy(_dst->data + _dst->length, _src->data, length);
 	_dst->length += length;
@@ -326,13 +326,13 @@ void string_append_cstr(string_t dst, const char *src)
 	assert(!_dst->header_const);
 	assert(!_dst->data_const);
 
-	if((_dst->length + null_byte) >= _dst->size)
+	if(_dst->length >= (_dst->size - null_byte))
 		return;
 
 	length = strlen(src);
 
-	if((_dst->length + length + null_byte) > _dst->size)
-		length = _dst->size - (_dst->length + null_byte);
+	if((_dst->length + length) > (_dst->size - null_byte))
+		length = _dst->size - null_byte - _dst->length;
 
 	memcpy(_dst->data + _dst->length, src, length);
 	_dst->length += length;
@@ -352,7 +352,7 @@ void string_append(string_t dst, char src)
 	assert(!_dst->header_const);
 	assert(!_dst->data_const);
 
-	if((_dst->length + null_byte) < _dst->size)
+	if(_dst->length < (_dst->size - null_byte))
 	{
 		_dst->data[_dst->length++] = src;
 		_dst->data[_dst->length] = '\0';
@@ -383,10 +383,10 @@ void string_assign_data(string_t dst, unsigned int length, const uint8_t *src)
 	assert(!_dst->header_const);
 	assert(!_dst->data_const);
 
-	if((_dst->length + null_byte) >= _dst->size)
+	if(_dst->length >= (_dst->size - null_byte))
 		return;
 
-	if((length + null_byte) > _dst->size)
+	if(length > (_dst->size - null_byte))
 		length = _dst->size - null_byte;
 
 	memcpy(_dst->data, src, length);
@@ -522,7 +522,9 @@ void string_to_cstr(const string_t src, unsigned int dst_size, char *dst)
 	assert(_src->data[_src->length] == '\0');
 	assert(dst_size > 0);
 
-	if(((length = _src->length) + null_byte) > dst_size)
+	length = _src->length;
+
+	if(length > (dst_size - null_byte))
 		length = dst_size - null_byte;
 
 	memcpy(dst, _src->data, length);
