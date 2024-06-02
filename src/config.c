@@ -549,9 +549,9 @@ static void config_dump(cli_command_call_t *call, const char *namespace)
 			string_assign_cstr(dst, "<not found");
 
 		if(namespace)
-			string_format_append(call->result, "\n- %-7s %-14s %s", type, string_cstr(key), string_cstr(dst));
+			string_format_append(call->result, "\n- %-7s %-20s %s", type, string_cstr(key), string_cstr(dst));
 		else
-			string_format_append(call->result, "\n- %-12s %-7s %-14s %s", info.namespace_name, type, string_cstr(key), string_cstr(dst));
+			string_format_append(call->result, "\n- %-12s %-7s %-20s %s", info.namespace_name, type, string_cstr(key), string_cstr(dst));
 
 		if((rv = nvs_entry_next(&iterator)) == ESP_ERR_NVS_NOT_FOUND)
 			break;
