@@ -21,6 +21,8 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 {
 	string_auto(mac, 16);
 
+	assert(inited);
+
 	switch(event_id)
 	{
 		case(WIFI_EVENT_HOME_CHANNEL_CHANGE):
@@ -64,6 +66,8 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
 static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
+	assert(inited);
+
 	switch(event_id)
 	{
 		case(IP_EVENT_STA_GOT_IP):
