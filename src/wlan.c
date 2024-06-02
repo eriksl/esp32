@@ -206,9 +206,9 @@ void wlan_init(void)
 	util_abort_on_esp_err("esp_event_handler_instance_register 2",
 			esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID, ip_event_handler, (void *)0, (esp_event_handler_instance_t *)0));
 
-	util_abort_on_esp_err("esp_netif_sntp_init", esp_netif_sntp_init(&sntp_config));
 	util_abort_on_esp_err("esp_netif_init", esp_netif_init());
 	netif = esp_netif_create_default_wifi_sta();
+	util_abort_on_esp_err("esp_netif_sntp_init", esp_netif_sntp_init(&sntp_config));
 	util_abort_on_esp_err("esp_wifi_init", esp_wifi_init(&init_config));
 	util_abort_on_esp_err("esp_wifi_set_mode", esp_wifi_set_mode(WIFI_MODE_STA));
 	util_abort_on_esp_err("esp_wifi_config_11b_rate", esp_wifi_config_11b_rate(WIFI_IF_STA, true));
