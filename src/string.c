@@ -49,6 +49,13 @@ unsigned int init_called = 0;
 
 static_assert(string_header_length == sizeof(_string_t));
 
+void string_module_init(void)
+{
+	assert(!inited);
+
+	inited = true;
+}
+
 static void _string_init_header(_string_t *_dst, unsigned int size, bool header_const, bool header_from_malloc, bool data_const, bool data_from_malloc)
 {
 	assert(inited);
@@ -77,13 +84,6 @@ void _string_auto(string_t dst, unsigned int size)
 	_string_init_header(_dst, size, false, false, false, false);
 	_dst->data = _dst->data_start;
 	string_clear((string_t)_dst);
-}
-
-void string_module_init(void)
-{
-	assert(!inited);
-
-	inited = true;
 }
 
 string_t _string_new(unsigned int size, const char *file, unsigned int line)
