@@ -65,6 +65,16 @@ void util_esp_ipv6_addr_to_string(string_t dst, const esp_ip6_addr_t *src)
 	string_format(dst, IPV6STR, IPV62STR(*src));
 }
 
+void util_mac_addr_to_string(string_t dst, const uint8_t mac[6], bool invert)
+{
+	if(invert)
+		string_format(dst, "%02x:%02x:%02x:%02x:%02x:%02x",
+				mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]);
+	else
+		string_format(dst, "%02x:%02x:%02x:%02x:%02x:%02x",
+				mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
 void util_time_to_string(string_t dst, const time_t *ticks)
 {
 	struct tm tm;

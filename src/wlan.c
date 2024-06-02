@@ -19,6 +19,8 @@ static esp_netif_t *netif;
 
 static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
+	string_auto(mac, 16);
+
 	switch(event_id)
 	{
 		case(WIFI_EVENT_HOME_CHANNEL_CHANGE):
@@ -37,8 +39,11 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 		{
 			wifi_event_sta_connected_t *event = (wifi_event_sta_connected_t *)event_data;
 
-			log_format("wlan event: associated: channel: %u, ssid: %.*s, bssid: %02x:%02x:%02x:%02x:%02x:%02x", event->channel, event->ssid_len, event->ssid,
-					event->bssid[0], event->bssid[1], event->bssid[2], event->bssid[3], event->bssid[4], event->bssid[5]);
+			util_mac_addr_to_string(mac, event->bssid, false);
+
+			log_format("wlan event: associated: channel: %u, ssid: %.*s, bssid: %s",
+					event->channel, event->ssid_len, event->ssid, string_cstr(mac));
+
 			break;
 		}
 		case(WIFI_EVENT_STA_DISCONNECTED):

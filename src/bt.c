@@ -87,11 +87,6 @@ static const struct ble_gatt_svc_def gatt_definitions[] =
 	},
 };
 
-void bt_addr_to_str(string_t dst, const uint8_t src[6])
-{
-	string_format(dst, "%02x:%02x:%02x:%02x:%02x:%02x", src[5], src[4], src[3], src[2], src[1], src[0]);
-}
-
 static inline void reassemble_reset(void)
 {
 	reassembly_offset = 0;
@@ -520,7 +515,7 @@ void command_info_bluetooth(cli_command_call_t *call)
 
 	assert(call->parameter_count == 0);
 
-	bt_addr_to_str(string_addr, bt_host_address);
+	util_mac_addr_to_string(string_addr, bt_host_address, true);
 
 	string_format(call->result, "bluetooth information");
 
