@@ -238,7 +238,7 @@ void command_fs_checksum(cli_command_call_t *call)
 	mbedtls_sha256_finish(&hash_context, hash);
 	mbedtls_sha256_free(&hash_context);
 
-	string_hash(hash_text, sizeof(hash), hash);
+	util_hash_to_string(hash_text, sizeof(hash), hash);
 
 	string_format(call->result, "OK checksum: %s", string_cstr(hash_text));
 }

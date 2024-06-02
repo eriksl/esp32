@@ -161,7 +161,7 @@ void command_info_flash(cli_command_call_t *call)
 		if((rv = esp_partition_get_sha256(partition, sha256_hash)))
 			string_assign_cstr(sha256_hash_text, "<invalid>");
 		else
-			string_hash(sha256_hash_text, sizeof(sha256_hash), sha256_hash);
+			util_hash_to_string(sha256_hash_text, sizeof(sha256_hash), sha256_hash);
 
 		string_format_append(call->result, "%s  %2u %1s%1s%1s %-8s %06lx %4lu %-7s %-8s %-64s",
 				(index > 0) ? "\n" : "",

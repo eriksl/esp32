@@ -75,3 +75,30 @@ void util_time_to_string(string_t dst, const time_t *ticks)
 
 	string_assign_cstr(dst, timestring);
 }
+
+void util_hash_to_string(string_t dst, unsigned int hash_size, const uint8_t *hash)
+{
+	unsigned int in, out, value;
+
+	assert(inited);
+	assert(dst);
+	assert(hash);
+
+	string_clear(dst);
+
+	for(in = 0, out = 0; in < hash_size; out++)
+	{
+		if(out & 0x1)
+		{
+			value = (hash[in] & 0x0f) >> 0;
+			in++;
+		}
+		else
+			value = (hash[in] & 0xf0) >> 4;
+
+		if(value >= 0xa)
+			string_append(dst, (value - 10) + 'a');
+		else
+			string_append(dst, (value -  0) + '0');
+	}
+}

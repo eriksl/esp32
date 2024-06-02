@@ -160,7 +160,7 @@ void command_ota_finish(cli_command_call_t *call)
 	mbedtls_sha256_finish(&ota_sha256_ctx, ota_sha256_hash);
 	mbedtls_sha256_free(&ota_sha256_ctx);
 	ota_sha256_ctx_active = false;
-	string_hash(ota_sha256_hash_text, sizeof(ota_sha256_hash), ota_sha256_hash);
+	util_hash_to_string(ota_sha256_hash_text, sizeof(ota_sha256_hash), ota_sha256_hash);
 
 	if((rv = esp_ota_end(ota_handle)))
 	{
@@ -199,7 +199,7 @@ void command_ota_commit(cli_command_call_t *call)
 		return;
 	}
 
-	string_hash(local_sha256_hash_text, sizeof(local_sha256_hash), local_sha256_hash);
+	util_hash_to_string(local_sha256_hash_text, sizeof(local_sha256_hash), local_sha256_hash);
 
 	if(!string_equal_string(remote_sha256_hash_text, local_sha256_hash_text))
 	{

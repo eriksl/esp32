@@ -57,7 +57,6 @@ bool string_equal_cstr(const string_t dst, const char *src);
 bool string_uint(const string_t src, unsigned int base, unsigned int *value);
 bool string_int(const string_t src, unsigned int base, int *value);
 bool string_float(const string_t src, float *value);
-void string_hash(string_t dst, unsigned int hash_length, const uint8_t *hash);
 void string_replace(string_t dst, unsigned int start_pos, unsigned int end_pos, char from, char to);
 
 void string_module_init(void);
