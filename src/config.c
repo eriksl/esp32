@@ -337,23 +337,10 @@ static bool get_value_as_string(const char *namespace, const string_t key, const
 		}
 		case(NVS_TYPE_BLOB):
 		{
-			char raw_value[32];
-			unsigned length, ix;
-
 			if(type)
 				*type = "blob";
 
-			length = sizeof(raw_value);
-			rv = nvs_get_blob(handle, info->key, raw_value, &length);
-
-			if(rv == ESP_ERR_NVS_INVALID_LENGTH)
-				length = 0;
-			else
-				util_abort_on_esp_err("nvs_get_blob", rv);
-
-			string_format(dst, "[%d]", length);
-			for(ix = 0; ix < length; ix++)
-				string_format_append(dst, " %02x", (uint8_t)raw_value[ix]);
+			string_assign_cstr(dst, "<blob>");
 			break;
 		}
 		default:
