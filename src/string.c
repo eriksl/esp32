@@ -426,7 +426,7 @@ static void _string_format(string_t dst, bool append, const char *fmt, va_list a
 
 	assert(length >= 0);
 
-	if(length >= size)
+	if(length > size)
 		length = size - null_byte;
 
 	_dst->length += length;
