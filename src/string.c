@@ -460,7 +460,7 @@ const char *string_cstr(const string_t src)
 	assert(_src->size > 0);
 	assert(_src->data[_src->length] == '\0');
 
-	return(_src->data);
+	return(_src->const_data);
 }
 
 char *string_cstr_nonconst(string_t src)
@@ -490,7 +490,7 @@ const uint8_t *string_data(const string_t src)
 	assert(_src->size > 0);
 	assert(_src->data[_src->length] == '\0');
 
-	return((const uint8_t *)_src->data);
+	return((const uint8_t *)_src->const_data);
 }
 
 uint8_t *string_data_nonconst(string_t src)
@@ -527,7 +527,7 @@ void string_to_cstr(const string_t src, unsigned int dst_size, char *dst)
 	if(length > (dst_size - null_byte))
 		length = dst_size - null_byte;
 
-	memcpy(dst, _src->data, length);
+	memcpy(dst, _src->const_data, length);
 	dst[length] = '\0';
 }
 
@@ -635,7 +635,7 @@ bool string_equal_string(const string_t dst, const string_t src)
 	if(_src->length != _dst->length)
 		return(false);
 
-	if(memcmp(_src->data, _dst->data, _src->length))
+	if(memcmp(_src->const_data, _dst->const_data, _src->length))
 		return(false);
 
 	return(true);
@@ -658,7 +658,7 @@ bool string_equal_cstr(const string_t dst, const char *src)
 	if(length != _dst->length)
 		return(false);
 
-	if(memcmp(_dst->data, src, length))
+	if(memcmp(_dst->const_data, src, length))
 		return(false);
 
 	return(true);
@@ -684,7 +684,7 @@ bool string_uint(const string_t src, unsigned int base, unsigned int *value)
 
 	errno = 0;
 
-	*value = strtoul(_src->data, &endptr, base);
+	*value = strtoul(_src->const_data, &endptr, base);
 
 	if(errno || !endptr || (*endptr != '\0'))
 	{
@@ -715,7 +715,7 @@ bool string_int(const string_t src, unsigned int base, int *value)
 
 	errno = 0;
 
-	*value = strtol(_src->data, &endptr, base);
+	*value = strtol(_src->const_data, &endptr, base);
 
 	if(errno || !endptr || (*endptr != '\0'))
 	{
@@ -746,7 +746,7 @@ bool string_float(const string_t src, float *value)
 
 	errno = 0;
 
-	*value = strtof(_src->data, &endptr);
+	*value = strtof(_src->const_data, &endptr);
 
 	if(errno || !endptr || (*endptr != '\0'))
 	{
