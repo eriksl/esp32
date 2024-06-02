@@ -130,7 +130,7 @@ void command_fs_read(cli_command_call_t *call)
 		return;
 	}
 
-	if((length = read(fd, string_data_nonconst(call->result_oob), call->parameters[0].unsigned_int)) < 0)
+	if((length = string_read_fd(call->result_oob, fd, call->parameters[0].unsigned_int)) < 0)
 	{
 		string_assign_cstr(call->result, "ERROR: read failed");
 		close(fd);
@@ -138,8 +138,6 @@ void command_fs_read(cli_command_call_t *call)
 	}
 
 	close(fd);
-
-	string_set_length(call->result_oob, length);
 
 	string_format(call->result, "OK chunk read: %d", length);
 }
@@ -205,12 +203,11 @@ void command_fs_erase(cli_command_call_t *call)
 
 void command_fs_checksum(cli_command_call_t *call)
 {
-	int fd, length;
+	int fd;
 	string_auto(filename, 64);
 	mbedtls_sha256_context hash_context;
 	unsigned char hash[32];
 	string_auto(hash_text, (sizeof(hash) * 2) + 1);
-	uint8_t *buffer = string_data_nonconst(call->result_oob);
 
 	assert(call->parameter_count == 1);
 	assert(string_size(call->result_oob) > 4096);
@@ -228,8 +225,8 @@ void command_fs_checksum(cli_command_call_t *call)
 		return;
 	}
 
-	while((length = read(fd, buffer, 4096)) > 0)
-		mbedtls_sha256_update(&hash_context, buffer, length);
+	while(string_read_fd(call->result_oob, fd, 4096) > 0)
+		mbedtls_sha256_update(&hash_context, string_data(call->result_oob), string_length(call->result_oob));
 
 	close(fd);
 
