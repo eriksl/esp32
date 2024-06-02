@@ -62,7 +62,7 @@ static void _string_init_header(_string_t *_dst, unsigned int size, bool header_
 	assert(_dst);
 
 	_dst->magic_word = string_magic_word;
-	_dst->size = size;
+	_dst->size = size + null_byte;
 	_dst->length = 0;
 	_dst->header_const = header_const ? 1 : 0;
 	_dst->header_from_malloc = header_from_malloc ? 1 : 0;
@@ -77,7 +77,6 @@ void _string_auto(string_t dst, unsigned int size)
 
 	assert(inited);
 	assert(_dst);
-	assert(size);
 
 	auto_called++;
 
@@ -97,7 +96,7 @@ string_t _string_new(unsigned int size, const char *file, unsigned int line)
 	log_format("string_new: %u @ %s:%u", size, file, line);
 #endif
 
-	_dst = heap_caps_malloc(sizeof(_string_t) + size, MALLOC_CAP_SPIRAM);
+	_dst = heap_caps_malloc(sizeof(_string_t) + size + null_byte, MALLOC_CAP_SPIRAM);
 	assert(_dst);
 
 	_string_init_header(_dst, size, false, true, false, false);
@@ -127,7 +126,7 @@ string_t _string_const(const char *const_string, const char *file, unsigned int 
 	_dst = heap_caps_malloc(sizeof(_string_t), MALLOC_CAP_SPIRAM);
 	assert(_dst);
 
-	_string_init_header(_dst, length + null_byte, false, true, true, false);
+	_string_init_header(_dst, length, false, true, true, false);
 	_dst->length = length;
 	_dst->const_data = const_string;
 
@@ -148,7 +147,7 @@ string_t _string_init(unsigned int size, const char *init_string, const char *fi
 	log_format("string_init: \"%s\"[%u] @ %s:%u", init_string, size, file, line);
 #endif
 
-	_dst = heap_caps_malloc(sizeof(_string_t) + size, MALLOC_CAP_SPIRAM);
+	_dst = heap_caps_malloc(sizeof(_string_t) + size + null_byte, MALLOC_CAP_SPIRAM);
 	assert(_dst);
 
 	_string_init_header(_dst, size, false, true, false, false);
@@ -238,7 +237,7 @@ unsigned int string_size(const string_t src)
 	assert(_src->length < _src->size);
 	assert(_src->size > 0);
 
-	return(_src->size);
+	return(_src->size - null_byte);
 }
 
 void string_clear(string_t dst)
