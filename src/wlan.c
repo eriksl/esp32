@@ -252,8 +252,13 @@ void command_wlan_client_config(cli_command_call_t *call)
 
 void wlan_init(void)
 {
+	string_auto_init(hostname_key, "hostname");
+	string_auto(hostname, 16);
 	wifi_init_config_t init_config = WIFI_INIT_CONFIG_DEFAULT();
 	esp_sntp_config_t sntp_config = ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(0, {});
+
+	if(!config_get_string(hostname_key, hostname))
+		string_assign_cstr(hostname, "esp32s3");
 
 	init_config.ampdu_rx_enable = 1;
 	init_config.ampdu_tx_enable = 1;
@@ -284,4 +289,5 @@ void wlan_init(void)
 	wlan_state = ws_init;
 	inited = true;
 
+	util_abort_on_esp_err("esp_netif_set_hostname", esp_netif_set_hostname(netif, string_cstr(hostname)));
 }
