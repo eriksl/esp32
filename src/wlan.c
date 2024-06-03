@@ -56,12 +56,6 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
 	switch(event_id)
 	{
-		case(WIFI_EVENT_HOME_CHANNEL_CHANGE):
-		{
-			wifi_event_home_channel_change_t *event = (wifi_event_home_channel_change_t *)event_data;
-			log_format("wlan event: home channel change: old: %u, new: %u", event->old_chan, event->new_chan);
-			break;
-		}
 		case(WIFI_EVENT_STA_START):
 		{
 #if 0
@@ -72,13 +66,17 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 			util_warn_on_esp_err("esp_wifi_connect", esp_wifi_connect());
 			break;
 		}
-		case(WIFI_EVENT_STA_CONNECTED):
+		case(WIFI_EVENT_STA_STOP):
 		{
 #if 0
 			log("wlan event: stop");
 #endif
 			wlan_state = ws_init;
 			wlan_state_since = esp_timer_get_time();
+			break;
+		}
+		case(WIFI_EVENT_STA_CONNECTED):
+		{
 #if 0
 			wifi_event_sta_connected_t *event = (wifi_event_sta_connected_t *)event_data;
 
@@ -94,16 +92,22 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 		{
 			wifi_event_sta_disconnected_t *event = (wifi_event_sta_disconnected_t *)event_data;
 			log_format("wlan event: disconnected: reason: %u, try to reconnect", event->reason);
-			util_warn_on_esp_err("esp_wifi_connect", esp_wifi_connect());
-			break;
-		}
 			wlan_state_since = esp_timer_get_time();
 			wlan_state = ws_associating;
 
+			rv = esp_wifi_connect();
+			if(rv != ESP_ERR_WIFI_NOT_STARTED)
+				util_warn_on_esp_err("esp_wifi_connect", esp_wifi_connect());
+			break;
+		}
+		case(WIFI_EVENT_HOME_CHANNEL_CHANGE):
+		{
 #if 0
 			wifi_event_home_channel_change_t *event = (wifi_event_home_channel_change_t *)event_data;
 			log_format("wlan event: home channel change: old: %u, new: %u", event->old_chan, event->new_chan);
 #endif
+			break;
+		}
 		default:
 		{
 			log_format("wlan event: unknown event: %ld", event_id);
@@ -145,6 +149,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 
 		case(IP_EVENT_GOT_IP6):
 		{
+			esp_ip6_addr_t ip6;
 #if 0
 			string_auto(ip, 128);
 
