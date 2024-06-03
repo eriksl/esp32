@@ -13,9 +13,41 @@
 #include <esp_wifi.h>
 #include <esp_netif.h>
 #include <esp_netif_sntp.h>
+#include <esp_timer.h>
+
+typedef enum
+{
+	ws_invalid,
+	ws_init,
+	ws_associating,
+	ws_associated,
+	ws_ipv4_address_acquired,
+	ws_ipv6_link_local_address_acquired,
+	ws_ipv6_slaac_address_acquired,
+} wlan_state_t;
 
 static bool inited = false;
 static esp_netif_t *netif;
+static uint64_t wlan_state_since = 0;
+static wlan_state_t wlan_state = ws_invalid;
+
+static const char *wlan_state_to_string(wlan_state_t state)
+{
+	const char *rv = (const char *)0;
+
+	switch(state)
+	{
+		case(ws_init): { rv = "init"; break; }
+		case(ws_associating): { rv = "associating"; break; }
+		case(ws_associated): { rv = "associated"; break; }
+		case(ws_ipv4_address_acquired): { rv = "ipv4 address acquired"; break; }
+		case(ws_ipv6_link_local_address_acquired): { rv = "ipv6 link local address acquired"; break; }
+		case(ws_ipv6_slaac_address_acquired): { rv = "ipv6 autoconfig address acquired"; break; }
+		default: { rv = "unknown state"; break; }
+	}
+
+	return(rv);
+}
 
 static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
@@ -34,17 +66,23 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 		case(WIFI_EVENT_STA_START):
 		{
 			log("wlan event: start");
+			wlan_state = ws_associating;
+			wlan_state_since = esp_timer_get_time();
 			util_warn_on_esp_err("esp_wifi_connect", esp_wifi_connect());
 			break;
 		}
 		case(WIFI_EVENT_STA_CONNECTED):
 		{
+			wlan_state = ws_init;
+			wlan_state_since = esp_timer_get_time();
 			wifi_event_sta_connected_t *event = (wifi_event_sta_connected_t *)event_data;
 
 			util_mac_addr_to_string(mac, event->bssid, false);
 
 			log_format("wlan event: associated: channel: %u, ssid: %.*s, bssid: %s",
 					event->channel, event->ssid_len, event->ssid, string_cstr(mac));
+			wlan_state_since = esp_timer_get_time();
+			wlan_state = ws_associated;
 
 			break;
 		}
@@ -55,6 +93,8 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 			util_warn_on_esp_err("esp_wifi_connect", esp_wifi_connect());
 			break;
 		}
+			wlan_state_since = esp_timer_get_time();
+			wlan_state = ws_associating;
 
 		default:
 		{
@@ -84,6 +124,8 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 
 			log_format("ip event: got ipv4: changed: %d, ip: %s, netmask: %s, gw: %s",
 					event->ip_changed, string_cstr(ip), string_cstr(netmask), string_cstr(gw));
+			wlan_state_since = esp_timer_get_time();
+			wlan_state = ws_ipv4_address_acquired;
 
 			util_abort_on_esp_err("esp_netif_create_ip6_linklocal", esp_netif_create_ip6_linklocal(netif));
 			util_abort_on_esp_err("esp_netif_sntp_start", esp_netif_sntp_start());
@@ -98,6 +140,12 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 			ip_event_got_ip6_t *event = (ip_event_got_ip6_t *)event_data;
 			util_esp_ipv6_addr_to_string(ip, &event->ip6_info.ip);
 			log_format("ip event: got ipv6: ip: %s", string_cstr(ip));
+			wlan_state_since = esp_timer_get_time();
+
+			if(esp_netif_get_ip6_global(netif, &ip6))
+				wlan_state = ws_ipv6_link_local_address_acquired;
+			else
+				wlan_state = ws_ipv6_slaac_address_acquired;
 
 			break;
 		}
@@ -214,6 +262,8 @@ void wlan_init(void)
 	util_abort_on_esp_err("esp_wifi_config_11b_rate", esp_wifi_config_11b_rate(WIFI_IF_STA, true));
 	util_abort_on_esp_err("esp_wifi_start", esp_wifi_start());
 
+	wlan_state_since = esp_timer_get_time();
+	wlan_state = ws_init;
 	inited = true;
 
 }
