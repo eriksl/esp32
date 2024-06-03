@@ -391,6 +391,10 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
+	{ "info-wlan", "iw", "show information about wlan", command_wlan_info,
+		{}
+	},
+
 	{ "log", "l", "show log", command_log,
 		{	1,
 			{
