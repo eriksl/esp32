@@ -51,7 +51,6 @@ static const char *wlan_state_to_string(wlan_state_t state)
 
 static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
-	string_auto(mac, 16);
 
 	assert(inited);
 
@@ -77,10 +76,8 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 			wlan_state_since = esp_timer_get_time();
 			wifi_event_sta_connected_t *event = (wifi_event_sta_connected_t *)event_data;
 
-			util_mac_addr_to_string(mac, event->bssid, false);
-
-			log_format("wlan event: associated: channel: %u, ssid: %.*s, bssid: %s",
-					event->channel, event->ssid_len, event->ssid, string_cstr(mac));
+			log_format("wlan event: associated: channel: %u, ssid: %.*s",
+					event->channel, event->ssid_len, event->ssid);
 			wlan_state_since = esp_timer_get_time();
 			wlan_state = ws_associated;
 
