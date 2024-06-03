@@ -387,7 +387,7 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
-	{ "info-string", "istr", "show information about all string", command_info_string,
+	{ "info-string", "istr", "show information about all strings", command_info_string,
 		{}
 	},
 
