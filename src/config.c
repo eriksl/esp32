@@ -446,81 +446,6 @@ bool config_erase(const string_t key)
 	return(true);
 }
 
-void command_info_config(cli_command_call_t *call)
-{
-	nvs_stats_t stats;
-
-	assert(inited);
-	assert(call->parameter_count == 0);
-
-	util_abort_on_esp_err("nvs_get_stats", nvs_get_stats((const char *)0, &stats));
-
-	string_format(call->result, "CONFIG INFO");
-	string_format_append(call->result, "\nentries:");
-	string_format_append(call->result, "\n- used: %u", stats.used_entries);
-	string_format_append(call->result, "\n- free: %u", stats.free_entries);
-	string_format_append(call->result, "\n- available: %u", stats.available_entries);
-	string_format_append(call->result, "\n- total: %u", stats.total_entries);
-	string_format_append(call->result, "\n- namespaces: %u", stats.namespace_count);
-}
-
-void command_config_set_uint(cli_command_call_t *call)
-{
-	int64_t value;
-	const char *type;
-	assert(inited);
-	assert(call->parameter_count == 2);
-
-	config_set_uint(call->parameters[0].string, call->parameters[1].unsigned_int);
-
-	if(get_value_as_integer("config", call->parameters[0].string, (const nvs_entry_info_t *)0, &type, &value))
-		string_format(call->result, "%s[%s]=%lld", string_cstr(call->parameters[0].string), type, value);
-	else
-		string_format(call->result, "ERROR: %s not found", string_cstr(call->parameters[0].string));
-}
-
-void command_config_set_int(cli_command_call_t *call)
-{
-	int64_t value;
-	const char *type;
-	assert(inited);
-	assert(call->parameter_count == 2);
-
-	config_set_int(call->parameters[0].string, call->parameters[1].signed_int);
-
-	if(get_value_as_integer("config", call->parameters[0].string, (const nvs_entry_info_t *)0, &type, &value))
-		string_format(call->result, "%s[%s]=%lld", string_cstr(call->parameters[0].string), type, value);
-	else
-		string_format(call->result, "ERROR: %s not found", string_cstr(call->parameters[0].string));
-}
-
-void command_config_set_string(cli_command_call_t *call)
-{
-	string_auto(dst, 64);
-	const char *type;
-
-	assert(inited);
-	assert(call->parameter_count == 2);
-
-	config_set_string(call->parameters[0].string, call->parameters[1].string);
-
-	if(get_value_as_string((const char *)0, call->parameters[0].string, (nvs_entry_info_t *)0, &type, dst))
-		string_format(call->result, "%s[%s]=%s", string_cstr(call->parameters[0].string), type, string_cstr(dst));
-	else
-		string_format(call->result, "ERROR: %s not found", string_cstr(call->parameters[0].string));
-}
-
-void command_config_erase(cli_command_call_t *call)
-{
-	assert(inited);
-	assert(call->parameter_count == 1);
-
-	if(config_erase(call->parameters[0].string))
-		string_format(call->result, "erase %s OK", string_cstr(call->parameters[0].string));
-	else
-		string_format(call->result, "erase %s not found", string_cstr(call->parameters[0].string));
-}
-
 static void config_dump(cli_command_call_t *call, const char *namespace)
 {
 	int rv;
@@ -562,14 +487,89 @@ static void config_dump(cli_command_call_t *call, const char *namespace)
 	nvs_release_iterator(iterator);
 }
 
-void command_config_dump(cli_command_call_t *call)
+void config_command_info(cli_command_call_t *call)
+{
+	nvs_stats_t stats;
+
+	assert(inited);
+	assert(call->parameter_count == 0);
+
+	util_abort_on_esp_err("nvs_get_stats", nvs_get_stats((const char *)0, &stats));
+
+	string_format(call->result, "CONFIG INFO");
+	string_format_append(call->result, "\nentries:");
+	string_format_append(call->result, "\n- used: %u", stats.used_entries);
+	string_format_append(call->result, "\n- free: %u", stats.free_entries);
+	string_format_append(call->result, "\n- available: %u", stats.available_entries);
+	string_format_append(call->result, "\n- total: %u", stats.total_entries);
+	string_format_append(call->result, "\n- namespaces: %u", stats.namespace_count);
+}
+
+void config_command_set_uint(cli_command_call_t *call)
+{
+	int64_t value;
+	const char *type;
+	assert(inited);
+	assert(call->parameter_count == 2);
+
+	config_set_uint(call->parameters[0].string, call->parameters[1].unsigned_int);
+
+	if(get_value_as_integer("config", call->parameters[0].string, (const nvs_entry_info_t *)0, &type, &value))
+		string_format(call->result, "%s[%s]=%lld", string_cstr(call->parameters[0].string), type, value);
+	else
+		string_format(call->result, "ERROR: %s not found", string_cstr(call->parameters[0].string));
+}
+
+void config_command_set_int(cli_command_call_t *call)
+{
+	int64_t value;
+	const char *type;
+	assert(inited);
+	assert(call->parameter_count == 2);
+
+	config_set_int(call->parameters[0].string, call->parameters[1].signed_int);
+
+	if(get_value_as_integer("config", call->parameters[0].string, (const nvs_entry_info_t *)0, &type, &value))
+		string_format(call->result, "%s[%s]=%lld", string_cstr(call->parameters[0].string), type, value);
+	else
+		string_format(call->result, "ERROR: %s not found", string_cstr(call->parameters[0].string));
+}
+
+void config_command_set_string(cli_command_call_t *call)
+{
+	string_auto(dst, 64);
+	const char *type;
+
+	assert(inited);
+	assert(call->parameter_count == 2);
+
+	config_set_string(call->parameters[0].string, call->parameters[1].string);
+
+	if(get_value_as_string((const char *)0, call->parameters[0].string, (nvs_entry_info_t *)0, &type, dst))
+		string_format(call->result, "%s[%s]=%s", string_cstr(call->parameters[0].string), type, string_cstr(dst));
+	else
+		string_format(call->result, "ERROR: %s not found", string_cstr(call->parameters[0].string));
+}
+
+void config_command_erase(cli_command_call_t *call)
+{
+	assert(inited);
+	assert(call->parameter_count == 1);
+
+	if(config_erase(call->parameters[0].string))
+		string_format(call->result, "erase %s OK", string_cstr(call->parameters[0].string));
+	else
+		string_format(call->result, "erase %s not found", string_cstr(call->parameters[0].string));
+}
+
+void config_command_dump(cli_command_call_t *call)
 {
 	assert(call->parameter_count == 0);
 
 	return(config_dump(call, (const char *)0));
 }
 
-void command_config_show(cli_command_call_t *call)
+void config_command_show(cli_command_call_t *call)
 {
 	assert(call->parameter_count == 0);
 

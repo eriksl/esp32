@@ -205,11 +205,27 @@ static void command_info_cli(cli_command_call_t *call)
 
 static const cli_command_t cli_commands[] =
 {
-	{ "config-dump", "cd", "dump all nvs keys", command_config_dump,
+	{ "bt-info", "bi", "show information about bluetooth", bluetooth_command_info,
 		{}
 	},
 
-	{ "config-set-int", "csi", "set a signed int config value", command_config_set_int,
+	{ "config-dump", "cd", "dump all nvs keys", config_command_dump,
+		{}
+	},
+
+	{ "config-erase", "ce", "erase a config entry", config_command_erase,
+		{	1,
+			{
+				{ cli_parameter_string, 0, 1, 0, 0, "key", {} },
+			},
+		}
+	},
+
+	{ "config-info", "ci", "show information about the configuration", config_command_info,
+		{}
+	},
+
+	{ "config-set-int", "csi", "set a signed int config value", config_command_set_int,
 		{	2,
 			{
 				{ cli_parameter_string, 0, 1, 0, 0, "key", {} },
@@ -218,7 +234,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "config-set-uint", "csu", "set an unsigned int config value", command_config_set_uint,
+	{ "config-set-uint", "csu", "set an unsigned int config value", config_command_set_uint,
 		{	2,
 			{
 				{ cli_parameter_string, 0, 1, 0, 0, "key", {} },
@@ -227,7 +243,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "config-set-string", "css", "set a string config value", command_config_set_string,
+	{ "config-set-string", "css", "set a string config value", config_command_set_string,
 		{	2,
 			{
 				{ cli_parameter_string, 0, 1, 0, 0, "key", {} },
@@ -236,16 +252,15 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "config-erase", "ce", "erase a config entry", command_config_erase,
-		{	1,
-			{
-				{ cli_parameter_string, 0, 1, 0, 0, "key", {} },
-			},
-		}
+	{ "config-show", "cs", "show config", config_command_show,
+		{}
 	},
 
+	{ "console-info", "ci", "show information about the console", console_command_info,
+		{}
+	},
 
-	{ "flash-bench", (const char*)0, "benchmark flash+transport", command_flash_bench,
+	{ "flash-bench", (const char*)0, "benchmark flash+transport", flash_command_bench,
 		{	1,
 			{
 				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length", .unsigned_int = { 0, 4096 }},
@@ -253,7 +268,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "flash-checksum", (const char*)0, "obtain checksum of sectors in flash", command_flash_checksum,
+	{ "flash-checksum", (const char*)0, "obtain checksum of sectors in flash", flash_command_checksum,
 		{	2,
 			{
 				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "start sector", {} },
@@ -262,11 +277,11 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "flash-info", (const char*)0, "show info about flash memory", command_flash_info,
+	{ "flash-info", (const char*)0, "show info about flash memory", flash_command_info,
 		{}
 	},
 
-	{ "flash-read", (const char*)0, "read sectors from flash", command_flash_read,
+	{ "flash-read", (const char*)0, "read sectors from flash", flash_command_read,
 		{	1,
 			{
 				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "sector", {} },
@@ -274,7 +289,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "flash-write", (const char*)0, "write sectors to flash", command_flash_write,
+	{ "flash-write", (const char*)0, "write sectors to flash", flash_command_write,
 		{	2,
 			{
 				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "simulate", .unsigned_int = { 0, 1 }},
@@ -283,7 +298,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "fs-read", (const char*)0, "read chunk from a file on the littlefs filesystem", command_fs_read,
+	{ "fs-read", (const char*)0, "read chunk from a file on the littlefs filesystem", fs_command_read,
 		{	3,
 			{
 				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length", .unsigned_int = { 0, 4096 }},
@@ -293,7 +308,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "fs-append", (const char*)0, "append chunk to file on the littlefs filesystem", command_fs_append,
+	{ "fs-append", (const char*)0, "append chunk to file on the littlefs filesystem", fs_command_append,
 		{	2,
 			{
 				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length", .unsigned_int = { 0, 4096 }},
@@ -302,7 +317,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "fs-checksum", (const char*)0, "checksum file on the littlefs filesystem", command_fs_checksum,
+	{ "fs-checksum", (const char*)0, "checksum file on the littlefs filesystem", fs_command_checksum,
 		{	1,
 			{
 				{ cli_parameter_string, 0, 1, 1, 1, "file", .string = { 1, 64 }},
@@ -310,7 +325,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "fs-erase", (const char*)0, "erase file on the littlefs filesystem", command_fs_erase,
+	{ "fs-erase", (const char*)0, "erase file on the littlefs filesystem", fs_command_erase,
 		{	1,
 			{
 				{ cli_parameter_string, 0, 1, 1, 1, "file", .string = { 1, 64 }},
@@ -318,15 +333,15 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "fs-format", "fsf", "format the littlefs filesystem", command_fs_format,
+	{ "fs-format", "fsf", "format the littlefs filesystem", fs_command_format,
 		{}
 	},
 
-	{ "fs-info", "fsi", "show info about the littlefs filesystem", command_fs_info,
+	{ "fs-info", "fsi", "show info about the littlefs filesystem", fs_command_info,
 		{}
 	},
 
-	{ "fs-list", "ls", "show all files on the littlefs filesystem", command_fs_ls,
+	{ "fs-list", "ls", "show all files on the littlefs filesystem", fs_command_list,
 		{}
 	},
 
@@ -347,11 +362,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "info", "i", "show some general information", command_info_firmware,
-		{}
-	},
-
-	{ "info-bt", "ib", "show information about bluetooth", command_info_bluetooth,
+	{ "info", "stats", "show some generic information", info_command_info,
 		{}
 	},
 
@@ -359,43 +370,19 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
-	{ "info-console", "icon", "show information about the console", console_command_info,
+	{ "info-partitions", "ip", "show information about partitions", info_command_info_partitions,
 		{}
 	},
 
-	{ "info-config", "icf", "show information about the configuration", command_info_config,
+	{ "info-memory", "im", "show information about memory", info_command_info_memory,
 		{}
 	},
 
-	{ "info-flash", "if", "show information about the flash", command_info_flash,
+	{ "info-process", "ps", "show information about running processes", info_command_info_process,
 		{}
 	},
 
-	{ "info-log", "il", "show information about the log", command_info_log,
-		{}
-	},
-
-	{ "info-memory", "im", "show information about memory", command_info_memory,
-		{}
-	},
-
-	{ "info-process", "ip", "show information about running processes", command_info_process,
-		{}
-	},
-
-	{ "info-system", "is", "show information about the system", command_info_system,
-		{}
-	},
-
-	{ "info-string", "istr", "show information about all strings", command_info_string,
-		{}
-	},
-
-	{ "info-wlan", "iw", "show information about wlan", command_wlan_info,
-		{}
-	},
-
-	{ "log", "l", "show log", command_log,
+	{ "log", "l", "show log", log_command_log,
 		{	1,
 			{
 				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "start entry", { .unsigned_int = { 0, 128 }} },
@@ -403,11 +390,35 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "log-clear", "lc", "show log and clear it", command_log_clear,
+	{ "log-clear", "lc", "show log and clear it", log_command_log_clear,
 		{}
 	},
 
-	{ "ota-start", (const char*)0, "start ota session", command_ota_start,
+	{ "log-info", "li", "show information about the log", log_command_info,
+		{}
+	},
+
+	{ "ota-commit", (const char*)0, "verify and select finished ota session", ota_command_commit,
+		{	1,
+			{
+				{ cli_parameter_string, 0, 1, 1, 1, "checksum", .string = { 64, 64 }},
+			},
+		}
+	},
+
+	{ "ota-confirm", (const char*)0, "confirm ota image runs correctly", ota_command_confirm,
+		{	1,
+			{
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "slot", .unsigned_int = { 0, 1 }},
+			},
+		}
+	},
+
+	{ "ota-finish", (const char*)0, "finish ota session", ota_command_finish,
+		{}
+	},
+
+	{ "ota-start", (const char*)0, "start ota session", ota_command_start,
 		{	1,
 			{
 				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "length", {} },
@@ -415,7 +426,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "ota-write", (const char*)0, "write one sector of ota data", command_ota_write,
+	{ "ota-write", (const char*)0, "write one sector of ota data", ota_command_write,
 		{	2,
 			{
 				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "length", {} },
@@ -424,37 +435,14 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "ota-finish", (const char*)0, "finish ota session", command_ota_finish,
-		{}
-	},
-
-	{ "ota-commit", (const char*)0, "verify and select finished ota session", command_ota_commit,
-		{	1,
-			{
-				{ cli_parameter_string, 0, 1, 1, 1, "checksum", .string = { 64, 64 }},
-			},
-		}
-	},
-
-	{ "ota-confirm", (const char*)0, "confirm ota image runs correctly", command_ota_confirm,
-		{	1,
-			{
-				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "slot", .unsigned_int = { 0, 1 }},
-			},
-		}
-	},
-
 	{ "reset", "r", "reset", command_reset,
 		{}
 	},
 
-	{ "show-config", "sc", "show config", command_config_show,
+	{ "string-info", "si", "show information about all strings", string_command_info,
 		{}
 	},
 
-	{ "stats", "s", "show some general information", command_info_firmware,
-		{}
-	},
 
 #if 0
 	{ "test", "t", "test parsing", command_test_parse,
@@ -466,13 +454,17 @@ static const cli_command_t cli_commands[] =
 	},
 #endif
 
-	{ "wlan-client-config", "wcc", "set wireless ssid and password in client mode", command_wlan_client_config,
+	{ "wlan-client-config", "wcc", "set wireless ssid and password in client mode", wlan_command_client_config,
 		{	2,
 			{
 				{ cli_parameter_string, 0, 0, 1, 1, "ssid", .string = { 0, 63 }},
 				{ cli_parameter_string, 0, 0, 1, 1, "password", .string = { 0, 63 }},
 			},
 		}
+	},
+
+	{ "wlan-info", "wi", "show information about wlan", wlan_command_info,
+		{}
 	},
 
 	{ (const char *)0, (const char *)0, (const char *)0, (cli_command_function_t *)0,

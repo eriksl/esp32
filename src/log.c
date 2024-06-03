@@ -160,7 +160,7 @@ void log_init(void)
 	log("boot");
 }
 
-void command_info_log(cli_command_call_t *call)
+void log_command_info(cli_command_call_t *call)
 {
 	assert(inited);
 
@@ -174,7 +174,7 @@ void command_info_log(cli_command_call_t *call)
 	string_format_append(call->result, "\n  last entry viewed: %u", log_buffer->out);
 }
 
-void command_log(cli_command_call_t *call)
+void log_command_log(cli_command_call_t *call)
 {
 	string_auto(timestring, 64);
 	unsigned int entries, amount;
@@ -213,11 +213,11 @@ void command_log(cli_command_call_t *call)
 		string_format_append(call->result, "\n[%u more]", entries - amount);
 }
 
-void command_log_clear(cli_command_call_t *call)
+void log_command_log_clear(cli_command_call_t *call)
 {
 	assert(inited);
 
-	command_log(call);
+	log_command_log(call);
 
 	log_clear();
 

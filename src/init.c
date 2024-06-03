@@ -12,6 +12,7 @@
 #include "util.h"
 #include "fs.h"
 #include "wlan.h"
+#include "info.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -20,6 +21,7 @@
 
 void app_main(void)
 {
+	info_init();
 	string_module_init();
 	log_init();
 	config_init();

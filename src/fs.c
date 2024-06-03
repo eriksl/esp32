@@ -38,7 +38,7 @@ void fs_init(void)
 	inited = true;
 }
 
-void command_fs_info(cli_command_call_t *call)
+void fs_command_info(cli_command_call_t *call)
 {
 	unsigned int total, used;
 
@@ -51,7 +51,7 @@ void command_fs_info(cli_command_call_t *call)
 	string_format_append(call->result, "\nmounted: %s", esp_littlefs_mounted("littlefs") ? "yes" : "no");
 }
 
-void command_fs_ls(cli_command_call_t *call)
+void fs_command_list(cli_command_call_t *call)
 {
 	DIR *dir;
 	struct dirent *dirent;
@@ -85,7 +85,7 @@ void command_fs_ls(cli_command_call_t *call)
 	closedir(dir);
 }
 
-void command_fs_format(cli_command_call_t *call)
+void fs_command_format(cli_command_call_t *call)
 {
 	assert(inited);
 	assert(call->parameter_count == 0);
@@ -99,7 +99,7 @@ void command_fs_format(cli_command_call_t *call)
 	string_assign_cstr(call->result, "format complete");
 }
 
-void command_fs_read(cli_command_call_t *call)
+void fs_command_read(cli_command_call_t *call)
 {
 	string_auto(filename, 64);
 	int fd, length;
@@ -142,7 +142,7 @@ void command_fs_read(cli_command_call_t *call)
 	string_format(call->result, "OK chunk read: %d", length);
 }
 
-void command_fs_append(cli_command_call_t *call)
+void fs_command_append(cli_command_call_t *call)
 {
 	string_auto(filename, 64);
 	int fd, length;
@@ -186,7 +186,7 @@ void command_fs_append(cli_command_call_t *call)
 	string_format(call->result, "OK file length: %ld", offset);
 }
  
-void command_fs_erase(cli_command_call_t *call)
+void fs_command_erase(cli_command_call_t *call)
 {
 	string_auto(filename, 64);
 
@@ -201,7 +201,7 @@ void command_fs_erase(cli_command_call_t *call)
 	string_assign_cstr(call->result, "OK file erased");
 }
 
-void command_fs_checksum(cli_command_call_t *call)
+void fs_command_checksum(cli_command_call_t *call)
 {
 	int fd;
 	string_auto(filename, 64);

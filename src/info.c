@@ -1,3 +1,6 @@
+#include <stdint.h>
+#include <stdbool.h>
+
 #include <esp_log.h>
 #include <esp_chip_info.h>
 #include <esp_flash.h>
@@ -8,18 +11,27 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-#include <stdint.h>
-#include <stdio.h>
-
 #include "string.h"
 #include "cli-command.h"
 #include "info.h"
 #include "log.h"
 #include "util.h"
 
-void command_info_firmware(cli_command_call_t *call)
+static bool inited = false;
+static unsigned int initial_free_heap;
+static unsigned int initial_free_spiram;
+static unsigned int initial_free_internal;
+static unsigned int initial_free_total;
+static unsigned int initial_free_rtcram;
+
+void info_command_info(cli_command_call_t *call)
 {
 	const esp_app_desc_t *desc;
+	esp_chip_info_t chip_info;
+	uint32_t flash_size;
+
+	assert(inited);
+	assert(call->parameter_count == 0);
 
 	if(!(desc = esp_app_get_description()))
 	{
@@ -32,9 +44,28 @@ void command_info_firmware(cli_command_call_t *call)
 			">   date: %s %s\n"
 			">   build start: %s %s\n",
 			__DATE__, __TIME__, desc->date, desc->time);
+
+	esp_chip_info(&chip_info);
+
+	string_format_append(call->result, "\nSoC: %s with %d cores\nRF: %s%s%s%s\n",
+		CONFIG_IDF_TARGET,
+		chip_info.cores,
+		(chip_info.features & CHIP_FEATURE_WIFI_BGN) ? "WiFi/" : "",
+		(chip_info.features & CHIP_FEATURE_BT) ? "BT" : "",
+		(chip_info.features & CHIP_FEATURE_BLE) ? "BLE" : "",
+		(chip_info.features & CHIP_FEATURE_IEEE802154) ? ", 802.15.4 (Zigbee/Thread)" : "");
+
+	unsigned major_rev = chip_info.revision / 100;
+	unsigned minor_rev = chip_info.revision % 100;
+	string_format_append(call->result, "Revision: %d.%d\n", major_rev, minor_rev);
+
+	esp_flash_get_size(NULL, &flash_size);
+
+	string_format_append(call->result, "Flash: %lu MB %s\n", flash_size / (1024 * 1024),
+		(chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
 }
 
-void command_info_flash(cli_command_call_t *call)
+void info_command_info_partitions(cli_command_call_t *call)
 {
 	int rv;
 	esp_partition_iterator_t partition_iterator;
@@ -47,6 +78,7 @@ void command_info_flash(cli_command_call_t *call)
 	unsigned char sha256_hash[32];
 	string_auto(sha256_hash_text, (sizeof(sha256_hash) * 2) + 1);
 
+	assert(inited);
 	assert(call->parameter_count == 0);
 
 	if(!(boot_partition = esp_ota_get_boot_partition()))
@@ -175,25 +207,28 @@ void command_info_flash(cli_command_call_t *call)
 	esp_partition_iterator_release(partition_iterator);
 }
 
-void command_info_memory(cli_command_call_t *call)
+void info_command_info_memory(cli_command_call_t *call)
 {
+	assert(inited);
+	assert(call->parameter_count == 0);
+
 	string_format(call->result, "%-30s %-4s\n", "Type of memory", "kB");
-	string_format_append(call->result, "  %-28s %lu\n", "free heap total",			esp_get_free_heap_size() / 1024);
-	string_format_append(call->result, "  %-28s %lu\n", "minimum free heap",			esp_get_minimum_free_heap_size() / 1024);
-	string_format_append(call->result, "  %-28s %u\n",  "heap executable",			heap_caps_get_free_size(MALLOC_CAP_EXEC) / 1024);
-	string_format_append(call->result, "  %-28s %u\n",  "heap 32 bit addressable",	heap_caps_get_free_size(MALLOC_CAP_32BIT) / 1024);
-	string_format_append(call->result, "  %-28s %u\n",  "heap 8 bit addressable",		heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024);
-	string_format_append(call->result, "  %-28s %u\n",  "heap DMA adressable",		heap_caps_get_free_size(MALLOC_CAP_DMA) / 1024);
-	string_format_append(call->result, "  %-28s %u\n",  "heap SPI RAM",				heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024);
-	string_format_append(call->result, "  %-28s %u\n",  "heap internal RAM",			heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024);
-	string_format_append(call->result, "  %-28s %u\n",  "heap default",				heap_caps_get_free_size(MALLOC_CAP_DEFAULT) / 1024);
-	string_format_append(call->result, "  %-28s %u\n",  "heap IRAM 8 bit adressable",	heap_caps_get_free_size(MALLOC_CAP_IRAM_8BIT) / 1024);
-	string_format_append(call->result, "  %-28s %u\n",  "heap retention",				heap_caps_get_free_size(MALLOC_CAP_RETENTION) / 1024);
-	string_format_append(call->result, "  %-28s %u\n",  "heap RTC RAM",				heap_caps_get_free_size(MALLOC_CAP_RTCRAM) / 1024);
-	string_format_append(call->result, "  %-28s %u\n",  "heap TCM",					heap_caps_get_free_size(MALLOC_CAP_TCM) / 1024);
+	string_format_append(call->result, "  %-28s %4lu / %4u\n",	"free heap total",				esp_get_free_heap_size() / 1024, initial_free_heap  / 1024);
+	string_format_append(call->result, "  %-28s %4lu\n",		"minimum free heap",			esp_get_minimum_free_heap_size() / 1024);
+	string_format_append(call->result, "  %-28s %4u\n",  		"heap executable",				heap_caps_get_free_size(MALLOC_CAP_EXEC) / 1024);
+	string_format_append(call->result, "  %-28s %4u\n",  		"heap 32 bit addressable",		heap_caps_get_free_size(MALLOC_CAP_32BIT) / 1024);
+	string_format_append(call->result, "  %-28s %4u\n",  		"heap 8 bit addressable",		heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024);
+	string_format_append(call->result, "  %-28s %4u\n",  		"heap DMA adressable",			heap_caps_get_free_size(MALLOC_CAP_DMA) / 1024);
+	string_format_append(call->result, "  %-28s %4u / %4u\n",	"heap SPI RAM",					heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024, initial_free_spiram / 1024);
+	string_format_append(call->result, "  %-28s %4u / %4u\n",	"heap internal RAM",			heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024, initial_free_internal / 1024);
+	string_format_append(call->result, "  %-28s %4u / %4u\n",	"heap default",					heap_caps_get_free_size(MALLOC_CAP_DEFAULT) / 1024, initial_free_total / 1024);
+	string_format_append(call->result, "  %-28s %4u\n",  		"heap IRAM 8 bit adressable",	heap_caps_get_free_size(MALLOC_CAP_IRAM_8BIT) / 1024);
+	string_format_append(call->result, "  %-28s %4u\n",  		"heap retention",				heap_caps_get_free_size(MALLOC_CAP_RETENTION) / 1024);
+	string_format_append(call->result, "  %-28s %4u / %4u\n",	"heap RTC RAM",					heap_caps_get_free_size(MALLOC_CAP_RTCRAM) / 1024, initial_free_rtcram / 1024);
+	string_format_append(call->result, "  %-28s %4u\n",			"heap TCM",						heap_caps_get_free_size(MALLOC_CAP_TCM) / 1024);
 }
 
-void command_info_process(cli_command_call_t *call)
+void info_command_info_process(cli_command_call_t *call)
 {
 	unsigned int ix, processes;
 	unsigned long runtime;
@@ -201,6 +236,9 @@ void command_info_process(cli_command_call_t *call)
 	const TaskStatus_t *pip;
 	const char *name;
 	const char *state;
+
+	assert(inited);
+	assert(call->parameter_count == 0);
 
 	processes = uxTaskGetNumberOfTasks();
 	process_info = heap_caps_malloc(sizeof(*process_info) * processes , MALLOC_CAP_SPIRAM);
@@ -264,27 +302,15 @@ void command_info_process(cli_command_call_t *call)
 	free(process_info);
 }
 
-void command_info_system(cli_command_call_t *call)
+void info_init(void)
 {
-	esp_chip_info_t chip_info;
-	uint32_t flash_size;
+	assert(!inited);
 
-	esp_chip_info(&chip_info);
+	initial_free_heap = esp_get_free_heap_size();
+	initial_free_spiram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+	initial_free_internal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+	initial_free_total = heap_caps_get_free_size(MALLOC_CAP_DEFAULT);
+	initial_free_rtcram = heap_caps_get_free_size(MALLOC_CAP_RTCRAM);
 
-	string_format(call->result, "SoC: %s with %d cores\nRF: %s%s%s%s\n",
-		CONFIG_IDF_TARGET,
-		chip_info.cores,
-		(chip_info.features & CHIP_FEATURE_WIFI_BGN) ? "WiFi/" : "",
-		(chip_info.features & CHIP_FEATURE_BT) ? "BT" : "",
-		(chip_info.features & CHIP_FEATURE_BLE) ? "BLE" : "",
-		(chip_info.features & CHIP_FEATURE_IEEE802154) ? ", 802.15.4 (Zigbee/Thread)" : "");
-
-	unsigned major_rev = chip_info.revision / 100;
-	unsigned minor_rev = chip_info.revision % 100;
-	string_format_append(call->result, "Revision: %d.%d\n", major_rev, minor_rev);
-
-	esp_flash_get_size(NULL, &flash_size);
-
-	string_format_append(call->result, "Flash: %lu MB %s\n", flash_size / (1024 * 1024),
-		(chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
+	inited = true;
 }

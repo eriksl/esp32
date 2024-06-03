@@ -785,7 +785,7 @@ int string_read_fd(string_t dst, unsigned int fd, unsigned int length)
 	return(rv);
 }
 
-void command_info_string(cli_command_call_t *call)
+void string_command_info(cli_command_call_t *call)
 {
 	assert(call->parameter_count == 0);
 

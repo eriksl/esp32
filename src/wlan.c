@@ -182,7 +182,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 	}
 }
 
-void command_wlan_client_config(cli_command_call_t *call)
+void wlan_command_client_config(cli_command_call_t *call)
 {
 	string_auto(value, 64);
 	string_auto_init(key_ssid, "wlan-ssid");
@@ -292,7 +292,7 @@ void wlan_init(void)
 	util_abort_on_esp_err("esp_netif_set_hostname", esp_netif_set_hostname(netif, string_cstr(hostname)));
 }
 
-void command_wlan_info(cli_command_call_t *call)
+void wlan_command_info(cli_command_call_t *call)
 {
 	esp_netif_t *default_netif;
 	esp_netif_ip_info_t ip_info;

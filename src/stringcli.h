@@ -1,3 +1,3 @@
 #pragma once
 
-void command_info_string(cli_command_call_t *call);
+void string_command_info(cli_command_call_t *call);

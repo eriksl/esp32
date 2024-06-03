@@ -39,7 +39,7 @@ static void ota_abort(void)
 	ota_length = 0;
 }
 
-void command_ota_start(cli_command_call_t *call)
+void ota_command_start(cli_command_call_t *call)
 {
 	int rv;
 	unsigned int length;
@@ -91,7 +91,7 @@ void command_ota_start(cli_command_call_t *call)
 	string_format(call->result, "OK start write ota partition %s %u", partition->label, util_partition_to_slot(partition));
 }
 
-void command_ota_write(cli_command_call_t *call)
+void ota_command_write(cli_command_call_t *call)
 {
 	int rv;
 	unsigned length, checksum_chunk;
@@ -137,7 +137,7 @@ void command_ota_write(cli_command_call_t *call)
 	string_format(call->result, "OK write ota");
 }
 
-void command_ota_finish(cli_command_call_t *call)
+void ota_command_finish(cli_command_call_t *call)
 {
 	int rv;
 	unsigned char ota_sha256_hash[32];
@@ -173,7 +173,7 @@ void command_ota_finish(cli_command_call_t *call)
 	string_format(call->result, "OK finish ota, checksum: %s", string_cstr(ota_sha256_hash_text));
 }
 
-void command_ota_commit(cli_command_call_t *call)
+void ota_command_commit(cli_command_call_t *call)
 {
 	esp_err_t rv;
 	unsigned char local_sha256_hash[32];
@@ -233,7 +233,7 @@ void command_ota_commit(cli_command_call_t *call)
 	string_format(call->result, "OK commit ota");
 }
 
-void command_ota_confirm(cli_command_call_t *call)
+void ota_command_confirm(cli_command_call_t *call)
 {
 	int rv;
 	const esp_partition_t *boot_partition, *running_partition;

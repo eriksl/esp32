@@ -15,7 +15,7 @@
 
 static uint8_t flash_buffer[4096];
 
-void command_flash_bench(cli_command_call_t *call)
+void flash_command_bench(cli_command_call_t *call)
 {
 	unsigned int length;
 
@@ -32,7 +32,7 @@ void command_flash_bench(cli_command_call_t *call)
 	string_format(call->result, "OK flash-bench: sending %u bytes", length);
 }
 
-void command_flash_checksum(cli_command_call_t *call)
+void flash_command_checksum(cli_command_call_t *call)
 {
 	int rv;
 	unsigned int start_sector, length, current;
@@ -73,7 +73,7 @@ void command_flash_checksum(cli_command_call_t *call)
 	string_format_append(call->result, "%02x", output[current]);
 }
 
-void command_flash_info(cli_command_call_t *call)
+void flash_command_info(cli_command_call_t *call)
 {
 	esp_partition_iterator_t partition_iterator;
 	const esp_partition_t *partition;
@@ -131,7 +131,7 @@ void command_flash_info(cli_command_call_t *call)
 			0, 0, 0); // FIXME
 }
 
-void command_flash_read(cli_command_call_t *call)
+void flash_command_read(cli_command_call_t *call)
 {
 	int rv;
 	unsigned int sector;
@@ -152,7 +152,7 @@ void command_flash_read(cli_command_call_t *call)
 	string_format(call->result, "OK flash-read: read sector %u", sector);
 }
 
-void command_flash_write(cli_command_call_t *call)
+void flash_command_write(cli_command_call_t *call)
 {
 	unsigned int simulate;
 	unsigned int sector;

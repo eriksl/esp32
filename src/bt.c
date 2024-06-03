@@ -509,7 +509,7 @@ int bt_init(void)
 	return(0);
 }
 
-void command_info_bluetooth(cli_command_call_t *call)
+void bluetooth_command_info(cli_command_call_t *call)
 {
 	string_auto(string_addr, 32);
 

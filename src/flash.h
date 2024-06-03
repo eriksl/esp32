@@ -1,7 +1,7 @@
 #pragma once
 
-void command_flash_bench(cli_command_call_t *call);
-void command_flash_checksum(cli_command_call_t *call);
-void command_flash_info(cli_command_call_t *call);
-void command_flash_read(cli_command_call_t *call);
-void command_flash_write(cli_command_call_t *call);
+void flash_command_bench(cli_command_call_t *call);
+void flash_command_checksum(cli_command_call_t *call);
+void flash_command_info(cli_command_call_t *call);
+void flash_command_read(cli_command_call_t *call);
+void flash_command_write(cli_command_call_t *call);
