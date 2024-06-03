@@ -51,12 +51,13 @@ static const char *wlan_state_to_string(wlan_state_t state)
 
 static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
+	unsigned int rv;
 
 	assert(inited);
 
 	switch(event_id)
 	{
-		case(WIFI_EVENT_STA_START):
+		case(WIFI_EVENT_STA_START): /* 2 */
 		{
 #if 0
 			log("wlan event: start");
@@ -66,7 +67,7 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 			util_warn_on_esp_err("esp_wifi_connect", esp_wifi_connect());
 			break;
 		}
-		case(WIFI_EVENT_STA_STOP):
+		case(WIFI_EVENT_STA_STOP): /* 3 */
 		{
 #if 0
 			log("wlan event: stop");
@@ -75,7 +76,7 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 			wlan_state_since = esp_timer_get_time();
 			break;
 		}
-		case(WIFI_EVENT_STA_CONNECTED):
+		case(WIFI_EVENT_STA_CONNECTED): /* 4 */
 		{
 #if 0
 			wifi_event_sta_connected_t *event = (wifi_event_sta_connected_t *)event_data;
@@ -88,7 +89,7 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
 			break;
 		}
-		case(WIFI_EVENT_STA_DISCONNECTED):
+		case(WIFI_EVENT_STA_DISCONNECTED): /* 5 */
 		{
 			wifi_event_sta_disconnected_t *event = (wifi_event_sta_disconnected_t *)event_data;
 			log_format("wlan event: disconnected: reason: %u, try to reconnect", event->reason);
@@ -100,7 +101,7 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 				util_warn_on_esp_err("esp_wifi_connect", esp_wifi_connect());
 			break;
 		}
-		case(WIFI_EVENT_HOME_CHANNEL_CHANGE):
+		case(WIFI_EVENT_HOME_CHANNEL_CHANGE): /* 40 */
 		{
 #if 0
 			wifi_event_home_channel_change_t *event = (wifi_event_home_channel_change_t *)event_data;
