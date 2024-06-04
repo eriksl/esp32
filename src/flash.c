@@ -37,9 +37,9 @@ void flash_command_checksum(cli_command_call_t *call)
 	int rv;
 	unsigned int start_sector, length, current;
 	mbedtls_sha1_context ctx;
-	uint8_t output[20];
+	uint8_t hash[20];
+	string_auto(hash_text, 64);
 
-	assert(string_size(call->result_oob) > 4096);
 	assert(call->parameter_count == 2);
 
 	mbedtls_sha1_init(&ctx);
@@ -63,14 +63,16 @@ void flash_command_checksum(cli_command_call_t *call)
 		}
 	}
 
-	if((rv = mbedtls_sha1_finish(&ctx, output)) < 0)
+	if((rv = mbedtls_sha1_finish(&ctx, hash)) < 0)
 	{
 		string_format(call->result, "ERROR: mbedtls_sha1_finish returned error %d", rv);
 		return;
 	}
 
+	util_hash_to_string(hash_text, sizeof(hash), hash);
+
 	string_format(call->result, "OK flash-checksum: checksummed %u sectors from sector %u, checksum: ", current - start_sector, start_sector);
-	string_format_append(call->result, "%02x", output[current]);
+	string_append_string(call->result, hash_text);
 }
 
 void flash_command_info(cli_command_call_t *call)
