@@ -143,7 +143,7 @@ string_t _string_init(unsigned int size, const char *init_string, const char *fi
 	_string_t *_dst;
 
 	assert(inited);
-	assert(size > strlen(init_string));
+	assert(size >= strlen(init_string));
 
 #ifdef DEBUG
 	log_format("string_init: \"%s\"[%u] @ %s:%u", init_string, size, file, line);
@@ -152,13 +152,15 @@ string_t _string_init(unsigned int size, const char *init_string, const char *fi
 	_dst = heap_caps_malloc(sizeof(_string_t) + size + null_byte, MALLOC_CAP_SPIRAM);
 	assert(_dst);
 
-	_string_init_header(_dst, size, false, true, false, false);
+	_string_init_header(_dst, size + null_byte, false, true, false, false);
 	_dst->data = _dst->data_start;
 
 	string_assign_cstr((string_t)_dst, init_string);
 
 	init_called++;
 	allocated++;
+
+	assert(_dst->length < _dst->size);
 
 	return((string_t)_dst);
 }
