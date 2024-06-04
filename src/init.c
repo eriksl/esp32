@@ -21,6 +21,7 @@
 
 void app_main(void)
 {
+	console_init_1();
 	info_init();
 	string_module_init();
 	log_init();
@@ -29,8 +30,8 @@ void app_main(void)
 	fs_init();
 	cli_init();
 	bt_init();
-	console_init();
 	wlan_init();
+	console_init_2();
 
 	run_main();
 }
