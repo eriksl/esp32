@@ -14,7 +14,6 @@
 
 void packet_decapsulate(cli_buffer_t *cli_buffer, string_t *data, string_t *oob_data)
 {
-	string_auto_init(error_message, "<error");
 	packet_header_t *packet;
 	const uint8_t *data_pad;
 	unsigned int data_length, data_pad_offset, oob_data_offset, oob_data_length;
@@ -23,6 +22,8 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, string_t *data, string_t *oob_
 	assert(cli_buffer);
 	assert(data);
 	assert(oob_data);
+
+	*data = (string_t)0;
 
 	packet = (packet_header_t *)cli_buffer->data;
 
@@ -123,7 +124,13 @@ void packet_decapsulate(cli_buffer_t *cli_buffer, string_t *data, string_t *oob_
 	return;
 
 error:
-	string_assign_string(*data, error_message);
+	static const char *error_msg = "<error>";
+
+	if(!*data)
+		*data = string_init(strlen(error_msg), error_msg);
+	else
+		string_assign_cstr(*data, error_msg);
+
 	*oob_data = (string_t)0;
 }
 
