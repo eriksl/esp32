@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <errno.h>
 
 #include "string.h"
 #include "cli-command.h"
@@ -11,7 +12,6 @@
 #include <freertos/FreeRTOS.h>
 
 #include <unistd.h>
-#include <errno.h>
 
 //#define DEBUG 1
 
