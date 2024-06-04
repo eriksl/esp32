@@ -16,6 +16,7 @@
 #include <freertos/FreeRTOS.h>
 
 #include <sys/time.h>
+#include <errno.h>
 
 enum
 {
@@ -64,7 +65,7 @@ static void log_clear(void)
 	log_buffer->out = 0;
 }
 
-void log_cstr(const char *string)
+void _log_cstr(bool append_strerror, const char *string)
 {
 	if(inited)
 	{
@@ -73,19 +74,26 @@ void log_cstr(const char *string)
 		entry = &log_buffer->entry[log_buffer->in];
 
 		entry->timestamp = time((time_t *)0);
-		strlcpy(entry->data, string, log_buffer_data_size);
-		entry->data[log_buffer_data_size - 1] = '\0';
+
+		if(append_strerror)
+			snprintf(entry->data, sizeof(entry->data), "%s: %s (%u)",
+				string, strerror(errno), errno);
+		else
+			snprintf(entry->data, sizeof(entry->data), "%s", string);
 
 		if(log_buffer->in++ >= log_buffer_entries)
 			log_buffer->in = 0;
-	}
 
-	console_write_line(string);
+		console_write_line(entry->data);
+	}
+	else
+		console_write_line(string);
 }
 
-void log_format(const char *fmt, ...)
+void _log_format(bool append_strerror, const char *fmt, ...)
 {
 	va_list ap;
+	unsigned int offset;
 
 	if(inited)
 	{
@@ -98,6 +106,13 @@ void log_format(const char *fmt, ...)
 		va_start(ap, fmt);
 		vsnprintf(entry->data, sizeof(entry->data), fmt, ap);
 		va_end(ap);
+
+		if(append_strerror)
+		{
+			offset = strlen(entry->data);
+			snprintf(entry->data + offset, sizeof(entry->data) - offset, ": %s (%u)",
+					strerror(errno), errno);
+		}
 
 		if(log_buffer->in++ >= log_buffer_entries)
 			log_buffer->in = 0;
