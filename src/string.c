@@ -518,6 +518,18 @@ char string_at(const string_t src, unsigned int offset)
 	return(_src->data[offset]);
 }
 
+char string_at_tail(const string_t src)
+{
+	unsigned int length;
+
+	length = string_length(src);
+
+	if(length < 1)
+		return('\0');
+
+	return(string_at(src, length - 1));
+}
+
 void string_assign(string_t dst, unsigned int offset, char src)
 {
 	_string_t *_dst = (_string_t *)dst;
