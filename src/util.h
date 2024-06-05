@@ -12,7 +12,6 @@
 #pragma GCC poison strncat
 #pragma GCC poison printf
 #pragma GCC poison sprintf
-#pragma GCC poison snprintf
 
 void util_init(void);
 uint32_t util_md5_32(unsigned int length, const uint8_t *data);
