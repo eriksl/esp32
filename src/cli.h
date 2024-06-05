@@ -4,9 +4,8 @@ typedef enum
 {
 	cli_source_none = 0,
 	cli_source_bt,
-	cli_source_station,
-	cli_source_ap,
 	cli_source_console,
+	cli_source_wlan_tcp,
 } cli_source_t;
 
 typedef struct
@@ -35,9 +34,10 @@ typedef struct
 
 		struct
 		{
-			uint8_t address[4];
+			int fd;
+			char address_opaque[32];
 			uint16_t port;
-		} ipv4;
+		} ip;
 	};
 } cli_buffer_t;
 

@@ -467,6 +467,10 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
+	{ "wlan-ip-info", "wii", "show information about tcp/udp over wlan", wlan_command_ip_info,
+		{}
+	},
+
 	{ (const char *)0, (const char *)0, (const char *)0, (cli_command_function_t *)0,
 		{}
 	},
@@ -898,19 +902,16 @@ static void run_send_queue(void *)
 				break;
 			}
 
-			case(cli_source_station):
-			{
-				break;
-			}
-
-			case(cli_source_ap):
-			{
-				break;
-			}
-
 			case(cli_source_console):
 			{
 				console_send(&cli_buffer);
+
+				break;
+			}
+
+			case(cli_source_wlan_tcp):
+			{
+				wlan_tcp_send(&cli_buffer);
 
 				break;
 			}

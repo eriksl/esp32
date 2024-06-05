@@ -1,19 +1,29 @@
 #include <stdint.h>
 #include <stdbool.h>
-#include <assert.h>
+#include <sys/socket.h>
 
 #include "string.h"
 #include "cli-command.h"
+#include "cli.h"
 #include "wlan.h"
 #include "config.h"
 #include "log.h"
 #include "util.h"
+#include "packet.h"
 
 #include <esp_event.h>
 #include <esp_wifi.h>
 #include <esp_netif.h>
 #include <esp_netif_sntp.h>
 #include <esp_timer.h>
+
+#include <assert.h>
+
+enum
+{
+	segmentation_max_segment_size = 1440,
+	segmentation_timeout_ms = 1000,
+};
 
 typedef enum
 {
@@ -30,6 +40,24 @@ static bool inited = false;
 static esp_netif_t *netif;
 static uint64_t wlan_state_since = 0;
 static wlan_state_t wlan_state = ws_invalid;
+static int tcp_socket_fd = -1;
+
+static unsigned int tcp_send_bytes;
+static unsigned int tcp_send_segments;
+static unsigned int tcp_send_packets;
+static unsigned int tcp_send_errors;
+static unsigned int tcp_send_no_connection;
+static unsigned int tcp_receive_bytes;
+static unsigned int tcp_receive_segments;
+static unsigned int tcp_receive_packets;
+static unsigned int tcp_receive_accepts;
+static unsigned int tcp_receive_accept_errors;
+static unsigned int tcp_receive_errors;
+static unsigned int tcp_receive_segmentation_timeouts;
+static unsigned int tcp_receive_incomplete_packets;
+static unsigned int tcp_receive_complete_packets;
+static unsigned int tcp_receive_incomplete_raw;
+static unsigned int tcp_receive_complete_raw;
 
 static const char *wlan_state_to_string(wlan_state_t state)
 {
@@ -182,6 +210,186 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 	}
 }
 
+static void run_tcp(void *)
+{
+	int accept_fd;
+	struct sockaddr s_addr;
+	socklen_t s_addr_length;
+	struct sockaddr_in6 si6_addr;
+	int length;
+	string_t receive_buffer;
+	cli_buffer_t cli_buffer;
+	unsigned int segment, plength;
+	uint64_t timestamp_start;
+	bool io_error;
+
+	assert(inited);
+	assert(sizeof(cli_buffer.ip.address_opaque) >= sizeof(struct sockaddr));
+	assert(sizeof(cli_buffer.ip.address_opaque) >= sizeof(struct sockaddr_in));
+	assert(sizeof(cli_buffer.ip.address_opaque) >= sizeof(struct sockaddr_in6));
+
+	receive_buffer = string_new(4096 + 128);
+
+	memset(&si6_addr, 0, sizeof(si6_addr));
+	si6_addr.sin6_family = AF_INET6;
+	si6_addr.sin6_port = htons(24);
+
+	assert((accept_fd = socket(AF_INET6, SOCK_STREAM, 0)) >= 0);
+	assert(bind(accept_fd, (const struct sockaddr *)&si6_addr, sizeof(si6_addr)) == 0);
+	assert(listen(accept_fd, 0) == 0);
+
+	for(;;)
+	{
+		s_addr_length = sizeof(s_addr);
+
+		if((tcp_socket_fd = accept(accept_fd, &s_addr, &s_addr_length)) < 0)
+		{
+			tcp_receive_accept_errors++;
+			continue;
+		}
+
+		tcp_receive_accepts++;
+
+		assert(sizeof(s_addr) >= s_addr_length);
+		assert(sizeof(cli_buffer.ip.address_opaque) >= s_addr_length);
+
+		memcpy(&cli_buffer.ip.address_opaque, &s_addr, s_addr_length);
+		cli_buffer.source = cli_source_wlan_tcp;
+
+		for(io_error = false; !io_error; )
+		{
+			string_clear(receive_buffer);
+
+			for(segment = 0; segment < 16; segment++)
+			{
+				length = string_recv_fd(receive_buffer, tcp_socket_fd);
+
+				tcp_receive_segments++;
+
+				if(length < 0)
+				{
+					tcp_receive_errors++;
+					io_error = true;
+					break;
+				}
+
+				if(length == 0)
+				{
+					io_error = true;
+					break;
+				}
+
+				tcp_receive_bytes += length;
+
+				if(segment == 0)
+					timestamp_start = esp_timer_get_time();
+				else
+				{
+					if(((esp_timer_get_time() - timestamp_start) / 1000) >= segmentation_timeout_ms)
+					{
+						tcp_receive_segmentation_timeouts++;
+						break;
+					}
+				}
+
+				if(packet_is_packet(length, string_data(receive_buffer)))
+				{
+					plength = packet_length(length, string_data(receive_buffer));
+
+					if(string_length(receive_buffer) > plength)
+					{
+						log_format("wlan tcp receive: more data received than expected: %u - %u", string_length(receive_buffer), plength);
+						break;
+					}
+					else
+					{
+						if(string_length(receive_buffer) == plength)
+						{
+							tcp_receive_complete_packets++;
+							break;
+						}
+						else
+							tcp_receive_incomplete_packets++;
+					}
+				}
+				else
+				{
+					if((length < segmentation_max_segment_size) || (string_length(receive_buffer) > 4096))
+					{
+						tcp_receive_complete_raw++;
+						break;
+					}
+					else
+						tcp_receive_incomplete_raw++;
+				}
+			}
+
+			tcp_receive_packets++;
+
+			if(!io_error)
+			{
+				cli_buffer.length = string_length(receive_buffer);
+				cli_buffer.data_from_malloc = 1;
+				assert((cli_buffer.data = heap_caps_malloc(cli_buffer.length ? cli_buffer.length : cli_buffer.length + 1, MALLOC_CAP_SPIRAM)));
+				memcpy(cli_buffer.data, string_data(receive_buffer), cli_buffer.length);
+
+				cli_receive_queue_push(&cli_buffer);
+			}
+		}
+
+		close(tcp_socket_fd);
+		tcp_socket_fd = -1;
+	}
+
+	string_free(receive_buffer);
+}
+
+void wlan_tcp_send(const cli_buffer_t *cli_buffer)
+{
+	int length, offset, chunk, sent;
+
+	assert(inited);
+
+	if(tcp_socket_fd < 0)
+	{
+		tcp_send_no_connection++;
+		return;
+	}
+
+	tcp_send_packets++;
+
+	offset = 0;
+	length = cli_buffer->length;
+
+	for(;;)
+	{
+		chunk = length;
+
+		sent = send(tcp_socket_fd, &cli_buffer->data[offset], chunk, 0);
+
+		tcp_send_segments++;
+
+		if(sent <= 0)
+		{
+			tcp_send_errors++;
+			break;
+		}
+
+		tcp_send_bytes += sent;
+
+		length -= sent;
+		offset += sent;
+
+		assert(length >= 0);
+		assert(offset <= cli_buffer->length);
+
+		if(length == 0)
+			break;
+
+		assert(offset < cli_buffer->length);
+	}
+}
+
 void wlan_command_client_config(cli_command_call_t *call)
 {
 	string_auto(value, 64);
@@ -290,6 +498,35 @@ void wlan_init(void)
 	inited = true;
 
 	util_abort_on_esp_err("esp_netif_set_hostname", esp_netif_set_hostname(netif, string_cstr(hostname)));
+
+	if(xTaskCreatePinnedToCore(run_tcp, "wlan-tcp", 3 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
+        util_abort("wlan: xTaskCreatePinnedToNode run_tcp");
+}
+
+void wlan_command_ip_info(cli_command_call_t *call)
+{
+	assert(inited);
+	assert(call->parameter_count == 0);
+
+	string_assign_cstr(call->result, "IP INFO");
+	string_append_cstr(call->result, "\ntcp send");
+	string_format_append(call->result, "\n- sent bytes %u", tcp_send_bytes);
+	string_format_append(call->result, "\n- sent segments %u", tcp_send_segments);
+	string_format_append(call->result, "\n- sent packets: %u", tcp_send_packets);
+	string_format_append(call->result, "\n- send errors: %u", tcp_send_errors);
+	string_format_append(call->result, "\n- disconnected socket events: %u", tcp_send_no_connection);
+	string_append_cstr(call->result, "\ntcp receive");
+	string_format_append(call->result, "\n- received bytes: %u", tcp_receive_bytes);
+	string_format_append(call->result, "\n- received segments: %u", tcp_receive_segments);
+	string_format_append(call->result, "\n- received packets: %u", tcp_receive_packets);
+	string_format_append(call->result, "\n- received incomplete packets: %u", tcp_receive_incomplete_packets);
+	string_format_append(call->result, "\n- received complete packets: %u", tcp_receive_complete_packets);
+	string_format_append(call->result, "\n- received incomplete raw data: %u", tcp_receive_incomplete_raw);
+	string_format_append(call->result, "\n- received complete raw data: %u", tcp_receive_complete_raw);
+	string_format_append(call->result, "\n- receive errors: %u", tcp_receive_errors);
+	string_format_append(call->result, "\n- segmentation timeouts: %u", tcp_receive_segmentation_timeouts);
+	string_format_append(call->result, "\n- accepted connections: %u", tcp_receive_accepts);
+	string_format_append(call->result, "\n- accept errors: %u", tcp_receive_accept_errors);
 }
 
 void wlan_command_info(cli_command_call_t *call)

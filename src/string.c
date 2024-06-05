@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <errno.h>
+#include <sys/socket.h>
 
 #include "string.h"
 #include "cli-command.h"
@@ -791,6 +792,35 @@ int string_read_fd(string_t dst, unsigned int fd, unsigned int length)
 		_dst->length = 0;
 	else
 		_dst->length = (unsigned int)rv;
+
+	assert(_dst->length < _dst->size);
+
+	_dst->data[_dst->length] = '\0';
+
+	return(rv);
+}
+
+int string_recv_fd(string_t dst, unsigned int fd)
+{
+	unsigned int length;
+	int rv;
+	_string_t *_dst = (_string_t *)dst;
+
+	assert(inited);
+	assert(_dst);
+	assert(_dst->magic_word == string_magic_word);
+	assert(_dst->length < _dst->size);
+	assert(_dst->size > 0);
+	assert(_dst->data[_dst->length] == '\0');
+	assert(!_dst->header_const);
+	assert(!_dst->data_const);
+
+	length = _dst->size - null_byte - _dst->length;
+
+	rv = recv(fd, &_dst->data[_dst->length], length, 0);
+
+	if(rv > 0)
+		_dst->length += rv;
 
 	assert(_dst->length < _dst->size);
 
