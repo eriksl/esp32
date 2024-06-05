@@ -533,6 +533,8 @@ static void receive_queue_pop(cli_buffer_t *cli_buffer)
 static void send_queue_push(cli_buffer_t *cli_buffer)
 {
 	assert(inited);
+	assert(cli_buffer);
+	assert(send_queue_handle);
 
 	xQueueSend(send_queue_handle, cli_buffer, portMAX_DELAY);
 
