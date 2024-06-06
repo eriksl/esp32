@@ -529,8 +529,14 @@ static void help(cli_command_call_t *call)
 static void receive_queue_pop(cli_buffer_t *cli_buffer)
 {
 	assert(inited);
+	assert(cli_buffer);
+	assert(receive_queue_handle);
 
 	xQueueReceive(receive_queue_handle, cli_buffer, portMAX_DELAY);
+
+	assert(cli_buffer->magic_number_head == cli_buffer_magic_number_head);
+	assert(cli_buffer->magic_number_tail == cli_buffer_magic_number_tail);
+
 	cli_stats_commands_received++;
 }
 
@@ -540,7 +546,10 @@ static void send_queue_push(cli_buffer_t *cli_buffer)
 	assert(cli_buffer);
 	assert(send_queue_handle);
 
-	xQueueSend(send_queue_handle, cli_buffer, portMAX_DELAY);
+	cli_buffer->magic_number_head = cli_buffer_magic_number_head;
+	cli_buffer->magic_number_tail = cli_buffer_magic_number_tail;
+
+	xQueueSendToBack(send_queue_handle, cli_buffer, portMAX_DELAY);
 
 	if(cli_buffer->packetised)
 		cli_stats_replies_sent_packet++;
@@ -555,6 +564,9 @@ static void send_queue_pop(cli_buffer_t *cli_buffer)
 	assert(inited);
 
 	xQueueReceive(send_queue_handle, cli_buffer, portMAX_DELAY);
+
+	assert(cli_buffer->magic_number_head == cli_buffer_magic_number_head);
+	assert(cli_buffer->magic_number_tail == cli_buffer_magic_number_tail);
 }
 
 static void run_receive_queue(void *)
@@ -926,11 +938,14 @@ static void run_send_queue(void *)
 	}
 }
 
-void cli_receive_queue_push(const cli_buffer_t *buffer)
+void cli_receive_queue_push(cli_buffer_t *buffer)
 {
 	assert(inited);
 
-	xQueueSend(receive_queue_handle, buffer, portMAX_DELAY);
+	buffer->magic_number_head = cli_buffer_magic_number_head;
+	buffer->magic_number_tail = cli_buffer_magic_number_tail;
+
+	xQueueSendToBack(receive_queue_handle, buffer, portMAX_DELAY);
 }
 
 void cli_init(void)

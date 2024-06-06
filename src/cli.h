@@ -1,5 +1,11 @@
 #pragma once
 
+enum
+{
+	cli_buffer_magic_number_head = 0x1234abcd,
+	cli_buffer_magic_number_tail  = 0xdcba4321,
+};
+
 typedef enum
 {
 	cli_source_none = 0,
@@ -10,6 +16,7 @@ typedef enum
 
 typedef struct
 {
+	unsigned int	magic_number_head;
 	cli_source_t	source;
 	unsigned int	length;
 	uint8_t			*data;
@@ -39,7 +46,8 @@ typedef struct
 			uint16_t port;
 		} ip;
 	};
+	unsigned int magic_number_tail;
 } cli_buffer_t;
 
 void cli_init(void);
-void cli_receive_queue_push(const cli_buffer_t *buffer);
+void cli_receive_queue_push(cli_buffer_t *buffer);
