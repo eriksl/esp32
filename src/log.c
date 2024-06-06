@@ -20,8 +20,8 @@
 
 enum
 {
-	log_buffer_size = 7 * 1024,
-	log_buffer_entries = 55,
+	log_buffer_size = 8192,
+	log_buffer_entries = 62,
 	log_buffer_data_size = 120,
 	log_buffer_magic_word = 0x4afbcafe,
 };
@@ -45,9 +45,10 @@ typedef struct
 	log_entry_t entry[log_buffer_entries];
 } log_t;
 
+static_assert(sizeof(log_t) == 7960);
 static_assert(sizeof(log_t) < log_buffer_size);
-static_assert(sizeof(log_t) == 7064);
 
+RTC_NOINIT_ATTR static char rtc_slow_memory[log_buffer_size];
 static bool inited = false;
 static log_t *log_buffer = (log_t *)0;
 
@@ -155,11 +156,13 @@ static int logging_function(const char *fmt, va_list ap)
 	return(length);
 }
 
+
 void log_init(void)
 {
 	assert(!inited);
-	assert((log_buffer = (log_t *)heap_caps_malloc(sizeof(log_t), MALLOC_CAP_RTCRAM)));
-	assert(log_buffer == (log_t *)0x600fe198);
+	assert(rtc_slow_memory == (char *)0x50000000);
+
+	log_buffer = (log_t *)rtc_slow_memory;
 
 	inited = true;
 
