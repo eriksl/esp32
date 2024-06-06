@@ -307,7 +307,7 @@ static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *context, void *a
 	}
 }
 
-static void bt_received(unsigned int connection_handle, unsigned int attribute_handle, const struct os_mbuf *mbuf)
+static void bt_received(unsigned int connection_handle, unsigned int attribute_handle, const struct os_mbuf *mbuf) // FIXME use string_t for reassembly buffer
 {
 	cli_buffer_t cli_buffer;
 	unsigned int reassembled_packet_length, chunk_length, current_write_offset;
