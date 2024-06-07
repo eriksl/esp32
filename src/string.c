@@ -208,6 +208,7 @@ unsigned int string_length(const string_t src)
 	assert(_src->magic_word == string_magic_word);
 	assert(_src->length < _src->size);
 	assert(_src->size > 0);
+	assert(_src->data[_src->length] == '\0');
 
 	return(_src->length);
 }
@@ -221,6 +222,7 @@ unsigned int string_size(const string_t src)
 	assert(_src->magic_word == string_magic_word);
 	assert(_src->length < _src->size);
 	assert(_src->size > 0);
+	assert(_src->data[_src->length] == '\0');
 
 	return(_src->size - null_byte);
 }
