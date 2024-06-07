@@ -34,6 +34,8 @@ string_t _string_init(unsigned int size, const char *init_string, const char *fi
 void string_clear(string_t dst);
 void string_fill(string_t dst, unsigned int length, char byte);
 unsigned int string_length(const string_t src);
+bool string_empty(const string_t src);
+bool string_full(const string_t src);
 unsigned int string_size(const string_t src);
 void string_append_string(string_t dst, const string_t src);
 void string_append_cstr(string_t dst, const char *src);

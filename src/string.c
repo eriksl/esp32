@@ -227,6 +227,34 @@ unsigned int string_size(const string_t src)
 	return(_src->size - null_byte);
 }
 
+bool string_empty(const string_t src)
+{
+	_string_t *_src = (_string_t *)src;
+
+	assert(inited);
+	assert(_src);
+	assert(_src->magic_word == string_magic_word);
+	assert(_src->length < _src->size);
+	assert(_src->size > 0);
+	assert(_src->data[_src->length] == '\0');
+
+	return(_src->length  == 0);
+}
+
+bool string_full(const string_t src)
+{
+	_string_t *_src = (_string_t *)src;
+
+	assert(inited);
+	assert(_src);
+	assert(_src->magic_word == string_magic_word);
+	assert(_src->length < _src->size);
+	assert(_src->size > 0);
+	assert(_src->data[_src->length] == '\0');
+
+	return(_src->length == (_src->size - null_byte));
+}
+
 void string_clear(string_t dst)
 {
 	_string_t *_dst = (_string_t *)dst;
