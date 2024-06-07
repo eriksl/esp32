@@ -13,6 +13,8 @@
 #include <freertos/FreeRTOS.h>
 
 #include <unistd.h>
+#include <host/ble_hs_mbuf.h>
+#include <os/os_mbuf.h>
 
 //#define DEBUG 1
 
@@ -857,6 +859,46 @@ int string_recv_fd(string_t dst, unsigned int fd)
 	_dst->data[_dst->length] = '\0';
 
 	return(rv);
+}
+
+unsigned int string_append_mbuf(string_t dst, const void *src)
+{
+	unsigned int length;
+	uint16_t om_length;
+	_string_t *_dst = (_string_t *)dst;
+	const struct os_mbuf *_src = (const struct os_mbuf *)src;
+
+	assert(inited);
+	assert(_dst);
+	assert(_dst->magic_word == string_magic_word);
+	assert(_dst->length < _dst->size);
+	assert(_dst->size > 0);
+	assert(_dst->data[_dst->length] == '\0');
+	assert(!_dst->header_const);
+	assert(!_dst->data_const);
+
+	length = os_mbuf_len(_src);
+
+	if((_dst->length + length) > (_dst->size - null_byte))
+		length = _dst->size - null_byte - _dst->length;
+
+	ble_hs_mbuf_to_flat(_src, _dst->data + _dst->length, length, &om_length);
+
+	assert(om_length == length);
+
+	_dst->length += length;
+
+	assert(_dst->length < _dst->size);
+
+	_dst->data[_dst->length] = '\0';
+
+	return(length);
+}
+
+unsigned int string_assign_mbuf(string_t dst, const void *src)
+{
+	string_clear(dst);
+	return(string_append_mbuf(dst, src));
 }
 
 void string_command_info(cli_command_call_t *call)
