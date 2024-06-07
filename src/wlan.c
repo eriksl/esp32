@@ -439,8 +439,6 @@ void wlan_command_client_config(cli_command_call_t *call)
 
 		util_warn_on_esp_err("esp_wifi_set_config", rv);
 
-		log_format("associate: %s/%s", config.sta.ssid, config.sta.password);
-
 		if(rv)
 		{
 			string_append_cstr(call->result, "\nesp_wifi_set_config returns error");
