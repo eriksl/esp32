@@ -45,13 +45,16 @@ static uint8_t bt_host_address[6] = {0};
 static uint16_t attribute_handle;
 static uint8_t own_addr_type;
 static bool inited = false;
-static uint8_t *reassembly_buffer = (uint8_t *)0;
-static unsigned int reassembly_offset = 0;
+
+static string_t reassembly_buffer = (string_t)0;
+
 static unsigned int reassembly_expected_length = 0;
 static uint64_t reassembly_timestamp_start = 0;
 
+static unsigned int bt_stats_reassembly_timeouts;
 static unsigned int bt_stats_reassembly_oversize_chunk;
 static unsigned int bt_stats_reassembly_buffer_overrun;
+static unsigned int bt_stats_reassembly_errors;
 
 static unsigned int bt_stats_indication_error;
 static unsigned int bt_stats_indication_timeout;
@@ -89,7 +92,7 @@ static const struct ble_gatt_svc_def gatt_definitions[] =
 
 static inline void reassemble_reset(void)
 {
-	reassembly_offset = 0;
+	string_clear(reassembly_buffer);
 	reassembly_expected_length = 0;
 	reassembly_timestamp_start = 0;
 }
@@ -308,107 +311,102 @@ static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *context, void *a
 	}
 }
 
-static void bt_received(unsigned int connection_handle, unsigned int attribute_handle, const struct os_mbuf *mbuf) // FIXME use string_t for reassembly buffer
+static void bt_received(unsigned int connection_handle, unsigned int attribute_handle, const struct os_mbuf *mbuf)
 {
 	cli_buffer_t cli_buffer;
-	unsigned int reassembled_packet_length, chunk_length, current_write_offset;
-	uint64_t reassembly_timestamp_now;
-	uint16_t om_length;
+	unsigned int chunk_length;
+	uint64_t timestamp_now;
 
 	assert(inited);
 	assert(reassembly_buffer);
 	assert(mbuf);
 
-	if((chunk_length = os_mbuf_len(mbuf)) > reassembly_buffer_size)
+	if(string_full(reassembly_buffer))
 	{
 		bt_stats_reassembly_oversize_chunk++;
 		return(reassemble_reset());
 	}
 
-	reassembly_timestamp_now = esp_timer_get_time();
+	chunk_length = string_append_mbuf(reassembly_buffer, mbuf);
 
-	if(!reassembly_offset || !reassembly_expected_length || !reassembly_timestamp_start)
+	bt_stats_received_bytes += chunk_length;
+	bt_stats_received_fragments++;
+
+	timestamp_now = esp_timer_get_time();
+
+	if(reassembly_timestamp_start && (((timestamp_now - reassembly_timestamp_start) / 1000) >= reassembly_timeout_ms))
 	{
-		assert(!reassembly_offset);
-		assert(!reassembly_expected_length);
-		assert(!reassembly_timestamp_start);
+		bt_stats_reassembly_timeouts++;
+		return(reassemble_reset());
+	}
 
-		ble_hs_mbuf_to_flat(mbuf, reassembly_buffer, chunk_length, &om_length);
-		assert(om_length == chunk_length);
-		bt_stats_received_bytes += chunk_length;
-		bt_stats_received_fragments++;
-
-		reassembly_offset = chunk_length;
-
-		if(packet_is_packet(chunk_length, reassembly_buffer) && (chunk_length < (reassembled_packet_length = packet_length(chunk_length, reassembly_buffer))))
+	if(!reassembly_expected_length)
+	{
+		if(reassembly_timestamp_start)
 		{
-			if(!reassembled_packet_length)
-				return(reassemble_reset());
+			bt_stats_reassembly_errors++;
+			return(reassemble_reset());
+		}
 
-			reassembly_expected_length = reassembled_packet_length;
-			reassembly_timestamp_start = reassembly_timestamp_now;
-			return;
+		if(packet_is_packet(reassembly_buffer))
+		{
+			reassembly_expected_length = packet_length(reassembly_buffer);
+
+			if(string_length(reassembly_buffer) < reassembly_expected_length)
+			{
+				reassembly_timestamp_start = timestamp_now;
+				return;
+			}
+			/* FALLTHROUGH */
 		}
 		else
 		{
-			if(!packet_is_packet(chunk_length, reassembly_buffer) && (chunk_length == reassembly_raw_stream_fragmented_size))
+			if(chunk_length == reassembly_raw_stream_fragmented_size)
 			{
 				reassembly_expected_length = reassembly_expected_length_unknown;
-				reassembly_timestamp_start = reassembly_timestamp_now;
+				reassembly_timestamp_start = timestamp_now;
 				return;
 			}
+			/* FALLTHROUGH */
 		}
 	}
 	else
 	{
-		assert(reassembly_offset);
-		assert(reassembly_expected_length);
-		assert(reassembly_timestamp_start);
-
-		current_write_offset = reassembly_offset;
-		reassembly_offset += chunk_length;
-
-		if(reassembly_offset > reassembly_buffer_size)
+		if(!reassembly_timestamp_start)
 		{
-			bt_stats_reassembly_buffer_overrun++;
+			bt_stats_reassembly_errors++;
 			return(reassemble_reset());
 		}
 
-		ble_hs_mbuf_to_flat(mbuf, &reassembly_buffer[current_write_offset], chunk_length, &om_length);
-		assert(om_length == chunk_length);
-		bt_stats_received_bytes += chunk_length;
-		bt_stats_received_fragments++;
-
-		if(((reassembly_timestamp_now - reassembly_timestamp_start) / 1000) >= reassembly_timeout_ms)
+		if(reassembly_expected_length == reassembly_expected_length_unknown)
 		{
-			if(reassembly_expected_length != reassembly_expected_length_unknown)
-				return(reassemble_reset());
+			if(chunk_length == reassembly_raw_stream_fragmented_size)
+				return;
+
+			/* FALLTHROUGH */
 		}
 		else
 		{
-			if(reassembly_expected_length == reassembly_expected_length_unknown)
+			if(string_length(reassembly_buffer) > reassembly_expected_length)
 			{
-				if(chunk_length == reassembly_raw_stream_fragmented_size)
-					return;
+				bt_stats_reassembly_errors++;
+				return(reassemble_reset());
 			}
 			else
 			{
-				if(reassembly_offset > reassembly_expected_length)
-					return(reassemble_reset());
-				else
-				{
-					if(reassembly_offset < reassembly_expected_length)
-						return;
-				}
+				if(string_length(reassembly_buffer) < reassembly_expected_length)
+					return;
+
+				/* FALLTHROUGH */
 			}
 		}
 	}
 
 	cli_buffer.source = cli_source_bt;
-	cli_buffer.length = reassembly_offset;
+	cli_buffer.length = string_length(reassembly_buffer);
 	cli_buffer.data_from_malloc = 1;
 	assert((cli_buffer.data = heap_caps_malloc(cli_buffer.length ? cli_buffer.length : cli_buffer.length + 1, MALLOC_CAP_SPIRAM)));
-	memcpy(cli_buffer.data, reassembly_buffer, cli_buffer.length);
+	memcpy(cli_buffer.data, string_data(reassembly_buffer), cli_buffer.length);
 	cli_buffer.bt.connection_handle = connection_handle;
 	cli_buffer.bt.attribute_handle = attribute_handle;
 
@@ -483,7 +481,8 @@ void bt_init(void)
 	if(!config_get_string(hostname_key, hostname))
 		string_assign_cstr(hostname, "esp32");
 
-	assert((reassembly_buffer = heap_caps_malloc(reassembly_buffer_size, MALLOC_CAP_SPIRAM)));
+	reassembly_buffer = string_new(reassembly_buffer_size);
+	assert(reassembly_buffer);
 	reassemble_reset();
 
 	util_abort_on_esp_err("nimble_port_init", nimble_port_init());
@@ -530,8 +529,10 @@ void bluetooth_command_info(cli_command_call_t *call)
 	string_format_append(call->result, "\n  - bytes: %u", bt_stats_received_bytes);
 
 	string_format_append(call->result, "\n  reassembly:");
+	string_format_append(call->result, "\n  - timeouts: %u", bt_stats_reassembly_timeouts);
 	string_format_append(call->result, "\n  - oversized chunks: %u", bt_stats_reassembly_oversize_chunk);
 	string_format_append(call->result, "\n  - buffer overruns: %u", bt_stats_reassembly_buffer_overrun);
+	string_format_append(call->result, "\n  - errors: %u", bt_stats_reassembly_errors);
 
 	string_format_append(call->result, "\n  indication:");
 	string_format_append(call->result, "\n  - errors: %u", bt_stats_indication_error);
