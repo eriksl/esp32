@@ -268,6 +268,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 		case(BLE_GAP_EVENT_MTU):
 		case(BLE_GAP_EVENT_SUBSCRIBE):
 		case(BLE_GAP_EVENT_PHY_UPDATE_COMPLETE):
+		case(BLE_GAP_EVENT_DATA_LEN_CHG):
 		{
 			break;
 		}
