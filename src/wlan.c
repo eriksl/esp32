@@ -58,6 +58,7 @@ static unsigned int tcp_receive_incomplete_packets;
 static unsigned int tcp_receive_complete_packets;
 static unsigned int tcp_receive_incomplete_raw;
 static unsigned int tcp_receive_complete_raw;
+static unsigned int tcp_receive_segmentation_errors;
 
 static const char *wlan_state_to_string(wlan_state_t state)
 {
@@ -298,7 +299,7 @@ static void run_tcp(void *)
 
 					if(string_length(receive_buffer) > plength)
 					{
-						log_format("wlan tcp receive: more data received than expected: %u - %u", string_length(receive_buffer), plength);
+						tcp_receive_segmentation_errors++;
 						break;
 					}
 					else
@@ -525,6 +526,7 @@ void wlan_command_ip_info(cli_command_call_t *call)
 	string_format_append(call->result, "\n- received complete raw data: %u", tcp_receive_complete_raw);
 	string_format_append(call->result, "\n- receive errors: %u", tcp_receive_errors);
 	string_format_append(call->result, "\n- segmentation timeouts: %u", tcp_receive_segmentation_timeouts);
+	string_format_append(call->result, "\n- segmentation errors: %u", tcp_receive_segmentation_errors);
 	string_format_append(call->result, "\n- accepted connections: %u", tcp_receive_accepts);
 	string_format_append(call->result, "\n- accept errors: %u", tcp_receive_accept_errors);
 }
