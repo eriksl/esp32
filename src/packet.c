@@ -226,14 +226,14 @@ void packet_encapsulate(cli_buffer_t *cli_buffer, const string_t data, const str
 	}
 }
 
-bool packet_is_packet(unsigned int length, const void *buffer)
+bool packet_is_packet(const string_t buffer)
 {
 	packet_header_t *packet;
 
-	if(length < sizeof(*packet))
+	if(string_length(buffer) < sizeof(*packet))
 		return(false);
 
-	packet = (packet_header_t *)buffer;
+	packet = (packet_header_t *)string_data(buffer);
 
 	if((packet->soh != packet_header_soh) || (packet->version != packet_header_version) || (packet->id != packet_header_id))
 		return(false);
@@ -241,14 +241,14 @@ bool packet_is_packet(unsigned int length, const void *buffer)
 	return(true);
 }
 
-unsigned int packet_length(unsigned int length, const void *buffer)
+unsigned int packet_length(const string_t buffer)
 {
 	packet_header_t *packet;
 
-	if(!packet_is_packet(length, buffer))
+	if(!packet_is_packet(buffer))
 		return(0);
 
-	packet = (packet_header_t *)buffer;
+	packet = (packet_header_t *)string_data(buffer);
 
 	return(packet->length);
 }

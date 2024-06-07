@@ -292,9 +292,9 @@ static void run_tcp(void *)
 					}
 				}
 
-				if(packet_is_packet(string_length(receive_buffer), string_data(receive_buffer))) // FIXME: change this interface to string_t
+				if(packet_is_packet(receive_buffer))
 				{
-					plength = packet_length(length, string_data(receive_buffer));
+					plength = packet_length(receive_buffer);
 
 					if(string_length(receive_buffer) > plength)
 					{

@@ -10,7 +10,7 @@
 #undef assert_field
 #undef attr_packed
 
-bool packet_is_packet(unsigned int length, const void *buffer);
-unsigned int packet_length(unsigned int length, const void *buffer);
+bool packet_is_packet(const string_t buffer);
+unsigned int packet_length(const string_t buffer);
 void packet_decapsulate(cli_buffer_t *cli_buffer, string_t *data, string_t *oob_data);
 void packet_encapsulate(cli_buffer_t *cli_buffer, const string_t data, const string_t oob_data);
