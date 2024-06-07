@@ -472,7 +472,7 @@ void bt_send(const cli_buffer_t *cli_buffer)
 	bt_stats_sent_packets++;
 }
 
-int bt_init(void)
+void bt_init(void)
 {
 	string_auto_init(hostname_key, "hostname");
 	string_auto(hostname, 16);
@@ -505,8 +505,6 @@ int bt_init(void)
 	util_abort_on_esp_err("ble_svc_gap_device_name_set", ble_svc_gap_device_name_set(string_cstr(hostname)));
 	ble_store_config_init();
 	nimble_port_freertos_init(nimble_port_task);
-
-	return(0);
 }
 
 void bluetooth_command_info(cli_command_call_t *call)
