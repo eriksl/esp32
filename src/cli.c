@@ -96,6 +96,7 @@ static unsigned int cli_stats_commands_received_raw;
 static unsigned int cli_stats_replies_sent;
 static unsigned int cli_stats_replies_sent_packet;
 static unsigned int cli_stats_replies_sent_raw;
+static unsigned int cli_stats_broadcast_dropped;
 static bool inited = false;
 
 static const char *parameter_type_to_string(unsigned int type)
@@ -197,6 +198,7 @@ static void command_info_cli(cli_command_call_t *call)
 	string_format_append(call->result, "\n- total: %u", cli_stats_commands_received);
 	string_format_append(call->result, "\n- packetised: %u", cli_stats_commands_received_packet);
 	string_format_append(call->result, "\n- raw: %u", cli_stats_commands_received_raw);
+	string_format_append(call->result, "\n- dropped broadcast: %u", cli_stats_broadcast_dropped);
 	string_format_append(call->result, "\nreplies sent:");
 	string_format_append(call->result, "\n- total: %u", cli_stats_replies_sent);
 	string_format_append(call->result, "\n- packetised: %u", cli_stats_replies_sent_packet);
@@ -608,6 +610,12 @@ static void run_receive_queue(void *)
 		cli_buffer.length = 0;
 		cli_buffer.data = (uint8_t *)0;
 		cli_buffer.data_from_malloc = 0;
+
+		if(cli_buffer.broadcast_groups)
+		{
+			cli_stats_broadcast_dropped++;
+			goto error;
+		}
 
 		if(!(command = string_parse(data, 0)))
 		{
