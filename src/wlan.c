@@ -23,6 +23,8 @@ enum
 {
 	segmentation_max_segment_size = 1440,
 	segmentation_timeout_ms = 1000,
+	fragmentation_max_fragment_size = 1024,
+	fragmentation_timeout_ms = 1000,
 };
 
 typedef enum
@@ -41,6 +43,7 @@ static esp_netif_t *netif;
 static uint64_t wlan_state_since = 0;
 static wlan_state_t wlan_state = ws_invalid;
 static int tcp_socket_fd = -1;
+static int udp_socket_fd = -1;
 
 static unsigned int tcp_send_bytes;
 static unsigned int tcp_send_segments;
@@ -59,6 +62,22 @@ static unsigned int tcp_receive_complete_packets;
 static unsigned int tcp_receive_incomplete_raw;
 static unsigned int tcp_receive_complete_raw;
 static unsigned int tcp_receive_segmentation_errors;
+
+static unsigned int udp_send_bytes;
+static unsigned int udp_send_segments;
+static unsigned int udp_send_packets;
+static unsigned int udp_send_errors;
+static unsigned int udp_send_no_connection;
+static unsigned int udp_receive_bytes;
+static unsigned int udp_receive_segments;
+static unsigned int udp_receive_packets;
+static unsigned int udp_receive_errors;
+static unsigned int udp_receive_segmentation_timeouts;
+static unsigned int udp_receive_incomplete_packets;
+static unsigned int udp_receive_complete_packets;
+static unsigned int udp_receive_incomplete_raw;
+static unsigned int udp_receive_complete_raw;
+static unsigned int udp_receive_segmentation_errors;
 
 static const char *wlan_state_to_string(wlan_state_t state)
 {
@@ -391,6 +410,177 @@ void wlan_tcp_send(const cli_buffer_t *cli_buffer)
 	}
 }
 
+static void run_udp(void *)
+{
+	struct sockaddr_in6 si6_addr;
+	unsigned int si6_addr_length;
+	int length;
+	string_t receive_buffer;
+	cli_buffer_t cli_buffer;
+	unsigned int segment, plength;
+	uint64_t timestamp_start;
+	bool io_error;
+
+	assert(inited);
+	assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr));
+	assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr_in));
+	assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr_in6));
+
+	receive_buffer = string_new(4096 + 128);
+
+	memset(&si6_addr, 0, sizeof(si6_addr));
+	si6_addr.sin6_family = AF_INET6;
+	si6_addr.sin6_port = htons(24);
+
+	assert((udp_socket_fd = socket(AF_INET6, SOCK_DGRAM, 0)) >= 0);
+	assert(bind(udp_socket_fd, (const struct sockaddr *)&si6_addr, sizeof(si6_addr)) == 0);
+
+	for(;;)
+	{
+		io_error = false;
+		string_clear(receive_buffer);
+
+		for(segment = 0; segment < 16; segment++)
+		{
+			si6_addr_length = sizeof(si6_addr);
+
+			length = string_recvfrom_fd(receive_buffer, udp_socket_fd, &si6_addr_length, &si6_addr);
+
+			assert(sizeof(si6_addr) >= si6_addr_length);
+			assert(sizeof(cli_buffer.ip.address.sin6_addr) >= si6_addr_length);
+
+			memcpy(&cli_buffer.ip.address.sin6_addr, &si6_addr, si6_addr_length);
+			cli_buffer.ip.address.sin6_length = si6_addr_length;
+			cli_buffer.source = cli_source_wlan_udp;
+
+			udp_receive_segments++;
+
+			if(length < 0)
+			{
+				udp_receive_errors++;
+				io_error = true;
+				break;
+			}
+
+			if(length == 0)
+			{
+				io_error = true;
+				break;
+			}
+
+			udp_receive_bytes += length;
+
+			if(segment == 0)
+				timestamp_start = esp_timer_get_time();
+			else
+			{
+				if(((esp_timer_get_time() - timestamp_start) / 1000) >= segmentation_timeout_ms)
+				{
+					udp_receive_segmentation_timeouts++;
+					break;
+				}
+			}
+
+			if(packet_is_packet(receive_buffer))
+			{
+				plength = packet_length(receive_buffer);
+
+				if(string_length(receive_buffer) > plength)
+				{
+					udp_receive_segmentation_errors++;
+					break;
+				}
+				else
+				{
+					if(string_length(receive_buffer) == plength)
+					{
+						udp_receive_complete_packets++;
+						break;
+					}
+					else
+						udp_receive_incomplete_packets++;
+				}
+			}
+			else
+			{
+				if((length < fragmentation_max_fragment_size) || (string_length(receive_buffer) > 4096))
+				{
+					udp_receive_complete_raw++;
+					break;
+				}
+				else
+					udp_receive_incomplete_raw++;
+			}
+		}
+
+		udp_receive_packets++;
+
+		if(!io_error)
+		{
+			cli_buffer.length = string_length(receive_buffer);
+			cli_buffer.data_from_malloc = 1;
+			assert((cli_buffer.data = heap_caps_malloc(cli_buffer.length ? cli_buffer.length : cli_buffer.length + 1, MALLOC_CAP_SPIRAM)));
+			memcpy(cli_buffer.data, string_data(receive_buffer), cli_buffer.length);
+
+			cli_receive_queue_push(&cli_buffer);
+		}
+	}
+
+	close(udp_socket_fd);
+	udp_socket_fd = -1;
+
+	string_free(receive_buffer);
+}
+
+void wlan_udp_send(const cli_buffer_t *cli_buffer)
+{
+	int length, offset, chunk, sent;
+
+	assert(inited);
+
+	if(udp_socket_fd < 0)
+	{
+		udp_send_no_connection++;
+		return;
+	}
+
+	udp_send_packets++;
+
+	offset = 0;
+	length = cli_buffer->length;
+
+	for(;;)
+	{
+		chunk = length;
+
+		if(chunk > 1024)
+			chunk = 1024;
+
+		sent = sendto(udp_socket_fd, &cli_buffer->data[offset], chunk, 0, (const struct sockaddr *)&cli_buffer->ip.address.sin6_addr, cli_buffer->ip.address.sin6_length);
+
+		udp_send_segments++;
+
+		if(sent <= 0)
+		{
+			udp_send_errors++;
+			break;
+		}
+
+		udp_send_bytes += sent;
+
+		length -= sent;
+		offset += sent;
+
+		assert(length >= 0);
+		assert(offset <= cli_buffer->length);
+
+		if(length == 0)
+			break;
+
+		assert(offset < cli_buffer->length);
+	}
+}
+
 void wlan_command_client_config(cli_command_call_t *call)
 {
 	string_auto(value, 64);
@@ -500,6 +690,9 @@ void wlan_init(void)
 
 	if(xTaskCreatePinnedToCore(run_tcp, "wlan-tcp", 3 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
         util_abort("wlan: xTaskCreatePinnedToNode run_tcp");
+
+	if(xTaskCreatePinnedToCore(run_udp, "wlan-udp", 3 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
+        util_abort("wlan: xTaskCreatePinnedToNode run_udp");
 }
 
 void wlan_command_ip_info(cli_command_call_t *call)
@@ -527,6 +720,23 @@ void wlan_command_ip_info(cli_command_call_t *call)
 	string_format_append(call->result, "\n- segmentation errors: %u", tcp_receive_segmentation_errors);
 	string_format_append(call->result, "\n- accepted connections: %u", tcp_receive_accepts);
 	string_format_append(call->result, "\n- accept errors: %u", tcp_receive_accept_errors);
+	string_append_cstr(call->result, "\nudp send");
+	string_format_append(call->result, "\n- sent bytes %u", udp_send_bytes);
+	string_format_append(call->result, "\n- sent segments %u", udp_send_segments);
+	string_format_append(call->result, "\n- sent packets: %u", udp_send_packets);
+	string_format_append(call->result, "\n- send errors: %u", udp_send_errors);
+	string_format_append(call->result, "\n- disconnected socket events: %u", udp_send_no_connection);
+	string_append_cstr(call->result, "\nudp receive");
+	string_format_append(call->result, "\n- received bytes: %u", udp_receive_bytes);
+	string_format_append(call->result, "\n- received segments: %u", udp_receive_segments);
+	string_format_append(call->result, "\n- received packets: %u", udp_receive_packets);
+	string_format_append(call->result, "\n- received incomplete packets: %u", udp_receive_incomplete_packets);
+	string_format_append(call->result, "\n- received complete packets: %u", udp_receive_complete_packets);
+	string_format_append(call->result, "\n- received incomplete raw data: %u", udp_receive_incomplete_raw);
+	string_format_append(call->result, "\n- received complete raw data: %u", udp_receive_complete_raw);
+	string_format_append(call->result, "\n- receive errors: %u", udp_receive_errors);
+	string_format_append(call->result, "\n- segmentation timeouts: %u", udp_receive_segmentation_timeouts);
+	string_format_append(call->result, "\n- segmentation errors: %u", udp_receive_segmentation_errors);
 }
 
 void wlan_command_info(cli_command_call_t *call)

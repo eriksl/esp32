@@ -12,6 +12,7 @@ typedef enum
 	cli_source_bt,
 	cli_source_console,
 	cli_source_wlan_tcp,
+	cli_source_wlan_udp,
 } cli_source_t;
 
 typedef struct

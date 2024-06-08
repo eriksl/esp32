@@ -935,6 +935,13 @@ static void run_send_queue(void *)
 
 				break;
 			}
+
+			case(cli_source_wlan_udp):
+			{
+				wlan_udp_send(&cli_buffer);
+
+				break;
+			}
 		}
 
 		if(cli_buffer.data_from_malloc && cli_buffer.data)
