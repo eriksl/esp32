@@ -41,9 +41,11 @@ typedef struct
 
 		struct
 		{
-			int fd;
-			char address_opaque[32];
-			uint16_t port;
+			struct
+			{
+				unsigned int sin6_length;
+				char sin6_addr[32];
+			} address;
 		} ip;
 	};
 	unsigned int magic_number_tail;

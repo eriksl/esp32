@@ -214,9 +214,8 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 static void run_tcp(void *)
 {
 	int accept_fd;
-	struct sockaddr s_addr;
-	socklen_t s_addr_length;
 	struct sockaddr_in6 si6_addr;
+	socklen_t si6_addr_length;
 	int length;
 	string_t receive_buffer;
 	cli_buffer_t cli_buffer;
@@ -225,9 +224,9 @@ static void run_tcp(void *)
 	bool io_error;
 
 	assert(inited);
-	assert(sizeof(cli_buffer.ip.address_opaque) >= sizeof(struct sockaddr));
-	assert(sizeof(cli_buffer.ip.address_opaque) >= sizeof(struct sockaddr_in));
-	assert(sizeof(cli_buffer.ip.address_opaque) >= sizeof(struct sockaddr_in6));
+	assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr));
+	assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr_in));
+	assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr_in6));
 
 	receive_buffer = string_new(4096 + 128);
 
@@ -241,9 +240,9 @@ static void run_tcp(void *)
 
 	for(;;)
 	{
-		s_addr_length = sizeof(s_addr);
+		si6_addr_length = sizeof(si6_addr);
 
-		if((tcp_socket_fd = accept(accept_fd, &s_addr, &s_addr_length)) < 0)
+		if((tcp_socket_fd = accept(accept_fd, (struct sockaddr *)&si6_addr, &si6_addr_length)) < 0)
 		{
 			tcp_receive_accept_errors++;
 			continue;
@@ -251,10 +250,11 @@ static void run_tcp(void *)
 
 		tcp_receive_accepts++;
 
-		assert(sizeof(s_addr) >= s_addr_length);
-		assert(sizeof(cli_buffer.ip.address_opaque) >= s_addr_length);
+		assert(sizeof(si6_addr) >= si6_addr_length);
+		assert(sizeof(cli_buffer.ip.address.sin6_addr) >= si6_addr_length);
 
-		memcpy(&cli_buffer.ip.address_opaque, &s_addr, s_addr_length);
+		memcpy(&cli_buffer.ip.address.sin6_addr, &si6_addr, si6_addr_length);
+		cli_buffer.ip.address.sin6_length = si6_addr_length;
 		cli_buffer.source = cli_source_wlan_tcp;
 
 		for(io_error = false; !io_error; )
