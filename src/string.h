@@ -62,6 +62,6 @@ bool string_int(const string_t src, unsigned int base, int *value);
 bool string_float(const string_t src, float *value);
 void string_replace(string_t dst, unsigned int start_pos, unsigned int end_pos, char from, char to);
 int string_read_fd(string_t dst, unsigned int fd, unsigned int length);
-int string_recv_fd(string_t dst, unsigned int fd);
+int string_recvfrom_fd(string_t dst, unsigned int fd, unsigned int *sockaddr_len, void *sockaddr);
 
 void string_module_init(void);

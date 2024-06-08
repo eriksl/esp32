@@ -832,7 +832,7 @@ int string_read_fd(string_t dst, unsigned int fd, unsigned int length)
 	return(rv);
 }
 
-int string_recv_fd(string_t dst, unsigned int fd)
+int string_recvfrom_fd(string_t dst, unsigned int fd, unsigned int *sockaddr_len, void *sockaddr)
 {
 	unsigned int length;
 	int rv;
@@ -849,7 +849,7 @@ int string_recv_fd(string_t dst, unsigned int fd)
 
 	length = _dst->size - null_byte - _dst->length;
 
-	rv = recv(fd, &_dst->data[_dst->length], length, 0);
+	rv = recvfrom(fd, &_dst->data[_dst->length], length, 0, (struct sockaddr *)sockaddr, (socklen_t *)sockaddr_len);
 
 	if(rv > 0)
 		_dst->length += rv;

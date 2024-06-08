@@ -263,7 +263,7 @@ static void run_tcp(void *)
 
 			for(segment = 0; segment < 16; segment++)
 			{
-				length = string_recv_fd(receive_buffer, tcp_socket_fd);
+				length = string_recvfrom_fd(receive_buffer, tcp_socket_fd, (unsigned int *)0, (void *)0);
 
 				tcp_receive_segments++;
 
