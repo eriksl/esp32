@@ -212,20 +212,24 @@ void info_command_info_memory(cli_command_call_t *call)
 	assert(inited);
 	assert(call->parameter_count == 0);
 
-	string_format(call->result, "%-30s %-4s\n", "Type of memory", "kB");
-	string_format_append(call->result, "  %-28s %4lu / %4u\n",	"free heap total",				esp_get_free_heap_size() / 1024, initial_free_heap  / 1024);
-	string_format_append(call->result, "  %-28s %4lu\n",		"minimum free heap",			esp_get_minimum_free_heap_size() / 1024);
-	string_format_append(call->result, "  %-28s %4u\n",  		"heap executable",				heap_caps_get_free_size(MALLOC_CAP_EXEC) / 1024);
-	string_format_append(call->result, "  %-28s %4u\n",  		"heap 32 bit addressable",		heap_caps_get_free_size(MALLOC_CAP_32BIT) / 1024);
-	string_format_append(call->result, "  %-28s %4u\n",  		"heap 8 bit addressable",		heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024);
-	string_format_append(call->result, "  %-28s %4u\n",  		"heap DMA adressable",			heap_caps_get_free_size(MALLOC_CAP_DMA) / 1024);
-	string_format_append(call->result, "  %-28s %4u / %4u\n",	"heap SPI RAM",					heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024, initial_free_spiram / 1024);
-	string_format_append(call->result, "  %-28s %4u / %4u\n",	"heap internal RAM",			heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024, initial_free_internal / 1024);
-	string_format_append(call->result, "  %-28s %4u / %4u\n",	"heap default",					heap_caps_get_free_size(MALLOC_CAP_DEFAULT) / 1024, initial_free_total / 1024);
-	string_format_append(call->result, "  %-28s %4u\n",  		"heap IRAM 8 bit adressable",	heap_caps_get_free_size(MALLOC_CAP_IRAM_8BIT) / 1024);
-	string_format_append(call->result, "  %-28s %4u\n",  		"heap retention",				heap_caps_get_free_size(MALLOC_CAP_RETENTION) / 1024);
-	string_format_append(call->result, "  %-28s %4u / %4u\n",	"heap RTC RAM",					heap_caps_get_free_size(MALLOC_CAP_RTCRAM) / 1024, initial_free_rtcram / 1024);
-	string_format_append(call->result, "  %-28s %4u\n",			"heap TCM",						heap_caps_get_free_size(MALLOC_CAP_TCM) / 1024);
+	string_format(call->result, "MEMORY");
+	string_format_append(call->result, "\n%-30s %-4s", "amount:", "kB");
+	string_format_append(call->result, "\n- %-28s %4lu / %4u",	"free heap total",				esp_get_free_heap_size() / 1024, initial_free_heap  / 1024);
+	string_format_append(call->result, "\n- %-28s %4lu",		"minimum free heap",			esp_get_minimum_free_heap_size() / 1024);
+	string_format_append(call->result, "\n- %-28s %4u",  		"heap executable",				heap_caps_get_free_size(MALLOC_CAP_EXEC) / 1024);
+	string_format_append(call->result, "\n- %-28s %4u",  		"heap 32 bit addressable",		heap_caps_get_free_size(MALLOC_CAP_32BIT) / 1024);
+	string_format_append(call->result, "\n- %-28s %4u",  		"heap 8 bit addressable",		heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024);
+	string_format_append(call->result, "\n- %-28s %4u",  		"heap DMA adressable",			heap_caps_get_free_size(MALLOC_CAP_DMA) / 1024);
+	string_format_append(call->result, "\n- %-28s %4u / %4u",	"heap SPI RAM",					heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024, initial_free_spiram / 1024);
+	string_format_append(call->result, "\n- %-28s %4u / %4u",	"heap internal RAM",			heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024, initial_free_internal / 1024);
+	string_format_append(call->result, "\n- %-28s %4u / %4u",	"heap default",					heap_caps_get_free_size(MALLOC_CAP_DEFAULT) / 1024, initial_free_total / 1024);
+	string_format_append(call->result, "\n- %-28s %4u",  		"heap IRAM 8 bit adressable",	heap_caps_get_free_size(MALLOC_CAP_IRAM_8BIT) / 1024);
+	string_format_append(call->result, "\n- %-28s %4u",  		"heap retention",				heap_caps_get_free_size(MALLOC_CAP_RETENTION) / 1024);
+	string_format_append(call->result, "\n- %-28s %4u / %4u",	"heap RTC RAM",					heap_caps_get_free_size(MALLOC_CAP_RTCRAM) / 1024, initial_free_rtcram / 1024);
+	string_format_append(call->result, "\n- %-28s %4u",			"heap TCM",						heap_caps_get_free_size(MALLOC_CAP_TCM) / 1024);
+	string_append_cstr(call->result, "\ntimings:");
+	string_format_append(call->result, "\n- malloc min time: %llu microseconds", stat_util_time_malloc_min);
+	string_format_append(call->result, "\n- malloc max time: %llu microseconds", stat_util_time_malloc_max);
 }
 
 void info_command_info_process(cli_command_call_t *call)
@@ -241,7 +245,7 @@ void info_command_info_process(cli_command_call_t *call)
 	assert(call->parameter_count == 0);
 
 	processes = uxTaskGetNumberOfTasks();
-	process_info = heap_caps_malloc(sizeof(*process_info) * processes , MALLOC_CAP_SPIRAM);
+	process_info = util_memory_alloc_spiram(sizeof(*process_info) * processes);
 	assert(uxTaskGetSystemState(process_info, processes, &runtime) == processes);
 
 	string_format_append(call->result, "processes: %u\n", processes);

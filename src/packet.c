@@ -163,7 +163,7 @@ void packet_encapsulate(cli_buffer_t *cli_buffer, const string_t data, const str
 
 		cli_buffer->length = oob_data_offset + oob_data_length;
 		cli_buffer->data_from_malloc = 1;
-		cli_buffer->data = heap_caps_malloc(cli_buffer->length, MALLOC_CAP_SPIRAM);
+		cli_buffer->data = util_memory_alloc_spiram(cli_buffer->length);
 		memcpy(&cli_buffer->data[data_offset], string_cstr(data), data_length);
 		cli_buffer->data[data_offset + data_length] = '\n';
 		memset(&cli_buffer->data[data_pad_offset], 0, oob_data_offset - data_pad_offset);
@@ -213,8 +213,7 @@ void packet_encapsulate(cli_buffer_t *cli_buffer, const string_t data, const str
 
 		cli_buffer->length = oob_data_offset + oob_data_length;
 		cli_buffer->data_from_malloc = 1;
-		cli_buffer->data = heap_caps_malloc(cli_buffer->length, MALLOC_CAP_SPIRAM);
-		assert(cli_buffer->data);
+		cli_buffer->data = util_memory_alloc_spiram(cli_buffer->length);
 		memcpy(cli_buffer->data, string_cstr(data), data_length);
 		cli_buffer->data[data_length] = '\n';
 

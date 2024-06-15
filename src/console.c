@@ -315,7 +315,7 @@ static void run_console(void *)
 			cli_buffer.source = cli_source_console;
 			cli_buffer.length = line->length;
 			cli_buffer.data_from_malloc = 1;
-			assert((cli_buffer.data = heap_caps_malloc(line->length ? line->length : line->length + 1, MALLOC_CAP_SPIRAM)));
+			cli_buffer.data = util_memory_alloc_spiram(line->length);
 			memcpy(cli_buffer.data, line->data, line->length);
 			cli_receive_queue_push(&cli_buffer);
 
@@ -347,8 +347,7 @@ void console_init_1()
 
 	assert(!inited_1);
 
-	lines = (lines_t *)heap_caps_malloc(sizeof(lines_t) , MALLOC_CAP_SPIRAM);
-	assert(lines);
+	lines = util_memory_alloc_spiram(sizeof(lines_t));
 
 	lines->size = line_amount;
 	lines->current = 0;

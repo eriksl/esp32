@@ -27,8 +27,7 @@ void ledpixel_init(void)
 
 ledpixel_t ledpixel_new(unsigned int max_leds, unsigned int gpio)
 {
-	_ledpixel_t *_ledpixel = heap_caps_malloc(sizeof(_ledpixel_t), MALLOC_CAP_SPIRAM);
-	assert(_ledpixel);
+	_ledpixel_t *_ledpixel = util_memory_alloc_spiram(sizeof(_ledpixel_t));
 
 	_ledpixel->config.strip_gpio_num = gpio;
 	_ledpixel->config.max_leds = max_leds;

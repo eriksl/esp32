@@ -350,7 +350,7 @@ static void run_tcp(void *)
 			{
 				cli_buffer.length = string_length(receive_buffer);
 				cli_buffer.data_from_malloc = 1;
-				assert((cli_buffer.data = heap_caps_malloc(cli_buffer.length ? cli_buffer.length : cli_buffer.length + 1, MALLOC_CAP_SPIRAM)));
+				cli_buffer.data = util_memory_alloc_spiram(cli_buffer.length);
 				memcpy(cli_buffer.data, string_data(receive_buffer), cli_buffer.length);
 
 				cli_receive_queue_push(&cli_buffer);
@@ -519,7 +519,7 @@ static void run_udp(void *)
 		{
 			cli_buffer.length = string_length(receive_buffer);
 			cli_buffer.data_from_malloc = 1;
-			assert((cli_buffer.data = heap_caps_malloc(cli_buffer.length ? cli_buffer.length : cli_buffer.length + 1, MALLOC_CAP_SPIRAM)));
+			cli_buffer.data = util_memory_alloc_spiram(cli_buffer.length);
 			memcpy(cli_buffer.data, string_data(receive_buffer), cli_buffer.length);
 
 			cli_receive_queue_push(&cli_buffer);

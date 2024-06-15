@@ -101,8 +101,7 @@ string_t _string_new(unsigned int size, const char *file, unsigned int line)
 	log_format("string_new: %u @ %s:%u", size, file, line);
 #endif
 
-	_dst = heap_caps_malloc(sizeof(_string_t) + size + null_byte, MALLOC_CAP_SPIRAM);
-	assert(_dst);
+	_dst = util_memory_alloc_spiram(sizeof(_string_t) + size + null_byte);
 
 	_string_init_header(_dst, size, false, true, false, false);
 	_dst->data = _dst->data_start;
@@ -128,8 +127,7 @@ string_t _string_const(const char *const_string, const char *file, unsigned int 
 
 	length = strlen(const_string);
 
-	_dst = heap_caps_malloc(sizeof(_string_t), MALLOC_CAP_SPIRAM);
-	assert(_dst);
+	_dst = util_memory_alloc_spiram(sizeof(_string_t));
 
 	_string_init_header(_dst, length, false, true, true, false);
 	_dst->length = length;
@@ -152,8 +150,7 @@ string_t _string_init(unsigned int size, const char *init_string, const char *fi
 	log_format("string_init: \"%s\"[%u] @ %s:%u", init_string, size, file, line);
 #endif
 
-	_dst = heap_caps_malloc(sizeof(_string_t) + size + null_byte, MALLOC_CAP_SPIRAM);
-	assert(_dst);
+	_dst = util_memory_alloc_spiram(sizeof(_string_t) + size + null_byte);
 
 	_string_init_header(_dst, size + null_byte, false, true, false, false);
 	_dst->data = _dst->data_start;

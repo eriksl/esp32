@@ -13,6 +13,11 @@
 #pragma GCC poison printf
 #pragma GCC poison sprintf
 
+extern uint64_t stat_util_time_malloc_min;
+extern uint64_t stat_util_time_malloc_max;
+
+#define util_memory_alloc_spiram(amount) _util_memory_alloc_spiram(amount, __FILE__, __LINE__)
+
 void util_init(void);
 uint32_t util_md5_32(unsigned int length, const uint8_t *data);
 unsigned int util_partition_to_slot(const esp_partition_t *partition);
@@ -21,6 +26,7 @@ void util_esp_ipv6_addr_to_string(string_t dst, const esp_ip6_addr_t *src);
 void util_mac_addr_to_string(string_t dst, const uint8_t mac[6], bool inverse);
 void util_time_to_string(string_t dst, const time_t *ticks);
 void util_hash_to_string(string_t dst, unsigned int hash_size, const uint8_t *hash);
+void *_util_memory_alloc_spiram(unsigned int amount, const char *file, unsigned int line);
 
 static inline void util_abort_on_esp_err(const char *what, int rv)
 {

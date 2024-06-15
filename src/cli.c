@@ -970,20 +970,14 @@ void cli_init(void)
 	cli_buffer_t *queue_data;
 	StaticQueue_t *queue;
 
-	queue_data = heap_caps_malloc(receive_queue_size * sizeof(cli_buffer_t) , MALLOC_CAP_SPIRAM);
-	assert(queue_data);
-
-	queue = heap_caps_malloc(sizeof(StaticQueue_t), MALLOC_CAP_SPIRAM);
-	assert(queue);
+	queue_data = util_memory_alloc_spiram(receive_queue_size * sizeof(cli_buffer_t));
+	queue = util_memory_alloc_spiram(sizeof(StaticQueue_t));
 
 	if(!(receive_queue_handle = xQueueCreateStatic(receive_queue_size, sizeof(cli_buffer_t), (void *)queue_data, queue)))
 		util_abort("cli: xQueueCreateStatic receive queue init");
 
-	queue_data = heap_caps_malloc(send_queue_size * sizeof(cli_buffer_t) , MALLOC_CAP_SPIRAM);
-	assert(queue_data);
-
-	queue = heap_caps_malloc(sizeof(StaticQueue_t), MALLOC_CAP_SPIRAM);
-	assert(queue);
+	queue_data = util_memory_alloc_spiram(send_queue_size * sizeof(cli_buffer_t));
+	queue = util_memory_alloc_spiram(sizeof(StaticQueue_t));
 
 	if(!(send_queue_handle = xQueueCreateStatic(send_queue_size, sizeof(cli_buffer_t), (void *)queue_data, queue)))
 		util_abort("cli: xQueueCreateStatic send queue init");

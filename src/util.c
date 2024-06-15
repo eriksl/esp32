@@ -12,6 +12,7 @@
 #include <mbedtls/md5.h>
 
 #include <esp_netif_ip_addr.h>
+#include <esp_timer.h>
 
 #include <stddef.h>
 #include <sys/time.h>
@@ -111,4 +112,42 @@ void util_hash_to_string(string_t dst, unsigned int hash_size, const uint8_t *ha
 		else
 			string_append(dst, (value -  0) + '0');
 	}
+}
+
+uint64_t stat_util_time_malloc_min = 0;
+uint64_t stat_util_time_malloc_max = 0;
+
+void *_util_memory_alloc_spiram(unsigned int amount, const char *file, unsigned int line)
+{
+	uint64_t time_start, time_spent;
+	void *memory;
+
+	time_start = esp_timer_get_time();
+
+	if(amount == 0)		// heap_caps_malloc returns NULL when 0 bytes are requested
+		amount = 1;
+
+	memory = heap_caps_malloc(amount, MALLOC_CAP_SPIRAM);
+
+	if(!memory)
+	{
+		log_format("util_memory_alloc_spiram: out of memory, called from: %s:%u", file, line);
+		abort();
+	}
+
+	time_spent = esp_timer_get_time() - time_start;
+
+	if(stat_util_time_malloc_min == 0)
+		stat_util_time_malloc_min = time_spent;
+	else
+		if(stat_util_time_malloc_min > time_spent)
+			stat_util_time_malloc_min = time_spent;
+
+	if(stat_util_time_malloc_max == 0)
+		stat_util_time_malloc_max = time_spent;
+	else
+		if(stat_util_time_malloc_max < time_spent)
+			stat_util_time_malloc_max = time_spent;
+
+	return(memory);
 }
