@@ -406,7 +406,7 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 	cli_buffer.length = string_length(reassembly_buffer);
 	cli_buffer.data_from_malloc = 1;
 	cli_buffer.data = util_memory_alloc_spiram(cli_buffer.length);
-	memcpy(cli_buffer.data, string_data(reassembly_buffer), cli_buffer.length);
+	util_memcpy(cli_buffer.data, string_data(reassembly_buffer), cli_buffer.length);
 	cli_buffer.bt.connection_handle = connection_handle;
 	cli_buffer.bt.attribute_handle = attribute_handle;
 

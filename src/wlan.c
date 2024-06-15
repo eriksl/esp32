@@ -272,7 +272,7 @@ static void run_tcp(void *)
 		assert(sizeof(si6_addr) >= si6_addr_length);
 		assert(sizeof(cli_buffer.ip.address.sin6_addr) >= si6_addr_length);
 
-		memcpy(&cli_buffer.ip.address.sin6_addr, &si6_addr, si6_addr_length);
+		util_memcpy(&cli_buffer.ip.address.sin6_addr, &si6_addr, si6_addr_length);
 		cli_buffer.ip.address.sin6_length = si6_addr_length;
 		cli_buffer.source = cli_source_wlan_tcp;
 
@@ -351,7 +351,7 @@ static void run_tcp(void *)
 				cli_buffer.length = string_length(receive_buffer);
 				cli_buffer.data_from_malloc = 1;
 				cli_buffer.data = util_memory_alloc_spiram(cli_buffer.length);
-				memcpy(cli_buffer.data, string_data(receive_buffer), cli_buffer.length);
+				util_memcpy(cli_buffer.data, string_data(receive_buffer), cli_buffer.length);
 
 				cli_receive_queue_push(&cli_buffer);
 			}
@@ -449,7 +449,7 @@ static void run_udp(void *)
 			assert(sizeof(si6_addr) >= si6_addr_length);
 			assert(sizeof(cli_buffer.ip.address.sin6_addr) >= si6_addr_length);
 
-			memcpy(&cli_buffer.ip.address.sin6_addr, &si6_addr, si6_addr_length);
+			util_memcpy(&cli_buffer.ip.address.sin6_addr, &si6_addr, si6_addr_length);
 			cli_buffer.ip.address.sin6_length = si6_addr_length;
 			cli_buffer.source = cli_source_wlan_udp;
 
@@ -520,7 +520,7 @@ static void run_udp(void *)
 			cli_buffer.length = string_length(receive_buffer);
 			cli_buffer.data_from_malloc = 1;
 			cli_buffer.data = util_memory_alloc_spiram(cli_buffer.length);
-			memcpy(cli_buffer.data, string_data(receive_buffer), cli_buffer.length);
+			util_memcpy(cli_buffer.data, string_data(receive_buffer), cli_buffer.length);
 
 			cli_receive_queue_push(&cli_buffer);
 		}

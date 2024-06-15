@@ -321,7 +321,7 @@ void string_append_string(string_t dst, const string_t src)
 	if((_dst->length + length) > (_dst->size - null_byte))
 		length = _dst->size - null_byte - _dst->length;
 
-	memcpy(_dst->data + _dst->length, _src->data, length);
+	util_memcpy(_dst->data + _dst->length, _src->data, length);
 	_dst->length += length;
 	_dst->data[_dst->length] = '\0';
 
@@ -349,7 +349,7 @@ void string_append_cstr(string_t dst, const char *src)
 	if((_dst->length + length) > (_dst->size - null_byte))
 		length = _dst->size - null_byte - _dst->length;
 
-	memcpy(_dst->data + _dst->length, src, length);
+	util_memcpy(_dst->data + _dst->length, src, length);
 	_dst->length += length;
 	_dst->data[_dst->length] = '\0';
 
@@ -406,7 +406,7 @@ void string_assign_data(string_t dst, unsigned int length, const uint8_t *src)
 	if(length > (_dst->size - null_byte))
 		length = _dst->size - null_byte;
 
-	memcpy(_dst->data, src, length);
+	util_memcpy(_dst->data, src, length);
 
 	_dst->length = length;
 	_dst->data[_dst->length] = '\0';
@@ -528,7 +528,7 @@ void string_to_cstr(const string_t src, unsigned int dst_size, char *dst)
 	if(length > (dst_size - null_byte))
 		length = dst_size - null_byte;
 
-	memcpy(dst, _src->const_data, length);
+	util_memcpy(dst, _src->const_data, length);
 	dst[length] = '\0';
 }
 

@@ -230,6 +230,8 @@ void info_command_info_memory(cli_command_call_t *call)
 	string_append_cstr(call->result, "\ntimings:");
 	string_format_append(call->result, "\n- malloc min time: %llu microseconds", stat_util_time_malloc_min);
 	string_format_append(call->result, "\n- malloc max time: %llu microseconds", stat_util_time_malloc_max);
+	string_format_append(call->result, "\n- memcpy min time: %llu microseconds", stat_util_time_memcpy_min);
+	string_format_append(call->result, "\n- memcpy max time: %llu microseconds", stat_util_time_memcpy_max);
 }
 
 void info_command_info_process(cli_command_call_t *call)

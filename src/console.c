@@ -1,10 +1,7 @@
-#include <stdio.h>
-#include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <unistd.h>
 #include <errno.h>
-#include <fcntl.h>
+#include <string.h>
 
 #include "string.h"
 #include "cli-command.h"
@@ -16,6 +13,10 @@
 
 #include <freertos/FreeRTOS.h>
 #include <driver/usb_serial_jtag.h>
+
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 enum
 {
@@ -316,7 +317,7 @@ static void run_console(void *)
 			cli_buffer.length = line->length;
 			cli_buffer.data_from_malloc = 1;
 			cli_buffer.data = util_memory_alloc_spiram(line->length);
-			memcpy(cli_buffer.data, line->data, line->length);
+			util_memcpy(cli_buffer.data, line->data, line->length);
 			cli_receive_queue_push(&cli_buffer);
 
 			if((lines->current + 1) < lines->size)
