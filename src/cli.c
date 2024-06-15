@@ -578,7 +578,7 @@ static void run_receive_queue(void *)
 	string_t							oob_data;
 	string_t							command;
 	string_t							token;
-	unsigned int						count, current, ix;
+	unsigned int						count, current, ix, string_parse_offset;
 	const cli_command_t					*cli_command;
 	unsigned int						parameter_count;
 	const cli_parameter_description_t	*parameter_description;
@@ -617,7 +617,9 @@ static void run_receive_queue(void *)
 			goto error;
 		}
 
-		if(!(command = string_parse(data, 0)))
+		string_parse_offset = 0;
+
+		if(!(command = string_parse(data, &string_parse_offset)))
 		{
 			string_format(error, "ERROR: empty line");
 			packet_encapsulate(&cli_buffer, error, (string_t)0);
@@ -659,7 +661,7 @@ static void run_receive_queue(void *)
 			parameter->type = cli_parameter_none;
 			parameter->has_value = 0;
 
-			if(!(token = string_parse(data, current + 1)))
+			if(!(token = string_parse(data, &string_parse_offset)))
 			{
 				if(!parameter_description->value_required)
 					continue;
@@ -840,7 +842,7 @@ static void run_receive_queue(void *)
 			goto error;
 		}
 
-		if((token = string_parse(data, current + 1)))
+		if((token = string_parse(data, &string_parse_offset)))
 		{
 			string_free(token);
 			string_format(error, "ERROR: too many parameters");

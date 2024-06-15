@@ -51,6 +51,9 @@ unsigned int auto_called = 0;
 unsigned int new_called = 0;
 unsigned int const_called = 0;
 unsigned int init_called = 0;
+uint64_t string_parse_time_min = 0;
+uint64_t string_parse_time_max = 0;
+
 
 static_assert(string_header_length == sizeof(_string_t));
 
@@ -578,11 +581,45 @@ void string_assign(string_t dst, unsigned int offset, char src)
 	_dst->data[offset] = src;
 }
 
-string_t string_parse(const string_t src, unsigned int index)
+void string_cut(string_t dst, const string_t src, unsigned int from, unsigned int length)
 {
-	unsigned int offset, current_index, start, end;
+	const _string_t *_src = (const _string_t *)src;
+	_string_t *_dst = (_string_t *)dst;
+
+	assert(inited);
+	assert(_src);
+	assert(_src->magic_word == string_magic_word);
+	assert(_src->length < _src->size);
+	assert(_src->size > 0);
+
+	assert(_dst);
+	assert(_dst->magic_word == string_magic_word);
+	assert(_dst->length < _dst->size);
+	assert(_dst->size > 0);
+	assert(!_dst->header_const);
+	assert(!_dst->data_const);
+
+	if((from + length) > _src->length)
+		length = _src->length - from;
+
+	if(length > (_dst->size - null_byte))
+		length = _dst->size - null_byte;
+
+	util_memcpy(_dst->data, &_src->data[from], length);
+
+	_dst->length = length;
+	_dst->data[_dst->length] = '\0';
+}
+
+string_t string_parse(const string_t src, unsigned int *offset)
+{
+	unsigned int start, length;
 	_string_t *_src = (_string_t *)src;
 	string_t dst;
+
+	uint64_t time_start, time_spent;
+
+	time_start = esp_timer_get_time();
 
 	assert(inited);
 	assert(_src);
@@ -591,39 +628,41 @@ string_t string_parse(const string_t src, unsigned int index)
 	assert(_src->size > 0);
 	assert(_src->data[_src->length] == '\0');
 
-	offset = 0;
-	start = 0;
-	end = 0;
-
-	for(current_index = 0; (offset < _src->length) && (current_index <= index); current_index++)
+	if(*offset >= _src->length)
 	{
-		for(; offset < _src->length; offset++)
-			if((_src->data[offset] != ' ') &&
-					(_src->data[offset] != '\t') &&
-					(_src->data[offset] != '\n') &&
-					(_src->data[offset] != '\r'))
-				break;
-
-		if(offset >= _src->length)
-			return((string_t)0);
-
-		start = offset;
-
-		for(; offset < _src->length; offset++)
-			if((_src->data[offset] == ' ') ||
-					(_src->data[offset] == '\t') ||
-					(_src->data[offset] == '\n') ||
-					(_src->data[offset] == '\r'))
-				break;
-
-		end = offset;
+		dst = (string_t)0;
+		goto error;
 	}
 
-	if(current_index != (index + 1))
-		return((string_t)0);
+	for(; *offset < _src->length; (*offset)++)
+		if(_src->data[*offset] > ' ')
+			break;
 
-	dst = string_new(end - start + null_byte);
-	string_assign_data(dst, end - start, (uint8_t *)&_src->data[start]);
+	start = *offset;
+
+	for(length = 0; *offset < _src->length; (*offset)++, length++)
+		if(_src->data[*offset] <= ' ')
+			break;
+
+	assert((start + length) <= _src->length);
+
+	dst = string_new(length + null_byte);
+	string_cut(dst, src, start, length);
+
+error:
+	time_spent = esp_timer_get_time() - time_start;
+
+	if(string_parse_time_min == 0)
+		string_parse_time_min = time_spent;
+	else
+		if(string_parse_time_min > time_spent)
+			string_parse_time_min = time_spent;
+
+	if(string_parse_time_max == 0)
+		string_parse_time_max = time_spent;
+	else
+		if(string_parse_time_max < time_spent)
+			string_parse_time_max = time_spent;
 
 	return(dst);
 }
@@ -902,6 +941,8 @@ void string_command_info(cli_command_call_t *call)
 {
 	assert(call->parameter_count == 0);
 
-	string_format(call->result, "STRING\nstats:\n- allocate events: %u\n- free events: %u\n- active: %u", allocated, freed, allocated - freed);
+	string_format(call->result, "STRING");
+	string_format_append(call->result, "\nstats:\n- allocate events: %u\n- free events: %u\n- active: %u", allocated, freed, allocated - freed);
 	string_format_append(call->result, "\nmethods called:\n- auto: %u\n- new: %u\n- init: %u\n- const: %u", auto_called, new_called, init_called, const_called);
+	string_format_append(call->result, "\ntimings:\n- string_parse min: %llu microseconds\n- string_parse max: %llu microseconds", string_parse_time_min, string_parse_time_max);
 }
