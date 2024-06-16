@@ -646,6 +646,12 @@ string_t string_parse(const string_t src, unsigned int *offset)
 
 	assert((start + length) <= _src->length);
 
+	if(length == 0)
+	{
+		dst = (string_t)0;
+		goto error;
+	}
+
 	dst = string_new(length + null_byte);
 	string_cut(dst, src, start, length);
 
