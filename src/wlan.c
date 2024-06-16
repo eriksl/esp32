@@ -107,9 +107,6 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 	{
 		case(WIFI_EVENT_STA_START): /* 2 */
 		{
-#if 0
-			log("wlan event: start");
-#endif
 			wlan_state = ws_associating;
 			wlan_state_since = esp_timer_get_time();
 			util_warn_on_esp_err("esp_wifi_connect", esp_wifi_connect());
@@ -117,21 +114,12 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 		}
 		case(WIFI_EVENT_STA_STOP): /* 3 */
 		{
-#if 0
-			log("wlan event: stop");
-#endif
 			wlan_state = ws_init;
 			wlan_state_since = esp_timer_get_time();
 			break;
 		}
 		case(WIFI_EVENT_STA_CONNECTED): /* 4 */
 		{
-#if 0
-			wifi_event_sta_connected_t *event = (wifi_event_sta_connected_t *)event_data;
-
-			log_format("wlan event: associated: channel: %u, ssid: %.*s",
-					event->channel, event->ssid_len, event->ssid);
-#endif
 			wlan_state_since = esp_timer_get_time();
 			wlan_state = ws_associated;
 
@@ -151,10 +139,6 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 		}
 		case(WIFI_EVENT_HOME_CHANNEL_CHANGE): /* 40 */
 		{
-#if 0
-			wifi_event_home_channel_change_t *event = (wifi_event_home_channel_change_t *)event_data;
-			log_format("wlan event: home channel change: old: %u, new: %u", event->old_chan, event->new_chan);
-#endif
 			break;
 		}
 		default:
@@ -173,20 +157,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 	{
 		case(IP_EVENT_STA_GOT_IP):
 		{
-#if 0
-			string_auto(ip, 32);
-			string_auto(netmask, 32);
-			string_auto(gw, 32);
 
-			ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-
-			util_esp_ipv4_addr_to_string(ip, &event->ip_info.ip);
-			util_esp_ipv4_addr_to_string(netmask, &event->ip_info.netmask);
-			util_esp_ipv4_addr_to_string(gw, &event->ip_info.gw);
-
-			log_format("ip event: got ipv4: changed: %d, ip: %s, netmask: %s, gw: %s",
-					event->ip_changed, string_cstr(ip), string_cstr(netmask), string_cstr(gw));
-#endif
 			wlan_state_since = esp_timer_get_time();
 			wlan_state = ws_ipv4_address_acquired;
 
@@ -199,13 +170,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 		case(IP_EVENT_GOT_IP6):
 		{
 			esp_ip6_addr_t ip6;
-#if 0
-			string_auto(ip, 128);
 
-			ip_event_got_ip6_t *event = (ip_event_got_ip6_t *)event_data;
-			util_esp_ipv6_addr_to_string(ip, &event->ip6_info.ip);
-			log_format("ip event: got ipv6: ip: %s", string_cstr(ip));
-#endif
 			wlan_state_since = esp_timer_get_time();
 
 			if(esp_netif_get_ip6_global(netif, &ip6))
