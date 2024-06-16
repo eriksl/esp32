@@ -784,6 +784,8 @@ void wlan_init(void)
 	assert(state_timer);
 	set_state(ws_init);
 
+	inited = true;
+
 	util_abort_on_esp_err("esp_event_loop_create_default", esp_event_loop_create_default());
 	util_abort_on_esp_err("esp_event_handler_instance_register 1",
 			esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wlan_event_handler, (void *)0, (esp_event_handler_instance_t *)0));
@@ -799,8 +801,6 @@ void wlan_init(void)
 	util_abort_on_esp_err("esp_wifi_config_11b_rate", esp_wifi_config_11b_rate(WIFI_IF_STA, true)); // FIXME
 	util_abort_on_esp_err("esp_wifi_config_11b_rate", esp_wifi_config_11b_rate(WIFI_IF_AP, true)); // FIXME
 	util_abort_on_esp_err("esp_wifi_start", esp_wifi_start());
-
-	inited = true;
 
 	util_abort_on_esp_err("esp_netif_set_hostname", esp_netif_set_hostname(netif_sta, string_cstr(hostname)));
 	util_abort_on_esp_err("esp_netif_set_hostname", esp_netif_set_hostname(netif_ap, string_cstr(hostname)));
