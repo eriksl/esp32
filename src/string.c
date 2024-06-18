@@ -843,6 +843,27 @@ void string_replace(string_t dst, unsigned int start_pos, unsigned int end_pos, 
 			_dst->data[ix] = to;
 }
 
+void string_tolower(string_t dst)
+{
+	unsigned int ix;
+	_string_t *_dst = (_string_t *)dst;
+
+	assert(inited);
+	assert(_dst);
+	assert(_dst->magic_word == string_magic_word);
+	assert(_dst->length < _dst->size);
+	assert(_dst->size > 0);
+	assert(_dst->data[_dst->length] == '\0');
+	assert(!_dst->header_const);
+	assert(!_dst->data_const);
+
+	for(ix = 0; ix <= _dst->length; ix++)
+		if((_dst->data[ix] >= 'A') && (_dst->data[ix] <= 'Z'))
+			_dst->data[ix] += 'a' - 'A';
+
+	assert(_dst->data[_dst->length] == '\0');
+}
+
 int string_read_fd(string_t dst, unsigned int fd, unsigned int length)
 {
 	int rv;
