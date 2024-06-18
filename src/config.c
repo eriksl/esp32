@@ -356,22 +356,6 @@ static bool get_value_as_string(const char *namespace, const string_t key, const
 	return(true);
 }
 
-bool config_get_int(const string_t key, int32_t *value)
-{
-	int64_t raw_value;
-
-	assert(inited);
-
-	if(!get_value_as_integer("config", key, (const nvs_entry_info_t *)0, (const char **)0, &raw_value))
-	{
-		*value = 0;
-		return(false);
-	}
-
-	*value = raw_value;
-	return(true);
-}
-
 bool config_get_uint(const string_t key, uint32_t *value)
 {
 	int64_t raw_value;
@@ -388,12 +372,55 @@ bool config_get_uint(const string_t key, uint32_t *value)
 	return(true);
 }
 
+bool config_get_uint_cstr(const char *key, uint32_t *value)
+{
+	string_auto(key_string, 32);
+
+	string_assign_cstr(key_string, key);
+
+	return(config_get_uint(key_string, value));
+}
+
+bool config_get_int(const string_t key, int32_t *value)
+{
+	int64_t raw_value;
+
+	assert(inited);
+
+	if(!get_value_as_integer("config", key, (const nvs_entry_info_t *)0, (const char **)0, &raw_value))
+	{
+		*value = 0;
+		return(false);
+	}
+
+	*value = raw_value;
+	return(true);
+}
+
+bool config_get_int_cstr(const char *key, int32_t *value)
+{
+	string_auto(key_string, 32);
+
+	string_assign_cstr(key_string, key);
+
+	return(config_get_int(key_string, value));
+}
+
 bool config_get_string(const string_t key, string_t dst)
 {
 	assert(inited);
 	assert(dst);
 
 	return(get_value_as_string((const char *)0, key, (nvs_entry_info_t *)0, (const char **)0, dst));
+}
+
+bool config_get_string_cstr(const char *key, string_t dst)
+{
+	string_auto(key_string, 32);
+
+	string_assign_cstr(key_string, key);
+
+	return(config_get_string(key_string, dst));
 }
 
 void config_set_uint(const string_t key, uint32_t value)
@@ -406,6 +433,15 @@ void config_set_uint(const string_t key, uint32_t value)
 	nvs_close(handle);
 }
 
+void config_set_uint_cstr(const char *key, uint32_t value)
+{
+	string_auto(key_string, 32);
+
+	string_assign_cstr(key_string, key);
+
+	config_set_uint(key_string, value);
+}
+
 void config_set_int(const string_t key, int32_t value)
 {
 	nvs_handle_t handle;
@@ -416,6 +452,15 @@ void config_set_int(const string_t key, int32_t value)
 	nvs_close(handle);
 }
 
+void config_set_int_cstr(const char *key, int32_t value)
+{
+	string_auto(key_string, 32);
+
+	string_assign_cstr(key_string, key);
+
+	config_set_int(key_string, value);
+}
+
 void config_set_string(const string_t key, string_t value)
 {
 	nvs_handle_t handle;
@@ -424,6 +469,15 @@ void config_set_string(const string_t key, string_t value)
 	util_abort_on_esp_err("nvs_set_str", nvs_set_str(handle, string_cstr(key), string_cstr(value)));
 	util_abort_on_esp_err("nvs_commit", nvs_commit(handle));
 	nvs_close(handle);
+}
+
+void config_set_string_cstr(const char *key, string_t value)
+{
+	string_auto(key_string, 32);
+
+	string_assign_cstr(key_string, key);
+
+	config_set_string(key_string, value);
 }
 
 bool config_erase(const string_t key)
@@ -444,6 +498,15 @@ bool config_erase(const string_t key)
 	nvs_close(handle);
 
 	return(true);
+}
+
+void config_erase_cstr(const char *key)
+{
+	string_auto(key_string, 32);
+
+	string_assign_cstr(key_string, key);
+
+	config_erase(key_string);
 }
 
 static void config_dump(cli_command_call_t *call, const char *namespace)
