@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <lwip/ip_addr.h>
 
 #include "string.h"
 #include "cli-command.h"
@@ -12,13 +13,22 @@
 #include <mbedtls/base64.h>
 #include <mbedtls/md5.h>
 
-#include <esp_netif_ip_addr.h>
 #include <esp_timer.h>
+#include <esp_netif.h>
+#include <esp_netif_ip_addr.h>
 
 #include <stddef.h>
 #include <sys/time.h>
 
 static bool inited;
+
+static const char *ipv6_address_type_strings[ipv6_address_size] =
+{
+	[ipv6_address_link_local] =		"link local",
+	[ipv6_address_global_slaac] =	"autoconfig",
+	[ipv6_address_global_static] =	"static",
+	[ipv6_address_other] =			"other",
+};
 
 void util_init(void)
 {
@@ -64,7 +74,8 @@ void util_esp_ipv4_addr_to_string(string_t dst, const esp_ip4_addr_t *src)
 
 void util_esp_ipv6_addr_to_string(string_t dst, const esp_ip6_addr_t *src)
 {
-	string_format(dst, IPV6STR, IPV62STR(*src));
+	string_format(dst, "%s", ip6addr_ntoa((const ip6_addr_t *)src));
+	string_tolower(dst);
 }
 
 void util_mac_addr_to_string(string_t dst, const uint8_t mac[6], bool invert)
@@ -75,6 +86,38 @@ void util_mac_addr_to_string(string_t dst, const uint8_t mac[6], bool invert)
 	else
 		string_format(dst, "%02x:%02x:%02x:%02x:%02x:%02x",
 				mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+ipv6_address_t util_ipv6_address_type(const void *addr)
+{
+	const esp_ip6_addr_t *_addr = (const esp_ip6_addr_t *)addr;
+	unsigned int b[2];
+
+	if(ip6_addr_islinklocal(_addr))
+		return(ipv6_address_link_local);
+
+	if(!ip6_addr_isglobal(_addr))
+		return(ipv6_address_other);
+
+	b[0] = (htonl(_addr->addr[2]) & 0x000000ffUL) >> 0;
+	b[1] = (htonl(_addr->addr[3]) & 0xff000000UL) >> 24;
+
+	if((b[0] == 0xff) && (b[1]== 0xfe))
+		return(ipv6_address_global_slaac);
+
+	return(ipv6_address_global_static);
+}
+
+const char *util_ipv6_address_type_string(const void *addr)
+{
+	ipv6_address_t type;
+
+	type = util_ipv6_address_type(addr);
+
+	if((type < 0) || (type >= ipv6_address_size))
+		return("<illegal>");
+
+	return(ipv6_address_type_strings[type]);
 }
 
 void util_time_to_string(string_t dst, const time_t *ticks)
@@ -189,3 +232,4 @@ void _util_memcpy(void *to, const void *from, unsigned int length, const char *f
 		if(stat_util_time_memcpy_max < time_spent)
 			stat_util_time_memcpy_max = time_spent;
 }
+

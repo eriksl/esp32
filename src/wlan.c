@@ -17,6 +17,8 @@
 #include <esp_netif_sntp.h>
 #include <esp_timer.h>
 
+esp_err_t esp_netif_up(esp_netif_t *esp_netif); // FIXME, is in esp_netif_private.h
+
 #include <assert.h>
 
 enum
@@ -36,11 +38,14 @@ typedef enum
 	ws_ipv4_address_acquired,
 	ws_ipv6_link_local_address_acquired,
 	ws_ipv6_slaac_address_acquired,
+	ws_ipv6_static_address_active,
 	ws_rescue_ap_mode_init,
 	ws_rescue_ap_mode_idle,
 	ws_rescue_ap_mode_associated,
 	ws_size,
 } wlan_state_t;
+
+static const char *key_ipv6_address = "ipv6-address";
 
 static bool inited = false;
 static esp_netif_t *netif_sta;
@@ -99,14 +104,16 @@ static const state_info_t state_info[ws_size] =
 											"init" },
 	[ws_associating] =						{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_associated)  | (1 << ws_rescue_ap_mode_idle) | (1 << ws_rescue_ap_mode_associated),
 											"associating" },
-	[ws_associated] =						{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv4_address_acquired),
+	[ws_associated] =						{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv4_address_acquired) | (1 << ws_ipv6_link_local_address_acquired),
 											"associated" },
 	[ws_ipv4_address_acquired] =			{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv6_link_local_address_acquired),
 											"ipv4 address acquired" },
-	[ws_ipv6_link_local_address_acquired] =	{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv6_slaac_address_acquired),
+	[ws_ipv6_link_local_address_acquired] =	{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv4_address_acquired) | (1 << ws_ipv6_slaac_address_acquired) | (1 << ws_ipv6_static_address_active),
 											"ipv6 link local address acquired" },
-	[ws_ipv6_slaac_address_acquired] =		{ (1 << ws_init) | (1 << ws_associating),
+	[ws_ipv6_slaac_address_acquired] =		{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv6_static_address_active),
 											"ipv6 autoconfig address acquired" },
+	[ws_ipv6_static_address_active] =		{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv6_slaac_address_acquired) | (1 << ws_ipv6_static_address_active),
+											"ipv6 static address set" },
 	[ws_rescue_ap_mode_init] =				{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_rescue_ap_mode_idle) | (1 << ws_rescue_ap_mode_associated),
 											"rescue access point mode init" },
 	[ws_rescue_ap_mode_idle] =				{ (1 << ws_rescue_ap_mode_init) | (1 << ws_rescue_ap_mode_associated),
@@ -135,10 +142,14 @@ static void set_state(wlan_state_t state_new)
 	state_string = wlan_state_to_cstr(state);
 	state_new_string = wlan_state_to_cstr(state_new);
 
+#if 0
+	log_format("wlan: state from %s to %s", state_string, state_new_string);
+#endif
+
 	if((state_new == ws_associating) || (!(state_info[state].valid_transitions & (1 << state_new))))
 	{
 		if(!(state_info[state].valid_transitions & (1 << state_new)))
-			log_format("wlan: invalid state transition from %s to %s, reassociating", state_string, state_new_string);
+			log_format("wlan: invalid state transition from %s (%d) to %s (%d), %x, reassociating", state_string, state, state_new_string, state_new, (unsigned int)state_info[state].valid_transitions);
 		else
 			if((state != ws_init) && (state != ws_associating))
 				log_format("wlan: reassociate, switch from %s to %s", state_string, state_new_string);
@@ -196,7 +207,7 @@ void state_callback(TimerHandle_t handle)
 
 	state_time++;
 
-	if((state == ws_associating) && (state_time > 30))
+	if(((state == ws_associating) || (state == ws_associated)) && (state_time > 30))
 	{
 		util_warn_on_esp_err("esp_wifi_get_mac", esp_wifi_get_mac(WIFI_IF_AP, mac_address));
 		snprintf((char *)config_ap.ap.ssid, sizeof(config_ap.ap.ssid), "esp32-%02x:%02x:%02x:%02x:%02x:%02x",
@@ -243,6 +254,9 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 		}
 		case(WIFI_EVENT_STA_CONNECTED): /* 4 */
 		{
+			util_warn_on_esp_err("esp_netif_up", esp_netif_up(netif_sta)); // FIXME at this point the interface is not up, linklocal returns error
+			util_warn_on_esp_err("esp_netif_create_ip6_linklocal", esp_netif_create_ip6_linklocal(netif_sta));
+
 			set_state(ws_associated);
 			break;
 		}
@@ -290,6 +304,8 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 	}
 }
 
+esp_err_t esp_netif_add_ip6_address(esp_netif_t *esp_netif, const ip_event_add_ip6_t *addr); // FIXME
+
 static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
 	assert(inited);
@@ -298,22 +314,59 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 	{
 		case(IP_EVENT_STA_GOT_IP):
 		{
-			set_state(ws_ipv4_address_acquired);
-
-			util_abort_on_esp_err("esp_netif_create_ip6_linklocal", esp_netif_create_ip6_linklocal(netif_sta));
 			util_abort_on_esp_err("esp_netif_sntp_start", esp_netif_sntp_start());
+
+			set_state(ws_ipv4_address_acquired);
 
 			break;
 		}
 
 		case(IP_EVENT_GOT_IP6):
 		{
-			esp_ip6_addr_t ip6;
+			const ip_event_got_ip6_t *event = (const ip_event_got_ip6_t *)event_data;
+			string_auto(ipv6_address_string, 64);
+			esp_ip6_addr_t ipv6_address;
+			ip_event_add_ip6_t ipv6_add_event;
 
-			if(esp_netif_get_ip6_global(netif_sta, &ip6))
-				set_state(ws_ipv6_link_local_address_acquired);
-			else
-				set_state(ws_ipv6_slaac_address_acquired);
+			util_esp_ipv6_addr_to_string(ipv6_address_string, &event->ip6_info.ip);
+#if 0
+			log_format("wlan: got ipv6: %s, type: %s", string_cstr(ipv6_address_string), util_ipv6_address_type_string(&event->ip6_info.ip));
+#endif
+
+			switch(util_ipv6_address_type(&event->ip6_info.ip))
+			{
+				case(ipv6_address_link_local):
+				{
+					set_state(ws_ipv6_link_local_address_acquired);
+
+					if(config_get_string_cstr(key_ipv6_address, ipv6_address_string) && !esp_netif_str_to_ip6(string_cstr(ipv6_address_string), &ipv6_address))
+					{
+						ipv6_add_event.addr = ipv6_address;
+						ipv6_add_event.preferred = true;
+						util_warn_on_esp_err("esp_netif_add_ip6_address", esp_netif_add_ip6_address(netif_sta, &ipv6_add_event));
+					}
+
+					break;
+				}
+				case(ipv6_address_global_slaac):
+				{
+					set_state(ws_ipv6_slaac_address_acquired);
+
+					break;
+				}
+				case(ipv6_address_global_static):
+				{
+					set_state(ws_ipv6_static_address_active);
+
+					break;
+				}
+				default:
+				{
+					log("wlan: invalid IPv6 address received");
+
+					break;
+				}
+			}
 
 			break;
 		}
@@ -759,6 +812,35 @@ void wlan_command_client_config(cli_command_call_t *call)
 	}
 }
 
+void wlan_command_ipv6_config(cli_command_call_t *call)
+{
+	string_auto(ipv6_address_string, 64);
+	esp_ip6_addr_t ipv6_address;
+
+	assert(inited);
+	assert(call->parameter_count < 2);
+
+	if(call->parameter_count > 0)
+	{
+		if(esp_netif_str_to_ip6(string_cstr(call->parameters[0].string), &ipv6_address))
+		{
+			string_assign_cstr(call->result, "invalid ipv6 address");
+			return;
+		}
+
+		string_assign_cstr(ipv6_address_string, ip6addr_ntoa((const ip6_addr_t *)&ipv6_address));
+		string_tolower(ipv6_address_string);
+		config_set_string_cstr(key_ipv6_address, ipv6_address_string);
+	}
+
+	string_assign_cstr(call->result, "ipv6 static address: ");
+
+	if(config_get_string_cstr(key_ipv6_address, ipv6_address_string))
+		string_append_string(call->result, ipv6_address_string);
+	else
+		string_append_cstr(call->result, "<unset>");
+}
+
 void wlan_init(void)
 {
 	string_auto_init(hostname_key, "hostname");
@@ -983,7 +1065,7 @@ void wlan_command_info(cli_command_call_t *call)
 	for(ix = 0; ix < rv; ix++)
 	{
 		util_esp_ipv6_addr_to_string(ipv6_str, &esp_ip6_addr[ix]);
-		string_format_append(call->result, "\n- address %u: %s", ix, string_cstr(ipv6_str));
+		string_format_append(call->result, "\n- address %u: %s (%s)", ix, string_cstr(ipv6_str), util_ipv6_address_type_string(&esp_ip6_addr[ix]));
 	}
 
 	string_append_cstr(call->result, "\nhostname: ");

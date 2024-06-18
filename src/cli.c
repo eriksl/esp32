@@ -384,6 +384,14 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
+	{ "ipv6-config", "ip6c", "set ipv6 static address and netmask", wlan_command_ipv6_config,
+		{	1,
+			{
+				{ cli_parameter_string, 0, 0, 1, 1, "address", .string = { 0, 64 }},
+			},
+		}
+	},
+
 	{ "log", "l", "show log", log_command_log,
 		{	1,
 			{

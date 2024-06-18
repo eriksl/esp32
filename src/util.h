@@ -18,6 +18,15 @@ extern uint64_t stat_util_time_malloc_max;
 extern uint64_t stat_util_time_memcpy_min;
 extern uint64_t stat_util_time_memcpy_max;
 
+typedef enum
+{
+	ipv6_address_link_local,
+	ipv6_address_global_slaac,
+	ipv6_address_global_static,
+	ipv6_address_other,
+	ipv6_address_size,
+} ipv6_address_t;
+
 #define util_memory_alloc_spiram(amount) _util_memory_alloc_spiram(amount, __FILE__, __LINE__)
 #define util_memcpy(to, from, length) do { _util_memcpy(to, from, length, __FILE__, __LINE__); } while(0)
 
@@ -26,6 +35,8 @@ uint32_t util_md5_32(unsigned int length, const uint8_t *data);
 unsigned int util_partition_to_slot(const esp_partition_t *partition);
 void util_esp_ipv4_addr_to_string(string_t dst, const esp_ip4_addr_t *src);
 void util_esp_ipv6_addr_to_string(string_t dst, const esp_ip6_addr_t *src);
+ipv6_address_t util_ipv6_address_type(const void *);
+const char *util_ipv6_address_type_string(const void *);
 void util_mac_addr_to_string(string_t dst, const uint8_t mac[6], bool inverse);
 void util_time_to_string(string_t dst, const time_t *ticks);
 void util_hash_to_string(string_t dst, unsigned int hash_size, const uint8_t *hash);
