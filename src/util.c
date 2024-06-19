@@ -158,6 +158,46 @@ void util_hash_to_string(string_t dst, unsigned int hash_size, const uint8_t *ha
 	}
 }
 
+void util_hexdump_cstr(string_t dst, unsigned int src_length, const uint8_t *src)
+{
+	unsigned int in, out, value;
+
+	assert(inited);
+	assert(src);
+	assert(dst);
+
+	string_clear(dst);
+
+	for(in = 0, out = 0; (in < src_length) && (out < string_size(dst)); out++)
+	{
+		if(out & 0x1)
+		{
+			value = (src[in] & 0x0f) >> 0;
+			in++;
+		}
+		else
+		{
+			if(in != 0)
+				string_append_cstr(dst, " ");
+
+			string_append_cstr(dst, "0x");
+			value = (src[in] & 0xf0) >> 4;
+		}
+
+		if(value >= 0xa)
+			string_append(dst, (value - 10) + 'a');
+		else
+			string_append(dst, (value -  0) + '0');
+	}
+}
+
+void util_hexdump(string_t dst, const string_t src)
+{
+	assert(src);
+
+	util_hexdump_cstr(dst, string_length(src), string_data(src));
+}
+
 uint64_t stat_util_time_malloc_min = 0;
 uint64_t stat_util_time_malloc_max = 0;
 uint64_t stat_util_time_memcpy_min = 0;

@@ -42,6 +42,8 @@ void util_time_to_string(string_t dst, const time_t *ticks);
 void util_hash_to_string(string_t dst, unsigned int hash_size, const uint8_t *hash);
 void *_util_memory_alloc_spiram(unsigned int amount, const char *file, unsigned int line);
 void _util_memcpy(void *to, const void *from, unsigned int length, const char *file, unsigned int line);
+void util_hexdump_cstr(string_t dst, unsigned int src_length, const uint8_t *src);
+void util_hexdump(string_t dst, const string_t src);
 
 static inline void util_abort_on_esp_err(const char *what, int rv)
 {
