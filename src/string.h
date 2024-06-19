@@ -8,12 +8,12 @@ enum
 typedef struct string_opaque_t {} *string_t;
 
 #define string_auto(_name, _length) \
-	char _ ## _name ## _data[string_header_length + _length]; \
+	char _ ## _name ## _data[string_header_length + /* null_byte */ 1 + _length]; \
 	string_t _name = (string_t)_ ## _name ## _data; \
 	do { _string_auto(_name, _length); } while(0)
 
 #define string_auto_init(_name, _string) \
-	char _ ## _name ## _data[string_header_length + sizeof(_string)]; \
+	char _ ## _name ## _data[string_header_length + /* null_byte */ 1 + sizeof(_string)]; \
 	string_t _name = (string_t)_ ## _name ## _data; \
 	do { _string_auto(_name, sizeof(_string)); string_assign_cstr(_name, _string); } while(0)
 
