@@ -27,6 +27,7 @@ enum
 {
 	SERVICE_HANDLE = 0xabf0,
 	CHARACTERISTICS_HANDLE = 0xabf1,
+	KEY_HANDLE = 0xabf2,
 };
 
 enum
@@ -38,18 +39,24 @@ enum
 };
 
 static int gap_event(struct ble_gap_event *event, void *arg);
-static int gatt_event(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *context, void *arg);
+static int gatt_value_event(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *context, void *arg);
+static int gatt_key_event(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *context, void *arg);
 static void bt_received(unsigned int connection_handle, unsigned int attribute_handle, const struct os_mbuf *mbuf);
 
 static uint8_t bt_host_address[6] = {0};
-static uint16_t attribute_handle;
+static uint8_t key[12];
+static uint16_t value_attribute_handle;
+static uint16_t key_attribute_handle;
 static uint8_t own_addr_type;
 static bool inited = false;
+static bool authorised = false;
 
 static string_t reassembly_buffer = (string_t)0;
 
 static unsigned int reassembly_expected_length = 0;
 static uint64_t reassembly_timestamp_start = 0;
+
+static unsigned int bt_stats_unauthorised_access;
 
 static unsigned int bt_stats_reassembly_timeouts;
 static unsigned int bt_stats_reassembly_oversize_chunk;
@@ -76,9 +83,15 @@ static const struct ble_gatt_svc_def gatt_definitions[] =
 		{
 			{
 				.uuid = BLE_UUID16_DECLARE(CHARACTERISTICS_HANDLE),
-				.access_cb = gatt_event,
-				.val_handle = &attribute_handle,
+				.access_cb = gatt_value_event,
+				.val_handle = &value_attribute_handle,
 				.flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY,
+			},
+			{
+				.uuid = BLE_UUID16_DECLARE(KEY_HANDLE),
+				.access_cb = gatt_key_event,
+				.val_handle = &key_attribute_handle,
+				.flags = BLE_GATT_CHR_F_WRITE,
 			},
 			{
 				0,
@@ -105,7 +118,7 @@ static void nimble_port_task(void *param)
 	nimble_port_freertos_deinit();
 }
 
-static int gatt_event(uint16_t connection_handle, uint16_t attribute_handle, struct ble_gatt_access_ctxt *context, void *arg)
+static int gatt_value_event(uint16_t connection_handle, uint16_t attribute_handle, struct ble_gatt_access_ctxt *context, void *arg)
 {
 	assert(inited);
 
@@ -113,13 +126,65 @@ static int gatt_event(uint16_t connection_handle, uint16_t attribute_handle, str
 	{
 		case(BLE_GATT_ACCESS_OP_WRITE_CHR):
 		{
-			bt_received(connection_handle, attribute_handle, context->om);
+			if(!authorised)
+				bt_stats_unauthorised_access++;
+			else
+				bt_received(connection_handle, attribute_handle, context->om);
 			break;
 		}
 
 		default:
 		{
-			log_format("bt: gatt_event: default callback: 0x%x", context->op);
+			log_format("bt: gatt_value_event: default callback: 0x%x", context->op);
+			break;
+		}
+	}
+
+	return(0);
+}
+
+static int gatt_key_event(uint16_t connection_handle, uint16_t attribute_handle, struct ble_gatt_access_ctxt *context, void *arg)
+{
+	assert(inited);
+	authorised = false;
+
+	switch (context->op)
+	{
+		case(BLE_GATT_ACCESS_OP_WRITE_CHR):
+		{
+			static string_auto(input_string, 16);
+			string_auto(output_string, 16);
+			unsigned int length;
+
+			length = string_append_mbuf(input_string, context->om);
+
+			if(length != 16)
+				break;
+
+			decrypt_aes_256(output_string, input_string);
+
+			if(string_length(output_string) != 16)
+				break;
+
+			if((string_at(output_string, 12) != 0x04) ||
+					(string_at(output_string, 13) != 0x04) ||
+					(string_at(output_string, 14) != 0x04) ||
+					(string_at(output_string, 15) != 0x04))
+				break;
+
+			string_truncate(output_string, sizeof(key));
+
+			if(!string_equal_data(output_string, sizeof(key), key))
+				break;
+
+			authorised = true;
+
+			break;
+		}
+
+		default:
+		{
+			log_format("bt: gatt_key_event: default callback: 0x%x", context->op);
 			break;
 		}
 	}
@@ -184,9 +249,26 @@ static void callback_reset(int reason)
 
 static void callback_sync(void)
 {
+	uint8_t *keyptr;
+
 	util_abort_on_esp_err("bt: ble_hs_util_ensure_addr", ble_hs_util_ensure_addr(0));
 	util_abort_on_esp_err("bt: ble_hs_id_infer_auto", ble_hs_id_infer_auto(0, &own_addr_type));
 	util_abort_on_esp_err("bt: ble_hId_copy_addr", ble_hs_id_copy_addr(own_addr_type, bt_host_address, NULL));
+
+	keyptr = key;
+
+	*(keyptr++) = bt_host_address[0] ^ 0x55;
+	*(keyptr++) = bt_host_address[1] ^ 0x55;
+	*(keyptr++) = bt_host_address[2] ^ 0x55;
+	*(keyptr++) = bt_host_address[3] ^ 0x55;
+	*(keyptr++) = bt_host_address[4] ^ 0x55;
+	*(keyptr++) = bt_host_address[5] ^ 0x55;
+	*(keyptr++) = bt_host_address[5] ^ 0xaa;
+	*(keyptr++) = bt_host_address[4] ^ 0xaa;
+	*(keyptr++) = bt_host_address[3] ^ 0xaa;
+	*(keyptr++) = bt_host_address[2] ^ 0xaa;
+	*(keyptr++) = bt_host_address[1] ^ 0xaa;
+	*(keyptr++) = bt_host_address[0] ^ 0xaa;
 
 	server_advertise();
 }
@@ -201,6 +283,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 	{
 		case(BLE_GAP_EVENT_CONNECT):
 		{
+			authorised = false;
 			reassemble_reset();
 
 			if(event->connect.status != 0)
@@ -245,6 +328,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
 		case(BLE_GAP_EVENT_DISCONNECT):
 		{
+			authorised = false;
 			reassemble_reset();
 			server_advertise();
 
@@ -518,6 +602,8 @@ void bluetooth_command_info(cli_command_call_t *call)
 	string_format(call->result, "bluetooth information");
 
 	string_format_append(call->result, "\n  address: %s", string_cstr(string_addr));
+	string_format_append(call->result, "\n  authorised: %s", authorised ? "yes" : "no");
+	string_format_append(call->result, "\n  unauthorised access: %u", bt_stats_unauthorised_access);
 	string_format_append(call->result, "\n  data sent:");
 	string_format_append(call->result, "\n  - packets: %u", bt_stats_sent_packets);
 	string_format_append(call->result, "\n  - fragments: %u", bt_stats_sent_fragments);

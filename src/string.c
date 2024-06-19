@@ -723,6 +723,7 @@ bool string_equal_cstr(const string_t dst, const char *src)
 	_string_t *_dst = (_string_t *)dst;
 
 	assert(inited);
+	assert(dst);
 	assert(src);
 
 	assert(_dst->magic_word == string_magic_word);
