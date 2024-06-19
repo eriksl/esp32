@@ -20,6 +20,7 @@
 #include "util.h"
 #include "packet.h"
 #include "config.h"
+#include "bt_pair_pin.h"
 
 void ble_store_config_init(void);
 
@@ -313,7 +314,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 				struct ble_sm_io pkey = {0};
 
 				pkey.action = BLE_SM_IOACT_DISP;
-				pkey.passkey = 28022;
+				pkey.passkey = bt_pair_pin;
 
 				if((rc = ble_sm_inject_io(event->passkey.conn_handle, &pkey)) != 0)
 					log_format("bt: passkey error: ble_sm_inject_io result: %d", rc);
