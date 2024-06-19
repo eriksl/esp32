@@ -59,6 +59,7 @@ void string_to_cstr(const string_t src, unsigned int dst_size, char *dst);
 string_t string_parse(const string_t src, unsigned int *offset);
 bool string_equal_string(const string_t dst, const string_t src);
 bool string_equal_cstr(const string_t dst, const char *src);
+bool string_equal_data(const string_t dst, unsigned int length, const uint8_t *src);
 bool string_uint(const string_t src, unsigned int base, unsigned int *value);
 bool string_int(const string_t src, unsigned int base, int *value);
 bool string_float(const string_t src, float *value);

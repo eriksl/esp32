@@ -740,6 +740,27 @@ bool string_equal_cstr(const string_t dst, const char *src)
 	return(true);
 }
 
+bool string_equal_data(const string_t dst, unsigned int length, const uint8_t *src)
+{
+	_string_t *_dst = (_string_t *)dst;
+
+	assert(inited);
+	assert(src);
+	assert(dst);
+
+	assert(_dst->magic_word == string_magic_word);
+	assert(_dst->length < _dst->size);
+	assert(_dst->size > 0);
+
+	if(length != _dst->length)
+		return(false);
+
+	if(memcmp(_dst->const_data, src, length))
+		return(false);
+
+	return(true);
+}
+
 bool string_uint(const string_t src, unsigned int base, unsigned int *value)
 {
 	_string_t *_src = (_string_t *)src;
