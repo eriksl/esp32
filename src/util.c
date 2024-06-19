@@ -12,6 +12,7 @@
 
 #include <mbedtls/base64.h>
 #include <mbedtls/md5.h>
+#include <mbedtls/aes.h>
 
 #include <esp_timer.h>
 #include <esp_netif.h>
@@ -196,6 +197,32 @@ void util_hexdump(string_t dst, const string_t src)
 	assert(src);
 
 	util_hexdump_cstr(dst, string_length(src), string_data(src));
+}
+
+void decrypt_aes_256(string_t dst, const string_t src)
+{
+	static const uint8_t aes_256_key[32] =
+	{
+		0x3a, 0xe0, 0xbe, 0x96, 0xeb, 0x7c, 0xfe, 0xbc, 0x97, 0xe9, 0x7e, 0x98, 0x73, 0x8e, 0x4e, 0x88,
+		0xeb, 0xd7, 0x76, 0xa7, 0x55, 0x8a, 0xd3, 0x36, 0x96, 0x4b, 0xaf, 0x0b, 0x35, 0xa4, 0x84, 0xf5,
+	};
+	static const uint8_t aes_256_iv_init[16] = { 0x4f, 0x8f, 0xee, 0x60, 0xe9, 0x56, 0x4d, 0x0f, 0x81, 0xf0, 0x8a, 0xe5, 0x8d, 0x1c, 0x08, 0xd6 };
+	uint8_t aes_256_iv[16];
+
+	uint8_t output[16];
+
+    mbedtls_aes_context context;
+
+	assert(string_length(src) == sizeof(output));
+	assert(string_size(dst) >= sizeof(output));
+
+	memcpy(aes_256_iv, aes_256_iv_init, sizeof(aes_256_iv));
+
+    mbedtls_aes_init(&context);
+    mbedtls_aes_setkey_dec(&context, aes_256_key, sizeof(aes_256_key) * 8);
+    mbedtls_aes_crypt_cbc(&context, MBEDTLS_AES_DECRYPT, string_length(src), aes_256_iv, string_data(src), output);
+
+	string_assign_data(dst, sizeof(output), output);
 }
 
 uint64_t stat_util_time_malloc_min = 0;

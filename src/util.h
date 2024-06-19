@@ -40,6 +40,7 @@ const char *util_ipv6_address_type_string(const void *);
 void util_mac_addr_to_string(string_t dst, const uint8_t mac[6], bool inverse);
 void util_time_to_string(string_t dst, const time_t *ticks);
 void util_hash_to_string(string_t dst, unsigned int hash_size, const uint8_t *hash);
+void decrypt_aes_256(string_t dst, const string_t src);
 void *_util_memory_alloc_spiram(unsigned int amount, const char *file, unsigned int line);
 void _util_memcpy(void *to, const void *from, unsigned int length, const char *file, unsigned int line);
 void util_hexdump_cstr(string_t dst, unsigned int src_length, const uint8_t *src);
