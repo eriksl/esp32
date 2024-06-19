@@ -611,6 +611,24 @@ void string_cut(string_t dst, const string_t src, unsigned int from, unsigned in
 	_dst->data[_dst->length] = '\0';
 }
 
+void string_truncate(string_t dst, unsigned int length)
+{
+	_string_t *_dst = (_string_t *)dst;
+
+	assert(inited);
+	assert(_dst);
+	assert(_dst->magic_word == string_magic_word);
+	assert(_dst->length < _dst->size);
+	assert(_dst->size > 0);
+	assert(!_dst->header_const);
+
+	if(length >= _dst->length)
+		return;
+
+	_dst->length = length;
+	_dst->data[_dst->length] = '\0';
+}
+
 string_t string_parse(const string_t src, unsigned int *offset)
 {
 	unsigned int start, length;
