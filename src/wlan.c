@@ -17,8 +17,6 @@
 #include <esp_netif_sntp.h>
 #include <esp_timer.h>
 
-esp_err_t esp_netif_up(esp_netif_t *esp_netif); // FIXME, is in esp_netif_private.h
-
 #include <assert.h>
 
 enum
@@ -254,7 +252,6 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 		}
 		case(WIFI_EVENT_STA_CONNECTED): /* 4 */
 		{
-			util_warn_on_esp_err("esp_netif_up", esp_netif_up(netif_sta)); // FIXME at this point the interface is not up, linklocal returns error
 			util_warn_on_esp_err("esp_netif_create_ip6_linklocal", esp_netif_create_ip6_linklocal(netif_sta));
 
 			set_state(ws_associated);
@@ -869,14 +866,16 @@ void wlan_init(void)
 	inited = true;
 
 	util_abort_on_esp_err("esp_event_loop_create_default", esp_event_loop_create_default());
+
+	util_abort_on_esp_err("esp_netif_init", esp_netif_init());
+	netif_sta = esp_netif_create_default_wifi_sta();
+	netif_ap = esp_netif_create_default_wifi_ap();
+
 	util_abort_on_esp_err("esp_event_handler_instance_register 1",
 			esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wlan_event_handler, (void *)0, (esp_event_handler_instance_t *)0));
 	util_abort_on_esp_err("esp_event_handler_instance_register 2",
 			esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID, ip_event_handler, (void *)0, (esp_event_handler_instance_t *)0));
 
-	util_abort_on_esp_err("esp_netif_init", esp_netif_init());
-	netif_sta = esp_netif_create_default_wifi_sta();
-	netif_ap = esp_netif_create_default_wifi_ap();
 	util_abort_on_esp_err("esp_netif_sntp_init", esp_netif_sntp_init(&sntp_config));
 	util_abort_on_esp_err("esp_wifi_init", esp_wifi_init(&init_config));
 	util_abort_on_esp_err("esp_wifi_set_mode", esp_wifi_set_mode(WIFI_MODE_STA));
