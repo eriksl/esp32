@@ -251,7 +251,7 @@ void info_command_info_process(cli_command_call_t *call)
 	assert(uxTaskGetSystemState(process_info, processes, &runtime) == processes);
 
 	string_format_append(call->result, "processes: %u\n", processes);
-	string_format(call->result, "  %2s  %-12s %-10s %-4s %-5s\n", "#", "name", "state", "prio", "stack");
+	string_format(call->result, "  %2s  %-14s %-10s %-4s %-5s\n", "#", "name", "state", "prio", "stack");
 
 	for(ix = 0; ix < processes; ix++)
 	{
@@ -297,7 +297,7 @@ void info_command_info_process(cli_command_call_t *call)
 			}
 		}
 
-		string_format_append(call->result, "  %2u: %-12s %-10s %4u %5u\n",
+		string_format_append(call->result, "  %2u: %-14s %-10s %4u %5u\n",
 				pip->xTaskNumber,
 				name,
 				state,

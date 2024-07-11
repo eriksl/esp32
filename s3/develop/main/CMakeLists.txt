@@ -12,6 +12,7 @@ idf_component_register(
 		"log.c"
 		"main.c"
 		"packet.c"
+		"perftest.c"
 		"otacli.c"
 		"string.c"
 		"util.c"

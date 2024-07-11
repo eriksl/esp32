@@ -13,6 +13,7 @@
 #include "fs.h"
 #include "wlan.h"
 #include "info.h"
+#include "perftest.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -31,6 +32,7 @@ void app_main(void)
 	cli_init();
 	bt_init();
 	wlan_init();
+	perftest_init();
 	console_init_2();
 
 	run_main();
