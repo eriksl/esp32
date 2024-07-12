@@ -32,7 +32,9 @@ void app_main(void)
 	cli_init();
 	bt_init();
 	wlan_init();
+#if 0
 	perftest_init();
+#endif
 	console_init_2();
 
 	run_main();
