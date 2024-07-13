@@ -51,6 +51,9 @@ static void run_tcp_receive(void *)
 			continue;
 		}
 
+		int option = 1;
+		assert(!setsockopt(tcp_socket_fd, IPPROTO_TCP, TCP_NODELAY, &option, sizeof(option)));
+
 		assert(sizeof(si6_addr) >= si6_addr_length);
 
 		for(;;)
@@ -116,6 +119,9 @@ static void run_tcp_send(void *)
 			log_format_errno("perftest: accept fails: %d", tcp_socket_fd);
 			continue;
 		}
+
+		int option = 1;
+		assert(!setsockopt(tcp_socket_fd, IPPROTO_TCP, TCP_NODELAY, &option, sizeof(option)));
 
 		assert(sizeof(si6_addr) >= si6_addr_length);
 
