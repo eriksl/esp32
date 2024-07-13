@@ -5,10 +5,9 @@
 #include <sys/socket.h>
 
 #include "string.h"
-#include "cli-command.h"
-#include "stringcli.h"
 #include "log.h"
 #include "util.h"
+#include "cli-command.h"
 
 #include <freertos/FreeRTOS.h>
 

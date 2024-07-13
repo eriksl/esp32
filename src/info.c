@@ -12,10 +12,10 @@
 #include <freertos/task.h>
 
 #include "string.h"
-#include "cli-command.h"
 #include "info.h"
 #include "log.h"
 #include "util.h"
+#include "cli-command.h"
 
 static bool inited = false;
 static unsigned int initial_free_heap;

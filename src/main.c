@@ -2,7 +2,6 @@
 #include <stdbool.h>
 
 #include "string.h"
-#include "cli-command.h"
 #include "main.h"
 #include "ledpixel.h"
 #include "log.h"

@@ -2,10 +2,9 @@
 #include <stdbool.h>
 
 #include "string.h"
-#include "cli-command.h"
-#include "otacli.h"
 #include "log.h"
 #include "util.h"
+#include "cli-command.h"
 
 #include <mbedtls/sha256.h>
 

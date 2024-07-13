@@ -4,7 +4,6 @@
 #include <string.h>
 
 #include "string.h"
-#include "cli-command.h"
 #include "cli.h"
 #include "packet.h"
 #include "log.h"

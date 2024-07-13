@@ -3,20 +3,15 @@
 #include <errno.h>
 
 #include "string.h"
-#include "cli-command.h"
-#include "stringcli.h"
-#include "cli.h"
-#include "otacli.h"
-#include "flash.h"
-#include "info.h"
+#include "config.h"
 #include "log.h"
+#include "util.h"
+#include "cli.h"
+#include "packet.h"
 #include "bt.h"
 #include "console.h"
-#include "config.h"
 #include "wlan.h"
-#include "packet.h"
-#include "util.h"
-#include "fs.h"
+#include "cli-command.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>

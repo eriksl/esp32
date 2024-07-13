@@ -3,10 +3,10 @@
 #include <string.h> // for strerror
 
 #include "string.h"
-#include "cli-command.h"
 #include "fs.h"
 #include "log.h"
 #include "util.h"
+#include "cli-command.h"
 
 #include <esp_littlefs.h>
 

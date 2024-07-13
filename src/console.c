@@ -4,12 +4,12 @@
 #include <string.h>
 
 #include "string.h"
-#include "cli-command.h"
 #include "cli.h"
 #include "console.h"
 #include "log.h"
 #include "config.h"
 #include "util.h"
+#include "cli-command.h"
 
 #include <freertos/FreeRTOS.h>
 #include <driver/usb_serial_jtag.h>

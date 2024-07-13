@@ -18,11 +18,3 @@ void config_set_string_cstr(const char *key, string_t value);
 
 bool config_erase(const string_t key);
 bool config_erase_from_cstr(const char *key);
-
-void config_command_info(cli_command_call_t *call);
-void config_command_dump(cli_command_call_t *call);
-void config_command_show(cli_command_call_t *call);
-void config_command_set_int(cli_command_call_t *call);
-void config_command_set_uint(cli_command_call_t *call);
-void config_command_set_string(cli_command_call_t *call);
-void config_command_erase(cli_command_call_t *call);

@@ -12,15 +12,15 @@
 #include <services/gap/ble_svc_gap.h>
 #include <services/gatt/ble_svc_gatt.h>
 
-#include "string.h"
-#include "cli-command.h"
 #include "cli.h"
 #include "bt.h"
+#include "string.h"
 #include "log.h"
 #include "util.h"
 #include "packet.h"
 #include "config.h"
 #include "bt_pair_pin.h"
+#include "cli-command.h"
 
 void ble_store_config_init(void);
 

@@ -3,13 +3,13 @@
 #include <sys/socket.h>
 
 #include "string.h"
-#include "cli-command.h"
 #include "cli.h"
 #include "wlan.h"
 #include "config.h"
 #include "log.h"
 #include "util.h"
 #include "packet.h"
+#include "cli-command.h"
 
 #include <esp_event.h>
 #include <esp_wifi.h>

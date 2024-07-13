@@ -7,11 +7,11 @@
 #include <esp_random.h>
 
 #include "string.h"
-#include "cli-command.h"
 #include "cli.h"
 #include "log.h"
 #include "console.h"
 #include "util.h"
+#include "cli-command.h"
 
 #include <freertos/FreeRTOS.h>
 

@@ -4,7 +4,6 @@
 #include <lwip/ip_addr.h>
 
 #include "string.h"
-#include "cli-command.h"
 #include "log.h"
 #include "util.h"
 
