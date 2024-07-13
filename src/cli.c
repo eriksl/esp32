@@ -300,7 +300,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "fs-read", (const char*)0, "read chunk from a file on the littlefs filesystem", fs_command_read,
+	{ "fs-read", (const char*)0, "read chunk from a file", fs_command_read,
 		{	3,
 			{
 				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length", .unsigned_int = { 0, 4096 }},
@@ -336,7 +336,11 @@ static const cli_command_t cli_commands[] =
 	},
 
 	{ "fs-format", "fsf", "format the littlefs filesystem", fs_command_format,
-		{}
+		{	1,
+			{
+				{ cli_parameter_string, 0, 1, 0, 0, "partition name of fs to format", {} },
+			},
+		}
 	},
 
 	{ "fs-info", "fsi", "show info about the littlefs filesystem", fs_command_info,
@@ -344,7 +348,11 @@ static const cli_command_t cli_commands[] =
 	},
 
 	{ "fs-list", "ls", "show all files on the littlefs filesystem", fs_command_list,
-		{}
+		{	1,
+			{
+				{ cli_parameter_string, 0, 1, 0, 0, "directory to list", {} },
+			},
+		}
 	},
 
 	{ "help", "?", "this help", command_help,

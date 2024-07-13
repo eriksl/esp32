@@ -60,19 +60,21 @@ void fs_command_list(cli_command_call_t *call)
 	string_auto(filename, 64);
 
 	assert(inited);
-	assert(call->parameter_count == 0);
+	assert(call->parameter_count == 1);
 
-	if(!(dir = opendir("/littlefs")))
-		util_abort("littlefs opendir failed");
+	if(!(dir = opendir(string_cstr(call->parameters[0].string))))
+	{
+		string_format(call->result, "opendir of %s failed", string_cstr(call->parameters[0].string));
+		return;
+	}
 
-	string_assign_cstr(call->result, "DIRECTORY /littlefs");
+	string_format(call->result, "DIRECTORY %s", string_cstr(call->parameters[0].string));
 
 	while((dirent = readdir(dir)))
 	{
 		errno = 0;
 
-		string_assign_cstr(filename, "/littlefs/");
-		string_append_cstr(filename, dirent->d_name);
+		string_format(filename, "%s/%s", string_cstr(call->parameters[0].string), dirent->d_name);
 
 		if(stat(string_cstr(filename), &statb))
 			length = -1;
@@ -88,11 +90,11 @@ void fs_command_list(cli_command_call_t *call)
 void fs_command_format(cli_command_call_t *call)
 {
 	assert(inited);
-	assert(call->parameter_count == 0);
+	assert(call->parameter_count == 1);
 
-	if(esp_littlefs_format("littlefs"))
+	if(esp_littlefs_format(string_cstr(call->parameters[0].string)))
 	{
-		string_assign_cstr(call->result, "format failed");
+		string_format(call->result, "format of %s failed", string_cstr(call->parameters[0].string));
 		return;
 	}
 
@@ -101,7 +103,6 @@ void fs_command_format(cli_command_call_t *call)
 
 void fs_command_read(cli_command_call_t *call)
 {
-	string_auto(filename, 64);
 	int fd, length;
 
 	assert(inited);
@@ -113,13 +114,9 @@ void fs_command_read(cli_command_call_t *call)
 		return;
 	}
 
-	string_assign_cstr(filename, "/littlefs/");
-	string_append_string(filename, call->parameters[2].string);
-
-	if((fd = open(string_cstr(filename), O_RDONLY, 0)) < 0)
+	if((fd = open(string_cstr(call->parameters[2].string), O_RDONLY, 0)) < 0)
 	{
-		string_assign_cstr(call->result, "ERROR: cannot open file: ");
-		string_append_cstr(call->result, strerror(errno));
+		string_format(call->result, "ERROR: cannot open file %s: %s", string_cstr(call->parameters[2].string), strerror(errno));
 		return;
 	}
 
@@ -144,7 +141,6 @@ void fs_command_read(cli_command_call_t *call)
 
 void fs_command_append(cli_command_call_t *call)
 {
-	string_auto(filename, 64);
 	int fd, length;
 	off_t offset;
 
@@ -157,13 +153,9 @@ void fs_command_append(cli_command_call_t *call)
 		return;
 	}
 
-	string_assign_cstr(filename, "/littlefs/");
-	string_append_string(filename, call->parameters[1].string);
-
-	if((fd = open(string_cstr(filename), O_WRONLY | O_APPEND | O_CREAT, 0)) < 0)
+	if((fd = open(string_cstr(call->parameters[1].string), O_WRONLY | O_APPEND | O_CREAT, 0)) < 0)
 	{
-		string_assign_cstr(call->result, "ERROR: cannot open file: ");
-		string_append_cstr(call->result, strerror(errno));
+		string_format(call->result, "ERROR: cannot open file %s: %s", string_cstr(call->parameters[1].string), strerror(errno));
 		return;
 	}
 
@@ -188,15 +180,10 @@ void fs_command_append(cli_command_call_t *call)
  
 void fs_command_erase(cli_command_call_t *call)
 {
-	string_auto(filename, 64);
-
 	assert(inited);
 	assert(call->parameter_count == 1);
 
-	string_assign_cstr(filename, "/littlefs/");
-	string_append_string(filename, call->parameters[0].string);
-
-	unlink(string_cstr(filename));
+	unlink(string_cstr(call->parameters[0].string));
 
 	string_assign_cstr(call->result, "OK file erased");
 }
@@ -204,7 +191,6 @@ void fs_command_erase(cli_command_call_t *call)
 void fs_command_checksum(cli_command_call_t *call)
 {
 	int fd;
-	string_auto(filename, 64);
 	mbedtls_sha256_context hash_context;
 	unsigned char hash[32];
 	string_auto(hash_text, (sizeof(hash) * 2) + 1);
@@ -212,13 +198,10 @@ void fs_command_checksum(cli_command_call_t *call)
 	assert(call->parameter_count == 1);
 	assert(string_size(call->result_oob) > 4096);
 
-	string_assign_cstr(filename, "/littlefs/");
-	string_append_string(filename, call->parameters[0].string);
-
 	mbedtls_sha256_init(&hash_context);
 	mbedtls_sha256_starts(&hash_context, /* no SHA-224 */ 0);
 
-	if((fd = open(string_cstr(filename), O_RDONLY, 0)) < 0)
+	if((fd = open(string_cstr(call->parameters[0].string), O_RDONLY, 0)) < 0)
 	{
 		string_assign_cstr(call->result, "ERROR: cannot open file: ");
 		string_append_cstr(call->result, strerror(errno));
