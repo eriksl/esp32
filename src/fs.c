@@ -183,9 +183,10 @@ void fs_command_erase(cli_command_call_t *call)
 	assert(inited);
 	assert(call->parameter_count == 1);
 
-	unlink(string_cstr(call->parameters[0].string));
-
-	string_assign_cstr(call->result, "OK file erased");
+	if(unlink(string_cstr(call->parameters[0].string)))
+		string_assign_cstr(call->result, "file erase failed");
+	else
+		string_assign_cstr(call->result, "OK file erased");
 }
 
 void fs_command_checksum(cli_command_call_t *call)
