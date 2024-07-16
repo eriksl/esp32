@@ -13,6 +13,7 @@
 #include "wlan.h"
 #include "info.h"
 #include "perftest.h"
+#include "ramdisk.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -28,6 +29,7 @@ void app_main(void)
 	config_init();
 	util_init();
 	fs_init();
+	ramdisk_init();
 	cli_init();
 	bt_init();
 	wlan_init();

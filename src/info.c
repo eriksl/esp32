@@ -18,11 +18,11 @@
 #include "cli-command.h"
 
 static bool inited = false;
-static unsigned int initial_free_heap;
-static unsigned int initial_free_spiram;
-static unsigned int initial_free_internal;
-static unsigned int initial_free_total;
-static unsigned int initial_free_rtcram;
+unsigned int initial_free_heap;
+unsigned int initial_free_spiram;
+unsigned int initial_free_internal;
+unsigned int initial_free_total;
+unsigned int initial_free_rtcram;
 
 void info_command_info(cli_command_call_t *call)
 {

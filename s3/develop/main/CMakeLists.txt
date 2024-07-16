@@ -14,6 +14,7 @@ idf_component_register(
 		"packet.c"
 		"perftest.c"
 		"otacli.c"
+		"ramdisk.c"
 		"string.c"
 		"util.c"
 		"wlan.c"
