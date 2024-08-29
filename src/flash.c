@@ -16,7 +16,7 @@ static uint8_t flash_buffer[4096];
 
 void flash_command_bench(cli_command_call_t *call)
 {
-	unsigned int length;
+	unsigned int ix, length;
 
 	assert(string_size(call->result_oob) > 4096);
 	assert(call->parameter_count == 1);
@@ -27,7 +27,11 @@ void flash_command_bench(cli_command_call_t *call)
 		return;
 	}
 
-	string_fill(call->result_oob, length, '\0');
+	string_clear(call->result_oob);
+
+	for(ix = 0; ix < length; ix++)
+		string_append(call->result_oob, '\0');
+
 	string_format(call->result, "OK flash-bench: sending %u bytes", length);
 }
 
