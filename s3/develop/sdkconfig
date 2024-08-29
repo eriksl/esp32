@@ -1891,7 +1891,7 @@ CONFIG_LITTLEFS_ASSERTS=y
 # end of LittleFS
 # end of Component config
 
-# CONFIG_IDF_EXPERIMENTAL_FEATURES is not set
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
 
 # Deprecated options for backward compatibility
 # CONFIG_APP_BUILD_TYPE_ELF_RAM is not set
