@@ -301,8 +301,6 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 	}
 }
 
-esp_err_t esp_netif_add_ip6_address(esp_netif_t *esp_netif, const ip_event_add_ip6_t *addr); // FIXME
-
 static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
 	assert(inited);
@@ -323,7 +321,6 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 			const ip_event_got_ip6_t *event = (const ip_event_got_ip6_t *)event_data;
 			string_auto(ipv6_address_string, 64);
 			esp_ip6_addr_t ipv6_address;
-			ip_event_add_ip6_t ipv6_add_event;
 
 			util_esp_ipv6_addr_to_string(ipv6_address_string, &event->ip6_info.ip);
 #if 0
@@ -337,11 +334,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 					set_state(ws_ipv6_link_local_address_acquired);
 
 					if(config_get_string_cstr(key_ipv6_address, ipv6_address_string) && !esp_netif_str_to_ip6(string_cstr(ipv6_address_string), &ipv6_address))
-					{
-						ipv6_add_event.addr = ipv6_address;
-						ipv6_add_event.preferred = true;
-						util_warn_on_esp_err("esp_netif_add_ip6_address", esp_netif_add_ip6_address(netif_sta, &ipv6_add_event));
-					}
+						util_warn_on_esp_err("esp_netif_add_ip6_address", esp_netif_add_ip6_address(netif_sta, ipv6_address, true));
 
 					break;
 				}
