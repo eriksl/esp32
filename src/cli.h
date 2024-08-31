@@ -13,23 +13,18 @@ typedef enum
 	cli_source_console,
 	cli_source_wlan_tcp,
 	cli_source_wlan_udp,
+	cli_source_size,
 } cli_source_t;
 
 typedef struct
 {
 	unsigned int	magic_number_head;
 	cli_source_t	source;
-	unsigned int	length;
-	uint8_t			*data;
-	unsigned int	transaction_id;
-	unsigned int	broadcast_groups;
+	string_t		data;
 
 	struct
 	{
-		unsigned int data_from_malloc:1;
 		unsigned int packetised:1;
-		unsigned int checksum_requested:1;
-		unsigned int transaction_id_valid:1;
 	};
 
 	union

@@ -91,7 +91,6 @@ static unsigned int cli_stats_commands_received_raw;
 static unsigned int cli_stats_replies_sent;
 static unsigned int cli_stats_replies_sent_packet;
 static unsigned int cli_stats_replies_sent_raw;
-static unsigned int cli_stats_broadcast_dropped;
 static bool inited = false;
 
 static const char *parameter_type_to_string(unsigned int type)
@@ -193,7 +192,6 @@ static void command_info_cli(cli_command_call_t *call)
 	string_format_append(call->result, "\n- total: %u", cli_stats_commands_received);
 	string_format_append(call->result, "\n- packetised: %u", cli_stats_commands_received_packet);
 	string_format_append(call->result, "\n- raw: %u", cli_stats_commands_received_raw);
-	string_format_append(call->result, "\n- dropped broadcast: %u", cli_stats_broadcast_dropped);
 	string_format_append(call->result, "\nreplies sent:");
 	string_format_append(call->result, "\n- total: %u", cli_stats_replies_sent);
 	string_format_append(call->result, "\n- packetised: %u", cli_stats_replies_sent_packet);
@@ -585,10 +583,10 @@ static void send_queue_pop(cli_buffer_t *cli_buffer)
 static void run_receive_queue(void *)
 {
 	cli_buffer_t						cli_buffer;
-	string_t							data;
-	string_t							oob_data;
-	string_t							command;
-	string_t							token;
+	string_t							data = (string_t)0;
+	string_t							oob_data = (string_t)0;
+	string_t							command = (string_t)0;
+	string_t							token = (string_t)0;
 	unsigned int						count, current, ix, string_parse_offset;
 	const cli_command_t					*cli_command;
 	unsigned int						parameter_count;
@@ -610,23 +608,12 @@ static void run_receive_queue(void *)
 
 		receive_queue_pop(&cli_buffer);
 		packet_decapsulate(&cli_buffer, &data, &oob_data);
+		string_free(&cli_buffer.data);
 
 		if(cli_buffer.packetised)
 			cli_stats_commands_received_packet++;
 		else
 			cli_stats_commands_received_raw++;
-
-		if(cli_buffer.data_from_malloc && cli_buffer.data)
-			free(cli_buffer.data);
-		cli_buffer.length = 0;
-		cli_buffer.data = (uint8_t *)0;
-		cli_buffer.data_from_malloc = 0;
-
-		if(cli_buffer.broadcast_groups)
-		{
-			cli_stats_broadcast_dropped++;
-			goto error;
-		}
 
 		string_parse_offset = 0;
 
@@ -651,7 +638,7 @@ static void run_receive_queue(void *)
 
 		if(!cli_command->name)
 		{
-			string_format(error, "ERROR: unknown command \"%s\"", string_cstr(command)); // FIXME
+			string_format(error, "ERROR: unknown command \"%s\"", string_cstr(command));
 			packet_encapsulate(&cli_buffer, error, (string_t)0);
 			send_queue_push(&cli_buffer);
 			goto error;
@@ -707,7 +694,7 @@ static void run_receive_queue(void *)
 
 						if(!string_uint(parameter->string, parameter_description->base, &value))
 						{
-							string_format(error, "ERROR: invalid unsigned integer value: %s", string_cstr(parameter->string)); // FIXME
+							string_format(error, "ERROR: invalid unsigned integer value: %s", string_cstr(parameter->string));
 							packet_encapsulate(&cli_buffer, error, (string_t)0);
 							send_queue_push(&cli_buffer);
 							goto error;
@@ -855,13 +842,14 @@ static void run_receive_queue(void *)
 
 		if((token = string_parse(data, &string_parse_offset)))
 		{
-			string_free(token);
+			string_free(&token);
 			string_format(error, "ERROR: too many parameters");
 			packet_encapsulate(&cli_buffer, error, (string_t)0);
 			send_queue_push(&cli_buffer);
 			goto error;
 		}
 
+		call.source =			cli_buffer.source;
 		call.parameter_count =	parameter_count;
 		call.oob =				oob_data;
 
@@ -871,42 +859,23 @@ static void run_receive_queue(void *)
 		cli_command->function(&call);
 
 		packet_encapsulate(&cli_buffer, call.result, call.result_oob);
+
 		send_queue_push(&cli_buffer);
 
 error:
-		if(command)
-		{
-			string_free(command);
-			command = (string_t)0;
-		}
+		string_free(&command);
 
 		for(ix = 0; ix < call.parameter_count; ix++)
 		{
 			parameter = &call.parameters[ix];
-
-			if(parameter->string)
-			{
-				string_free(parameter->string);
-				parameter->string = (string_t)0;
-			}
+			string_free(&parameter->string);
 		}
 
 		cli_buffer.source = cli_source_none;
-		cli_buffer.length = 0;
-		cli_buffer.data_from_malloc = 0;
-		cli_buffer.data = (uint8_t *)0;
-
-		if(data)
-		{
-			string_free(data);
-			data = (string_t)0;
-		}
+		string_free(&data);
 
 		if(oob_data)
-		{
-			string_free(oob_data);
-			oob_data = (string_t)0;
-		}
+			string_free(&oob_data);
 	}
 }
 
@@ -923,6 +892,7 @@ static void run_send_queue(void *)
 		switch(cli_buffer.source)
 		{
 			case(cli_source_none):
+			case(cli_source_size):
 			{
 				log_format("cli: invalid source type: %u", cli_buffer.source);
 				break;
@@ -931,38 +901,30 @@ static void run_send_queue(void *)
 			case(cli_source_bt):
 			{
 				bt_send(&cli_buffer);
-
 				break;
 			}
 
 			case(cli_source_console):
 			{
 				console_send(&cli_buffer);
-
 				break;
 			}
 
 			case(cli_source_wlan_tcp):
 			{
 				wlan_tcp_send(&cli_buffer);
-
 				break;
 			}
 
 			case(cli_source_wlan_udp):
 			{
 				wlan_udp_send(&cli_buffer);
-
 				break;
 			}
 		}
 
-		if(cli_buffer.data_from_malloc && cli_buffer.data)
-			free(cli_buffer.data);
 		cli_buffer.source = cli_source_none;
-		cli_buffer.length = 0;
-		cli_buffer.data_from_malloc = 0;
-		cli_buffer.data = (uint8_t *)0;
+		string_free(&cli_buffer.data);
 	}
 }
 

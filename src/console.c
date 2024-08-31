@@ -314,10 +314,9 @@ static void run_console(void *)
 		if(line->length)
 		{
 			cli_buffer.source = cli_source_console;
-			cli_buffer.length = line->length;
-			cli_buffer.data_from_malloc = 1;
-			cli_buffer.data = util_memory_alloc_spiram(line->length);
-			util_memcpy(cli_buffer.data, line->data, line->length);
+			cli_buffer.data = string_new(line->length);
+			string_assign_data(cli_buffer.data, line->length, (uint8_t *)line->data);
+
 			cli_receive_queue_push(&cli_buffer);
 
 			if((lines->current + 1) < lines->size)
@@ -398,12 +397,12 @@ void console_write_line(const char *string)
 void console_send(const cli_buffer_t *cli_buffer)
 {
 	if(inited_1)
-		write_console(cli_buffer->length, (const char *)cli_buffer->data);
+		write_console(string_length(cli_buffer->data), (const char *)string_data(cli_buffer->data));
 
 	if(inited_2)
 		prompt();
 
-	console_stats_bytes_sent += cli_buffer->length;
+	console_stats_bytes_sent += string_length(cli_buffer->data);
 	console_stats_lines_sent++;
 }
 

@@ -19,14 +19,6 @@
 
 #include <assert.h>
 
-enum
-{
-	segmentation_max_segment_size = 1440,
-	segmentation_timeout_ms = 1000,
-	fragmentation_max_fragment_size = 1024,
-	fragmentation_timeout_ms = 1000,
-};
-
 typedef enum
 {
 	ws_invalid,
@@ -60,17 +52,11 @@ static unsigned int tcp_send_packets;
 static unsigned int tcp_send_errors;
 static unsigned int tcp_send_no_connection;
 static unsigned int tcp_receive_bytes;
-static unsigned int tcp_receive_segments;
 static unsigned int tcp_receive_packets;
 static unsigned int tcp_receive_accepts;
 static unsigned int tcp_receive_accept_errors;
 static unsigned int tcp_receive_errors;
-static unsigned int tcp_receive_segmentation_timeouts;
 static unsigned int tcp_receive_incomplete_packets;
-static unsigned int tcp_receive_complete_packets;
-static unsigned int tcp_receive_incomplete_raw;
-static unsigned int tcp_receive_complete_raw;
-static unsigned int tcp_receive_segmentation_errors;
 
 static unsigned int udp_send_bytes;
 static unsigned int udp_send_segments;
@@ -78,15 +64,9 @@ static unsigned int udp_send_packets;
 static unsigned int udp_send_errors;
 static unsigned int udp_send_no_connection;
 static unsigned int udp_receive_bytes;
-static unsigned int udp_receive_segments;
 static unsigned int udp_receive_packets;
 static unsigned int udp_receive_errors;
-static unsigned int udp_receive_segmentation_timeouts;
 static unsigned int udp_receive_incomplete_packets;
-static unsigned int udp_receive_complete_packets;
-static unsigned int udp_receive_incomplete_raw;
-static unsigned int udp_receive_complete_raw;
-static unsigned int udp_receive_segmentation_errors;
 
 typedef struct
 {
@@ -383,9 +363,6 @@ static void run_tcp(void *)
 	int length;
 	string_t receive_buffer;
 	cli_buffer_t cli_buffer;
-	unsigned int segment, plength;
-	uint64_t timestamp_start;
-	bool io_error;
 
 	assert(inited);
 	assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr));
@@ -414,102 +391,58 @@ static void run_tcp(void *)
 
 		tcp_receive_accepts++;
 
-		assert(sizeof(si6_addr) >= si6_addr_length);
-		assert(sizeof(cli_buffer.ip.address.sin6_addr) >= si6_addr_length);
-
-		util_memcpy(&cli_buffer.ip.address.sin6_addr, &si6_addr, si6_addr_length);
-		cli_buffer.ip.address.sin6_length = si6_addr_length;
-		cli_buffer.source = cli_source_wlan_tcp;
-
-		for(io_error = false; !io_error; )
+		for(;;)
 		{
 			string_clear(receive_buffer);
 
-			for(segment = 0; segment < 16; segment++)
+			assert(sizeof(si6_addr) >= si6_addr_length);
+			assert(sizeof(cli_buffer.ip.address.sin6_addr) >= si6_addr_length);
+
+			util_memcpy(&cli_buffer.ip.address.sin6_addr, &si6_addr, si6_addr_length);
+			cli_buffer.ip.address.sin6_length = si6_addr_length;
+			cli_buffer.source = cli_source_wlan_tcp;
+
+			length = string_recvfrom_fd(receive_buffer, tcp_socket_fd, (unsigned int *)0, (void *)0);
+
+			log_format("$ recvfrom: %d", length);
+
+			if(length <= 0)
 			{
-				length = string_recvfrom_fd(receive_buffer, tcp_socket_fd, (unsigned int *)0, (void *)0);
+				tcp_receive_errors++;
+				break;
+			}
 
-				tcp_receive_segments++;
+			tcp_receive_bytes += length;
 
-				if(length < 0)
-				{
-					tcp_receive_errors++;
-					io_error = true;
-					break;
-				}
-
-				if(length == 0)
-				{
-					io_error = true;
-					break;
-				}
-
-				tcp_receive_bytes += length;
-
-				if(segment == 0)
-					timestamp_start = esp_timer_get_time();
+			if(packet_valid(receive_buffer))
+			{
+				if(packet_complete(receive_buffer))
+					cli_buffer.packetised = 1;
 				else
 				{
-					if(((esp_timer_get_time() - timestamp_start) / 1000) >= segmentation_timeout_ms)
-					{
-						tcp_receive_segmentation_timeouts++;
-						break;
-					}
-				}
-
-				if(packet_is_packet(receive_buffer))
-				{
-					plength = packet_length(receive_buffer);
-
-					if(string_length(receive_buffer) > plength)
-					{
-						tcp_receive_segmentation_errors++;
-						break;
-					}
-					else
-					{
-						if(string_length(receive_buffer) == plength)
-						{
-							tcp_receive_complete_packets++;
-							break;
-						}
-						else
-							tcp_receive_incomplete_packets++;
-					}
-				}
-				else
-				{
-					if((length < segmentation_max_segment_size) || (string_length(receive_buffer) > 4096))
-					{
-						tcp_receive_complete_raw++;
-						break;
-					}
-					else
-						tcp_receive_incomplete_raw++;
+					tcp_receive_incomplete_packets++;
+					continue;
 				}
 			}
+			else
+				cli_buffer.packetised = 0;
 
 			tcp_receive_packets++;
 
-			if(!io_error)
-			{
-				cli_buffer.length = string_length(receive_buffer);
-				cli_buffer.data_from_malloc = 1;
-				cli_buffer.data = util_memory_alloc_spiram(cli_buffer.length);
-				util_memcpy(cli_buffer.data, string_data(receive_buffer), cli_buffer.length);
+			cli_buffer.data = string_new(string_length(receive_buffer));
+			string_assign_string(cli_buffer.data, receive_buffer);
 
-				cli_receive_queue_push(&cli_buffer);
-			}
+			cli_receive_queue_push(&cli_buffer);
 		}
 
 		close(tcp_socket_fd);
 		tcp_socket_fd = -1;
 	}
 
-	string_free(receive_buffer);
+	string_free(&receive_buffer);
 }
 
-void wlan_tcp_send(const cli_buffer_t *cli_buffer)
+void wlan_tcp_send(const cli_buffer_t *src)
 {
 	int length, offset, chunk, sent;
 
@@ -524,13 +457,13 @@ void wlan_tcp_send(const cli_buffer_t *cli_buffer)
 	tcp_send_packets++;
 
 	offset = 0;
-	length = cli_buffer->length;
+	length = string_length(src->data);
 
 	for(;;)
 	{
 		chunk = length;
 
-		sent = send(tcp_socket_fd, &cli_buffer->data[offset], chunk, 0);
+		sent = send(tcp_socket_fd, string_data(src->data) + offset, chunk, 0);
 
 		tcp_send_segments++;
 
@@ -546,12 +479,12 @@ void wlan_tcp_send(const cli_buffer_t *cli_buffer)
 		offset += sent;
 
 		assert(length >= 0);
-		assert(offset <= cli_buffer->length);
+		assert(offset <= string_length(src->data));
 
 		if(length == 0)
 			break;
 
-		assert(offset < cli_buffer->length);
+		assert(offset < string_length(src->data));
 	}
 }
 
@@ -562,9 +495,6 @@ static void run_udp(void *)
 	int length;
 	string_t receive_buffer;
 	cli_buffer_t cli_buffer;
-	unsigned int segment, plength;
-	uint64_t timestamp_start;
-	bool io_error;
 
 	assert(inited);
 	assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr));
@@ -582,102 +512,56 @@ static void run_udp(void *)
 
 	for(;;)
 	{
-		io_error = false;
 		string_clear(receive_buffer);
 
-		for(segment = 0; segment < 16; segment++)
+		si6_addr_length = sizeof(si6_addr);
+
+		length = string_recvfrom_fd(receive_buffer, udp_socket_fd, &si6_addr_length, &si6_addr);
+
+		assert(sizeof(si6_addr) >= si6_addr_length);
+		assert(sizeof(cli_buffer.ip.address.sin6_addr) >= si6_addr_length);
+
+		util_memcpy(&cli_buffer.ip.address.sin6_addr, &si6_addr, si6_addr_length);
+		cli_buffer.ip.address.sin6_length = si6_addr_length;
+
+		if(length <= 0)
 		{
-			si6_addr_length = sizeof(si6_addr);
+			udp_receive_errors++;
+			util_sleep(100);
+			continue;
+		}
 
-			length = string_recvfrom_fd(receive_buffer, udp_socket_fd, &si6_addr_length, &si6_addr);
+		udp_receive_bytes += length;
 
-			assert(sizeof(si6_addr) >= si6_addr_length);
-			assert(sizeof(cli_buffer.ip.address.sin6_addr) >= si6_addr_length);
-
-			util_memcpy(&cli_buffer.ip.address.sin6_addr, &si6_addr, si6_addr_length);
-			cli_buffer.ip.address.sin6_length = si6_addr_length;
-			cli_buffer.source = cli_source_wlan_udp;
-
-			udp_receive_segments++;
-
-			if(length < 0)
-			{
-				udp_receive_errors++;
-				io_error = true;
-				break;
-			}
-
-			if(length == 0)
-			{
-				io_error = true;
-				break;
-			}
-
-			udp_receive_bytes += length;
-
-			if(segment == 0)
-				timestamp_start = esp_timer_get_time();
+		if(packet_valid(receive_buffer))
+		{
+			if(packet_complete(receive_buffer))
+				cli_buffer.packetised = 1;
 			else
 			{
-				if(((esp_timer_get_time() - timestamp_start) / 1000) >= segmentation_timeout_ms)
-				{
-					udp_receive_segmentation_timeouts++;
-					break;
-				}
-			}
-
-			if(packet_is_packet(receive_buffer))
-			{
-				plength = packet_length(receive_buffer);
-
-				if(string_length(receive_buffer) > plength)
-				{
-					udp_receive_segmentation_errors++;
-					break;
-				}
-				else
-				{
-					if(string_length(receive_buffer) == plength)
-					{
-						udp_receive_complete_packets++;
-						break;
-					}
-					else
-						udp_receive_incomplete_packets++;
-				}
-			}
-			else
-			{
-				if((length < fragmentation_max_fragment_size) || (string_length(receive_buffer) > 4096))
-				{
-					udp_receive_complete_raw++;
-					break;
-				}
-				else
-					udp_receive_incomplete_raw++;
+				udp_receive_incomplete_packets++;
+				continue;
 			}
 		}
+		else
+			cli_buffer.packetised = 0;
 
 		udp_receive_packets++;
 
-		if(!io_error)
-		{
-			cli_buffer.length = string_length(receive_buffer);
-			cli_buffer.data_from_malloc = 1;
-			cli_buffer.data = util_memory_alloc_spiram(cli_buffer.length);
-			util_memcpy(cli_buffer.data, string_data(receive_buffer), cli_buffer.length);
+		cli_buffer.source = cli_source_wlan_udp;
+		cli_buffer.data = string_new(string_length(receive_buffer));
+		string_assign_string(cli_buffer.data, receive_buffer);
 
-			cli_receive_queue_push(&cli_buffer);
-		}
+		cli_receive_queue_push(&cli_buffer);
 	}
 
 	close(udp_socket_fd);
 	udp_socket_fd = -1;
 
-	string_free(receive_buffer);
+	string_free(&receive_buffer);
 }
 
-void wlan_udp_send(const cli_buffer_t *cli_buffer)
+void wlan_udp_send(const cli_buffer_t *src)
 {
 	int length, offset, chunk, sent;
 
@@ -692,7 +576,7 @@ void wlan_udp_send(const cli_buffer_t *cli_buffer)
 	udp_send_packets++;
 
 	offset = 0;
-	length = cli_buffer->length;
+	length = string_length(src->data);
 
 	for(;;)
 	{
@@ -701,7 +585,7 @@ void wlan_udp_send(const cli_buffer_t *cli_buffer)
 		if(chunk > 1024)
 			chunk = 1024;
 
-		sent = sendto(udp_socket_fd, &cli_buffer->data[offset], chunk, 0, (const struct sockaddr *)&cli_buffer->ip.address.sin6_addr, cli_buffer->ip.address.sin6_length);
+		sent = sendto(udp_socket_fd, string_data(src->data) + offset, chunk, 0, (const struct sockaddr *)&src->ip.address.sin6_addr, src->ip.address.sin6_length);
 
 		udp_send_segments++;
 
@@ -717,12 +601,12 @@ void wlan_udp_send(const cli_buffer_t *cli_buffer)
 		offset += sent;
 
 		assert(length >= 0);
-		assert(offset <= cli_buffer->length);
+		assert(offset <= string_length(src->data));
 
 		if(length == 0)
 			break;
 
-		assert(offset < cli_buffer->length);
+		assert(offset < string_length(src->data));
 	}
 }
 
@@ -902,15 +786,9 @@ void wlan_command_ip_info(cli_command_call_t *call)
 	string_format_append(call->result, "\n- disconnected socket events: %u", tcp_send_no_connection);
 	string_append_cstr(call->result, "\ntcp receive");
 	string_format_append(call->result, "\n- received bytes: %u", tcp_receive_bytes);
-	string_format_append(call->result, "\n- received segments: %u", tcp_receive_segments);
 	string_format_append(call->result, "\n- received packets: %u", tcp_receive_packets);
 	string_format_append(call->result, "\n- received incomplete packets: %u", tcp_receive_incomplete_packets);
-	string_format_append(call->result, "\n- received complete packets: %u", tcp_receive_complete_packets);
-	string_format_append(call->result, "\n- received incomplete raw data: %u", tcp_receive_incomplete_raw);
-	string_format_append(call->result, "\n- received complete raw data: %u", tcp_receive_complete_raw);
 	string_format_append(call->result, "\n- receive errors: %u", tcp_receive_errors);
-	string_format_append(call->result, "\n- segmentation timeouts: %u", tcp_receive_segmentation_timeouts);
-	string_format_append(call->result, "\n- segmentation errors: %u", tcp_receive_segmentation_errors);
 	string_format_append(call->result, "\n- accepted connections: %u", tcp_receive_accepts);
 	string_format_append(call->result, "\n- accept errors: %u", tcp_receive_accept_errors);
 	string_append_cstr(call->result, "\nudp send");
@@ -921,15 +799,9 @@ void wlan_command_ip_info(cli_command_call_t *call)
 	string_format_append(call->result, "\n- disconnected socket events: %u", udp_send_no_connection);
 	string_append_cstr(call->result, "\nudp receive");
 	string_format_append(call->result, "\n- received bytes: %u", udp_receive_bytes);
-	string_format_append(call->result, "\n- received segments: %u", udp_receive_segments);
 	string_format_append(call->result, "\n- received packets: %u", udp_receive_packets);
 	string_format_append(call->result, "\n- received incomplete packets: %u", udp_receive_incomplete_packets);
-	string_format_append(call->result, "\n- received complete packets: %u", udp_receive_complete_packets);
-	string_format_append(call->result, "\n- received incomplete raw data: %u", udp_receive_incomplete_raw);
-	string_format_append(call->result, "\n- received complete raw data: %u", udp_receive_complete_raw);
 	string_format_append(call->result, "\n- receive errors: %u", udp_receive_errors);
-	string_format_append(call->result, "\n- segmentation timeouts: %u", udp_receive_segmentation_timeouts);
-	string_format_append(call->result, "\n- segmentation errors: %u", udp_receive_segmentation_errors);
 }
 
 void wlan_command_info(cli_command_call_t *call)

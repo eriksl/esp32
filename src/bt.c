@@ -12,15 +12,16 @@
 #include <services/gap/ble_svc_gap.h>
 #include <services/gatt/ble_svc_gatt.h>
 
+#include "string.h"
 #include "cli.h"
 #include "bt.h"
-#include "string.h"
 #include "log.h"
 #include "util.h"
 #include "packet.h"
 #include "config.h"
 #include "bt_pair_pin.h"
 #include "cli-command.h"
+#include "packet_header.h"
 
 void ble_store_config_init(void);
 
@@ -29,14 +30,6 @@ enum
 	SERVICE_HANDLE = 0xabf0,
 	CHARACTERISTICS_HANDLE = 0xabf1,
 	KEY_HANDLE = 0xabf2,
-};
-
-enum
-{
-	reassembly_buffer_size = 4096 + sizeof(packet_header_t) + 32,
-	reassembly_timeout_ms = 2000,
-	reassembly_raw_stream_fragmented_size = 512,
-	reassembly_expected_length_unknown = ~0UL,
 };
 
 static int gap_event(struct ble_gap_event *event, void *arg);
@@ -52,28 +45,19 @@ static uint8_t own_addr_type;
 static bool inited = false;
 static bool authorised = false;
 
-static string_t reassembly_buffer = (string_t)0;
-
-static unsigned int reassembly_expected_length = 0;
-static uint64_t reassembly_timestamp_start = 0;
-
 static unsigned int bt_stats_unauthorised_access;
-
-static unsigned int bt_stats_reassembly_timeouts;
-static unsigned int bt_stats_reassembly_oversize_chunk;
-static unsigned int bt_stats_reassembly_buffer_overrun;
-static unsigned int bt_stats_reassembly_errors;
 
 static unsigned int bt_stats_indication_error;
 static unsigned int bt_stats_indication_timeout;
 
 static unsigned int bt_stats_sent_bytes;
-static unsigned int bt_stats_sent_fragments;
 static unsigned int bt_stats_sent_packets;
 
 static unsigned int bt_stats_received_bytes;
-static unsigned int bt_stats_received_fragments;
 static unsigned int bt_stats_received_packets;
+static unsigned int bt_stats_received_raw_packets;
+static unsigned int bt_stats_received_packetised_packets;
+static unsigned int bt_stats_received_incomplete_packets;
 
 static const struct ble_gatt_svc_def gatt_definitions[] =
 {
@@ -103,13 +87,6 @@ static const struct ble_gatt_svc_def gatt_definitions[] =
 		0,
 	},
 };
-
-static inline void reassemble_reset(void)
-{
-	string_clear(reassembly_buffer);
-	reassembly_expected_length = 0;
-	reassembly_timestamp_start = 0;
-}
 
 static void nimble_port_task(void *param)
 {
@@ -285,7 +262,6 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 		case(BLE_GAP_EVENT_CONNECT):
 		{
 			authorised = false;
-			reassemble_reset();
 
 			if(event->connect.status != 0)
 				server_advertise();
@@ -330,7 +306,6 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 		case(BLE_GAP_EVENT_DISCONNECT):
 		{
 			authorised = false;
-			reassemble_reset();
 			server_advertise();
 
 			break;
@@ -400,104 +375,44 @@ static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *context, void *a
 static void bt_received(unsigned int connection_handle, unsigned int attribute_handle, const struct os_mbuf *mbuf)
 {
 	cli_buffer_t cli_buffer;
-	unsigned int chunk_length;
-	uint64_t timestamp_now;
+	unsigned int length;
+	string_t input_buffer;
 
 	assert(inited);
-	assert(reassembly_buffer);
 	assert(mbuf);
 
-	if(string_full(reassembly_buffer))
+	log_format("$ bt receive %d bytes", mbuf->om_len);
+
+	input_buffer = string_new(mbuf->om_len);
+	length = string_append_mbuf(input_buffer, mbuf);
+
+	bt_stats_received_bytes += length;
+
+	if(!packet_valid(input_buffer))
 	{
-		bt_stats_reassembly_oversize_chunk++;
-		return(reassemble_reset());
+		cli_buffer.packetised = 0;
+		bt_stats_received_raw_packets++;
+		goto raw;
 	}
 
-	chunk_length = string_append_mbuf(reassembly_buffer, mbuf);
-
-	bt_stats_received_bytes += chunk_length;
-	bt_stats_received_fragments++;
-
-	timestamp_now = esp_timer_get_time();
-
-	if(reassembly_timestamp_start && (((timestamp_now - reassembly_timestamp_start) / 1000) >= reassembly_timeout_ms))
+	if(!packet_complete(input_buffer))
 	{
-		bt_stats_reassembly_timeouts++;
-		return(reassemble_reset());
+		bt_stats_received_incomplete_packets++;
+		string_free(&input_buffer);
+		return;
 	}
 
-	if(!reassembly_expected_length)
-	{
-		if(reassembly_timestamp_start)
-		{
-			bt_stats_reassembly_errors++;
-			return(reassemble_reset());
-		}
+	bt_stats_received_packetised_packets++;
 
-		if(packet_is_packet(reassembly_buffer))
-		{
-			reassembly_expected_length = packet_length(reassembly_buffer);
+	cli_buffer.packetised = 1;
 
-			if(string_length(reassembly_buffer) < reassembly_expected_length)
-			{
-				reassembly_timestamp_start = timestamp_now;
-				return;
-			}
-			/* FALLTHROUGH */
-		}
-		else
-		{
-			if(chunk_length == reassembly_raw_stream_fragmented_size)
-			{
-				reassembly_expected_length = reassembly_expected_length_unknown;
-				reassembly_timestamp_start = timestamp_now;
-				return;
-			}
-			/* FALLTHROUGH */
-		}
-	}
-	else
-	{
-		if(!reassembly_timestamp_start)
-		{
-			bt_stats_reassembly_errors++;
-			return(reassemble_reset());
-		}
-
-		if(reassembly_expected_length == reassembly_expected_length_unknown)
-		{
-			if(chunk_length == reassembly_raw_stream_fragmented_size)
-				return;
-
-			/* FALLTHROUGH */
-		}
-		else
-		{
-			if(string_length(reassembly_buffer) > reassembly_expected_length)
-			{
-				bt_stats_reassembly_errors++;
-				return(reassemble_reset());
-			}
-			else
-			{
-				if(string_length(reassembly_buffer) < reassembly_expected_length)
-					return;
-
-				/* FALLTHROUGH */
-			}
-		}
-	}
-
+raw:
 	cli_buffer.source = cli_source_bt;
-	cli_buffer.length = string_length(reassembly_buffer);
-	cli_buffer.data_from_malloc = 1;
-	cli_buffer.data = util_memory_alloc_spiram(cli_buffer.length);
-	util_memcpy(cli_buffer.data, string_data(reassembly_buffer), cli_buffer.length);
+	cli_buffer.data = input_buffer;
 	cli_buffer.bt.connection_handle = connection_handle;
 	cli_buffer.bt.attribute_handle = attribute_handle;
 
 	cli_receive_queue_push(&cli_buffer);
-	reassemble_reset();
 
 	bt_stats_received_packets++;
 }
@@ -506,55 +421,35 @@ void bt_send(const cli_buffer_t *cli_buffer)
 {
 	static const unsigned int max_chunk = /* netto data */ 512 + /* sizeof(packet_header_t) */ 32 + /* HCI headers */ 8;
 	struct os_mbuf *txom;
-	unsigned int offset, chunk, length, attempt;
-	int rv;
+	int rv, attempt;
 
-	assert(max_chunk == 552); /* sync this value with espif */
 	assert(inited);
+	assert(max_chunk == 552); /* sync this value with espif */
+	assert(string_length(cli_buffer->data) < max_chunk);
 
-	offset = 0;
-	length = cli_buffer->length;
-
-	while(length > 0)
+	for(attempt = 16; attempt > 0; attempt--)
 	{
-		chunk = length;
+		txom = ble_hs_mbuf_from_flat(string_data(cli_buffer->data), string_length(cli_buffer->data));
+		assert(txom);
 
-		if(chunk > max_chunk)
-			chunk = max_chunk;
+		rv = ble_gatts_indicate_custom(cli_buffer->bt.connection_handle, cli_buffer->bt.attribute_handle, txom);
 
-		for(attempt = 16; attempt > 0; attempt--)
-		{
-			txom = ble_hs_mbuf_from_flat(&cli_buffer->data[offset], chunk);
-			assert(txom);
-
-			rv = ble_gatts_indicate_custom(cli_buffer->bt.connection_handle, cli_buffer->bt.attribute_handle, txom);
-
-			if(!rv)
-				break;
-
-			if(rv != BLE_HS_ENOMEM)
-			{
-				bt_stats_indication_error++;
-				return;
-			}
-
-			vTaskDelay(100 / portTICK_PERIOD_MS);
-		}
-
-		if(attempt == 0)
-		{
-			bt_stats_indication_timeout++;
+		if(!rv)
 			break;
+
+		if(rv != BLE_HS_ENOMEM)
+		{
+			bt_stats_indication_error++;
+			return;
 		}
 
-		bt_stats_sent_fragments++;
-		bt_stats_sent_bytes += chunk;
-
-		length -= chunk;
-		offset += chunk;
+		util_sleep(100);
 	}
 
-	bt_stats_sent_packets++;
+	if(attempt == 0)
+		bt_stats_indication_timeout++;
+	else
+		bt_stats_sent_packets++;
 }
 
 void bt_init(void)
@@ -566,10 +461,6 @@ void bt_init(void)
 
 	if(!config_get_string(hostname_key, hostname))
 		string_assign_cstr(hostname, "esp32");
-
-	reassembly_buffer = string_new(reassembly_buffer_size);
-	assert(reassembly_buffer);
-	reassemble_reset();
 
 	util_abort_on_esp_err("nimble_port_init", nimble_port_init());
 
@@ -608,19 +499,14 @@ void bluetooth_command_info(cli_command_call_t *call)
 	string_format_append(call->result, "\n  unauthorised access: %u", bt_stats_unauthorised_access);
 	string_format_append(call->result, "\n  data sent:");
 	string_format_append(call->result, "\n  - packets: %u", bt_stats_sent_packets);
-	string_format_append(call->result, "\n  - fragments: %u", bt_stats_sent_fragments);
 	string_format_append(call->result, "\n  - bytes: %u", bt_stats_sent_bytes);
 
 	string_format_append(call->result, "\n  data received:");
 	string_format_append(call->result, "\n  - packets: %u", bt_stats_received_packets);
-	string_format_append(call->result, "\n  - fragments: %u", bt_stats_received_fragments);
 	string_format_append(call->result, "\n  - bytes: %u", bt_stats_received_bytes);
-
-	string_format_append(call->result, "\n  reassembly:");
-	string_format_append(call->result, "\n  - timeouts: %u", bt_stats_reassembly_timeouts);
-	string_format_append(call->result, "\n  - oversized chunks: %u", bt_stats_reassembly_oversize_chunk);
-	string_format_append(call->result, "\n  - buffer overruns: %u", bt_stats_reassembly_buffer_overrun);
-	string_format_append(call->result, "\n  - errors: %u", bt_stats_reassembly_errors);
+	string_format_append(call->result, "\n  - incomplete packets: %u", bt_stats_received_incomplete_packets);
+	string_format_append(call->result, "\n  - packetised packets: %u", bt_stats_received_packetised_packets);
+	string_format_append(call->result, "\n  - raw packets: %u", bt_stats_received_raw_packets);
 
 	string_format_append(call->result, "\n  indication:");
 	string_format_append(call->result, "\n  - errors: %u", bt_stats_indication_error);
