@@ -46,7 +46,7 @@ void ota_command_start(cli_command_call_t *call)
 	static const unsigned int source_to_chunk[cli_source_size] =
 	{
 		[cli_source_none] =		0,
-		[cli_source_bt] =		128,
+		[cli_source_bt] =		512,
 		[cli_source_console] =	0,
 		[cli_source_wlan_tcp] =	1024,
 		[cli_source_wlan_udp] =	4096,

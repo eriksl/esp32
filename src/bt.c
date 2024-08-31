@@ -134,7 +134,7 @@ static int gatt_key_event(uint16_t connection_handle, uint16_t attribute_handle,
 			string_auto(output_string, 16);
 			unsigned int length;
 
-			length = string_append_mbuf(input_string, context->om);
+			length = string_assign_mbuf(input_string, context->om);
 
 			if(length != 16)
 				break;
@@ -375,18 +375,14 @@ static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *context, void *a
 static void bt_received(unsigned int connection_handle, unsigned int attribute_handle, const struct os_mbuf *mbuf)
 {
 	cli_buffer_t cli_buffer;
-	unsigned int length;
 	string_t input_buffer;
 
 	assert(inited);
 	assert(mbuf);
 
-	log_format("$ bt receive %d bytes", mbuf->om_len);
+	input_buffer = string_new_from_mbuf(mbuf);
 
-	input_buffer = string_new(mbuf->om_len);
-	length = string_append_mbuf(input_buffer, mbuf);
-
-	bt_stats_received_bytes += length;
+	bt_stats_received_bytes += string_length(input_buffer);
 
 	if(!packet_valid(input_buffer))
 	{

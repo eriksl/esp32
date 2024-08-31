@@ -25,6 +25,9 @@ void _string_auto(string_t dst, unsigned int size);
 #define string_new(l) _string_new(l, __FILE__, __LINE__)
 string_t _string_new(unsigned int length, const char *file, unsigned int line);
 
+#define string_new_from_mbuf(l) _string_new_from_mbuf(l, __FILE__, __LINE__)
+string_t _string_new_from_mbuf(const void *mbuf, const char *file, unsigned int line);
+
 #define string_free(s) _string_free(s, __FILE__, __LINE__)
 void _string_free(string_t *string, const char *file, unsigned int line);
 

@@ -142,6 +142,19 @@ string_t _string_new(unsigned int size, const char *file, unsigned int line)
 	return((string_t)_dst);
 }
 
+string_t _string_new_from_mbuf(const void *mbuf_in, const char *file, unsigned int line)
+{
+	const struct os_mbuf *mbuf = (const struct os_mbuf *)mbuf_in;
+	string_t dst;
+
+	assert(mbuf);
+
+	dst = string_new(os_mbuf_len(mbuf));
+	string_assign_mbuf(dst, mbuf);
+
+	return(dst);
+}
+
 string_t _string_const(const char *const_string, const char *file, unsigned int line)
 {
 	_string_t *_dst;
