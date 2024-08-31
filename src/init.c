@@ -14,12 +14,14 @@
 #include "info.h"
 #include "perftest.h"
 #include "ramdisk.h"
-
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
+#include "notify.h"
 
 void app_main(void)
 {
+	notify_init();
+	notify(0, 0xff, 0x00, 0x00);
+	notify(1, 0xff, 0x00, 0x00);
+	notify(2, 0xff, 0x00, 0x00);
 	console_init_1();
 	info_init();
 	string_module_init();
@@ -35,6 +37,8 @@ void app_main(void)
 	perftest_init();
 #endif
 	console_init_2();
+	notify(0, 0x00, 0x01, 0x00);
+	notify(2, 0x00, 0x00, 0x00);
 
 	run_main();
 }

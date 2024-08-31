@@ -10,6 +10,7 @@
 #include "util.h"
 #include "packet.h"
 #include "cli-command.h"
+#include "notify.h"
 
 #include <esp_event.h>
 #include <esp_wifi.h>
@@ -72,32 +73,49 @@ typedef struct
 {
 	uint32_t valid_transitions;
 	const char *name;
+	struct
+	{
+		unsigned int r;
+		unsigned int g;
+		unsigned int b;
+	} colour;
 } state_info_t;
 
 static const state_info_t state_info[ws_size] =
 {
 	[ws_invalid] =							{ (1 << ws_init),
-											"invalid" },
+											"invalid",
+											{ 0xff, 0x00, 0x00 }},
 	[ws_init] =								{ (1 << ws_init) | (1 << ws_associating),
-											"init" },
+											"init",
+											{ 0xff, 0x00, 0x00 }},
 	[ws_associating] =						{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_associated)  | (1 << ws_rescue_ap_mode_idle) | (1 << ws_rescue_ap_mode_associated),
-											"associating" },
+											"associating",
+											{ 0x05, 0x00, 0x05 }},
 	[ws_associated] =						{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv4_address_acquired) | (1 << ws_ipv6_link_local_address_acquired),
-											"associated" },
+											"associated",
+											{ 0x00, 0x00, 0x05 }},
 	[ws_ipv4_address_acquired] =			{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv6_link_local_address_acquired),
-											"ipv4 address acquired" },
+											"ipv4 address acquired",
+											{ 0x00, 0x05, 0x00 }},
 	[ws_ipv6_link_local_address_acquired] =	{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv4_address_acquired) | (1 << ws_ipv6_slaac_address_acquired) | (1 << ws_ipv6_static_address_active),
-											"ipv6 link local address acquired" },
+											"ipv6 link local address acquired",
+											{ 0x01, 0x00, 0x00 }},
 	[ws_ipv6_slaac_address_acquired] =		{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv6_static_address_active),
-											"ipv6 autoconfig address acquired" },
+											"ipv6 autoconfig address acquired",
+											{ 0x00, 0x00, 0x01 }},
 	[ws_ipv6_static_address_active] =		{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv6_slaac_address_acquired) | (1 << ws_ipv6_static_address_active),
-											"ipv6 static address set" },
+											"ipv6 static address set",
+											{ 0x00, 0x01, 0x00 }},
 	[ws_rescue_ap_mode_init] =				{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_rescue_ap_mode_idle) | (1 << ws_rescue_ap_mode_associated),
-											"rescue access point mode init" },
+											"rescue access point mode init",
+											{ 0xff, 0x40, 0x40 }},
 	[ws_rescue_ap_mode_idle] =				{ (1 << ws_rescue_ap_mode_init) | (1 << ws_rescue_ap_mode_associated),
-											"rescue access point mode idle" },
+											"rescue access point mode idle",
+											{ 0xff, 0x88, 0x88 }},
 	[ws_rescue_ap_mode_associated] =		{ (1 << ws_rescue_ap_mode_idle),
-											"rescue access point mode associated" },
+											"rescue access point mode associated",
+											{ 0xff, 0xff, 0xff }},
 };
 
 static const char *wlan_state_to_cstr(wlan_state_t state_in)
@@ -159,6 +177,8 @@ static void set_state(wlan_state_t state_new)
 		state_time = 0;
 
 	state = state_new;
+
+	notify(1, state_info[state].colour.r, state_info[state].colour.g, state_info[state].colour.b);
 }
 
 void state_callback(TimerHandle_t handle)

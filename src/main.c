@@ -1,9 +1,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "string.h"
 #include "main.h"
-#include "ledpixel.h"
+#include "string.h"
 #include "log.h"
 #include "util.h"
 
@@ -12,24 +11,6 @@
 
 void run_main(void)
 {
-	ledpixel_t ledpixel;
-
-	ledpixel = ledpixel_new(1, 47);
-	ledpixel_set(ledpixel, 0, 0x00, 0x00, 0xff);
-	ledpixel_flush(ledpixel);
-
-	vTaskDelay(200 / portTICK_PERIOD_MS);
-
-	ledpixel_set(ledpixel, 0, 0x00, 0xff, 0x00);
-	ledpixel_flush(ledpixel);
-
-	for(;;)
-	{
-		vTaskDelay(500 / portTICK_PERIOD_MS);
-		ledpixel_set(ledpixel, 0, 0xff, 0x00, 0x00);
-		ledpixel_flush(ledpixel);
-		vTaskDelay(500 / portTICK_PERIOD_MS);
-		ledpixel_set(ledpixel, 0, 0x00, 0x00, 0xff);
-		ledpixel_flush(ledpixel);
-	}
+	vTaskSuspend(NULL);
+	util_abort("main: vTaskSuspend returned");
 }

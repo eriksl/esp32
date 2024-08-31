@@ -11,6 +11,7 @@ idf_component_register(
 		"ledpixel.c"
 		"log.c"
 		"main.c"
+		"notify.c"
 		"packet.c"
 		"perftest.c"
 		"ota.c"
