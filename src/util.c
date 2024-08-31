@@ -40,6 +40,11 @@ void util_init(void)
 	inited = true;
 }
 
+void util_sleep(unsigned int msec)
+{
+	vTaskDelay(msec / portTICK_PERIOD_MS);
+}
+
 uint32_t util_md5_32(unsigned int length, const uint8_t *data)
 {
 	uint8_t hash[16];

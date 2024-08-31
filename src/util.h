@@ -31,6 +31,7 @@ typedef enum
 #define util_memcpy(to, from, length) do { _util_memcpy(to, from, length, __FILE__, __LINE__); } while(0)
 
 void util_init(void);
+void util_sleep(unsigned int msec);
 uint32_t util_md5_32(unsigned int length, const uint8_t *data);
 unsigned int util_partition_to_slot(const esp_partition_t *partition);
 void util_esp_ipv4_addr_to_string(string_t dst, const esp_ip4_addr_t *src);
