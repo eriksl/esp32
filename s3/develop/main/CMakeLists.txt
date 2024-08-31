@@ -13,7 +13,7 @@ idf_component_register(
 		"main.c"
 		"packet.c"
 		"perftest.c"
-		"otacli.c"
+		"ota.c"
 		"ramdisk.c"
 		"string.c"
 		"util.c"
