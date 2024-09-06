@@ -1,6 +1,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <sys/socket.h>
+#include <sdkconfig.h>
+
+#if defined(CONFIG_BUILD_NETPERF_CODE)
 
 #include "perftest.h"
 #include "string.h"
@@ -285,3 +288,8 @@ void perftest_init(void)
 	if(xTaskCreatePinnedToCore(run_udp_send, "perf-udp-send", 2 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
 		util_abort("perftest: xTaskCreatePinnedToNode udp send");
 }
+#else
+void perftest_init(void)
+{
+}
+#endif

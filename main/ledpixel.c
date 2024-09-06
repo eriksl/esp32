@@ -1,11 +1,13 @@
 #include <stdint.h>
 #include <stdbool.h>
+#include <sdkconfig.h>
+
+#if defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
 
 #include "string.h"
 #include "ledpixel.h"
 #include "log.h"
 #include "util.h"
-
 #include <led_strip.h>
 
 typedef struct
@@ -58,3 +60,5 @@ void ledpixel_flush(ledpixel_t ledpixel)
 
 	util_abort_on_esp_err("led_strip_refresh", led_strip_refresh(_ledpixel->handle));
 }
+
+#endif

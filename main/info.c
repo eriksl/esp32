@@ -7,6 +7,7 @@
 #include <esp_ota_ops.h>
 #include <esp_system.h>
 #include <esp_heap_caps.h>
+#include <sdkconfig.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -47,7 +48,7 @@ void info_command_info(cli_command_call_t *call)
 
 	esp_chip_info(&chip_info);
 
-	string_format_append(call->result, "\nSoC: %s with %d cores\nRF: %s%s%s%s\n",
+	string_format_append(call->result, "\nSoC: %s with %d cores\nRF: %s%s%s%s",
 		CONFIG_IDF_TARGET,
 		chip_info.cores,
 		(chip_info.features & CHIP_FEATURE_WIFI_BGN) ? "WiFi/" : "",
@@ -57,12 +58,22 @@ void info_command_info(cli_command_call_t *call)
 
 	unsigned major_rev = chip_info.revision / 100;
 	unsigned minor_rev = chip_info.revision % 100;
-	string_format_append(call->result, "Revision: %d.%d\n", major_rev, minor_rev);
+	string_format_append(call->result, "\nRevision: %d.%d", major_rev, minor_rev);
 
 	esp_flash_get_size(NULL, &flash_size);
 
-	string_format_append(call->result, "Flash: %lu MB %s\n", flash_size / (1024 * 1024),
+	string_format_append(call->result, "\nFlash: %lu MB %s", flash_size / (1024 * 1024),
 		(chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
+
+	string_format_append(call->result, "\nBSP:\n- board name: %s\n- flash size: %u MB\n- SPI RAM size: %u MB",
+			CONFIG_BSP_BOARD_TYPE_NAME,
+			CONFIG_BSP_FLASH_SIZE / 1024,
+			CONFIG_BSP_SPIRAM_SIZE / 1024);
+#if defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
+	string_format_append(call->result, "\n- ledpixel at GPIO %u", CONFIG_BSP_LED_GPIO);
+#else
+	string_append_cstr(call->result, "\n- no ledpixel");
+#endif
 }
 
 void info_command_info_partitions(cli_command_call_t *call)

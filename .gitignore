@@ -2,5 +2,6 @@
 build/
 main/build
 managed_components
-s3/develop/main/bt_pair_pin.h
-src/bt_pair_pin.h
+bt_pair_pin.h
+sdkconfig
+sdkconfig.old

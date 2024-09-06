@@ -33,9 +33,7 @@ void app_main(void)
 	cli_init();
 	bt_init();
 	wlan_init();
-#if 0
 	perftest_init();
-#endif
 	console_init_2();
 	notify(0, 0x00, 0x01, 0x00);
 	notify(2, 0x00, 0x00, 0x00);

@@ -1,13 +1,14 @@
 #include <stdint.h>
 #include <stdbool.h>
+#include <sdkconfig.h>
 
 #include "notify.h"
-#include "string.h"
-#include "main.h"
-#include "ledpixel.h"
+
+#if defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
 #include "string.h"
 #include "log.h"
 #include "util.h"
+#include "ledpixel.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -41,7 +42,7 @@ void notify_init(void)
 
 	assert(!inited);
 
-	ledpixel = ledpixel_new(1, 47);
+	ledpixel = ledpixel_new(1, CONFIG_BSP_LED_GPIO);
 
 	for(state = 0; state < notify_state_size; state++)
 	{
@@ -78,3 +79,12 @@ void notify(unsigned int new_state, unsigned int r, unsigned g, unsigned int b)
 
 	timer_handler((struct tmrTimerControl *)0);
 }
+#else
+void notify_init(void)
+{
+}
+
+void notify(unsigned int new_state, unsigned int r, unsigned g, unsigned int b)
+{
+}
+#endif
