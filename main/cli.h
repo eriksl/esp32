@@ -3,7 +3,7 @@
 enum
 {
 	cli_buffer_magic_number_head = 0x1234abcd,
-	cli_buffer_magic_number_tail  = 0xdcba4321,
+	cli_buffer_magic_number_tail = 0xdcba4321,
 };
 
 typedef enum
