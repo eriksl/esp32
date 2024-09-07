@@ -45,6 +45,7 @@ static uint8_t own_addr_type;
 static bool inited = false;
 static bool authorised = false;
 
+static unsigned int bt_stats_authentication_attempts;
 static unsigned int bt_stats_unauthorised_access;
 
 static unsigned int bt_stats_indication_error;
@@ -133,6 +134,8 @@ static int gatt_key_event(uint16_t connection_handle, uint16_t attribute_handle,
 			static string_auto(input_string, 16);
 			string_auto(output_string, 16);
 			unsigned int length;
+
+			bt_stats_authentication_attempts++;
 
 			length = string_assign_mbuf(input_string, context->om);
 
@@ -492,6 +495,7 @@ void bluetooth_command_info(cli_command_call_t *call)
 
 	string_format_append(call->result, "\n  address: %s", string_cstr(string_addr));
 	string_format_append(call->result, "\n  authorised: %s", authorised ? "yes" : "no");
+	string_format_append(call->result, "\n  authentication attempts: %u", bt_stats_authentication_attempts);
 	string_format_append(call->result, "\n  unauthorised access: %u", bt_stats_unauthorised_access);
 	string_format_append(call->result, "\n  data sent:");
 	string_format_append(call->result, "\n  - packets: %u", bt_stats_sent_packets);
