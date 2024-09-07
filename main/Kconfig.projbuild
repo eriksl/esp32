@@ -5,43 +5,23 @@ config BUILD_NETPERF_CODE
 	bool
 	default n
 
-choice BSP_BOARD_TYPE
-	prompt "Board type"
-	help
-		Select the board.
+menu "BSP - do not change, set automically, change symlink to sdkconfig.defaults"
 
-	config BSP_WEMOS_LOLIN_S3_MINI
-		bool "WEMOS Lolin S3 Mini"
-	config BSP_LILYGO_T7_S3
-		bool "LiliGO T7 S3"
-endchoice
+	config BSP_BOARD_TYPE_NAME
+		string "Board type name"
 
-config BSP_BOARD_TYPE_NAME
-	string
-	default "WEMOS Lolin S3 Mini" if BSP_WEMOS_LOLIN_S3_MINI
-	default "LilyGO T7 S3" if BSP_LILYGO_T7_S3
+	config BSP_FLASH_SIZE
+		int "FLASH size"
 
-config BSP_FLASH_SIZE
-	int
-	default 4096 if BSP_WEMOS_LOLIN_S3_MINI
-	default 16384 if BSP_LILYGO_T7_S3
+	config BSP_SPIRAM_SIZE
+		int "SPIRAM size"
 
-config BSP_SPIRAM_SIZE
-	int
-	default 2048 if BSP_WEMOS_LOLIN_S3_MINI
-	default 8192 if BSP_LILYGO_T7_S3
+	config BSP_LED_TYPE
+		string "Ledpixel type"
 
-config BSP_LED_TYPE
-	string
-	default LEDPIXEL if BSP_WEMOS_LOLIN_S3_MINI
-	default NONE if BSP_LILYGO_T7_S3
+	config BSP_LED_GPIO
+		int "GPIO led is connected to"
 
-config BSP_LED_GPIO
-	int
-	default 47 if BSP_WEMOS_LOLIN_S3_MINI
-	default -1 if BSP_LILYGO_T7_S3
-
-config BSP_LED_HAVE_LEDPIXEL
-	bool
-	default y if BSP_LED_TYPE = "LEDPIXEL"
-	default n
+	config BSP_LED_HAVE_LEDPIXEL
+		bool "Ledpixel available?"
+endmenu
