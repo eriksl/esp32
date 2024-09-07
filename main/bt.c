@@ -420,35 +420,48 @@ void bt_send(const cli_buffer_t *cli_buffer)
 {
 	static const unsigned int max_chunk = /* netto data */ 512 + /* sizeof(packet_header_t) */ 32 + /* HCI headers */ 8;
 	struct os_mbuf *txom;
-	int rv, attempt;
+	int offset, chunk, rv, attempt;
 
 	assert(inited);
 	assert(max_chunk == 552); /* sync this value with espif */
-	assert(string_length(cli_buffer->data) < max_chunk);
 
-	for(attempt = 16; attempt > 0; attempt--)
+	for(offset = 0; offset < string_length(cli_buffer->data);)
 	{
-		txom = ble_hs_mbuf_from_flat(string_data(cli_buffer->data), string_length(cli_buffer->data));
-		assert(txom);
-
-		rv = ble_gatts_indicate_custom(cli_buffer->bt.connection_handle, cli_buffer->bt.attribute_handle, txom);
-
-		if(!rv)
+		if((chunk = string_length(cli_buffer->data) - offset) < 0)
 			break;
 
-		if(rv != BLE_HS_ENOMEM)
+		if(chunk > max_chunk)
+			chunk = max_chunk;
+
+		for(attempt = 16; attempt > 0; attempt--)
 		{
-			bt_stats_indication_error++;
-			return;
+			txom = ble_hs_mbuf_from_flat(string_data(cli_buffer->data) + offset, chunk);
+			assert(txom);
+
+			rv = ble_gatts_indicate_custom(cli_buffer->bt.connection_handle, cli_buffer->bt.attribute_handle, txom);
+
+			if(rv == 0)
+				break;
+
+			if(rv != BLE_HS_ENOMEM)
+			{
+				bt_stats_indication_error++;
+				return;
+			}
+
+			util_sleep(100);
 		}
 
-		util_sleep(100);
-	}
+		if(attempt == 0)
+		{
+			bt_stats_indication_timeout++;
+			break;
+		}
 
-	if(attempt == 0)
-		bt_stats_indication_timeout++;
-	else
+		offset += chunk;
+		bt_stats_sent_bytes += chunk;
 		bt_stats_sent_packets++;
+	}
 }
 
 void bt_init(void)
