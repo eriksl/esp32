@@ -1,7 +1,4 @@
 *.swp
 build/
-main/build
 managed_components
 bt_pair_pin.h
-sdkconfig
-sdkconfig.old

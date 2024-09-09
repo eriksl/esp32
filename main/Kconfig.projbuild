@@ -5,7 +5,7 @@ config BUILD_NETPERF_CODE
 	bool
 	default n
 
-menu "BSP - do not change, set automically, change symlink to sdkconfig.defaults"
+menu "BSP - do not change, set automically, when invoked using script idf"
 
 	config BSP_BOARD_TYPE_NAME
 		string "Board type name"
@@ -16,12 +16,12 @@ menu "BSP - do not change, set automically, change symlink to sdkconfig.defaults
 	config BSP_SPIRAM_SIZE
 		int "SPIRAM size"
 
-	config BSP_LED_TYPE
-		string "Ledpixel type"
-
-	config BSP_LED_GPIO
-		int "GPIO led is connected to"
-
 	config BSP_LED_HAVE_LEDPIXEL
 		bool "Ledpixel available?"
+
+	config BSP_LED_TYPE
+		string "LED type"
+
+	config BSP_LED_GPIO
+		int "GPIO LED is connected to"
 endmenu

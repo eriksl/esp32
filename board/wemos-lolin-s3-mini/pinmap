@@ -1,0 +1,51 @@
+	USED	AVAIL	FREE	SPI0/1			SPI2				SDM			GPIO		bootstrap		USB JTAG
+
+0	*																					boot select
+1			*		*
+2	*		*																LCD D/C
+3	*		*																			boot
+4	*		*													backlight
+5			*		*
+6			*		*
+7			*		*
+8			*		*
+9			*		*						(FSPIHD=IO_D3)
+10	*		*								FSPICS0=CS0
+11	*		*								FSPID=MOSI/IO_D0)
+12	*		*								FSPCLK=SCK
+13	*		*								FSPIQ=MISO/IO_D1
+14			*		*						(FSPIWP=IO_D2)
+15			*		*
+16			*		*
+17			*		*
+18			*		*
+19	*																									D-
+20	*																									D+
+21			*
+[22]
+[23]
+[24]
+[25]
+26	*						CS1=CS1
+27	*						HD=IO_D3
+28	*						WP=IO_D2
+29	*						CS0=CS0
+30	*						CLK=CLK
+31	*						Q=IO_D1
+32	*						D=IO_D0
+33			*		*		(IO4=IO_D4)
+34			*		*		(IO5=IO_D5)
+35			*		*		(IO6=IO_D6)
+36			*		*		(IO7=IO_D7)
+37			*		*		(DQS)
+38			*		*
+39
+40
+41
+42
+43			*		*
+44			*		*
+45
+46
+47	*																		LED PIXEL
+48
