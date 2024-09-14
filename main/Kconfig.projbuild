@@ -16,11 +16,11 @@ menu "BSP - do not change, set automically, when invoked using script idf"
 	config BSP_SPIRAM_SIZE
 		int "SPIRAM size"
 
-	config BSP_LED_HAVE_LEDPIXEL
-		bool "Ledpixel available?"
+	config BSP_LED_HAVE_LED
+		bool "Notification LED available?"
 
-	config BSP_LED_TYPE
-		string "LED type"
+	config BSP_LED_HAVE_LEDPIXEL
+		bool "Notification LEDpixel available?"
 
 	config BSP_LED_GPIO
 		int "GPIO LED is connected to"

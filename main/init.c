@@ -19,9 +19,7 @@
 void app_main(void)
 {
 	notify_init();
-	notify(0, 0xff, 0x00, 0x00);
-	notify(1, 0xff, 0x00, 0x00);
-	notify(2, 0xff, 0x00, 0x00);
+	notify(notify_sys_booting);
 	console_init_1();
 	info_init();
 	string_module_init();
@@ -35,8 +33,6 @@ void app_main(void)
 	wlan_init();
 	perftest_init();
 	console_init_2();
-	notify(0, 0x00, 0x01, 0x00);
-	notify(2, 0x00, 0x00, 0x00);
-
+	notify(notify_sys_booting_finished);
 	run_main();
 }
