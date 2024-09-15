@@ -586,8 +586,8 @@ void wlan_udp_send(const cli_buffer_t *src)
 	{
 		chunk = length;
 
-		if(chunk > 1024)
-			chunk = 1024;
+		//if(chunk > 1024) // FIXME do proper segmentation on both sides
+			//chunk = 1024;
 
 		sent = sendto(udp_socket_fd, string_data(src->data) + offset, chunk, 0, (const struct sockaddr *)&src->ip.address.sin6_addr, src->ip.address.sin6_length);
 
