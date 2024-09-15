@@ -22,7 +22,14 @@ enum
 {
 	line_size = 64,
 	line_amount = 8,
+	usb_uart_rx_buffer_size = 128,
+	usb_uart_tx_buffer_size = 256,
+	usb_uart_tx_timeout_ms = 10,
 };
+
+static_assert(usb_uart_rx_buffer_size > 64); // required by driver
+static_assert(usb_uart_tx_buffer_size > 64); // required by driver
+static_assert(pdMS_TO_TICKS(usb_uart_tx_timeout_ms) > 0);
 
 typedef enum
 {
@@ -58,6 +65,7 @@ static unsigned int console_stats_bytes_received;
 static unsigned int console_stats_bytes_received_error;
 static unsigned int console_stats_lines_sent;
 static unsigned int console_stats_bytes_sent;
+static unsigned int console_stats_bytes_dropped;
 
 static char read_console(void)
 {
@@ -83,12 +91,14 @@ static void write_console(unsigned int length, const char data[])
 	{
 		chunk = length;
 
-		if(chunk > 128)
-			chunk = 128;
+		if(chunk > usb_uart_tx_buffer_size)
+			chunk = usb_uart_tx_buffer_size;
 
-		usb_serial_jtag_write_bytes(&data[offset], chunk, ~0);
-
-		assert(length >= chunk);
+		if(!usb_serial_jtag_write_bytes(&data[offset], chunk, pdMS_TO_TICKS(usb_uart_tx_timeout_ms)))
+		{
+			console_stats_bytes_dropped += length - offset;
+			break;
+		}
 
 		length -= chunk;
 		offset += chunk;
@@ -359,8 +369,8 @@ void console_init_1()
 		line->length = 0;
 	}
 
-	usb_serial_jtag_config.rx_buffer_size = 128;
-	usb_serial_jtag_config.tx_buffer_size = 128;
+	usb_serial_jtag_config.rx_buffer_size = usb_uart_rx_buffer_size;
+	usb_serial_jtag_config.tx_buffer_size = usb_uart_tx_buffer_size;
 	util_abort_on_esp_err("usb_serial_jtag_driver_install", usb_serial_jtag_driver_install(&usb_serial_jtag_config));
 
 	inited_1 = true;
@@ -411,11 +421,12 @@ void console_command_info(cli_command_call_t *call)
 	assert(inited_2);
 	assert(call->parameter_count == 0);
 
-	string_format(call->result, "entered:");
+	string_format(call->result, "received:");
 	string_format_append(call->result, "\n- lines: %u", console_stats_lines_received);
 	string_format_append(call->result, "\n- bytes: %u", console_stats_bytes_received);
 	string_format_append(call->result, "\n- errors: %u", console_stats_bytes_received_error);
-	string_format_append(call->result, "\nreplies:");
+	string_format_append(call->result, "\nsent:");
 	string_format_append(call->result, "\n- lines: %u", console_stats_lines_sent);
 	string_format_append(call->result, "\n- bytes: %u", console_stats_bytes_sent);
+	string_format_append(call->result, "\n- dropped: %u", console_stats_bytes_dropped);
 }
