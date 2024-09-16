@@ -1,10 +1,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
 #include "string.h"
 #include "cli.h"
 #include "bt.h"
-#include "main.h"
 #include "log.h"
 #include "console.h"
 #include "config.h"
@@ -34,5 +36,6 @@ void app_main(void)
 	perftest_init();
 	console_init_2();
 	notify(notify_sys_booting_finished);
-	run_main();
+	vTaskSuspend(NULL);
+	util_abort("init: vTaskSuspend returned");
 }

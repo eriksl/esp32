@@ -10,7 +10,6 @@ idf_component_register(
 		"init.c"
 		"ledpixel.c"
 		"log.c"
-		"main.c"
 		"notify.c"
 		"packet.c"
 		"perftest.c"
