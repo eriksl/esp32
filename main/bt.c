@@ -407,6 +407,7 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 
 raw:
 	cli_buffer.source = cli_source_bt;
+	cli_buffer.mtu = 512;
 	cli_buffer.data = input_buffer;
 	cli_buffer.bt.connection_handle = connection_handle;
 	cli_buffer.bt.attribute_handle = attribute_handle;

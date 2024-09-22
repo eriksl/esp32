@@ -46,6 +46,9 @@ void info_command_info(cli_command_call_t *call)
 			">   build start: %s %s\n",
 			__DATE__, __TIME__, desc->date, desc->time);
 
+	string_format_append(call->result,
+			"# transport chunk size: %u", call->mtu);
+
 	esp_chip_info(&chip_info);
 
 	string_format_append(call->result, "\nSoC: %s with %d cores\nRF: %s%s%s%s",

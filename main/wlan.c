@@ -423,6 +423,7 @@ static void run_tcp(void *)
 
 			util_memcpy(&cli_buffer.ip.address.sin6_addr, &si6_addr, si6_addr_length);
 			cli_buffer.ip.address.sin6_length = si6_addr_length;
+			cli_buffer.mtu = 1024;
 			cli_buffer.source = cli_source_wlan_tcp;
 
 			length = string_recvfrom_fd(receive_buffer, tcp_socket_fd, (unsigned int *)0, (void *)0);
@@ -572,6 +573,7 @@ static void run_udp(void *)
 		udp_receive_packets++;
 
 		cli_buffer.source = cli_source_wlan_udp;
+		cli_buffer.mtu = 4096;
 		cli_buffer.data = string_new(string_length(receive_buffer));
 		string_assign_string(cli_buffer.data, receive_buffer);
 

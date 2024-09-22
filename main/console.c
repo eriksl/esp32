@@ -324,6 +324,7 @@ static void run_console(void *)
 		if(line->length)
 		{
 			cli_buffer.source = cli_source_console;
+			cli_buffer.mtu = 0;
 			cli_buffer.data = string_new(line->length);
 			string_assign_data(cli_buffer.data, line->length, (uint8_t *)line->data);
 

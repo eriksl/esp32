@@ -974,6 +974,7 @@ static void run_receive_queue(void *)
 		}
 
 		call.source =			cli_buffer.source;
+		call.mtu =				cli_buffer.mtu;
 		call.parameter_count =	parameter_count;
 		call.oob =				oob_data;
 

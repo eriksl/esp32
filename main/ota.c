@@ -43,17 +43,6 @@ void ota_command_start(cli_command_call_t *call)
 	int rv;
 	unsigned int length;
 	const esp_partition_t *partition;
-	static const unsigned int source_to_chunk[cli_source_size] =
-	{
-		[cli_source_none] =		0,
-		[cli_source_bt] =		512,
-		[cli_source_console] =	0,
-		[cli_source_wlan_tcp] =	1024,
-		[cli_source_wlan_udp] =	4096,
-	};
-
-	assert(call->source > cli_source_none);
-	assert(call->source < cli_source_size);
 
 	assert(call->parameter_count == 1);
 
@@ -98,7 +87,7 @@ void ota_command_start(cli_command_call_t *call)
 
 	ota_length = length;
 
-	string_format(call->result, "OK start write ota, chunk size %u partition %u/%s", source_to_chunk[call->source], util_partition_to_slot(partition), partition->label);
+	string_format(call->result, "OK start write ota, chunk size %u partition %u/%s", /* FIXME */ call->mtu, util_partition_to_slot(partition), partition->label);
 }
 
 void ota_command_write(cli_command_call_t *call)

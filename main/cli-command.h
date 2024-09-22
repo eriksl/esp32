@@ -1,4 +1,5 @@
 #pragma once
+
 #include "cli.h"
 
 enum
@@ -37,6 +38,7 @@ _Static_assert(sizeof(cli_parameter_t) == 12);
 typedef struct
 {
 	cli_source_t		source;
+	unsigned int		mtu;
 	unsigned int		parameter_count;
 	cli_parameter_t		parameters[parameters_size];
 	string_t			oob;
@@ -44,7 +46,7 @@ typedef struct
 	string_t			result_oob;
 } cli_command_call_t;
 
-_Static_assert(sizeof(cli_command_call_t) == 212);
+_Static_assert(sizeof(cli_command_call_t) == 216);
 
 typedef void(cli_command_function_t)(cli_command_call_t *);
 

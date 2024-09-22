@@ -20,6 +20,7 @@ typedef struct
 {
 	unsigned int	magic_number_head;
 	cli_source_t	source;
+	unsigned int	mtu;
 	string_t		data;
 
 	struct
