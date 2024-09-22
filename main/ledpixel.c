@@ -39,7 +39,7 @@ ledpixel_t ledpixel_new(unsigned int max_leds, unsigned int gpio)
 	_ledpixel->rmt_config.clk_src = RMT_CLK_SRC_DEFAULT;
 	_ledpixel->rmt_config.resolution_hz = 0;
 	_ledpixel->rmt_config.mem_block_symbols = 0;
-	_ledpixel->rmt_config.flags.with_dma = 1;
+	_ledpixel->rmt_config.flags.with_dma = 0;
 
 	util_abort_on_esp_err("led_strip_new_rmt_device", led_strip_new_rmt_device(&_ledpixel->config, &_ledpixel->rmt_config, &_ledpixel->handle));
 	util_abort_on_esp_err("led_strip_clear", led_strip_clear(_ledpixel->handle));
