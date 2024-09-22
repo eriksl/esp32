@@ -87,7 +87,7 @@ void packet_encapsulate(cli_buffer_t *dst, const const_string_t data, const cons
 
 		string_assign_string(dst->data, data);
 
-		if(string_at_tail(dst->data) != '\n')
+		if(string_at_back(dst->data) != '\n')
 			string_append(dst->data, '\n');
 
 		if(oob_data && oob_data_length)

@@ -148,7 +148,7 @@ static void set_state(wlan_state_t state_new)
 		else
 			if((state != ws_init) && (state != ws_associating))
 			{
-				log("wlan: disconnect");
+				log("wlan: start disconnect");
 				util_warn_on_esp_err("esp_wifi_disconnect", esp_wifi_disconnect());
 			}
 
@@ -226,11 +226,13 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 	{
 		case(WIFI_EVENT_STA_START): /* 2 */
 		{
+			log("wlan: associating");
 			set_state(ws_associating);
 			break;
 		}
 		case(WIFI_EVENT_STA_STOP): /* 3 */
 		{
+			log("wlan: stop");
 			set_state(ws_init);
 			break;
 		}
@@ -238,6 +240,7 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 		{
 			util_warn_on_esp_err("esp_netif_create_ip6_linklocal", esp_netif_create_ip6_linklocal(netif_sta));
 
+			log("wlan: associated");
 			set_state(ws_associated);
 			break;
 		}
@@ -250,21 +253,25 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 		}
 		case(WIFI_EVENT_AP_START):
 		{
+			log("wlan: start access point");
 			set_state(ws_rescue_ap_mode_idle);
 			break;
 		}
 		case(WIFI_EVENT_AP_STOP):
 		{
+			log("wlan: stop access point");
 			set_state(ws_rescue_ap_mode_init);
 			break;
 		}
 		case(WIFI_EVENT_AP_STACONNECTED):
 		{
+			log("wlan: access point associated");
 			set_state(ws_rescue_ap_mode_associated);
 			break;
 		}
 		case(WIFI_EVENT_AP_STADISCONNECTED):
 		{
+			log("wlan: access point deassociated");
 			set_state(ws_rescue_ap_mode_idle);
 			break;
 		}
@@ -293,7 +300,12 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 	{
 		case(IP_EVENT_STA_GOT_IP):
 		{
+			const ip_event_got_ip_t *event = (const ip_event_got_ip_t *)event_data;
+
 			util_abort_on_esp_err("esp_netif_sntp_start", esp_netif_sntp_start());
+
+			log_format("wlan: ipv4: " IPSTR " (mask: " IPSTR ", gw: " IPSTR ")",
+					IP2STR(&event->ip_info.ip), IP2STR(&event->ip_info.netmask), IP2STR(&event->ip_info.gw));
 
 			set_state(ws_ipv4_address_acquired);
 
@@ -305,16 +317,14 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 			const ip_event_got_ip6_t *event = (const ip_event_got_ip6_t *)event_data;
 			string_auto(ipv6_address_string, 64);
 			esp_ip6_addr_t ipv6_address;
-
-			util_esp_ipv6_addr_to_string(ipv6_address_string, &event->ip6_info.ip);
-#if 0
-			log_format("wlan: got ipv6: %s, type: %s", string_cstr(ipv6_address_string), util_ipv6_address_type_string(&event->ip6_info.ip));
-#endif
+			const char *address_type;
 
 			switch(util_ipv6_address_type(&event->ip6_info.ip))
 			{
 				case(ipv6_address_link_local):
 				{
+					address_type = "link-local";
+
 					set_state(ws_ipv6_link_local_address_acquired);
 
 					if(config_get_string_cstr(key_ipv6_address, ipv6_address_string) && !esp_netif_str_to_ip6(string_cstr(ipv6_address_string), &ipv6_address))
@@ -324,23 +334,32 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 				}
 				case(ipv6_address_global_slaac):
 				{
+					address_type = "SLAAC";
+
 					set_state(ws_ipv6_slaac_address_acquired);
 
 					break;
 				}
 				case(ipv6_address_global_static):
 				{
+					address_type = "static";
+
 					set_state(ws_ipv6_static_address_active);
 
 					break;
 				}
 				default:
 				{
+					address_type = "invalid";
+
 					log("wlan: invalid IPv6 address received");
 
 					break;
 				}
 			}
+
+			util_esp_ipv6_addr_to_string(ipv6_address_string, &event->ip6_info.ip);
+			log_format("wlan: %s ipv6: %s", address_type, string_cstr(ipv6_address_string));
 
 			break;
 		}

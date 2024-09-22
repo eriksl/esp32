@@ -4,6 +4,8 @@ idf_component_register(
 		"cli.c"
 		"config.c"
 		"console.c"
+		"display.c"
+		"display-spi-generic.c"
 		"flash.c"
 		"fs.c"
 		"info.c"

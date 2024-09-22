@@ -17,6 +17,7 @@
 #include "perftest.h"
 #include "ramdisk.h"
 #include "notify.h"
+#include "display.h"
 
 void app_main(void)
 {
@@ -35,6 +36,7 @@ void app_main(void)
 	wlan_init();
 	perftest_init();
 	console_init_2();
+	display_init();
 	notify(notify_sys_booting_finished);
 	vTaskSuspend(NULL);
 	util_abort("init: vTaskSuspend returned");

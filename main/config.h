@@ -17,4 +17,6 @@ void config_set_string(const string_t key, string_t value);
 void config_set_string_cstr(const char *key, string_t value);
 
 bool config_erase(const string_t key);
-bool config_erase_from_cstr(const char *key);
+bool config_erase_cstr(const char *key);
+bool config_erase_wildcard(const string_t key);
+bool config_erase_wildcard_cstr(const char *key);

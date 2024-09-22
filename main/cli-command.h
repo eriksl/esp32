@@ -13,6 +13,7 @@ typedef enum
 	cli_parameter_signed_int,
 	cli_parameter_float,
 	cli_parameter_string,
+	cli_parameter_string_raw,
 	cli_parameter_size,
 } cli_parameter_type_description_t;
 
@@ -94,3 +95,11 @@ void wlan_command_client_config(cli_command_call_t *call);
 void wlan_command_info(cli_command_call_t *call);
 void wlan_command_ip_info(cli_command_call_t *call);
 void wlan_command_ipv6_config(cli_command_call_t *call);
+
+void command_display_brightness(cli_command_call_t *call);
+void command_display_configure(cli_command_call_t *call);
+void command_display_erase(cli_command_call_t *call);
+void command_display_info(cli_command_call_t *call);
+void command_display_page_add_text(cli_command_call_t *call);
+void command_display_page_add_image(cli_command_call_t *call);
+void command_display_page_remove(cli_command_call_t *call);

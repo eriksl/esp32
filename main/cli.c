@@ -97,11 +97,12 @@ static const char *parameter_type_to_string(unsigned int type)
 {
 	static const char *type_string[cli_parameter_size] =
 	{
-		"invalid parameter type",
-		"u_int",
-		"s_int",
-		"float",
-		"string",
+		[cli_parameter_none] =			"invalid parameter type",
+		[cli_parameter_unsigned_int] =	"u_int",
+		[cli_parameter_signed_int] =	"s_int",
+		[cli_parameter_float] =			"float",
+		[cli_parameter_string] =		"string",
+		[cli_parameter_string_raw] =	"raw string",
 	};
 
 	if(type >= cli_parameter_size)
@@ -147,6 +148,16 @@ static void command_test_parse(cli_command_call_t *call)
 		string_format_append(call->result, "\n%2u \"%s\"", ix, string_cstr(token));
 		string_free(token);
 	}
+}
+#endif
+
+#if 1
+static void command_test_parse_raw_string(cli_command_call_t *call)
+{
+	assert(call->parameter_count == 2);
+
+	string_format(call->result, "parameter 1: %s", string_cstr(call->parameters[0].string));
+	string_format_append(call->result, "\nparameter 2: %s", string_cstr(call->parameters[1].string));
 }
 #endif
 
@@ -253,6 +264,68 @@ static const cli_command_t cli_commands[] =
 
 	{ "console-info", "coni", "show information about the console", console_command_info,
 		{}
+	},
+
+	{ "display-brightness", "db", "display brightness", command_display_brightness,
+		{	1,
+			{
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "brightness percentage", .unsigned_int = { 0, 100 }},
+			}
+		}
+	},
+
+	{ "display-configure", "dc", "configure display", command_display_configure,
+		{	10,
+			{
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "display type", .unsigned_int = { 0, 2 }},
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "interface", .unsigned_int = { 0, 1 }},
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "x-size", .unsigned_int = { 16, 1024 }},
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "y-size", .unsigned_int = { 16, 1024 }},
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "x-offset", .unsigned_int = { 16, 1024 }},
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "y-offset", .unsigned_int = { 16, 1024 }},
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "x-mirror", .unsigned_int = { 0, 1 }},
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "y-mirror", .unsigned_int = { 0, 1 }},
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "rotate", .unsigned_int = { 0, 1 }},
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "invert", .unsigned_int = { 0, 1 }},
+			}
+		}
+	},
+
+	{ "display-erase", "de", "erase display configuration", command_display_erase,
+		{},
+	},
+
+	{ "display-info", "di", "display information", command_display_info,
+		{},
+	},
+
+	{ "display-page-add-text", "dpat", "add text page to display", command_display_page_add_text,
+		{	3,
+			{
+				{ cli_parameter_string, 0, 1, 0, 0, "page name", {} },
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "timeout", {} },
+				{ cli_parameter_string_raw, 0, 1, 0, 0, "text", {} },
+			},
+		},
+	},
+
+	{ "display-page-add-image", "dpai", "add image page to display", command_display_page_add_image,
+		{	3,
+			{
+				{ cli_parameter_string, 0, 1, 0, 0, "page name", {}},
+				{ cli_parameter_unsigned_int, 1, 0, 0, 0, "timeout", {} },
+				{ cli_parameter_string_raw, 0, 1, 0, 0, "filename", {} },
+			},
+		},
+	},
+
+	{ "display_page-remove", "dpr", "remove page from display", command_display_page_remove,
+		{
+			1,
+			{
+				{ cli_parameter_string, 0, 1, 0, 0, "page name", {} },
+			},
+		}
 	},
 
 	{ "flash-bench", (const char*)0, "benchmark flash+transport", flash_command_bench,
@@ -465,6 +538,17 @@ static const cli_command_t cli_commands[] =
 	},
 #endif
 
+#if 1
+	{ "test-raw", "tr", "test parsing raw string", command_test_parse_raw_string,
+		{	2,
+			{
+				{ cli_parameter_string, 0, 1, 0, 0, "token", {} },
+				{ cli_parameter_string_raw, 0, 1, 0, 0, "string", {} },
+			},
+		}
+	},
+#endif
+
 	{ "wlan-client-config", "wcc", "set wireless ssid and password in client mode", wlan_command_client_config,
 		{	2,
 			{
@@ -587,7 +671,7 @@ static void run_receive_queue(void *)
 	string_t							oob_data = (string_t)0;
 	string_t							command = (string_t)0;
 	string_t							token = (string_t)0;
-	unsigned int						count, current, ix, string_parse_offset;
+	unsigned int						count, current, ix, string_parse_offset, previous_string_parse_offset;
 	const cli_command_t					*cli_command;
 	unsigned int						parameter_count;
 	const cli_parameter_description_t	*parameter_description;
@@ -616,6 +700,7 @@ static void run_receive_queue(void *)
 			cli_stats_commands_received_raw++;
 
 		string_parse_offset = 0;
+		previous_string_parse_offset = 0;
 
 		if(!(command = string_parse(data, &string_parse_offset)))
 		{
@@ -659,6 +744,8 @@ static void run_receive_queue(void *)
 			parameter->type = cli_parameter_none;
 			parameter->has_value = 0;
 
+			previous_string_parse_offset = string_parse_offset;
+
 			if(!(token = string_parse(data, &string_parse_offset)))
 			{
 				if(!parameter_description->value_required)
@@ -674,7 +761,7 @@ static void run_receive_queue(void *)
 			else
 			{
 				parameter_count++;
-				
+
 				parameter->string = token;
 
 				switch(parameter_description->type)
@@ -810,6 +897,43 @@ static void run_receive_queue(void *)
 						if((parameter_description->upper_bound_required) && (length > parameter_description->string.upper_length_bound))
 						{
 							string_format(error, "ERROR: invalid string length: %u, larger than upper bound: %u", length, parameter_description->string.upper_length_bound);
+							packet_encapsulate(&cli_buffer, error, (string_t)0);
+							send_queue_push(&cli_buffer);
+							goto error;
+						}
+
+						parameter->type = cli_parameter_string;
+						parameter->has_value = 1;
+
+						break;
+					}
+
+					case(cli_parameter_string_raw):
+					{
+						unsigned int length;
+
+						free(parameter->string);
+						parameter->string = string_new(string_length(data));
+
+						while((previous_string_parse_offset < string_length(data)) && (string_at(data, previous_string_parse_offset) == ' '))
+							previous_string_parse_offset++;
+
+						string_cut(parameter->string, data, previous_string_parse_offset, ~0);
+						string_parse_offset = string_length(data);
+
+						length = string_length(parameter->string);
+
+						if((parameter_description->lower_bound_required) && (length < parameter_description->string.lower_length_bound))
+						{
+							string_format(error, "ERROR: invalid raw string length: %u, smaller than lower bound: %u", length, parameter_description->string.lower_length_bound);
+							packet_encapsulate(&cli_buffer, error, (string_t)0);
+							send_queue_push(&cli_buffer);
+							goto error;
+						}
+
+						if((parameter_description->upper_bound_required) && (length > parameter_description->string.upper_length_bound))
+						{
+							string_format(error, "ERROR: invalid raw string length: %u, larger than upper bound: %u", length, parameter_description->string.upper_length_bound);
 							packet_encapsulate(&cli_buffer, error, (string_t)0);
 							send_queue_push(&cli_buffer);
 							goto error;

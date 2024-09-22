@@ -25,6 +25,9 @@ void _string_auto(string_t dst, unsigned int size);
 #define string_new(l) _string_new(l, __FILE__, __LINE__)
 string_t _string_new(unsigned int length, const char *file, unsigned int line);
 
+#define string_dup(s) _string_dup(s, __FILE__, __LINE__)
+string_t _string_dup(const const_string_t src, const char *file, unsigned int line);
+
 #define string_new_from_mbuf(l) _string_new_from_mbuf(l, __FILE__, __LINE__)
 string_t _string_new_from_mbuf(const void *mbuf, const char *file, unsigned int line);
 
@@ -56,7 +59,8 @@ void string_truncate(string_t dst, unsigned int length);
 void string_format(string_t dst, const char *fmt, ...) __attribute__ ((format (printf, 2, 3)));;
 void string_format_append(string_t dst, const char *fmt, ...) __attribute__ ((format (printf, 2, 3)));;;
 char string_at(const const_string_t src, unsigned int offset);
-char string_at_tail(const const_string_t src);
+char string_at_back(const const_string_t src);
+char string_pop_back(string_t dst);
 const char *string_cstr(const const_string_t src);
 const uint8_t *string_data(const const_string_t src);
 void string_to_cstr(const const_string_t src, unsigned int dst_size, char *dst);

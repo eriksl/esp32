@@ -13,9 +13,6 @@
 #include "util.h"
 #include "cli-command.h"
 
-#include <freertos/FreeRTOS.h>
-
-#include <sys/time.h>
 #include <errno.h>
 
 enum
@@ -51,6 +48,7 @@ static_assert(sizeof(log_t) < log_buffer_size);
 RTC_NOINIT_ATTR static char rtc_slow_memory[log_buffer_size];
 static bool inited = false;
 static log_t *log_buffer = (log_t *)0;
+static QueueHandle_t log_display_queue;
 
 static void log_clear(void)
 {
@@ -64,6 +62,11 @@ static void log_clear(void)
 	log_buffer->entries = log_buffer_entries;
 	log_buffer->in = 0;
 	log_buffer->out = 0;
+}
+
+static void log_signal_display(unsigned int item)
+{
+	xQueueSend(log_display_queue, &item, (TickType_t)0);
 }
 
 void _log_cstr(bool append_strerror, const char *string)
@@ -81,6 +84,8 @@ void _log_cstr(bool append_strerror, const char *string)
 				string, strerror(errno), errno);
 		else
 			snprintf(entry->data, sizeof(entry->data), "%s", string);
+
+		log_signal_display(log_buffer->in);
 
 		if(log_buffer->in++ >= log_buffer_entries)
 			log_buffer->in = 0;
@@ -114,6 +119,8 @@ void _log_format(bool append_strerror, const char *fmt, ...)
 			snprintf(entry->data + offset, sizeof(entry->data) - offset, ": %s (%u)",
 					strerror(errno), errno);
 		}
+
+		log_signal_display(log_buffer->in);
 
 		if(log_buffer->in++ >= log_buffer_entries)
 			log_buffer->in = 0;
@@ -156,6 +163,32 @@ static int logging_function(const char *fmt, va_list ap)
 	return(length);
 }
 
+void log_get_display_queue(QueueHandle_t *handle)
+{
+	assert(log_display_queue);
+
+	*handle = log_display_queue;
+}
+
+void log_get_entry(unsigned int entry_index, time_t *stamp, unsigned int text_buffer_size, char *text_buffer)
+{
+	assert(inited);
+	assert(text_buffer_size);
+	assert(text_buffer);
+
+	const log_entry_t *entry;
+
+	*stamp = (time_t)0;
+	text_buffer[0] = '\0';
+
+	if(entry_index >= log_buffer->entries)
+		return;
+
+	entry = &log_buffer->entry[entry_index];
+
+	*stamp = entry->timestamp;
+	strlcpy(text_buffer, entry->data, text_buffer_size);
+}
 
 void log_init(void)
 {
@@ -174,6 +207,8 @@ void log_init(void)
 	}
 
 	esp_log_set_vprintf(logging_function);
+
+	assert((log_display_queue = xQueueCreate(log_buffer_entries, sizeof(unsigned int))));
 
 	log("boot");
 }

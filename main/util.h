@@ -28,6 +28,7 @@ typedef enum
 } ipv6_address_t;
 
 #define util_memory_alloc_spiram(amount) _util_memory_alloc_spiram(amount, __FILE__, __LINE__)
+#define util_memory_alloc_dma(amount) _util_memory_alloc_dma(amount, __FILE__, __LINE__)
 #define util_memcpy(to, from, length) do { _util_memcpy(to, from, length, __FILE__, __LINE__); } while(0)
 
 void util_init(void);
@@ -43,6 +44,7 @@ void util_time_to_string(string_t dst, const time_t *ticks);
 void util_hash_to_string(string_t dst, unsigned int hash_size, const uint8_t *hash);
 void decrypt_aes_256(string_t dst, const string_t src);
 void *_util_memory_alloc_spiram(unsigned int amount, const char *file, unsigned int line);
+void *_util_memory_alloc_dma(unsigned int amount, const char *file, unsigned int line);
 void _util_memcpy(void *to, const void *from, unsigned int length, const char *file, unsigned int line);
 void util_hexdump_cstr(string_t dst, unsigned int src_length, const uint8_t *src);
 void util_hexdump(string_t dst, const string_t src);

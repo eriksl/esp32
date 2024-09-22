@@ -24,4 +24,28 @@ menu "BSP - do not change, set automically, when invoked using script idf"
 
 	config BSP_LED_GPIO
 		int "GPIO LED is connected to"
+
+	config BSP_SPI2_DISPLAY_DC
+		int "GPIO used for D/C of display on SPI2"
+
+	config BSP_SPI2_DISPLAY_BACKLIGHT
+		int "GPIO used for backlight control of display on SPI2"
+
+	config BSP_SPI3_DISPLAY_DC
+		int "GPIO used for D/C of display on SPI3"
+
+	config BSP_SPI3_DISPLAY_BACKLIGHT
+		int "GPIO used for backlight control of display on SPI3"
+
+	config BSP_SPI3_DISPLAY_CS
+		int "GPIO used for SPI3 CS of display on SPI3"
+
+	config BSP_SPI3_SCK
+		int "GPIO used for SPI3 SCK"
+
+	config BSP_SPI3_MOSI
+		int "GPIO used for SPI3 MOSI"
+
+	config BSP_SPI3_MISO
+		int "GPIO used for SPI3 MISO"
 endmenu

@@ -142,6 +142,19 @@ string_t _string_new(unsigned int size, const char *file, unsigned int line)
 	return((string_t)_dst);
 }
 
+string_t _string_dup(const const_string_t src, const char *file, unsigned int line)
+{
+	string_t dst;
+
+	dst = string_new(string_length(src));
+
+	assert(dst);
+
+	string_assign_string(dst, src);
+
+	return(dst);
+}
+
 string_t _string_new_from_mbuf(const void *mbuf_in, const char *file, unsigned int line)
 {
 	const struct os_mbuf *mbuf = (const struct os_mbuf *)mbuf_in;
@@ -443,7 +456,7 @@ char string_at(const const_string_t src, unsigned int offset)
 	return(_src->data[offset]);
 }
 
-char string_at_tail(const const_string_t src)
+char string_at_back(const const_string_t src)
 {
 	unsigned int length;
 	_string_t *_src = (_string_t *)src;
@@ -456,6 +469,23 @@ char string_at_tail(const const_string_t src)
 		return('\0');
 
 	return(string_at(src, length - 1));
+}
+
+char string_pop_back(string_t dst)
+{
+	unsigned int length;
+	char rv;
+
+	length = string_length(dst);
+
+	if(length < 1)
+		return(0);
+
+	rv = string_at(dst, length - 1);
+
+	string_truncate(dst, length - 1);
+
+	return(rv);
 }
 
 void string_cut(string_t dst, const const_string_t src, unsigned int from, unsigned int length)

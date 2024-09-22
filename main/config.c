@@ -1,5 +1,6 @@
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "string.h"
 #include "config.h"
@@ -500,13 +501,59 @@ bool config_erase(const string_t key)
 	return(true);
 }
 
-void config_erase_cstr(const char *key)
+bool config_erase_cstr(const char *key)
 {
 	string_auto(key_string, 32);
 
 	string_assign_cstr(key_string, key);
 
-	config_erase(key_string);
+	return(config_erase(key_string));
+}
+
+bool config_erase_wildcard(const string_t key)
+{
+	int rv;
+	nvs_handle_t handle;
+	nvs_iterator_t iterator;
+	nvs_entry_info_t info;
+
+	assert(inited);
+
+	util_abort_on_esp_err("nvs_open", nvs_open("config", NVS_READWRITE, &handle));
+
+	if((rv = nvs_entry_find("nvs", "config", NVS_TYPE_ANY, &iterator)) == ESP_ERR_NVS_NOT_FOUND)
+		return(true);
+
+	util_abort_on_esp_err("nvs_entry_find", rv);
+
+	for(;;)
+	{
+		util_abort_on_esp_err("nvs_entry_info", nvs_entry_info(iterator, &info));
+
+		if((strlen(info.key) >= string_length(key)) && string_equal_data(key, string_length(key), (const uint8_t *)info.key))
+			util_abort_on_esp_err("nvs_erase_key", nvs_erase_key(handle, info.key));
+
+		if((rv = nvs_entry_next(&iterator)) == ESP_ERR_NVS_NOT_FOUND)
+			break;
+
+		util_abort_on_esp_err("nvs_entry_next", rv);
+	}
+
+	nvs_release_iterator(iterator);
+
+	util_abort_on_esp_err("nvs_commit", nvs_commit(handle));
+	nvs_close(handle);
+
+	return(true);
+}
+
+bool config_erase_wildcard_cstr(const char *key)
+{
+	string_auto(key_string, 32);
+
+	string_assign_cstr(key_string, key);
+
+	return(config_erase_wildcard(key_string));
 }
 
 static void config_dump(cli_command_call_t *call, const char *namespace)
