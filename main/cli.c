@@ -993,7 +993,9 @@ error:
 		for(ix = 0; ix < call.parameter_count; ix++)
 		{
 			parameter = &call.parameters[ix];
-			string_free(&parameter->string);
+
+			if(parameter->string)
+				string_free(&parameter->string);
 		}
 
 		cli_buffer.source = cli_source_none;
