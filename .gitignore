@@ -2,3 +2,6 @@
 build/
 managed_components
 bt_pair_pin.h
+font/font_big
+font/font_small
+font/makefont
