@@ -73,9 +73,14 @@ void info_command_info(cli_command_call_t *call)
 			CONFIG_BSP_FLASH_SIZE / 1024,
 			CONFIG_BSP_SPIRAM_SIZE / 1024);
 #if defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
-	string_format_append(call->result, "\n- ledpixel at GPIO %u", CONFIG_BSP_LED_GPIO);
+	string_format_append(call->result, "\n- LEDpixel at GPIO %u", CONFIG_BSP_LED_GPIO);
 #else
-	string_append_cstr(call->result, "\n- no ledpixel");
+	string_append_cstr(call->result, "\n- no LEDpixel");
+#endif
+#if defined(CONFIG_BSP_LED_HAVE_LED)
+	string_format_append(call->result, "\n- status LED at GPIO %u", CONFIG_BSP_LED_GPIO);
+#else
+	string_append_cstr(call->result, "\n- no status LED");
 #endif
 }
 
