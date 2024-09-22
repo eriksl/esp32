@@ -153,7 +153,7 @@ void fs_command_append(cli_command_call_t *call)
 		return;
 	}
 
-	if((fd = open(string_cstr(call->parameters[1].string), O_WRONLY | O_APPEND | O_CREAT, 0)) < 0)
+	if((fd = open(string_cstr(call->parameters[1].string), O_RDWR | O_APPEND | O_CREAT, 0)) < 0)
 	{
 		string_format(call->result, "ERROR: cannot open file %s: %s", string_cstr(call->parameters[1].string), strerror(errno));
 		return;
