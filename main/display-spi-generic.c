@@ -259,7 +259,6 @@ void pre_callback(spi_transaction_t *transaction)
 
 bool display_spi_generic_init(const display_init_parameters_t *parameters, unsigned int *buffer_size)
 {
-	int freq_khz;
 	size_t max_transaction_length;
 
 	switch(parameters->interface_index)
@@ -317,27 +316,10 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters, unsig
 	if(parameters->invert >= 0)
 		invert = parameters->invert;
 
-	log_format("- host interface input: %u", parameters->interface_index);
-	log_format("- cs: %u", spi_signal->cs);
-	log_format("- sck: %u", spi_signal->sck);
-	log_format("- mosi: %u", spi_signal->mosi);
-	log_format("- miso: %u", spi_signal->miso);
-	log_format("- dc: %u", spi_signal->dc);
-	log_format("- bl: %u", spi_signal->bl);
-	log_format("- esp_host: %u", spi_signal->esp_host);
-	log_format("- size: %u x %u", x_size, y_size);
-	log_format("- offset: %u x %u", x_offset, y_offset);
-	log_format("- mirror: %u x %u", x_mirror, y_mirror);
-	log_format("- rotate: %u", rotate);
-	log_format("- invert: %u", invert);
-
 	callback_data_gpio_on.gpio = spi_signal->dc;
 	callback_data_gpio_on.level = 1;
 	callback_data_gpio_off.gpio = spi_signal->dc;
 	callback_data_gpio_off.level = 0;
-
-	log_format("- D/C gpio on: %u -> %u", callback_data_gpio_on.gpio, callback_data_gpio_on.level);
-	log_format("- D/C gpio off: %u -> %u", callback_data_gpio_off.gpio, callback_data_gpio_off.level);
 
 	gpio_config_t gpio_pin_config =
 	{
@@ -390,11 +372,8 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters, unsig
 	util_abort_on_esp_err("gpio_config", gpio_config(&gpio_pin_config));
 	util_abort_on_esp_err("spi_bus_initialize", spi_bus_initialize(spi_signal->esp_host, &bus_config, SPI_DMA_CH_AUTO));
 	util_abort_on_esp_err("spi_bus_add_device", spi_bus_add_device(spi_signal->esp_host, &device, &spi_device_handle));
-	util_abort_on_esp_err("spi_device_get_actual_freq", spi_device_get_actual_freq(spi_device_handle, &freq_khz));
-	log_format("lcd-spi: actual bus frequency: %d MHz", freq_khz / 1000);
 
 	util_abort_on_esp_err("spi_bus_get_max_transaction_len", spi_bus_get_max_transaction_len(spi_signal->esp_host, &max_transaction_length));
-	log_format("lcd-spi: max transaction size: %u", max_transaction_length);
 	*buffer_size = max_transaction_length;
 
 	util_abort_on_esp_err("sdm_new_channel", sdm_new_channel(&pdm_config, &sdm_channel_handle));
