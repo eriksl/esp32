@@ -7,6 +7,7 @@
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
+#include "info.h"
 
 #include <esp_littlefs.h>
 
@@ -40,15 +41,28 @@ void fs_init(void)
 
 void fs_command_info(cli_command_call_t *call)
 {
-	unsigned int total, used;
+	unsigned int total, used, avail, usedpct;
 
 	assert(inited);
 	assert(call->parameter_count == 0);
 
 	util_abort_on_esp_err("esp_littlefs_info", esp_littlefs_info("littlefs", &total, &used));
+	avail = total - used;
+	usedpct = (100 * used) / total;
 
-	string_format(call->result, "FS\nsizes:\n- total size: %u kB\n- used: %u kB\n- available %u kB", total / 1024, used / 1024, (total - used) / 1024);
-	string_format_append(call->result, "\nmounted: %s", esp_littlefs_mounted("littlefs") ? "yes" : "no");
+	string_assign_cstr(call->result, "LITTLEFS");
+
+	if(esp_littlefs_mounted("littlefs"))
+		string_format_append(call->result, " mounted at /littlefs:\n- total size: %u kB\n- used: %u kB\n- available %u kB, %u%% used", total / 1024, used / 1024, avail / 1024, usedpct);
+	else
+		string_append_cstr(call->result, " not mounted");
+
+	total = initial_free_spiram / 2;
+	used = (initial_free_spiram - heap_caps_get_free_size(MALLOC_CAP_SPIRAM)) / 2;
+	avail = total - used;
+	usedpct = (100 * used) / total;
+
+	string_format_append(call->result, "\nRAMDISK mounted at /ramdisk:\n- total size: %u kB\n- used: %u kB\n- available %u kB, %u%% used", total / 1024, used / 1024, avail / 1024, usedpct);
 }
 
 void fs_command_list(cli_command_call_t *call)

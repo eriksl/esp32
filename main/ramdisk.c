@@ -48,11 +48,10 @@ typedef struct ramdisk_file_descriptor_T
 
 typedef struct
 {
-	DIR dir;			/*!< VFS DIR struct */
-	//ramdisk_dir_t d;	/*!< DIR struct */
-	struct dirent dirent;	/*!< Last open dirent */
-	long offset;		/*!< Offset of the current dirent */
-	char *path;			/*!< Requested directory name */
+	DIR dir;
+	struct dirent dirent;
+	long offset;
+	char *path;
 } vfs_ramdisk_dir_t;
 
 static bool inited = false;
@@ -105,8 +104,6 @@ static ramdisk_file_descriptor_t *new_fd(ramdisk_file_metadata_t *meta, int open
 		last->next = entry;
 	else
 		fds = entry;
-
-	//log_format("new fd: %d", entry->fd);
 
 	return(entry);
 }
@@ -341,8 +338,6 @@ ssize_t ramdisk_read(int fd, void *data, size_t size)
 		offset_in_block = fdp->offset - (ramdisk_block_size * block);
 		available_in_block = ramdisk_block_size - offset_in_block;
 
-		//log_format("ramdisk: read: block: %u, offset in block: %u, avail: %u", block, offset_in_block, available_in_block);
-
 		if(!metadata->datablocks[block])
 		{
 			log_format("ramdisk: read: block #%u not allocated", block);
@@ -362,8 +357,6 @@ ssize_t ramdisk_read(int fd, void *data, size_t size)
 		size -= chunk;
 		data += chunk;
 		fdp->offset += chunk;
-
-		//log_format("ramdisk: file length: %u, fd offset: %u, size: %u", metadata->length, fdp->offset, size);
 	}
 
 	mutex_give();
@@ -400,13 +393,6 @@ ssize_t ramdisk_write(int fd, const void *data, size_t size)
 		return(-1);
 	}
 
-	if((heap_caps_get_free_size(MALLOC_CAP_SPIRAM) * 2) < initial_free_spiram) // FIXME
-	{
-		mutex_give();
-		errno = ENOSPC;
-		return(-1);
-	}
-
 	metadata = fdp->metadata;
 
 	if(fdp->offset > metadata->length)
@@ -415,11 +401,15 @@ ssize_t ramdisk_write(int fd, const void *data, size_t size)
 		fdp->offset = metadata->length;
 	}
 
-	//log_format("ramdisk: write: size %u", size);
-	//log_format("ramdisk: write: file length: %u, fd offset: %u", metadata->length, fdp->offset);
-
 	while(size > 0)
 	{
+		if((heap_caps_get_free_size(MALLOC_CAP_SPIRAM) * 2) < initial_free_spiram)
+		{
+			mutex_give();
+			errno = ENOSPC;
+			return(-1);
+		}
+
 		blocks = sizeof(metadata->datablocks) / sizeof(*metadata->datablocks);
 		block = fdp->offset / ramdisk_block_size;
 
@@ -432,8 +422,6 @@ ssize_t ramdisk_write(int fd, const void *data, size_t size)
 
 		offset_in_block = fdp->offset - (ramdisk_block_size * block);
 		available_in_block = ramdisk_block_size - offset_in_block;
-
-		//log_format("ramdisk: 1 block: %u, offset in block: %u, avail: %u", block, offset_in_block, available_in_block);
 
 		if(!metadata->datablocks[block])
 			metadata->datablocks[block] = util_memory_alloc_spiram(sizeof(ramdisk_data_block_t));
@@ -451,11 +439,7 @@ ssize_t ramdisk_write(int fd, const void *data, size_t size)
 
 		if(fdp->offset > metadata->length)
 			metadata->length = fdp->offset;
-
-		//log_format("ramdisk: 2 file length: %u, fd offset: %u, size: %u", metadata->length, fdp->offset, size);
 	}
-
-	//log_format("ramdisk: write: return %u", rv);
 
 	mutex_give();
 
@@ -658,8 +642,6 @@ off_t ramdisk_lseek(int fd, off_t offset_requested, int mode)
 	}
 
 	offset = start_offset + offset_requested;
-
-	//log_format("ramdisk: seek to %u", (unsigned int)offset);
 
 	if((offset < 0) || (offset > metadata->length))
 	{
