@@ -519,7 +519,7 @@ void display_spi_generic_write(const font_t *font, unsigned int cursor_row, unsi
 						glyph = (font_glyph_t *)0;
 				}
 
-				if(glyph && (col < y_size))
+				if(glyph)
 				{
 					for(bit = 0; bit < font->net.width; bit++)
 					{
@@ -531,7 +531,8 @@ void display_spi_generic_write(const font_t *font, unsigned int cursor_row, unsi
 								send_pixel(&background_pixel);
 						}
 
-						col++;
+						if(++col >= y_size)
+							goto finished;
 					}
 				}
 			}
@@ -542,5 +543,6 @@ void display_spi_generic_write(const font_t *font, unsigned int cursor_row, unsi
 		for(row = 0; row < font->net.height; row++)
 			send_pixel(&background_pixel);
 
+finished:
 	send_pixel((const display_rgb_t *)0); // flush
 }
