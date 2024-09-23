@@ -247,7 +247,7 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 		case(WIFI_EVENT_STA_DISCONNECTED): /* 5 */
 		{
 			wifi_event_sta_disconnected_t *event = (wifi_event_sta_disconnected_t *)event_data;
-			log_format("wlan event: disconnected: reason: %x", event->reason);
+			log_format("wlan: disconnected: reason: %x", event->reason);
 			set_state(ws_associating);
 			break;
 		}
@@ -277,7 +277,7 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 		}
 		case(WIFI_EVENT_AP_PROBEREQRECVED):
 		{
-			log("wlan event: ap probe received");
+			log("wlan: ap probe received");
 			break;
 		}
 		case(WIFI_EVENT_HOME_CHANNEL_CHANGE): /* 40 */
@@ -286,7 +286,7 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 		}
 		default:
 		{
-			log_format("wlan event: unknown event: %ld", event_id);
+			log_format("wlan: unknown event: %ld", event_id);
 			break;
 		}
 	}
