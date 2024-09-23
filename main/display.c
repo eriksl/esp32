@@ -122,7 +122,7 @@ static display_page_t *display_pages_next = (display_page_t *)0;
 static display_type_t display_type = dt_no_display;
 static font_t *font = (font_t *)0;
 static uint32_t *unicode_buffer = (uint32_t *)0;
-static unsigned int rows;
+static unsigned int columns, rows;
 static unsigned int cursor_row;
 static unsigned int x_size, y_size;
 static QueueHandle_t log_display_queue;
@@ -549,7 +549,7 @@ static void display_info(string_t output)
 	string_format_append(output, "\n- net height: %u", (unsigned int)font->net.height);
 	string_format_append(output, "\n- basic glyphs: %u", font_basic_glyphs_size);
 	string_format_append(output, "\n- extra glyphs: %u", (unsigned int)font->extra_glyphs);
-	string_format_append(output, "\n- columns: %u", (unsigned int)(y_size / font->net.width));
+	string_format_append(output, "\n- columns: %u", columns);
 	string_format_append(output, "\n- rows: %u", rows);
 
 	string_append_cstr(output, "\nPAGES:");
@@ -649,7 +649,8 @@ void display_init(void)
 		return;
 	}
 
-	rows = x_size / font->net.height;
+	columns = x_size / font->net.width;
+	rows = y_size / font->net.height;
 
 	display_pixel_buffer_size = buffer_size;
 	log_format("display: pixel buffer size: %u bytes", display_pixel_buffer_size);

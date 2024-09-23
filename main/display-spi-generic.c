@@ -288,8 +288,8 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters, unsig
 		return(false);
 	}
 
-	x_size = parameters->x_size;
-	y_size = parameters->y_size;
+	x_size = parameters->y_size;
+	y_size = parameters->x_size;
 
 	x_offset = 0;
 	y_offset = 0;
@@ -299,16 +299,16 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters, unsig
 	invert = 0;
 
 	if(parameters->x_offset >= 0)
-		x_offset = parameters->x_offset;
+		y_offset = parameters->x_offset;
 
 	if(parameters->y_offset >= 0)
-		y_offset = parameters->y_offset;
+		x_offset = parameters->y_offset;
 
 	if(parameters->x_mirror >= 0)
-		x_mirror = parameters->x_mirror;
+		y_mirror = parameters->x_mirror;
 
 	if(parameters->y_mirror >= 0)
-		y_mirror = parameters->y_mirror;
+		x_mirror = parameters->y_mirror;
 
 	if(parameters->rotate >= 0)
 		rotate = parameters->rotate;
@@ -398,10 +398,10 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters, unsig
 		madctl |= madctl_mv;
 
 	if(!x_mirror)
-		madctl |= madctl_mx;
+		madctl |= madctl_my;
 
 	if(!y_mirror)
-		madctl |= madctl_my;
+		madctl |= madctl_mx;
 
 	send_command_data_1(cmd_madctl, madctl);
 
