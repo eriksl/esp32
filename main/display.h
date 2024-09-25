@@ -11,10 +11,19 @@ typedef enum
 	dt_size = dt_error,
 } display_type_t;
 
-enum
+typedef enum
 {
-	display_colours = 8,
-};
+	dc_black = 0,
+	dc_blue,
+	dc_green,
+	dc_cyan,
+	dc_red,
+	dc_purple,
+	dc_yellow,
+	dc_white,
+	dc_error,
+	dc_size = dc_error,
+} display_colour_t;
 
 typedef struct
 {
@@ -25,7 +34,7 @@ typedef struct
 
 static_assert(sizeof(display_rgb_t) == 3);
 
-extern const display_rgb_t display_colour_map[display_colours];
+extern const display_rgb_t display_colour_map[dc_size];
 extern unsigned int display_pixel_buffer_size;
 extern uint8_t *display_pixel_buffer;
 
@@ -34,8 +43,6 @@ typedef struct
 	int interface_index;
 	int x_size;
 	int y_size;
-	int x_offset;
-	int y_offset;
 	int x_mirror;
 	int y_mirror;
 	int rotate;
@@ -85,17 +92,20 @@ typedef struct
 	const char *name;
 	bool (*init_fn)(const display_init_parameters_t *parameters, unsigned int *buffer_size);
 	void (*bright_fn)(unsigned int percentage);
-	void (*write_fn)(const font_t *font, unsigned int row, unsigned int line_unicode_length, const uint32_t *line_unicode);
-	void (*clear_fn)(void);
+	void (*write_fn)(const font_t *font, display_colour_t fg, display_colour_t bg,
+				unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
+				unsigned int line_unicode_length, const uint32_t *line_unicode);
+	void (*clear_fn)(display_colour_t);
 	void (*scroll_fn)(unsigned int lines);
+	void (*box_fn)(display_colour_t, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y);
 } display_info_t;
 
 void display_init(void);
-bool display_brightness(unsigned int percentage);
-bool display_write(bool scroll, const uint8_t *line);
-bool display_clear(void);
 
 bool display_spi_generic_init(const display_init_parameters_t *parameters, unsigned int *buffer_size);
 void display_spi_generic_bright(unsigned int percentage);
-void display_spi_generic_write(const font_t *font, unsigned int row, unsigned int line_unicode_length, const uint32_t *line_unicode);
-void display_spi_generic_clear(void);
+void display_spi_generic_write(const font_t *font, display_colour_t fg, display_colour_t bg,
+		unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
+		unsigned int line_unicode_length, const uint32_t *line_unicode);
+void display_spi_generic_clear(display_colour_t);
+void display_spi_generic_box(display_colour_t, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y);

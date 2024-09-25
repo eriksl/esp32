@@ -22,6 +22,8 @@ enum
 {
 	unicode_buffer_size = 64,
 	display_page_lines_size = 12,
+	page_border_size = 3,
+	page_text_offset = 1,
 };
 
 typedef enum
@@ -31,8 +33,6 @@ typedef enum
 	dv_if,
 	dv_x_size,
 	dv_y_size,
-	dv_x_offset,
-	dv_y_offset,
 	dv_x_mirror,
 	dv_y_mirror,
 	dv_rotate,
@@ -66,14 +66,16 @@ typedef struct display_page_T
 	};
 } display_page_t;
 
+//static bool write_display(bool scroll, display_colour_t fg, display_colour_t bg, unsigned x, unsigned y, const uint8_t *line);
+static bool clear(display_colour_t);
+static bool box(display_colour_t colour, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y);
+
 static const char * const display_variable[dv_size][3] =
 {
 	[dv_type] =		{	"type",				"display.type",		"display type, 0 = generic SPI LCD",	},
 	[dv_if] =		{	"interface",		"display.if",		"interface, 0 = SPI2, 1 = SPI3",		},
 	[dv_x_size] =	{	"x size",			"display.x.size",	"x size (width)",						},
 	[dv_y_size] =	{	"y size",			"display.y.size",	"y size (height)",						},
-	[dv_x_offset] = {	"x offset",			"display.x.offset",	"x offset (optional)",					},
-	[dv_y_offset] = {	"y offset",			"display.y.offset",	"y offset (optional)",					},
 	[dv_x_mirror] = {	"x mirror",			"display.x.mirror",	"x mirror (optional)",					},
 	[dv_y_mirror] = {	"y mirror",			"display.y.mirror",	"y mirror (optional)",					},
 	[dv_rotate] =	{	"rotate",			"display.rotate",	"rotate display (optional)",			},
@@ -89,6 +91,7 @@ static const display_info_t info[dt_size] =
 		.bright_fn = (void *)0,
 		.write_fn = (void *)0,
 		.clear_fn = (void *)0,
+		.box_fn = (void *)0,
 		.scroll_fn = (void *)0,
 	},
 	[dt_spi_generic] =
@@ -98,32 +101,31 @@ static const display_info_t info[dt_size] =
 		.bright_fn = display_spi_generic_bright,
 		.write_fn = display_spi_generic_write,
 		.clear_fn = display_spi_generic_clear,
+		.box_fn = display_spi_generic_box,
 		.scroll_fn = (void *)0,
 	},
 };
-
-const display_rgb_t display_colour_map[display_colours] =
+const display_rgb_t display_colour_map[dc_size] =
 {
-	{	0x00,	0x00,	0x00	},	//	black	0
-	{	0x00,	0x00,	0xff	},	//	blue	1
-	{	0x00,	0x88,	0x00	},	//	green	2
-	{	0x00,	0xaa,	0xaa	},	//	cyan	3
-	{	0xff,	0x00,	0x00	},	//	red		4
-	{	0xff,	0x00,	0xff	},	//	purple	5
-	{	0xff,	0xbb,	0x00	},	//	yellow	6
-	{	0xff,	0xff,	0xff	},	//	white	7
+	[dc_black] =	{	0x00,	0x00,	0x00	},
+	[dc_blue] =		{	0x00,	0x00,	0xff	},
+	[dc_green] =	{	0x00,	0x88,	0x00	},
+	[dc_cyan] =		{	0x00,	0xaa,	0xaa	},
+	[dc_red] =		{	0xff,	0x00,	0x00	},
+	[dc_purple] =	{	0xff,	0x00,	0xff	},
+	[dc_yellow] =	{	0xff,	0xbb,	0x00	},
+	[dc_white] =	{	0xff,	0xff,	0xff	},
 };
 
 unsigned int display_pixel_buffer_size = 0;
 uint8_t *display_pixel_buffer = (uint8_t *)0;
 
 static display_page_t *display_pages = (display_page_t *)0;
-static display_page_t *display_pages_next = (display_page_t *)0;
 static display_type_t display_type = dt_no_display;
 static font_t *font = (font_t *)0;
+static bool font_valid = false;
 static uint32_t *unicode_buffer = (uint32_t *)0;
 static unsigned int columns, rows;
-static unsigned int cursor_row;
 static unsigned int x_size, y_size;
 static QueueHandle_t log_display_queue;
 static bool log_mode = true;
@@ -228,7 +230,7 @@ static unsigned int utf8_to_unicode(const uint8_t *src, unsigned int dst_size, u
 	return(dst_index);
 }
 
-static bool read_font(const char *fontname)
+static bool load_font(const char *fontname)
 {
 	string_auto(pathfont, 32);
 	int fd;
@@ -242,7 +244,7 @@ static bool read_font(const char *fontname)
 	if((fd = open(string_cstr(pathfont), O_RDONLY, 0)) < 0)
 	{
 		log_format("display: failed to open font %s", string_cstr(pathfont));
-		goto error2;
+		goto error;
 	}
 
 	if(!font)
@@ -251,15 +253,16 @@ static bool read_font(const char *fontname)
 	if(read(fd, font, sizeof(*font)) != sizeof(*font))
 	{
 		log_format("display: failed to read font %s", string_cstr(pathfont));
-		goto error1;
+		goto error;
 	}
 
 	close(fd);
+	fd = -1;
 
 	if(font->magic_word != font_magic_word)
 	{
 		log_format("display: font file magic word invalid: %x", font->magic_word);
-		goto error2;
+		goto error;
 	}
 
 	memcpy(their_hash, font->checksum, sizeof(their_hash));
@@ -274,16 +277,23 @@ static bool read_font(const char *fontname)
 	if(memcmp(our_hash, their_hash, sizeof(our_hash)))
 	{
 		log("display: font file invalid checksum");
-		goto error2;
+		goto error;
 	}
+
+	columns = (x_size - (2 * page_border_size)) / font->net.width;
+	rows = (y_size - page_text_offset - (2 * page_border_size)) / font->net.height;
 
 	return(true);
 
-error1:
-	close(fd);
-error2:
-	free(font);
-	font = (font_t *)0;
+error:
+	if(fd >= 0)
+		close(fd);
+
+	if(font)
+		free(font);
+
+	columns = 0;
+	rows = 0;
 
 	return(false);
 }
@@ -295,20 +305,42 @@ static void run_display_log(void *)
 	struct tm tm;
 	char entry_text[64];
 	char log_line[64];
+	unsigned int unicode_length;
+	unsigned int y;
 
 	assert(log_display_queue);
+
+	y = 0;
 
 	for(;;)
 	{
 		assert(xQueueReceive(log_display_queue, &entry, portMAX_DELAY));
 
-		if(log_mode)
+		if(font_valid && log_mode && (display_type != dt_no_display) && info[display_type].write_fn)
 		{
 			log_get_entry(entry, &stamp, sizeof(entry_text), entry_text);
 			localtime_r(&stamp, &tm);
 			strftime(log_line, sizeof(log_line), "%H:%M:%S ", &tm);
 			strlcat(log_line, entry_text, sizeof(log_line));
-			display_write(true, (uint8_t *)log_line);
+			unicode_length = utf8_to_unicode((uint8_t *)log_line, unicode_buffer_size, unicode_buffer);
+
+			if(info[display_type].scroll_fn && ((y + font->net.height) >= y_size))
+			{
+				info[display_type].scroll_fn(1);
+				y = y_size - font->net.height - 1;
+			}
+
+			info[display_type].write_fn(font, dc_white, dc_black, 0, y, x_size - 1, y + font->net.height - 1, unicode_length, unicode_buffer);
+
+			y += font->net.height;
+
+			if(!info[display_type].scroll_fn)
+			{
+				if((y + font->net.height) > y_size)
+					y = 0;
+
+				box(dc_black, 0, y, x_size - 1, y + font->net.height - 1);
+			}
 		}
 	}
 
@@ -317,34 +349,94 @@ static void run_display_log(void *)
 
 static void run_display_info(void *)
 {
-	unsigned int ix;
+	display_page_t *display_pages_next;
+	display_colour_t current_colour;
+	unsigned int row, y;
+	unsigned int unicode_length;
+	void (*write_fn)(const font_t *font, display_colour_t fg, display_colour_t bg,
+				unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
+				unsigned int line_unicode_length, const uint32_t *line_unicode);
+
+	display_pages_next = (display_page_t *)0;
+	current_colour = dc_black + 1;
 
 	for(;;)
 	{
+		if(!font_valid || (display_type == dt_no_display) || (!(write_fn = info[display_type].write_fn)))
+			goto next2;
+
 		mutex_take();
 
-		if(!display_pages_next && !(display_pages_next = display_pages))
+		if(!display_pages_next)
 		{
-			if(!log_mode)
-				display_clear();
-			log_mode = true;
-			goto next;
+			display_pages_next = display_pages;
+			current_colour = dc_black + 1;
+
+			if(!display_pages_next)
+			{
+				if(!log_mode)
+				{
+					font_valid = load_font("font_small");
+					log_mode = true;
+					clear(dc_black);
+				}
+
+				goto next1;
+			}
 		}
 
-		log_mode = false;
-		cursor_row = 0;
+		if(log_mode)
+		{
+			log_mode = false;
 
-		display_write(false, (uint8_t *)string_cstr(display_pages_next->name));
+			if(!((font_valid = load_font("font_big"))))
+				goto next1;
 
-		for(ix = 0; (ix < display_page_lines_size) && display_pages_next->text.line[ix]; ix++)
-			display_write(false, (uint8_t *)string_cstr(display_pages_next->text.line[ix]));
+			current_colour = dc_black + 1;
+		}
 
-		for(; ix < rows; ix++)
-			display_write(false, (uint8_t *)"");
+		assert(page_border_size > 0);
+
+		box(current_colour,	0,										0,										x_size - 1,				page_border_size - 1);
+		box(current_colour,	(x_size - 1) - (page_border_size - 1),	0,										x_size - 1,				y_size - 1);
+		box(current_colour,	0,										(y_size - 1) - (page_border_size - 1),	x_size - 1,				y_size - 1);
+		box(current_colour,	0,										0,										page_border_size - 1,	y_size - 1);
+
+		unicode_length = utf8_to_unicode((uint8_t *)string_cstr(display_pages_next->name), unicode_buffer_size, unicode_buffer);
+		write_fn(font, dc_white, current_colour,
+				page_border_size, (page_border_size / 2), (x_size - 1) - (page_border_size - 1), page_text_offset + page_border_size + (font->net.height - 1),
+				unicode_length, unicode_buffer);
+
+		y = font->net.height + page_border_size + page_text_offset;
+
+		for(row = 0; (row < display_page_lines_size) && display_pages_next->text.line[row]; row++)
+		{
+			if((y + font->net.height) > y_size)
+				break;
+
+			unicode_length = utf8_to_unicode((uint8_t *)string_cstr(display_pages_next->text.line[row]), unicode_buffer_size, unicode_buffer);
+			write_fn(font, dc_black, dc_white,
+					page_border_size, y, (x_size - 1) - page_border_size, y + (font->net.height - 1),
+					unicode_length, unicode_buffer);
+
+			y += font->net.height;
+		}
 
 		display_pages_next = display_pages_next->next;
-next:
+
+		box(dc_white, page_border_size, y, (x_size - 1) - page_border_size, (y_size - 1) - page_border_size);
+
+		current_colour++;
+
+		if((current_colour == dc_white) || (current_colour == dc_black))
+			current_colour++;
+
+		if(current_colour >= dc_size)
+			current_colour = dc_black + 1;
+
+next1:
 		mutex_give();
+next2:
 		util_sleep(2000);
 	}
 
@@ -535,7 +627,7 @@ static void display_info(string_t output)
 		return;
 	}
 
-	if(!font)
+	if(!font_valid)
 	{
 		string_assign_cstr(output, "\n- no display font loaded");
 		return;
@@ -589,8 +681,6 @@ void display_init(void)
 		.interface_index = -1,
 		.x_size = -1,
 		.y_size = -1,
-		.x_offset = -1,
-		.y_offset = -1,
 		.x_mirror = -1,
 		.y_mirror = -1,
 		.rotate = -1,
@@ -617,12 +707,6 @@ void display_init(void)
 	if(config_get_uint_cstr(display_variable[dv_y_size][1], &value))
 		display_init_parameters.y_size = y_size = (int)value;
 
-	if(config_get_uint_cstr(display_variable[dv_x_offset][1], &value))
-		display_init_parameters.x_offset = (int)value;
-
-	if(config_get_uint_cstr(display_variable[dv_y_offset][1], &value))
-		display_init_parameters.y_offset = (int)value;
-
 	if(config_get_uint_cstr(display_variable[dv_x_mirror][1], &value))
 		display_init_parameters.x_mirror = (int)value;
 
@@ -643,14 +727,11 @@ void display_init(void)
 		return;
 	}
 
-	if(!read_font("font_small"))
+	if(!(font_valid = load_font("font_small")))
 	{
 		log("display: load font failed");
 		return;
 	}
-
-	columns = x_size / font->net.width;
-	rows = y_size / font->net.height;
 
 	display_pixel_buffer_size = buffer_size;
 	log_format("display: pixel buffer size: %u bytes", display_pixel_buffer_size);
@@ -658,7 +739,7 @@ void display_init(void)
 
 	unicode_buffer = (uint32_t *)util_memory_alloc_spiram(sizeof(uint32_t) * unicode_buffer_size);
 
-	display_clear();
+	clear(dc_black);
 
 	log_get_display_queue(&log_display_queue);
 	assert(log_display_queue);
@@ -666,14 +747,14 @@ void display_init(void)
 	mutex = xSemaphoreCreateMutex();
 	assert(mutex);
 
-	if(xTaskCreatePinnedToCore(run_display_log, "display-log", 2048, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
+	if(xTaskCreatePinnedToCore(run_display_log, "display-log", 3072, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
 		util_abort("display: xTaskCreatePinnedToNode display log");
 
-	if(xTaskCreatePinnedToCore(run_display_info, "display-info", 2048, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
+	if(xTaskCreatePinnedToCore(run_display_info, "display-info", 3072, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
 		util_abort("display: xTaskCreatePinnedToNode display run");
 }
 
-bool display_brightness(unsigned int percentage)
+static bool display_brightness(unsigned int percentage)
 {
 	if((display_type == dt_no_display) || !info[display_type].bright_fn)
 		return(false);
@@ -683,40 +764,22 @@ bool display_brightness(unsigned int percentage)
 	return(true);
 }
 
-bool display_write(bool scroll, const uint8_t *line)
-{
-	unsigned int unicode_length;
-
-	if((display_type == dt_no_display) || !info[display_type].write_fn)
-		return(false);
-
-	unicode_length = utf8_to_unicode(line, unicode_buffer_size, unicode_buffer);
-
-	if(scroll && info[display_type].scroll_fn && ((cursor_row + 1) >= rows))
-		info[display_type].scroll_fn(1);
-
-	info[display_type].write_fn(font, cursor_row, unicode_length, unicode_buffer);
-
-	cursor_row++;
-
-	if(scroll && !info[display_type].scroll_fn)
-	{
-		if(cursor_row >= rows)
-			cursor_row = 0;
-
-		info[display_type].write_fn(font, cursor_row, 0, unicode_buffer);
-	}
-
-	return(true);
-}
-
-bool display_clear(void)
+static bool clear(display_colour_t bg)
 {
 	if((display_type == dt_no_display) || !info[display_type].clear_fn)
 		return(false);
 
-	cursor_row = 0;
-	info[display_type].clear_fn();
+	info[display_type].clear_fn(bg);
+
+	return(true);
+}
+
+static bool box(display_colour_t colour, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y)
+{
+	if((display_type == dt_no_display) || !info[display_type].box_fn)
+		return(false);
+
+	info[display_type].box_fn(colour, from_x, from_y, to_x, to_y);
 
 	return(true);
 }
@@ -735,7 +798,7 @@ void command_display_configure(cli_command_call_t *call)
 {
 	dv_t ix;
 
-	assert((call->parameter_count <= 10));
+	assert((call->parameter_count <= 8));
 
 	if(call->parameter_count == 0)
 	{
