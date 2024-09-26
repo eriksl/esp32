@@ -525,7 +525,7 @@ static void run_display_log(void *)
 
 static void run_display_info(void *)
 {
-	display_page_t *display_pages_next;
+	display_page_t *display_pages_current, *display_pages_next;
 	display_colour_t current_colour;
 	unsigned int row, y;
 	int pad;
@@ -538,7 +538,7 @@ static void run_display_info(void *)
 				unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
 				unsigned int line_unicode_length, const uint32_t *line_unicode);
 
-	display_pages_next = (display_page_t *)0;
+	display_pages_current = display_pages;
 	current_colour = dc_black + 1;
 
 	for(;;)
@@ -548,12 +548,12 @@ static void run_display_info(void *)
 
 		mutex_take();
 
-		if(!display_pages_next)
+		if(!display_pages_current)
 		{
-			display_pages_next = display_pages;
+			display_pages_current = display_pages;
 			current_colour = dc_black + 1;
 
-			if(!display_pages_next)
+			if(!display_pages_current)
 			{
 				if(!log_mode)
 				{
@@ -587,7 +587,7 @@ static void run_display_info(void *)
 		stamp = time((time_t *)0);
 		localtime_r(&stamp, &tm);
 		strftime(stamp_line, sizeof(stamp_line), "%d/%m %H:%M", &tm);
-		pad = columns - strlen(stamp_line) - string_length_utf8(display_pages_next->name) - page_title_skip_size;
+		pad = columns - strlen(stamp_line) - string_length_utf8(display_pages_current->name) - page_title_skip_size;
 
 		if(pad < 0)
 			pad = 0;
@@ -595,7 +595,7 @@ static void run_display_info(void *)
 		uint8_t colour_code[] = { 0xef, 0xa0, 0x88 + dc_white, 0 };
 
 		snprintf(title_line, sizeof(title_line), "%s%*s%s%s%*s",
-				string_cstr(display_pages_next->name), pad, "", stamp_line, (const char *)colour_code, page_title_skip_size, "");
+				string_cstr(display_pages_current->name), pad, "", stamp_line, (const char *)colour_code, page_title_skip_size, "");
 
 		unicode_length = utf8_to_unicode((uint8_t *)title_line, unicode_buffer_size, unicode_buffer);
 		write_fn(font, dc_white, current_colour,
@@ -604,20 +604,18 @@ static void run_display_info(void *)
 
 		y = font->net.height + page_border_size + page_text_offset;
 
-		for(row = 0; (row < display_page_lines_size) && display_pages_next->text.line[row]; row++)
+		for(row = 0; (row < display_page_lines_size) && display_pages_current->text.line[row]; row++)
 		{
 			if((y + font->net.height) > y_size)
 				break;
 
-			unicode_length = utf8_to_unicode((uint8_t *)string_cstr(display_pages_next->text.line[row]), unicode_buffer_size, unicode_buffer);
+			unicode_length = utf8_to_unicode((uint8_t *)string_cstr(display_pages_current->text.line[row]), unicode_buffer_size, unicode_buffer);
 			write_fn(font, dc_black, dc_white,
 					page_border_size, y, (x_size - 1) - page_border_size, y + (font->net.height - 1),
 					unicode_length, unicode_buffer);
 
 			y += font->net.height;
 		}
-
-		display_pages_next = display_pages_next->next;
 
 		box(dc_white, page_border_size, y, (x_size - 1) - page_border_size, (y_size - 1) - page_border_size);
 
@@ -628,6 +626,17 @@ static void run_display_info(void *)
 
 		if(current_colour >= dc_size)
 			current_colour = dc_black + 1;
+
+		if(time((time_t *)0) > display_pages_current->expiry)
+		{
+			display_pages_next = display_pages_current->next;
+			mutex_give();
+			page_erase(display_pages_current->name);
+			mutex_take();
+			display_pages_current = display_pages_next;
+		}
+		else
+			display_pages_current = display_pages_current->next;
 
 next1:
 		mutex_give();
