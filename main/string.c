@@ -240,6 +240,20 @@ unsigned int string_length(const const_string_t src)
 	return(_src->length);
 }
 
+unsigned int string_length_utf8(const const_string_t src)
+{
+	_string_t *_src = (_string_t *)src;
+    unsigned int ix, rv;
+
+	_string_check_const(_src);
+
+    for(ix = 0, rv = 0; ix < _src->length; ix++)
+        if(!(_src->data[ix] & 0x80))
+            rv++;
+
+    return(rv);
+}
+
 unsigned int string_size(const const_string_t src)
 {
 	_string_t *_src = (_string_t *)src;

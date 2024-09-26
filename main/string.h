@@ -41,6 +41,7 @@ const_string_t string_empty_string(void);
 
 void string_clear(string_t dst);
 unsigned int string_length(const const_string_t src);
+unsigned int string_length_utf8(const const_string_t src);
 bool string_empty(const const_string_t src);
 bool string_full(const const_string_t src);
 unsigned int string_size(const const_string_t src);

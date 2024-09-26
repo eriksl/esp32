@@ -24,6 +24,7 @@ enum
 	display_page_lines_size = 12,
 	page_border_size = 3,
 	page_text_offset = 1,
+	page_title_skip_size = 2,
 };
 
 typedef enum
@@ -352,7 +353,12 @@ static void run_display_info(void *)
 	display_page_t *display_pages_next;
 	display_colour_t current_colour;
 	unsigned int row, y;
+	int pad;
 	unsigned int unicode_length;
+	time_t stamp;
+	struct tm tm;
+	char stamp_line[16];
+	char title_line[64];
 	void (*write_fn)(const font_t *font, display_colour_t fg, display_colour_t bg,
 				unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
 				unsigned int line_unicode_length, const uint32_t *line_unicode);
@@ -402,9 +408,22 @@ static void run_display_info(void *)
 		box(current_colour,	0,										(y_size - 1) - (page_border_size - 1),	x_size - 1,				y_size - 1);
 		box(current_colour,	0,										0,										page_border_size - 1,	y_size - 1);
 
-		unicode_length = utf8_to_unicode((uint8_t *)string_cstr(display_pages_next->name), unicode_buffer_size, unicode_buffer);
+		stamp = time((time_t *)0);
+		localtime_r(&stamp, &tm);
+		strftime(stamp_line, sizeof(stamp_line), "%d/%m %H:%M", &tm);
+		pad = columns - strlen(stamp_line) - string_length_utf8(display_pages_next->name) - page_title_skip_size;
+
+		if(pad < 0)
+			pad = 0;
+
+		uint8_t colour_code[] = { 0xef, 0xa0, 0x88 + dc_white, 0 };
+
+		snprintf(title_line, sizeof(title_line), "%s%*s%s%s%*s",
+				string_cstr(display_pages_next->name), pad, "", stamp_line, (const char *)colour_code, page_title_skip_size, "");
+
+		unicode_length = utf8_to_unicode((uint8_t *)title_line, unicode_buffer_size, unicode_buffer);
 		write_fn(font, dc_white, current_colour,
-				page_border_size, (page_border_size / 2), (x_size - 1) - (page_border_size - 1), page_text_offset + page_border_size + (font->net.height - 1),
+				page_border_size, page_border_size, (x_size - 1) - page_border_size, page_text_offset + page_border_size + (font->net.height - 1),
 				unicode_length, unicode_buffer);
 
 		y = font->net.height + page_border_size + page_text_offset;
