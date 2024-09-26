@@ -118,49 +118,6 @@ static void command_help(cli_command_call_t *call)
 	return(help(call));
 }
 
-#if 0
-static void command_test_parse(cli_command_call_t *call)
-{
-	unsigned int ix, length;
-	string_t token;
-
-	string_auto(description, 512);
-
-	assert(call->parameter_count == 1);
-
-	string_assign_cstr(description, call->parameters[0].string);
-
-	length = string_length(description);
-
-	for(ix = 0; ix < length; ix++)
-		if(string_at(description, ix) == '_')
-			string_assign(description, ix, ' ');
-
-	string_assign_cstr(call->result, "line: \"");
-	string_append_string(call->result, description);
-	string_append_cstr(call->result, "\"");
-
-	for(ix = 0; ix < 16; ix++)
-	{
-		if(!(token = string_parse(description, ix)))
-			break;
-
-		string_format_append(call->result, "\n%2u \"%s\"", ix, string_cstr(token));
-		string_free(token);
-	}
-}
-#endif
-
-#if 1
-static void command_test_parse_raw_string(cli_command_call_t *call)
-{
-	assert(call->parameter_count == 2);
-
-	string_format(call->result, "parameter 1: %s", string_cstr(call->parameters[0].string));
-	string_format_append(call->result, "\nparameter 2: %s", string_cstr(call->parameters[1].string));
-}
-#endif
-
 static void command_hostname(cli_command_call_t *call)
 {
 	string_auto(hostname, 64);
@@ -525,27 +482,6 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
-
-#if 0
-	{ "test", "t", "test parsing", command_test_parse,
-		{	1,
-			{
-				{ cli_parameter_string, 0, 1, 0, 0, "line", {} },
-			},
-		}
-	},
-#endif
-
-#if 1
-	{ "test-raw", "tr", "test parsing raw string", command_test_parse_raw_string,
-		{	2,
-			{
-				{ cli_parameter_string, 0, 1, 0, 0, "token", {} },
-				{ cli_parameter_string_raw, 0, 1, 0, 0, "string", {} },
-			},
-		}
-	},
-#endif
 
 	{ "wlan-client-config", "wcc", "set wireless ssid and password in client mode", wlan_command_client_config,
 		{	2,
