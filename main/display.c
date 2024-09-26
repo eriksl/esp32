@@ -67,10 +67,6 @@ typedef struct display_page_T
 	};
 } display_page_t;
 
-//static bool write_display(bool scroll, display_colour_t fg, display_colour_t bg, unsigned x, unsigned y, const uint8_t *line);
-static bool clear(display_colour_t);
-static bool box(display_colour_t colour, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y);
-
 static const char * const display_variable[dv_size][3] =
 {
 	[dv_type] =		{	"type",				"display.type",		"display type, 0 = generic SPI LCD",	},
@@ -232,6 +228,164 @@ static unsigned int utf8_to_unicode(const uint8_t *src, unsigned int dst_size, u
 	return(dst_index);
 }
 
+static void page_free(display_page_t **page)
+{
+	unsigned int ix;
+
+	if((**page).type == dpt_text)
+	{
+		for(ix = 0; ix < display_page_lines_size; ix++)
+			if((**page).text.line[ix])
+				string_free(&(**page).text.line[ix]);
+	}
+	else
+		string_free(&(**page).image.filename);
+
+	string_free(&(**page).name);
+
+	*page = (display_page_t *)0;
+}
+
+static void page_add(display_page_t *new_page)
+{
+	display_page_t root, *before, *current;
+
+	assert(new_page);
+
+	mutex_take();
+
+	root.next = display_pages;
+
+	for(before = &root, current = root.next; before && current; before = before->next, current = current->next)
+		if(string_equal_string(current->name, new_page->name))
+			break;
+
+	if(current && string_equal_string(current->name, new_page->name))
+	{
+		new_page->next = current->next;
+
+		if(before == &root)
+			display_pages = new_page;
+		else
+			before->next = new_page;
+
+		page_free(&current);
+	}
+	else
+	{
+		new_page->next = (display_page_t *)0;
+
+		if(before == &root)
+			display_pages = new_page;
+		else
+			before->next = new_page;
+	}
+
+	mutex_give();
+}
+
+static void page_erase(const const_string_t name)
+{
+	display_page_t root, *before, *current;
+
+	assert(name);
+
+	mutex_take();
+
+	root.next = display_pages;
+
+	for(before = &root, current = root.next; before && current; before = before->next, current = current->next)
+		if(string_equal_string(current->name, name))
+			break;
+
+	if(current && string_equal_string(current->name, name))
+	{
+		if(before == &root)
+			display_pages = current->next;
+		else
+			before->next = current->next;
+
+		page_free(&current);
+	}
+
+	mutex_give();
+}
+
+static void page_add_text(const const_string_t name, unsigned int lifetime, const const_string_t contents)
+{
+	string_auto(line_string, 64);
+	unsigned int ix, line;
+	display_page_t *new_page;
+	uint8_t previous, current;
+
+	new_page = util_memory_alloc_spiram(sizeof(*new_page));
+
+	new_page->name = string_dup(name);
+	new_page->type = dpt_text;
+	new_page->expiry = time((time_t *)0) + lifetime;
+
+	current = '\0';
+	previous = '\0';
+	line = 0;
+	string_clear(line_string);
+
+	for(ix = 0; (ix < string_length(contents)) && (line < display_page_lines_size); ix++)
+	{
+		previous = current;
+		current = string_at(contents, ix);
+
+		if((ix > 0) && (previous == '\\') && (current == 'n'))
+		{
+			if(string_at_back(line_string) == 'n')
+				string_pop_back(line_string);
+
+			if(string_at_back(line_string) == '\\')
+				string_pop_back(line_string);
+
+			goto new_line;
+		}
+
+		if(current == '\n')
+		{
+			if(string_at_back(line_string) == '\n')
+				string_pop_back(line_string);
+
+			goto new_line;
+		}
+
+		string_append(line_string, current);
+		continue;
+
+new_line:
+		new_page->text.line[line++] = string_dup(line_string);
+		string_clear(line_string);
+		previous = '\0';
+		current = '\0';
+	}
+
+	if(string_length(line_string) > 0)
+		new_page->text.line[line++] = string_dup(line_string);
+
+	for(; line < display_page_lines_size; line++)
+		new_page->text.line[line] = (string_t)0;
+
+	page_add(new_page);
+}
+
+static void page_add_image(const const_string_t name, unsigned int lifetime, const const_string_t filename)
+{
+	display_page_t *new_page;
+
+	new_page = util_memory_alloc_spiram(sizeof(*new_page));
+
+	new_page->name = string_dup(name);
+	new_page->type = dpt_image;
+	new_page->expiry = time((time_t *)0) + lifetime;
+	new_page->image.filename = string_dup(filename);
+
+	page_add(new_page);
+}
+
 static bool load_font(const char *fontname)
 {
 	string_auto(pathfont, 32);
@@ -299,6 +453,27 @@ error:
 
 	return(false);
 }
+
+static bool clear(display_colour_t bg)
+{
+	if((display_type == dt_no_display) || !info[display_type].clear_fn)
+		return(false);
+
+	info[display_type].clear_fn(bg);
+
+	return(true);
+}
+
+static bool box(display_colour_t colour, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y)
+{
+	if((display_type == dt_no_display) || !info[display_type].box_fn)
+		return(false);
+
+	info[display_type].box_fn(colour, from_x, from_y, to_x, to_y);
+
+	return(true);
+}
+
 
 static void run_display_log(void *)
 {
@@ -463,164 +638,6 @@ next2:
 	util_abort("run_display_info returns");
 }
 
-static void page_free(display_page_t **page)
-{
-	unsigned int ix;
-
-	if((**page).type == dpt_text)
-	{
-		for(ix = 0; ix < display_page_lines_size; ix++)
-			if((**page).text.line[ix])
-				string_free(&(**page).text.line[ix]);
-	}
-	else
-		string_free(&(**page).image.filename);
-
-	string_free(&(**page).name);
-
-	*page = (display_page_t *)0;
-}
-
-static void page_add(display_page_t *new_page)
-{
-	display_page_t root, *before, *current;
-
-	assert(new_page);
-
-	mutex_take();
-
-	root.next = display_pages;
-
-	for(before = &root, current = root.next; before && current; before = before->next, current = current->next)
-		if(string_equal_string(current->name, new_page->name))
-			break;
-
-	if(current && string_equal_string(current->name, new_page->name))
-	{
-		new_page->next = current->next;
-
-		if(before == &root)
-			display_pages = new_page;
-		else
-			before->next = new_page;
-
-		page_free(&current);
-	}
-	else
-	{
-		new_page->next = (display_page_t *)0;
-
-		if(before == &root)
-			display_pages = new_page;
-		else
-			before->next = new_page;
-	}
-
-	mutex_give();
-}
-
-static void page_erase(const const_string_t name)
-{
-	display_page_t root, *before, *current;
-
-	assert(name);
-
-	mutex_take();
-
-	root.next = display_pages;
-
-	for(before = &root, current = root.next; before && current; before = before->next, current = current->next)
-		if(string_equal_string(current->name, name))
-			break;
-
-	if(current && string_equal_string(current->name, name))
-	{
-		if(before == &root)
-			display_pages = current->next;
-		else
-			before->next = current->next;
-
-		page_free(&current);
-	}
-
-	mutex_give();
-}
-
-static void page_add_text(const const_string_t name, unsigned int lifetime, const const_string_t contents)
-{
-	string_auto(line_string, 64);
-	unsigned int ix, line;
-	display_page_t *new_page;
-	uint8_t previous, current;
-
-	new_page = util_memory_alloc_spiram(sizeof(*new_page));
-
-	new_page->name = string_dup(name);
-	new_page->type = dpt_text;
-	new_page->expiry = time((time_t *)0) + lifetime;
-
-	current = '\0';
-	previous = '\0';
-	line = 0;
-	string_clear(line_string);
-
-	for(ix = 0; (ix < string_length(contents)) && (line < display_page_lines_size); ix++)
-	{
-		previous = current;
-		current = string_at(contents, ix);
-
-		if((ix > 0) && (previous == '\\') && (current == 'n'))
-		{
-			if(string_at_back(line_string) == 'n')
-				string_pop_back(line_string);
-
-			if(string_at_back(line_string) == '\\')
-				string_pop_back(line_string);
-
-			goto new_line;
-		}
-
-		if(current == '\n')
-		{
-			if(string_at_back(line_string) == '\n')
-				string_pop_back(line_string);
-
-			goto new_line;
-		}
-
-		string_append(line_string, current);
-		continue;
-
-new_line:
-		new_page->text.line[line++] = string_dup(line_string);
-		string_clear(line_string);
-		previous = '\0';
-		current = '\0';
-	}
-
-	if(string_length(line_string) > 0)
-		new_page->text.line[line++] = string_dup(line_string);
-
-	for(; line < display_page_lines_size; line++)
-		new_page->text.line[line] = (string_t)0;
-
-	page_add(new_page);
-}
-
-static void page_add_image(const const_string_t name, unsigned int lifetime, const const_string_t filename)
-{
-	display_page_t *new_page;
-
-	new_page = util_memory_alloc_spiram(sizeof(*new_page));
-
-	new_page->name = string_dup(name);
-	new_page->type = dpt_image;
-	new_page->expiry = time((time_t *)0) + lifetime;
-	new_page->image.filename = string_dup(filename);
-
-	page_add(new_page);
-}
-
 static void display_info(string_t output)
 {
 	uint32_t value;
@@ -780,26 +797,6 @@ static bool display_brightness(unsigned int percentage)
 		return(false);
 
 	info[display_type].bright_fn(percentage);
-
-	return(true);
-}
-
-static bool clear(display_colour_t bg)
-{
-	if((display_type == dt_no_display) || !info[display_type].clear_fn)
-		return(false);
-
-	info[display_type].clear_fn(bg);
-
-	return(true);
-}
-
-static bool box(display_colour_t colour, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y)
-{
-	if((display_type == dt_no_display) || !info[display_type].box_fn)
-		return(false);
-
-	info[display_type].box_fn(colour, from_x, from_y, to_x, to_y);
 
 	return(true);
 }
