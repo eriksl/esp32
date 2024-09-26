@@ -131,6 +131,7 @@ static unsigned int x_size, y_size;
 static QueueHandle_t log_display_queue;
 static bool log_mode = true;
 static SemaphoreHandle_t mutex;
+static unsigned int display_log_y;
 
 static void mutex_take(void)
 {
@@ -307,11 +308,10 @@ static void run_display_log(void *)
 	char entry_text[64];
 	char log_line[64];
 	unsigned int unicode_length;
-	unsigned int y;
 
 	assert(log_display_queue);
 
-	y = 0;
+	display_log_y = 0;
 
 	for(;;)
 	{
@@ -325,22 +325,22 @@ static void run_display_log(void *)
 			strlcat(log_line, entry_text, sizeof(log_line));
 			unicode_length = utf8_to_unicode((uint8_t *)log_line, unicode_buffer_size, unicode_buffer);
 
-			if(info[display_type].scroll_fn && ((y + font->net.height) >= y_size))
+			if(info[display_type].scroll_fn && ((display_log_y + font->net.height) >= y_size))
 			{
 				info[display_type].scroll_fn(1);
-				y = y_size - font->net.height - 1;
+				display_log_y = y_size - font->net.height - 1;
 			}
 
-			info[display_type].write_fn(font, dc_white, dc_black, 0, y, x_size - 1, y + font->net.height - 1, unicode_length, unicode_buffer);
+			info[display_type].write_fn(font, dc_white, dc_black, 0, display_log_y, x_size - 1, display_log_y + font->net.height - 1, unicode_length, unicode_buffer);
 
-			y += font->net.height;
+			display_log_y += font->net.height;
 
 			if(!info[display_type].scroll_fn)
 			{
-				if((y + font->net.height) > y_size)
-					y = 0;
+				if((display_log_y + font->net.height) > y_size)
+					display_log_y = 0;
 
-				box(dc_black, 0, y, x_size - 1, y + font->net.height - 1);
+				box(dc_black, 0, display_log_y, x_size - 1, display_log_y + font->net.height - 1);
 			}
 		}
 	}
@@ -385,6 +385,7 @@ static void run_display_info(void *)
 					font_valid = load_font("font_small");
 					log_mode = true;
 					clear(dc_black);
+					display_log_y = 0;
 				}
 
 				goto next1;
