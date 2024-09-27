@@ -24,7 +24,6 @@ enum
 	display_page_lines_size = 12,
 	page_border_size = 3,
 	page_text_offset = 1,
-	page_title_skip_size = 2,
 };
 
 typedef enum
@@ -528,7 +527,7 @@ static void run_display_info(void *)
 	display_page_t *display_pages_current, *display_pages_next;
 	display_colour_t current_colour;
 	unsigned int row, y;
-	int pad;
+	int pad, chop;
 	unsigned int unicode_length;
 	time_t stamp;
 	struct tm tm;
@@ -587,15 +586,39 @@ static void run_display_info(void *)
 		stamp = time((time_t *)0);
 		localtime_r(&stamp, &tm);
 		strftime(stamp_line, sizeof(stamp_line), "%d/%m %H:%M", &tm);
-		pad = columns - strlen(stamp_line) - string_length_utf8(display_pages_current->name) - page_title_skip_size;
 
-		if(pad < 0)
-			pad = 0;
+		if(strlen(stamp_line) > columns)
+		{
+			chop = string_length_utf8(display_pages_current->name);
 
-		uint8_t colour_code[] = { 0xef, 0xa0, 0x88 + dc_white, 0 };
+			if(chop > columns)
+			{
+				chop = columns;
+				pad = 0;
+			}
+			else
+				pad = columns - string_length_utf8(display_pages_current->name);
 
-		snprintf(title_line, sizeof(title_line), "%s%*s%s%s%*s",
-				string_cstr(display_pages_current->name), pad, "", stamp_line, (const char *)colour_code, page_title_skip_size, "");
+			assert(pad >= 0);
+
+			snprintf(title_line, sizeof(title_line), "%.*s%*s",
+					chop, string_cstr(display_pages_current->name), pad, "");
+		}
+		else
+		{
+			chop = string_length_utf8(display_pages_current->name);
+
+			if((chop + strlen(stamp_line)) > columns)
+				chop = columns - strlen(stamp_line);
+
+			pad = columns - strlen(stamp_line) - chop;
+
+			assert(chop >= 0);
+			assert(pad >= 0);
+
+			snprintf(title_line, sizeof(title_line), "%.*s%*s%s",
+				chop, string_cstr(display_pages_current->name), pad, "", stamp_line);
+		}
 
 		unicode_length = utf8_to_unicode((uint8_t *)title_line, unicode_buffer_size, unicode_buffer);
 		write_fn(font, dc_white, current_colour,
