@@ -911,7 +911,7 @@ finish1:
 next1:
 		page_data_mutex_give();
 next2:
-		util_sleep(2000);
+		util_sleep(5000);
 	}
 
 	util_abort("run_display_info returns");
