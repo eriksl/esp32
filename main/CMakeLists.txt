@@ -6,7 +6,6 @@ idf_component_register(
 		"console.c"
 		"display.c"
 		"display-spi-generic.c"
-		"flash.c"
 		"fs.c"
 		"info.c"
 		"init.c"

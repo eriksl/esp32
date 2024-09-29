@@ -283,44 +283,6 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "flash-bench", (const char*)0, "benchmark flash+transport", flash_command_bench,
-		{	1,
-			{
-				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length", .unsigned_int = { 0, 4096 }},
-			},
-		}
-	},
-
-	{ "flash-checksum", (const char*)0, "obtain checksum of sectors in flash", flash_command_checksum,
-		{	2,
-			{
-				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "start sector", {} },
-				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "length", {} },
-			},
-		}
-	},
-
-	{ "flash-info", (const char*)0, "show info about flash memory", flash_command_info,
-		{}
-	},
-
-	{ "flash-read", (const char*)0, "read sectors from flash", flash_command_read,
-		{	1,
-			{
-				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "sector", {} },
-			},
-		}
-	},
-
-	{ "flash-write", (const char*)0, "write sectors to flash", flash_command_write,
-		{	2,
-			{
-				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "simulate", .unsigned_int = { 0, 1 }},
-				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "sector", {} },
-			}
-		}
-	},
-
 	{ "fs-read", (const char*)0, "read chunk from a file", fs_command_read,
 		{	3,
 			{
