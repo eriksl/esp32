@@ -77,6 +77,7 @@ void fs_command_erase(cli_command_call_t *call);
 void fs_command_checksum(cli_command_call_t *call);
 
 void info_command_info(cli_command_call_t *call);
+void info_command_info_board(cli_command_call_t *call);
 void info_command_info_memory(cli_command_call_t *call);
 void info_command_info_partitions(cli_command_call_t *call);
 void info_command_info_process(cli_command_call_t *call);
@@ -85,11 +86,11 @@ void log_command_info(cli_command_call_t *call);
 void log_command_log(cli_command_call_t *call);
 void log_command_log_clear(cli_command_call_t *call);
 
-void ota_command_start(cli_command_call_t *call);
-void ota_command_write(cli_command_call_t *call);
-void ota_command_finish(cli_command_call_t *call);
-void ota_command_commit(cli_command_call_t *call);
-void ota_command_confirm(cli_command_call_t *call);
+void command_ota_start(cli_command_call_t *call);
+void command_ota_write(cli_command_call_t *call);
+void command_ota_finish(cli_command_call_t *call);
+void command_ota_commit(cli_command_call_t *call);
+void command_ota_confirm(cli_command_call_t *call);
 
 void string_command_info(cli_command_call_t *call);
 

@@ -38,7 +38,7 @@ static void ota_abort(void)
 	ota_length = 0;
 }
 
-void ota_command_start(cli_command_call_t *call)
+void command_ota_start(cli_command_call_t *call)
 {
 	int rv;
 	unsigned int length;
@@ -87,10 +87,10 @@ void ota_command_start(cli_command_call_t *call)
 
 	ota_length = length;
 
-	string_format(call->result, "OK start write ota, chunk size %u partition %u/%s", /* FIXME */ call->mtu, util_partition_to_slot(partition), partition->label);
+	string_format(call->result, "OK start write ota to partition %u/%s", util_partition_to_slot(partition), partition->label);
 }
 
-void ota_command_write(cli_command_call_t *call)
+void command_ota_write(cli_command_call_t *call)
 {
 	int rv;
 	unsigned length, checksum_chunk;
@@ -136,7 +136,7 @@ void ota_command_write(cli_command_call_t *call)
 	string_format(call->result, "OK write ota");
 }
 
-void ota_command_finish(cli_command_call_t *call)
+void command_ota_finish(cli_command_call_t *call)
 {
 	int rv;
 	unsigned char ota_sha256_hash[32];
@@ -172,7 +172,7 @@ void ota_command_finish(cli_command_call_t *call)
 	string_format(call->result, "OK finish ota, checksum: %s", string_cstr(ota_sha256_hash_text));
 }
 
-void ota_command_commit(cli_command_call_t *call)
+void command_ota_commit(cli_command_call_t *call)
 {
 	esp_err_t rv;
 	unsigned char local_sha256_hash[32];
@@ -232,45 +232,15 @@ void ota_command_commit(cli_command_call_t *call)
 	string_format(call->result, "OK commit ota");
 }
 
-void ota_command_confirm(cli_command_call_t *call)
+void command_ota_confirm(cli_command_call_t *call)
 {
 	int rv;
-	const esp_partition_t *boot_partition, *running_partition;
-	unsigned int slot;
 
-	assert(call->parameter_count == 1);
-
-	slot = call->parameters[0].unsigned_int;
-
-	if(!(running_partition = esp_ota_get_running_partition()))
-	{
-		string_format(call->result, "ERROR: esp_ota_get_running_partition failed");
-		return;
-	}
-
-	if(util_partition_to_slot(running_partition) != slot)
-	{
-		string_format(call->result, "ERROR: address of running slot (%u) not equal to updated slot (%u), boot failed",
-				util_partition_to_slot(running_partition), slot);
-		return;
-	}
+	assert(call->parameter_count == 0);
 
 	if((rv = esp_ota_mark_app_valid_cancel_rollback()))
 	{
 		string_format(call->result, "ERROR: esp_ota_mark_app_valid_cancel_rollback failed: %u", rv);
-		return;
-	}
-
-	if(!(boot_partition = esp_ota_get_boot_partition()))
-	{
-		string_format(call->result, "ERROR: esp_ota_get_boot_partition failed");
-		return;
-	}
-
-	if(util_partition_to_slot(boot_partition) != slot)
-	{
-		string_format(call->result, "ERROR: address of boot slot (%u) not equal to updated slot (%u), confirm failed",
-				util_partition_to_slot(boot_partition), slot);
 		return;
 	}
 

@@ -41,22 +41,9 @@ void info_command_info(cli_command_call_t *call)
 		return;
 	}
 
-	string_format(call->result,
-			"> firmware\n"
-			">   date: %s %s\n"
-			">   build start: %s %s\n",
-			__DATE__, __TIME__, desc->date, desc->time);
-
-	string_format_append(call->result,
-			"# transport chunk size: %u\n", call->mtu);
-
-    string_format_append(call->result,
-            "$ expected image size: %ux%u\n",
-            display_image_x_size(), display_image_y_size());
-
 	esp_chip_info(&chip_info);
 
-	string_format_append(call->result, "SoC: %s with %d cores\nRF: %s%s%s%s",
+	string_format(call->result, "SoC: %s with %d cores\nRF: %s%s%s%s",
 		CONFIG_IDF_TARGET,
 		chip_info.cores,
 		(chip_info.features & CHIP_FEATURE_WIFI_BGN) ? "WiFi/" : "",
@@ -87,6 +74,22 @@ void info_command_info(cli_command_call_t *call)
 #else
 	string_append_cstr(call->result, "\n- no status LED");
 #endif
+
+	string_format_append(call->result,
+			"firmware\n"
+			"- date: %s %s\n"
+			"- build start: %s %s\n",
+			__DATE__, __TIME__, desc->date, desc->time);
+}
+
+void info_command_info_board(cli_command_call_t *call)
+{
+	assert(inited);
+	assert(call->parameter_count == 0);
+
+	string_format(call->result, "firmware date: %s %s, ", __DATE__, __TIME__);
+	string_format_append(call->result, "transport chunk size: %u, ", call->mtu);
+    string_format_append(call->result, "display area: %ux%u\n", display_image_x_size(), display_image_y_size());
 }
 
 void info_command_info_partitions(cli_command_call_t *call)

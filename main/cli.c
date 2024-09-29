@@ -393,9 +393,13 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "info", "stats", "show some generic information", info_command_info,
+	{ "info", (const char *)0, "show some generic information", info_command_info,
 		{}
 	},
+
+    { "info-board", "ib", "BSP info", info_command_info_board,
+        {}
+    },
 
 	{ "info-cli", "ic", "show information about the cli", command_info_cli,
 		{}
@@ -437,7 +441,7 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
-	{ "ota-commit", (const char*)0, "verify and select finished ota session", ota_command_commit,
+	{ "ota-commit", (const char*)0, "verify and select finished ota session", command_ota_commit,
 		{	1,
 			{
 				{ cli_parameter_string, 0, 1, 1, 1, "checksum", .string = { 64, 64 }},
@@ -445,19 +449,15 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "ota-confirm", (const char*)0, "confirm ota image runs correctly", ota_command_confirm,
-		{	1,
-			{
-				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "slot", .unsigned_int = { 0, 1 }},
-			},
-		}
-	},
-
-	{ "ota-finish", (const char*)0, "finish ota session", ota_command_finish,
+	{ "ota-confirm", (const char*)0, "confirm ota image runs correctly", command_ota_confirm,
 		{}
 	},
 
-	{ "ota-start", (const char*)0, "start ota session", ota_command_start,
+	{ "ota-finish", (const char*)0, "finish ota session", command_ota_finish,
+		{}
+	},
+
+	{ "ota-start", (const char*)0, "start ota session", command_ota_start,
 		{	1,
 			{
 				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "length", {} },
@@ -465,7 +465,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "ota-write", (const char*)0, "write one sector of ota data", ota_command_write,
+	{ "ota-write", (const char*)0, "write one sector of ota data", command_ota_write,
 		{	2,
 			{
 				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "length", {} },
