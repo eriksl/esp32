@@ -180,21 +180,24 @@ static void send_command_data_2_16(unsigned int cmd, unsigned int data_1, unsign
 	send_command_data(true, cmd, 4, bytes);
 }
 
+static unsigned int pixel_buffer_size = 0;
+static unsigned int pixel_buffer_rgb_length = 0;
+static unsigned int pixel_buffer_rgb_size = 0;
+static display_rgb_t *pixel_buffer_rgb = (display_rgb_t *)0;
+static uint8_t *pixel_buffer = (uint8_t *)0;
+
 static void box(unsigned int r, unsigned int g, unsigned int b, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y)
 {
 	unsigned int pixel, pixels, chunk;
 	unsigned int length_x, length_y;
-	display_rgb_t *pixel_buffer_rgb;
-	unsigned int pixel_buffer_rgb_size;
 
 	assert(inited);
-	assert(display_pixel_buffer);
-	assert(display_pixel_buffer_size > 0);
+	assert(pixel_buffer);
+	assert(pixel_buffer_size > 0);
+	assert(pixel_buffer_rgb);
+	assert(pixel_buffer_rgb_size > 0);
 	assert(to_x >= from_x);
 	assert(to_y >= from_y);
-
-	pixel_buffer_rgb = (display_rgb_t *)display_pixel_buffer;
-	pixel_buffer_rgb_size = display_pixel_buffer_size / sizeof(display_rgb_t);
 
 	length_x = to_x - from_x + 1;
 	length_y = to_y - from_y + 1;
@@ -254,7 +257,7 @@ void pre_callback(spi_transaction_t *transaction)
 	gpio_set_level(callback_data->gpio, callback_data->level);
 }
 
-bool display_spi_generic_init(const display_init_parameters_t *parameters, unsigned int *buffer_size)
+bool display_spi_generic_init(const display_init_parameters_t *parameters)
 {
 	size_t max_transaction_length;
 
@@ -359,15 +362,20 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters, unsig
 	};
 
 	util_abort_on_esp_err("gpio_config", gpio_config(&gpio_pin_config));
-	util_abort_on_esp_err("spi_bus_initialize", spi_bus_initialize(spi_signal->esp_host, &bus_config, SPI_DMA_CH_AUTO));
-	util_abort_on_esp_err("spi_bus_add_device", spi_bus_add_device(spi_signal->esp_host, &device, &spi_device_handle));
-
-	util_abort_on_esp_err("spi_bus_get_max_transaction_len", spi_bus_get_max_transaction_len(spi_signal->esp_host, &max_transaction_length));
-	*buffer_size = max_transaction_length;
 
 	util_abort_on_esp_err("sdm_new_channel", sdm_new_channel(&pdm_config, &sdm_channel_handle));
 	util_abort_on_esp_err("sdm_channel_enable", sdm_channel_enable(sdm_channel_handle));
 	util_abort_on_esp_err("sdm_channel_set_pulse_density", sdm_channel_set_pulse_density(sdm_channel_handle, 127));
+
+	util_abort_on_esp_err("spi_bus_initialize", spi_bus_initialize(spi_signal->esp_host, &bus_config, SPI_DMA_CH_AUTO));
+	util_abort_on_esp_err("spi_bus_add_device", spi_bus_add_device(spi_signal->esp_host, &device, &spi_device_handle));
+
+	util_abort_on_esp_err("spi_bus_get_max_transaction_len", spi_bus_get_max_transaction_len(spi_signal->esp_host, &max_transaction_length));
+	pixel_buffer_size = max_transaction_length;
+	pixel_buffer = util_memory_alloc_dma(pixel_buffer_size);
+	pixel_buffer_rgb = (display_rgb_t *)pixel_buffer;
+	pixel_buffer_rgb_size = pixel_buffer_size / sizeof(display_rgb_t);
+	pixel_buffer_rgb_length = 0;
 
 	inited = true;
 

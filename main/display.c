@@ -113,9 +113,6 @@ const display_rgb_t display_colour_map[dc_size] =
 	[dc_white] =	{	0xff,	0xff,	0xff	},
 };
 
-unsigned int display_pixel_buffer_size = 0;
-uint8_t *display_pixel_buffer = (uint8_t *)0;
-
 static display_page_t *display_pages = (display_page_t *)0;
 static display_type_t display_type = dt_no_display;
 static font_t *font = (font_t *)0;
@@ -743,7 +740,6 @@ static void display_info(string_t output)
 void display_init(void)
 {
 	uint32_t type, value;
-	unsigned int buffer_size;
 
 	static display_init_parameters_t display_init_parameters =
 	{
@@ -790,7 +786,7 @@ void display_init(void)
 
 	assert(info[display_type].init_fn);
 
-	if(!info[display_type].init_fn(&display_init_parameters, &buffer_size))
+	if(!info[display_type].init_fn(&display_init_parameters))
 	{
 		display_type = dt_no_display;
 		return;
@@ -801,10 +797,6 @@ void display_init(void)
 		log("display: load font failed");
 		return;
 	}
-
-	display_pixel_buffer_size = buffer_size;
-	log_format("display: pixel buffer size: %u bytes", display_pixel_buffer_size);
-	display_pixel_buffer = util_memory_alloc_dma(display_pixel_buffer_size);
 
 	unicode_buffer = (uint32_t *)util_memory_alloc_spiram(sizeof(uint32_t) * unicode_buffer_size);
 

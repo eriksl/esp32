@@ -35,8 +35,6 @@ typedef struct
 static_assert(sizeof(display_rgb_t) == 3);
 
 extern const display_rgb_t display_colour_map[dc_size];
-extern unsigned int display_pixel_buffer_size;
-extern uint8_t *display_pixel_buffer;
 
 typedef struct
 {
@@ -90,7 +88,7 @@ typedef struct __attribute__((packed))
 typedef struct
 {
 	const char *name;
-	bool (*init_fn)(const display_init_parameters_t *parameters, unsigned int *buffer_size);
+	bool (*init_fn)(const display_init_parameters_t *parameters);
 	void (*bright_fn)(unsigned int percentage);
 	void (*write_fn)(const font_t *font, display_colour_t fg, display_colour_t bg,
 				unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
@@ -102,7 +100,7 @@ typedef struct
 
 void display_init(void);
 
-bool display_spi_generic_init(const display_init_parameters_t *parameters, unsigned int *buffer_size);
+bool display_spi_generic_init(const display_init_parameters_t *parameters);
 void display_spi_generic_bright(unsigned int percentage);
 void display_spi_generic_write(const font_t *font, display_colour_t fg, display_colour_t bg,
 		unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
