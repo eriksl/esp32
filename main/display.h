@@ -99,6 +99,8 @@ typedef struct
 } display_info_t;
 
 void display_init(void);
+unsigned int display_image_x_size(void);
+unsigned int display_image_y_size(void);
 
 bool display_spi_generic_init(const display_init_parameters_t *parameters);
 void display_spi_generic_bright(unsigned int percentage);

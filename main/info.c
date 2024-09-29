@@ -17,6 +17,7 @@
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
+#include "display.h"
 
 static bool inited = false;
 unsigned int initial_free_heap;
@@ -47,11 +48,15 @@ void info_command_info(cli_command_call_t *call)
 			__DATE__, __TIME__, desc->date, desc->time);
 
 	string_format_append(call->result,
-			"# transport chunk size: %u", call->mtu);
+			"# transport chunk size: %u\n", call->mtu);
+
+    string_format_append(call->result,
+            "$ expected image size: %ux%u\n",
+            display_image_x_size(), display_image_y_size());
 
 	esp_chip_info(&chip_info);
 
-	string_format_append(call->result, "\nSoC: %s with %d cores\nRF: %s%s%s%s",
+	string_format_append(call->result, "SoC: %s with %d cores\nRF: %s%s%s%s",
 		CONFIG_IDF_TARGET,
 		chip_info.cores,
 		(chip_info.features & CHIP_FEATURE_WIFI_BGN) ? "WiFi/" : "",

@@ -815,6 +815,22 @@ void display_init(void)
 		util_abort("display: xTaskCreatePinnedToNode display run");
 }
 
+unsigned int display_image_x_size(void)
+{
+	if((display_type == dt_no_display) || !font_valid || !font)
+		return(0);
+
+	return(x_size - (2 * page_border_size));
+}
+
+unsigned int display_image_y_size(void)
+{
+	if((display_type == dt_no_display) || !font_valid || !font)
+		return(0);
+
+	return(y_size - (2 * page_border_size) - page_text_offset - font->net.height);
+}
+
 static bool display_brightness(unsigned int percentage)
 {
 	if((display_type == dt_no_display) || !info[display_type].bright_fn)
