@@ -403,6 +403,46 @@ finished:
 	pixel_buffer_flush(-1);
 }
 
+void display_spi_generic_plot_line(unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int rgb_pixels_length, const display_rgb_t *pixels)
+{
+	unsigned int current, chunk;
+	static const display_rgb_t * const bg = &display_colour_map[dc_blue];
+
+	assert(inited);
+	assert(pixel_buffer);
+	assert(pixel_buffer_size > 0);
+	assert(pixel_buffer_rgb);
+	assert(pixel_buffer_rgb_size > 0);
+
+	if((from_x >= x_size) || (from_y >= y_size))
+		return;
+
+	if(to_x >= x_size)
+		to_x = x_size - 1;
+
+	set_window(from_x, from_y, to_x, from_y);
+
+	if((to_x - from_x) < rgb_pixels_length)
+		rgb_pixels_length = to_x - from_x + 1;
+
+	chunk = 0;
+
+	for(current = 0; current < rgb_pixels_length; current += chunk)
+	{
+		chunk = rgb_pixels_length - current;
+
+		if(chunk > pixel_buffer_rgb_size)
+			chunk = pixel_buffer_rgb_size;
+
+		pixel_buffer_write(chunk, &pixels[current]);
+	}
+
+	for(; current < (to_x - from_x); current++)
+		pixel_buffer_write(1, bg);
+
+	pixel_buffer_flush(-1);
+}
+
 void pre_callback(spi_transaction_t *transaction)
 {
 	assert(inited);

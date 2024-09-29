@@ -96,6 +96,7 @@ typedef struct
 	void (*clear_fn)(display_colour_t);
 	void (*scroll_fn)(unsigned int lines);
 	void (*box_fn)(display_colour_t, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y);
+	void (*plot_line_fn)(unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int rgb_pixels_length, const display_rgb_t *pixels);
 } display_info_t;
 
 void display_init(void);
@@ -109,3 +110,4 @@ void display_spi_generic_write(const font_t *font, display_colour_t fg, display_
 		unsigned int line_unicode_length, const uint32_t *line_unicode);
 void display_spi_generic_clear(display_colour_t);
 void display_spi_generic_box(display_colour_t, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y);
+void display_spi_generic_plot_line(unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int rgb_pixels_length, const display_rgb_t *pixels);

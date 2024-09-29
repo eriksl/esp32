@@ -88,6 +88,7 @@ static const display_info_t info[dt_size] =
 		.write_fn = (void *)0,
 		.clear_fn = (void *)0,
 		.box_fn = (void *)0,
+		.plot_line_fn = (void *)0,
 		.scroll_fn = (void *)0,
 	},
 	[dt_spi_generic] =
@@ -98,6 +99,7 @@ static const display_info_t info[dt_size] =
 		.write_fn = display_spi_generic_write,
 		.clear_fn = display_spi_generic_clear,
 		.box_fn = display_spi_generic_box,
+		.plot_line_fn = display_spi_generic_plot_line,
 		.scroll_fn = (void *)0,
 	},
 };
@@ -470,6 +472,15 @@ static bool box(display_colour_t colour, unsigned int from_x, unsigned int from_
 	return(true);
 }
 
+static bool plot_line(unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int length_pixels, const png_bytep pixels)
+{
+	if((display_type == dt_no_display) || !info[display_type].plot_line_fn)
+		return(false);
+
+	info[display_type].plot_line_fn(from_x, from_y, to_x, length_pixels, (const display_rgb_t *)pixels);
+
+	return(true);
+}
 
 static void run_display_log(void *)
 {
