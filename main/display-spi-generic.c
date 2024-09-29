@@ -180,11 +180,59 @@ static void send_command_data_2_16(unsigned int cmd, unsigned int data_1, unsign
 	send_command_data(true, cmd, 4, bytes);
 }
 
+static void set_window(unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y)
+{
+	if(from_x >= x_size)
+		from_x = x_size - 1;
+
+	if(to_x >= x_size)
+		to_x = x_size - 1;
+
+	if(from_y >= y_size)
+		from_y = y_size - 1;
+
+	if(to_y >= y_size)
+		to_y = y_size - 1;
+
+	send_command_data_2_16(cmd_caset, from_y, to_y);
+	send_command_data_2_16(cmd_raset, from_x, to_x);
+	send_command(cmd_ramwr);
+}
+
 static unsigned int pixel_buffer_size = 0;
 static unsigned int pixel_buffer_rgb_length = 0;
 static unsigned int pixel_buffer_rgb_size = 0;
 static display_rgb_t *pixel_buffer_rgb = (display_rgb_t *)0;
 static uint8_t *pixel_buffer = (uint8_t *)0;
+
+static void pixel_buffer_flush(int length)
+{
+	if(length < 0)
+	{
+		length = pixel_buffer_rgb_length;
+		pixel_buffer_rgb_length = 0;
+	}
+
+	assert(length <= pixel_buffer_rgb_size);
+
+	send_command_data(false, 0, length * sizeof(display_rgb_t), pixel_buffer);
+}
+
+static void pixel_buffer_write(unsigned int length_rgb, const display_rgb_t *pixels_rgb)
+{
+	assert(inited);
+	assert(pixel_buffer);
+	assert(pixel_buffer_size > 0);
+	assert(pixel_buffer_rgb);
+	assert(pixel_buffer_rgb_size > 0);
+	assert(length_rgb < pixel_buffer_rgb_size);
+
+	if((pixel_buffer_rgb_length + length_rgb) >= pixel_buffer_rgb_size)
+		pixel_buffer_flush(-1);
+
+	memcpy(&pixel_buffer_rgb[pixel_buffer_rgb_length], pixels_rgb, length_rgb * sizeof(display_rgb_t));
+	pixel_buffer_rgb_length += length_rgb;
+}
 
 static void box(unsigned int r, unsigned int g, unsigned int b, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y)
 {
@@ -210,9 +258,7 @@ static void box(unsigned int r, unsigned int g, unsigned int b, unsigned int fro
 		pixel_buffer_rgb[pixel].b = b;
 	}
 
-	send_command_data_2_16(cmd_caset, from_x, to_x);
-	send_command_data_2_16(cmd_raset, from_y, to_y);
-	send_command(cmd_ramwr);
+	set_window(from_x, from_y, to_x, to_y);
 
 	chunk = 0;
 
@@ -223,7 +269,7 @@ static void box(unsigned int r, unsigned int g, unsigned int b, unsigned int fro
 		if(chunk > (pixels - pixel))
 			chunk = pixels - pixel;
 
-		send_command_data(false, 0, chunk * sizeof(display_rgb_t), display_pixel_buffer);
+		pixel_buffer_flush(chunk);
 	}
 }
 
@@ -238,12 +284,123 @@ void display_spi_generic_box(display_colour_t colour, unsigned int from_x, unsig
 
 	rgb = &display_colour_map[colour];
 
-	box(rgb->r, rgb->g, rgb->b, from_y, from_x, to_y, to_x); // swap x/y
+	box(rgb->r, rgb->g, rgb->b, from_x, from_y, to_x, to_y);
 }
 
 void display_spi_generic_clear(display_colour_t bg)
 {
 	display_spi_generic_box(bg, 0, 0, x_size - 1, y_size - 1);
+}
+
+void display_spi_generic_write(const font_t *font, display_colour_t fg_colour, display_colour_t bg_colour,
+		unsigned int from_x, unsigned int from_y,
+		unsigned int to_x, unsigned int to_y,
+		unsigned int unicode_line_length, const uint32_t *unicode_line)
+{
+	unsigned int current_unicode_entry;
+	uint32_t code;
+	const font_glyph_t *glyph;
+	int col, row, bit;
+	unsigned current_glyph;
+	unsigned int ix;
+	display_rgb_t fg_rgb;
+	display_rgb_t bg_rgb;
+
+	assert(inited);
+	assert(pixel_buffer);
+	assert(pixel_buffer_size > 0);
+	assert(pixel_buffer_rgb);
+	assert(pixel_buffer_rgb_size > 0);
+
+	assert(from_x <= to_x);
+	assert(from_y <= to_y);
+
+	if((from_x >= x_size) || (from_y >= y_size))
+		return;
+
+	assert(fg_colour < dc_size);
+	assert(bg_colour < dc_size);
+
+	fg_rgb = display_colour_map[fg_colour];
+	bg_rgb = display_colour_map[bg_colour];
+
+	set_window(from_x, from_y, to_x, to_y);
+
+	col = from_x;
+
+	for(current_unicode_entry = 0; current_unicode_entry < unicode_line_length; current_unicode_entry++)
+	{
+		code = unicode_line[current_unicode_entry];
+
+		if((code >= 0xf800) && (code < 0xf808)) // abuse private use unicode codepoints for foreground colours
+		{
+			ix = (code - 0xf800);
+
+			if(ix >= dc_size)
+				log_format("display-spi-generic: foreground colour out of range: %u", ix);
+			else
+				fg_rgb = display_colour_map[ix];
+		}
+		else
+		{
+			if((code >= 0xf808) && (code < 0xf810)) // abuse private use unicode codepoints for background colours
+			{
+				ix = (code - 0xf808);
+
+				if(ix >= dc_size)
+					log_format("display-spi-generic: background colour out of range: %u", ix);
+				else
+					bg_rgb = display_colour_map[ix];
+			}
+			else
+			{
+				if(code < font_basic_glyphs_size)
+					glyph = &font->basic_glyph[code];
+				else
+				{
+					for(current_glyph = 0; current_glyph < font->extra_glyphs; current_glyph++)
+					{
+						glyph = &font->extra_glyph[current_glyph];
+
+						if(glyph->codepoint == code)
+							break;
+					}
+
+					if(current_glyph >= font->extra_glyphs)
+						glyph = (font_glyph_t *)0;
+				}
+
+				if(glyph)
+				{
+					for(bit = 0; bit < font->net.width; bit++)
+					{
+						for(row = 0; row < (to_y - from_y + 1); row++)
+						{
+							if(row < font->net.height)
+							{
+								if(glyph->row[row] & (1 << bit))
+									pixel_buffer_write(1, &fg_rgb);
+								else
+									pixel_buffer_write(1, &bg_rgb);
+							}
+							else
+								pixel_buffer_write(1, &bg_rgb);
+						}
+
+						if(++col > to_x)
+							goto finished;
+					}
+				}
+			}
+		}
+	}
+
+	for(; col <= to_x; col++)
+		for(row = 0; row < (to_y - from_y + 1); row++)
+			pixel_buffer_write(1, &bg_rgb);
+
+finished:
+	pixel_buffer_flush(-1);
 }
 
 void pre_callback(spi_transaction_t *transaction)
@@ -428,130 +585,3 @@ void display_spi_generic_bright(unsigned int percentage)
 	}
 }
 
-static inline void send_pixel(display_colour_t colour)
-{
-	static unsigned int ix = 0;
-
-	display_rgb_t *pixel_buffer_rgb;
-	unsigned int pixel_buffer_rgb_size;
-
-	pixel_buffer_rgb = (display_rgb_t *)display_pixel_buffer;
-	pixel_buffer_rgb_size = display_pixel_buffer_size / sizeof(display_rgb_t);
-
-	if(((ix + 1) >= pixel_buffer_rgb_size) || (colour == dc_size))
-	{
-		send_command_data(false, 0, ix * sizeof(display_rgb_t), display_pixel_buffer);
-		ix = 0;
-	}
-
-	if(colour != dc_size)
-		pixel_buffer_rgb[ix++] = display_colour_map[colour];
-}
-
-void display_spi_generic_write(const font_t *font, display_colour_t fg_colour, display_colour_t bg_colour,
-		unsigned int from_x, unsigned int from_y,
-		unsigned int to_x, unsigned int to_y,
-		unsigned int unicode_line_length, const uint32_t *unicode_line)
-{
-	unsigned int current_unicode_entry;
-	uint32_t code;
-	const font_glyph_t *glyph;
-	int col, row, bit;
-	unsigned current_glyph;
-	unsigned int ix;
-
-	assert(display_pixel_buffer);
-	assert(display_pixel_buffer_size > 0);
-
-	assert(from_x <= to_x);
-	assert(from_y <= to_y);
-
-	if((from_x >= x_size) || (from_y >= y_size))
-		return;
-
-	if(to_x >= x_size)
-		to_x = x_size - 1;
-
-	if(to_y >= y_size)
-		to_y = y_size - 1;
-
-	send_command_data_2_16(cmd_caset, from_y, to_y);
-	send_command_data_2_16(cmd_raset, from_x, to_x);
-	send_command(cmd_ramwr);
-
-	col = from_x;
-
-	for(current_unicode_entry = 0; current_unicode_entry < unicode_line_length; current_unicode_entry++)
-	{
-		code = unicode_line[current_unicode_entry];
-
-		if((code >= 0xf800) && (code < 0xf808)) // abuse private use unicode codepoints for foreground colours
-		{
-			ix = (code - 0xf800);
-
-			if(ix >= dc_size)
-				log_format("display-spi-generic: foreground colour out of range: %u", ix);
-			else
-				fg_colour = ix;
-		}
-		else
-		{
-			if((code >= 0xf808) && (code < 0xf810)) // abuse private use unicode codepoints for background colours
-			{
-				ix = (code - 0xf808);
-
-				if(ix >= dc_size)
-					log_format("display-spi-generic: background colour out of range: %u", ix);
-				else
-					bg_colour = ix;
-			}
-			else
-			{
-				if(code < font_basic_glyphs_size)
-					glyph = &font->basic_glyph[code];
-				else
-				{
-					for(current_glyph = 0; current_glyph < font->extra_glyphs; current_glyph++)
-					{
-						glyph = &font->extra_glyph[current_glyph];
-
-						if(glyph->codepoint == code)
-							break;
-					}
-
-					if(current_glyph >= font->extra_glyphs)
-						glyph = (font_glyph_t *)0;
-				}
-
-				if(glyph)
-				{
-					for(bit = 0; bit < font->net.width; bit++)
-					{
-						for(row = 0; row < (to_y - from_y + 1); row++)
-						{
-							if(row < font->net.height)
-							{
-								if(glyph->row[row] & (1 << bit))
-									send_pixel(fg_colour);
-								else
-									send_pixel(bg_colour);
-							}
-							else
-								send_pixel(bg_colour);
-						}
-
-						if(++col > to_x)
-							goto finished;
-					}
-				}
-			}
-		}
-	}
-
-	for(; col <= to_x; col++)
-		for(row = 0; row < (to_y - from_y + 1); row++)
-			send_pixel(bg_colour);
-
-finished:
-	send_pixel(dc_size); // flush
-}
