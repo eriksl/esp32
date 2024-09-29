@@ -831,7 +831,7 @@ unsigned int display_image_y_size(void)
 	return(y_size - (2 * page_border_size) - page_text_offset - font->net.height);
 }
 
-static bool display_brightness(unsigned int percentage)
+static bool brightness(unsigned int percentage)
 {
 	if((display_type == dt_no_display) || !info[display_type].bright_fn)
 		return(false);
@@ -845,7 +845,7 @@ void command_display_brightness(cli_command_call_t *call)
 {
 	assert(call->parameter_count == 1);
 
-	if(display_brightness(call->parameters[0].unsigned_int))
+	if(brightness(call->parameters[0].unsigned_int))
 		string_assign_cstr(call->result, "set brightness: ok");
 	else
 		string_assign_cstr(call->result, "set brightness: no display");
