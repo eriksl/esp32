@@ -1,5 +1,6 @@
 ## IDF Component Manager Manifest File
 dependencies:
+  espressif/libpng: "*"
   joltwallet/littlefs: "*"
   espressif/led_strip: "*"
   ## Required IDF version
