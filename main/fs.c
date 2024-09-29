@@ -156,7 +156,7 @@ void fs_command_read(cli_command_call_t *call)
 void fs_command_append(cli_command_call_t *call)
 {
 	int fd, length;
-	off_t offset;
+	struct stat statb;
 
 	assert(inited);
 	assert(call->parameter_count == 2);
@@ -167,7 +167,7 @@ void fs_command_append(cli_command_call_t *call)
 		return;
 	}
 
-	if((fd = open(string_cstr(call->parameters[1].string), O_RDWR | O_APPEND | O_CREAT, 0)) < 0)
+	if((fd = open(string_cstr(call->parameters[1].string), O_WRONLY | O_APPEND | O_CREAT, 0)) < 0)
 	{
 		string_format(call->result, "ERROR: cannot open file %s: %s", string_cstr(call->parameters[1].string), strerror(errno));
 		return;
@@ -180,16 +180,14 @@ void fs_command_append(cli_command_call_t *call)
 		return;
 	}
 
-	if((offset = lseek(fd, 0, SEEK_END)) == -1)
-	{
-		string_assign_cstr(call->result, "ERROR: lseek failed");
-		close(fd);
-		return;
-	}
-
 	close(fd);
 
-	string_format(call->result, "OK file length: %ld", offset);
+	if(stat(string_cstr(call->parameters[1].string), &statb))
+		length = -1;
+	else
+		length = statb.st_size;
+
+	string_format(call->result, "OK file length: %d", length);
 }
  
 void fs_command_erase(cli_command_call_t *call)
