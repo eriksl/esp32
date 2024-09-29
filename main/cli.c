@@ -268,8 +268,8 @@ static const cli_command_t cli_commands[] =
 		{	3,
 			{
 				{ cli_parameter_string, 0, 1, 0, 0, "page name", {}},
-				{ cli_parameter_unsigned_int, 1, 0, 0, 0, "timeout", {} },
-				{ cli_parameter_string_raw, 0, 1, 0, 0, "filename", {} },
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "timeout", {} },
+				{ cli_parameter_string, 0, 1, 0, 0, "filename", {} },
 			},
 		},
 	},
