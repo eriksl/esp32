@@ -122,17 +122,17 @@ static unsigned int columns, rows;
 static unsigned int x_size, y_size;
 static QueueHandle_t log_display_queue;
 static bool log_mode = true;
-static SemaphoreHandle_t mutex;
+static SemaphoreHandle_t page_data_mutex;
 static unsigned int display_log_y;
 
-static void mutex_take(void)
+static inline void page_data_mutex_take(void)
 {
-	assert(xSemaphoreTake(mutex, portMAX_DELAY));
+	assert(xSemaphoreTake(page_data_mutex, portMAX_DELAY));
 }
 
-static void mutex_give(void)
+static inline void page_data_mutex_give(void)
 {
-	assert(xSemaphoreGive(mutex));
+	assert(xSemaphoreGive(page_data_mutex));
 }
 
 static unsigned int utf8_to_unicode(const uint8_t *src, unsigned int dst_size, uint32_t *dst)
@@ -248,7 +248,7 @@ static void page_add(display_page_t *new_page)
 
 	assert(new_page);
 
-	mutex_take();
+	page_data_mutex_take();
 
 	root.next = display_pages;
 
@@ -277,7 +277,7 @@ static void page_add(display_page_t *new_page)
 			before->next = new_page;
 	}
 
-	mutex_give();
+	page_data_mutex_give();
 }
 
 static void page_erase(const const_string_t name)
@@ -286,7 +286,7 @@ static void page_erase(const const_string_t name)
 
 	assert(name);
 
-	mutex_take();
+	page_data_mutex_take();
 
 	root.next = display_pages;
 
@@ -304,7 +304,7 @@ static void page_erase(const const_string_t name)
 		page_free(&current);
 	}
 
-	mutex_give();
+	page_data_mutex_give();
 }
 
 static void page_add_text(const const_string_t name, unsigned int lifetime, const const_string_t contents)
@@ -542,7 +542,7 @@ static void run_display_info(void *)
 		if(!font_valid || (display_type == dt_no_display) || (!(write_fn = info[display_type].write_fn)))
 			goto next2;
 
-		mutex_take();
+		page_data_mutex_take();
 
 		if(!display_pages_current)
 		{
@@ -650,16 +650,16 @@ static void run_display_info(void *)
 		if(time((time_t *)0) > display_pages_current->expiry)
 		{
 			display_pages_next = display_pages_current->next;
-			mutex_give();
+			page_data_mutex_give();
 			page_erase(display_pages_current->name);
-			mutex_take();
+			page_data_mutex_take();
 			display_pages_current = display_pages_next;
 		}
 		else
 			display_pages_current = display_pages_current->next;
 
 next1:
-		mutex_give();
+		page_data_mutex_give();
 next2:
 		util_sleep(2000);
 	}
@@ -712,7 +712,7 @@ static void display_info(string_t output)
 
 	string_append_cstr(output, "\nPAGES:");
 
-	mutex_take();
+	page_data_mutex_take();
 
 	for(current_page = display_pages; current_page; current_page = current_page->next)
 	{
@@ -734,7 +734,7 @@ static void display_info(string_t output)
 		}
 	}
 
-	mutex_give();
+	page_data_mutex_give();
 }
 
 void display_init(void)
@@ -805,8 +805,8 @@ void display_init(void)
 	log_get_display_queue(&log_display_queue);
 	assert(log_display_queue);
 
-	mutex = xSemaphoreCreateMutex();
-	assert(mutex);
+	page_data_mutex = xSemaphoreCreateMutex();
+	assert(page_data_mutex);
 
 	if(xTaskCreatePinnedToCore(run_display_log, "display-log", 3072, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
 		util_abort("display: xTaskCreatePinnedToNode display log");
