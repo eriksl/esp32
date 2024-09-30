@@ -779,6 +779,20 @@ static void run_display_info(void *)
 				if(png_error_status)
 					goto finish;
 
+				png_color_16 default_background =
+				{
+					.index = 255,
+					.red = 0,
+					.green = 0,
+					.blue = 0,
+					.gray = 0,
+				};
+
+				png_set_background(png_ptr, &default_background, PNG_BACKGROUND_GAMMA_SCREEN, 0, 1);
+
+				if(png_error_status)
+					goto finish;
+
 				colour_type = png_get_color_type(png_ptr, info_ptr);
 
 				if(png_error_status)
