@@ -8,6 +8,7 @@
 #include <freertos/FreeRTOS.h>
 #include <png.h>
 #include <zlib.h>
+#include <esp_timer.h>
 
 #include "string.h"
 #include "log.h"
@@ -140,6 +141,7 @@ static bool log_mode = true;
 static SemaphoreHandle_t page_data_mutex;
 static unsigned int display_log_y;
 static bool png_error_status = true;
+static unsigned int stat_display_show = 0;
 
 static inline void page_data_mutex_take(void)
 {
@@ -606,6 +608,7 @@ static void run_display_info(void *)
 	png_bytep row_pointer = (png_bytep)0;
 	int fd = -1;
 	user_png_io_ptr_t user_io_ptr;
+	uint64_t time_start, time_spent;
 
 	display_pages_current = display_pages;
 	current_colour = dc_black + 1;
@@ -647,6 +650,8 @@ static void run_display_info(void *)
 		}
 
 		assert(page_border_size > 0);
+
+		time_start = esp_timer_get_time();
 
 		box(current_colour,	0,										0,										x_size - 1,				page_border_size - 1);
 		box(current_colour,	(x_size - 1) - (page_border_size - 1),	0,										x_size - 1,				y_size - 1);
@@ -922,6 +927,9 @@ finish1:
 		else
 			display_pages_current = display_pages_current->next;
 
+		time_spent = esp_timer_get_time() - time_start;
+		stat_display_show = time_spent / 1000ULL;
+
 next1:
 		page_data_mutex_give();
 next2:
@@ -999,6 +1007,9 @@ static void display_info(string_t output)
 	}
 
 	page_data_mutex_give();
+
+	string_append_cstr(output, "\nSTATS:");
+	string_format_append(output, "\n- display draw time: %u ms", stat_display_show);
 }
 
 void display_init(void)
