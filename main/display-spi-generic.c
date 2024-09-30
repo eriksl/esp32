@@ -88,27 +88,42 @@ static bool inited = false;
 static sdm_channel_handle_t sdm_channel_handle;
 static spi_device_handle_t spi_device_handle;
 static const spi_signal_t *spi_signal;
-
 static callback_data_t callback_data_gpio_on;
 static callback_data_t callback_data_gpio_off;
+static SemaphoreHandle_t spi_mutex;
+static unsigned int spi_pending;
 static unsigned int x_size, y_size;
 static unsigned int x_mirror, y_mirror;
 static unsigned int rotate;
 static unsigned int invert;
 static unsigned int madctl;
 
+static inline void spi_mutex_take(void)
+{
+	assert(xSemaphoreTake(spi_mutex, portMAX_DELAY));
+}
+
+static inline void spi_mutex_give(void)
+{
+	assert(xSemaphoreGive(spi_mutex));
+}
+
 static void send_command_data(bool send_cmd, unsigned int cmd, unsigned int length, const uint8_t *data)
 {
-	spi_transaction_ext_t transaction_base;
-	spi_transaction_t *transaction = &transaction_base.base;
-	spi_transaction_ext_t *transaction_ext = &transaction_base;
+	static spi_transaction_ext_t transaction_base;
+	static spi_transaction_t *transaction = &transaction_base.base;
+	static spi_transaction_ext_t *transaction_ext = &transaction_base;
+	static spi_transaction_t *transaction_result;
+
+	spi_mutex_take();
 
 	assert(inited);
 	assert(spi_device_handle);
 	assert(send_cmd || (cmd == 0));
 	assert((length == 0) || (data != (const uint8_t *)0));
 
-	spi_device_acquire_bus(spi_device_handle, portMAX_DELAY);
+	for(; spi_pending > 0; spi_pending--)
+		util_abort_on_esp_err("spi_device_get_trans_result", spi_device_get_trans_result(spi_device_handle, &transaction_result, portMAX_DELAY));
 
 	if(cmd)
 	{
@@ -125,9 +140,6 @@ static void send_command_data(bool send_cmd, unsigned int cmd, unsigned int leng
 		transaction_ext->command_bits = 8;
 		transaction_ext->address_bits = 0;
 		transaction_ext->dummy_bits = 0;
-
-		if(length > 0)
-			transaction->flags |= SPI_TRANS_CS_KEEP_ACTIVE;
 
 		util_abort_on_esp_err("spi_device_transmit", spi_device_transmit(spi_device_handle, transaction));
 	}
@@ -151,7 +163,7 @@ static void send_command_data(bool send_cmd, unsigned int cmd, unsigned int leng
 		util_abort_on_esp_err("spi_device_transmit", spi_device_transmit(spi_device_handle, transaction));
 	}
 
-	spi_device_release_bus(spi_device_handle);
+	spi_mutex_give();
 }
 
 static void send_command(unsigned int cmd)
@@ -207,6 +219,16 @@ static uint8_t *pixel_buffer = (uint8_t *)0;
 
 static void pixel_buffer_flush(int length)
 {
+	static spi_transaction_ext_t transaction_base;
+	static spi_transaction_t *transaction = &transaction_base.base;
+	static spi_transaction_ext_t *transaction_ext = &transaction_base;
+	static spi_transaction_t *transaction_result;
+
+	assert(inited);
+	assert(spi_device_handle);
+
+	spi_mutex_take();
+
 	if(length < 0)
 	{
 		length = pixel_buffer_rgb_length;
@@ -215,7 +237,30 @@ static void pixel_buffer_flush(int length)
 
 	assert(length <= pixel_buffer_rgb_size);
 
-	send_command_data(false, 0, length * sizeof(display_rgb_t), pixel_buffer);
+	if(length > 0)
+	{
+		memset(transaction_ext, 0, sizeof(*transaction_ext));
+
+		transaction->flags = SPI_TRANS_VARIABLE_CMD;
+		transaction->cmd = 0;
+		transaction->addr = 0;
+		transaction->length = length * 8 * sizeof(display_rgb_t);
+		transaction->rxlength = 0;
+		transaction->tx_buffer = pixel_buffer;
+		transaction->rx_buffer = (void *)0;
+		transaction->user = &callback_data_gpio_on;
+		transaction_ext->command_bits = 0;
+		transaction_ext->address_bits = 0;
+		transaction_ext->dummy_bits = 0;
+
+		for(; spi_pending > 0; spi_pending--)
+			util_abort_on_esp_err("spi_device_get_trans_result", spi_device_get_trans_result(spi_device_handle, &transaction_result, portMAX_DELAY));
+
+		util_abort_on_esp_err("spi_device_queue_trans", spi_device_queue_trans(spi_device_handle, transaction, portMAX_DELAY));
+		spi_pending++;
+	}
+
+	spi_mutex_give();
 }
 
 static void pixel_buffer_write(unsigned int length_rgb, const display_rgb_t *pixels_rgb)
@@ -557,6 +602,10 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 		.pre_cb = pre_callback,
 		.post_cb = (transaction_cb_t)0,
 	};
+
+	spi_mutex = xSemaphoreCreateMutex();
+	assert(spi_mutex);
+	spi_pending = 0;
 
 	util_abort_on_esp_err("gpio_config", gpio_config(&gpio_pin_config));
 
