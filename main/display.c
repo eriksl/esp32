@@ -579,7 +579,7 @@ static void user_error(png_structp png_ptr, png_const_charp msg)
 {
 	log_format("fatal error in libpng: %s", msg);
 	png_error_status = true;
-	//util_abort("libpng");
+	util_abort("libpng"); // should be using longjmp but it's complicated
 }
 
 static void user_warning(png_structp png_ptr, png_const_charp msg)
