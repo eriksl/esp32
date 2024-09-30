@@ -217,7 +217,7 @@ static unsigned int pixel_buffer_rgb_size = 0;
 static display_rgb_t *pixel_buffer_rgb = (display_rgb_t *)0;
 static uint8_t *pixel_buffer = (uint8_t *)0;
 
-static void pixel_buffer_flush(int length)
+static void pixel_buffer_flush(int length, bool wait)
 {
 	static spi_transaction_ext_t transaction_base;
 	static spi_transaction_t *transaction = &transaction_base.base;
@@ -258,12 +258,16 @@ static void pixel_buffer_flush(int length)
 
 		util_abort_on_esp_err("spi_device_queue_trans", spi_device_queue_trans(spi_device_handle, transaction, portMAX_DELAY));
 		spi_pending++;
+
+		if(wait)
+			for(; spi_pending > 0; spi_pending--)
+				util_abort_on_esp_err("spi_device_get_trans_result", spi_device_get_trans_result(spi_device_handle, &transaction_result, portMAX_DELAY));
 	}
 
 	spi_mutex_give();
 }
 
-static void pixel_buffer_write(unsigned int length_rgb, const display_rgb_t *pixels_rgb)
+static void pixel_buffer_write(unsigned int length_rgb, const display_rgb_t *pixels_rgb, bool wait)
 {
 	assert(inited);
 	assert(pixel_buffer);
@@ -273,7 +277,7 @@ static void pixel_buffer_write(unsigned int length_rgb, const display_rgb_t *pix
 	assert(length_rgb < pixel_buffer_rgb_size);
 
 	if((pixel_buffer_rgb_length + length_rgb) >= pixel_buffer_rgb_size)
-		pixel_buffer_flush(-1);
+		pixel_buffer_flush(-1, wait);
 
 	memcpy(&pixel_buffer_rgb[pixel_buffer_rgb_length], pixels_rgb, length_rgb * sizeof(display_rgb_t));
 	pixel_buffer_rgb_length += length_rgb;
@@ -314,7 +318,7 @@ static void box(unsigned int r, unsigned int g, unsigned int b, unsigned int fro
 		if(chunk > (pixels - pixel))
 			chunk = pixels - pixel;
 
-		pixel_buffer_flush(chunk);
+		pixel_buffer_flush(chunk, true);
 	}
 }
 
@@ -424,12 +428,12 @@ void display_spi_generic_write(const font_t *font, display_colour_t fg_colour, d
 							if(row < font->net.height)
 							{
 								if(glyph->row[row] & (1 << bit))
-									pixel_buffer_write(1, &fg_rgb);
+									pixel_buffer_write(1, &fg_rgb, true);
 								else
-									pixel_buffer_write(1, &bg_rgb);
+									pixel_buffer_write(1, &bg_rgb, true);
 							}
 							else
-								pixel_buffer_write(1, &bg_rgb);
+								pixel_buffer_write(1, &bg_rgb, true);
 						}
 
 						if(++col > to_x)
@@ -442,10 +446,10 @@ void display_spi_generic_write(const font_t *font, display_colour_t fg_colour, d
 
 	for(; col <= to_x; col++)
 		for(row = 0; row < (to_y - from_y + 1); row++)
-			pixel_buffer_write(1, &bg_rgb);
+			pixel_buffer_write(1, &bg_rgb, true);
 
 finished:
-	pixel_buffer_flush(-1);
+	pixel_buffer_flush(-1, true);
 }
 
 void display_spi_generic_plot_line(unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int rgb_pixels_length, const display_rgb_t *pixels)
@@ -479,13 +483,13 @@ void display_spi_generic_plot_line(unsigned int from_x, unsigned int from_y, uns
 		if(chunk > pixel_buffer_rgb_size)
 			chunk = pixel_buffer_rgb_size;
 
-		pixel_buffer_write(chunk, &pixels[current]);
+		pixel_buffer_write(chunk, &pixels[current], true);
 	}
 
 	for(; current < (to_x - from_x); current++)
-		pixel_buffer_write(1, bg);
+		pixel_buffer_write(1, bg, true);
 
-	pixel_buffer_flush(-1);
+	pixel_buffer_flush(-1, false);
 }
 
 void pre_callback(spi_transaction_t *transaction)
