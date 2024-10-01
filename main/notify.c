@@ -4,13 +4,15 @@
 
 #include "notify.h"
 
-#include "string.h"
-#include "log.h"
-#include "util.h"
-
 #if defined(CONFIG_BSP_LED_HAVE_LEDPIXEL) || defined(CONFIG_BSP_LED_HAVE_LED)
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+
+enum
+{
+	duty_dim = 1UL << 6,
+	duty_full = 1UL << 14,
+};
 
 typedef enum
 {
@@ -34,6 +36,7 @@ typedef struct
 	bool on;
 	bool blinking;
 	bool fast;
+	bool dim;
 } led_t;
 
 typedef struct
@@ -45,18 +48,18 @@ typedef struct
 
 static const notification_info_t notification_info[notify_size] =
 {
-	[notify_sys_booting] =					{	phase_system,	{ 0xff, 0x00, 0x00 },	{ true,  true,  true,  true }},
-	[notify_sys_booting_finished] =			{	phase_system,	{ 0x00, 0x01, 0x00 },	{ true,  true,  false, false }},
-	[notify_net_init] =						{	phase_net,		{ 0xff, 0x00, 0x00 },	{ false, false, false, false }},
-	[notify_net_associating] =				{	phase_net,		{ 0x05, 0x00, 0x05 },	{ false, false, false, false }},
-	[notify_net_associating_finished] =		{	phase_net,		{ 0x05, 0x00, 0x05 },	{ false, false, false, false }},
-	[notify_net_ipv4_acquired] =			{	phase_net,		{ 0x00, 0x05, 0x00 },	{ true,  true,  true,  false }},
-	[notify_net_ipv6_ll_active] =			{	phase_net,		{ 0x01, 0x00, 0x00 },	{ false, false, false, false }},
-	[notify_net_ipv6_slaac_acquired] =		{	phase_net,		{ 0x00, 0x00, 0x01 },	{ false, false, false, false }},
-	[notify_net_ipv6_static_active] =		{	phase_net,		{ 0x00, 0x01, 0x00 },	{ false, false, false, false }},
-	[notify_net_ap_mode_init] =				{	phase_net,		{ 0xff, 0x40, 0x40 },	{ false, false, false, false }},
-	[notify_net_ap_mode_idle] =				{	phase_net,		{ 0xff, 0x88, 0x88 },	{ false, false, false, false }},
-	[notify_net_ap_mode_associated] =		{	phase_net,		{ 0xff, 0xff, 0xff },	{ false, false, false, false }},
+	[notify_sys_booting] =					{	phase_system,	{ 0xff, 0x00, 0x00 },	{ true,  true,  true,  true,  false, }},
+	[notify_sys_booting_finished] =			{	phase_system,	{ 0x00, 0x01, 0x00 },	{ true,  true,  false, false, false, }},
+	[notify_net_init] =						{	phase_net,		{ 0xff, 0x00, 0x00 },	{ false, false, false, false, false, }},
+	[notify_net_associating] =				{	phase_net,		{ 0x05, 0x00, 0x05 },	{ false, false, false, false, false, }},
+	[notify_net_associating_finished] =		{	phase_net,		{ 0x05, 0x00, 0x05 },	{ false, false, false, false, false, }},
+	[notify_net_ipv4_acquired] =			{	phase_net,		{ 0x00, 0x05, 0x00 },	{ true,  true,  true,  false, false, }},
+	[notify_net_ipv6_ll_active] =			{	phase_net,		{ 0x01, 0x00, 0x00 },	{ true,  true,  true,  true,  true,  }},
+	[notify_net_ipv6_slaac_acquired] =		{	phase_net,		{ 0x00, 0x00, 0x01 },	{ true,  true,  true,  false, true,  }},
+	[notify_net_ipv6_static_active] =		{	phase_net,		{ 0x00, 0x01, 0x00 },	{ false, false, false, false, false, }},
+	[notify_net_ap_mode_init] =				{	phase_net,		{ 0xff, 0x40, 0x40 },	{ false, false, false, false, false, }},
+	[notify_net_ap_mode_idle] =				{	phase_net,		{ 0xff, 0x88, 0x88 },	{ false, false, false, false, false, }},
+	[notify_net_ap_mode_associated] =		{	phase_net,		{ 0xff, 0xff, 0xff },	{ false, false, false, false, false, }},
 };
 
 static bool inited = false;
@@ -120,51 +123,40 @@ void notify(notify_t notification)
 #else
 #if defined(CONFIG_BSP_LED_HAVE_LED)
 
-#include <driver/gpio.h>
+#include "pwm-led.h"
 
-static TimerHandle_t state_timer_slow;
-static TimerHandle_t state_timer_fast;
-static bool led_blinking = false;
+static TimerHandle_t state_timer;
+static bool led_blinking;
+static bool led_blinking_fast;
+static unsigned int led_dim_duty;
 static unsigned int led_counter;
+static unsigned int led_pwm_channel;
 
-static void led_timer_handler_slow(struct tmrTimerControl *)
+static void led_timer_handler(struct tmrTimerControl *)
 {
-	if(led_blinking)
-	{
-		gpio_set_level(CONFIG_BSP_LED_GPIO, (led_counter++) & 0x01);
-		xTimerStart(state_timer_slow, 0);
-	}
-}
+	if(!led_blinking)
+		return;
 
-static void led_timer_handler_fast(struct tmrTimerControl *)
-{
-	if(led_blinking)
-	{
-		gpio_set_level(CONFIG_BSP_LED_GPIO, (led_counter++) & 0x01);
-		xTimerStart(state_timer_fast, 0);
-	}
+	if((led_counter % (led_blinking_fast ? 1 : 10)) <= 5)
+		pwm_led_channel_set(led_pwm_channel, led_dim_duty);
+	else
+		pwm_led_channel_set(led_pwm_channel, 0);
+
+	led_counter++;
+
+	xTimerStart(state_timer, 0);
 }
 
 void notify_init(void)
 {
-	gpio_config_t gpio_pin_config =
-	{
-		.pin_bit_mask = (1ULL << CONFIG_BSP_LED_GPIO),
-		.mode = GPIO_MODE_OUTPUT,
-		.pull_up_en = GPIO_PULLUP_DISABLE,
-		.pull_down_en = GPIO_PULLDOWN_DISABLE,
-		.intr_type = GPIO_INTR_DISABLE,
-	};
-
-	util_abort_on_esp_err("gpio_config", gpio_config(&gpio_pin_config));
-
 	led_blinking = false;
+	led_blinking_fast = false;
+	led_dim_duty = duty_full;
 	led_counter = 0;
+	led_pwm_channel = pwm_led_channel_new(CONFIG_BSP_LED_GPIO, plt_14bit_5khz);
 
-	state_timer_slow = xTimerCreate("notify-slow", pdMS_TO_TICKS(500), pdFALSE, (void *)0, led_timer_handler_slow);
-	assert(state_timer_slow);
-	state_timer_fast = xTimerCreate("notify-fast", pdMS_TO_TICKS(50), pdFALSE, (void *)0, led_timer_handler_fast);
-	assert(state_timer_fast);
+	state_timer = xTimerCreate("notify-gpio", pdMS_TO_TICKS(50), pdFALSE, (void *)0, led_timer_handler);
+	assert(state_timer);
 
 	inited = true;
 }
@@ -177,23 +169,23 @@ void notify(notify_t notification)
 
 	info = &notification_info[notification];
 
-	if(info->led.enabled)
+	if(!info->led.enabled)
+		return;
+
+	led_dim_duty = info->led.dim ? duty_dim : duty_full;
+
+	if(info->led.blinking)
 	{
-		if(info->led.blinking)
-		{
-			led_blinking = true;
+		led_blinking = true;
+		led_blinking_fast = info->led.fast;
 
-			if(info->led.fast)
-				xTimerStart(state_timer_fast, 0);
-			else
-				xTimerStart(state_timer_slow, 0);
-		}
-		else
-		{
-			led_blinking = false;
+		xTimerStart(state_timer, 0);
+	}
+	else
+	{
+		led_blinking = false;
 
-			gpio_set_level(CONFIG_BSP_LED_GPIO, info->led.on ? 1 : 0);
-		}
+		pwm_led_channel_set(led_pwm_channel, info->led.on ? led_dim_duty : 0);
 	}
 }
 #else
