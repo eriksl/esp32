@@ -1012,6 +1012,16 @@ static void display_info(string_t output)
 	string_format_append(output, "\n- display draw time: %u ms", stat_display_show);
 }
 
+static bool brightness(unsigned int percentage)
+{
+	if((display_type == dt_no_display) || !info[display_type].bright_fn)
+		return(false);
+
+	info[display_type].bright_fn(percentage);
+
+	return(true);
+}
+
 void display_init(void)
 {
 	uint32_t type, value;
@@ -1083,6 +1093,8 @@ void display_init(void)
 	page_data_mutex = xSemaphoreCreateMutex();
 	assert(page_data_mutex);
 
+	brightness(75);
+
 	if(xTaskCreatePinnedToCore(run_display_log, "display-log", 3 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
 		util_abort("display: xTaskCreatePinnedToNode display log");
 
@@ -1104,16 +1116,6 @@ unsigned int display_image_y_size(void)
 		return(0);
 
 	return(y_size - (2 * page_border_size) - page_text_offset - font->net.height);
-}
-
-static bool brightness(unsigned int percentage)
-{
-	if((display_type == dt_no_display) || !info[display_type].bright_fn)
-		return(false);
-
-	info[display_type].bright_fn(percentage);
-
-	return(true);
 }
 
 void command_display_brightness(cli_command_call_t *call)

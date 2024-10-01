@@ -436,6 +436,10 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
+    { "pwm-led-info", "pli", "info about pwm led channels and timers", command_pwm_led_info,
+        {}
+    },
+
 	{ "reset", "r", "reset", command_reset,
 		{}
 	},

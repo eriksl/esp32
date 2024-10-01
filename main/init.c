@@ -18,9 +18,11 @@
 #include "ramdisk.h"
 #include "notify.h"
 #include "display.h"
+#include "pwm-led.h"
 
 void app_main(void)
 {
+	pwm_led_init();
 	notify_init();
 	notify(notify_sys_booting);
 	console_init_1();

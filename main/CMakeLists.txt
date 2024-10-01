@@ -15,6 +15,7 @@ idf_component_register(
 		"packet.c"
 		"perftest.c"
 		"ota.c"
+        "pwm-led.c"
 		"ramdisk.c"
 		"string.c"
 		"util.c"

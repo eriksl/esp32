@@ -4,12 +4,12 @@
 
 #include <driver/spi_master.h>
 #include <driver/gpio.h>
-#include <driver/sdm.h>
 
 #include "string.h"
 #include "log.h"
 #include "util.h"
 #include "display-spi-generic.h"
+#include "pwm-led.h"
 #include "sdkconfig.h"
 
 enum
@@ -85,13 +85,13 @@ static const spi_host_signal_t spi_host_signal =
 };
 
 static bool inited = false;
-static sdm_channel_handle_t sdm_channel_handle;
 static spi_device_handle_t spi_device_handle;
 static const spi_signal_t *spi_signal;
 static callback_data_t callback_data_gpio_on;
 static callback_data_t callback_data_gpio_off;
 static SemaphoreHandle_t spi_mutex;
 static unsigned int spi_pending;
+static unsigned int pwm_led_channel;
 static unsigned int x_size, y_size;
 static unsigned int x_mirror, y_mirror;
 static unsigned int rotate;
@@ -561,20 +561,11 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 
 	gpio_config_t gpio_pin_config =
 	{
-		.pin_bit_mask = (1ULL << spi_signal->dc) | (1ULL << spi_signal->bl),
+		.pin_bit_mask = (1ULL << spi_signal->dc),
 		.mode = GPIO_MODE_OUTPUT,
 		.pull_up_en = GPIO_PULLUP_DISABLE,
 		.pull_down_en = GPIO_PULLDOWN_DISABLE,
 		.intr_type = GPIO_INTR_DISABLE,
-	};
-
-	sdm_config_t pdm_config =
-	{
-		.gpio_num = spi_signal->bl,
-		.clk_src = SDM_CLK_SRC_DEFAULT,
-		.sample_rate_hz = 80000000 / 1,
-		.flags.invert_out = 0,
-		.flags.io_loop_back = 0,
 	};
 
 	spi_bus_config_t bus_config =
@@ -613,10 +604,6 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 
 	util_abort_on_esp_err("gpio_config", gpio_config(&gpio_pin_config));
 
-	util_abort_on_esp_err("sdm_new_channel", sdm_new_channel(&pdm_config, &sdm_channel_handle));
-	util_abort_on_esp_err("sdm_channel_enable", sdm_channel_enable(sdm_channel_handle));
-	util_abort_on_esp_err("sdm_channel_set_pulse_density", sdm_channel_set_pulse_density(sdm_channel_handle, 127));
-
 	util_abort_on_esp_err("spi_bus_initialize", spi_bus_initialize(spi_signal->esp_host, &bus_config, SPI_DMA_CH_AUTO));
 	util_abort_on_esp_err("spi_bus_add_device", spi_bus_add_device(spi_signal->esp_host, &device, &spi_device_handle));
 
@@ -626,6 +613,8 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 	pixel_buffer_rgb = (display_rgb_t *)pixel_buffer;
 	pixel_buffer_rgb_size = pixel_buffer_size / sizeof(display_rgb_t);
 	pixel_buffer_rgb_length = 0;
+
+	pwm_led_channel = pwm_led_channel_new(spi_signal->bl, plt_14bit_5khz);
 
 	inited = true;
 
@@ -655,26 +644,9 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 	return(true);
 }
 
-static const int perc_to_sdm[][2] =
-{
-	{	0,		-128	},
-	{	25,		-108	},
-	{	50,		-96		},
-	{	75,		-88		},
-	{	100,	127		},
-};
-
 void display_spi_generic_bright(unsigned int percentage)
 {
-	unsigned int ix;
+	assert(percentage <= 100);
 
-	if(percentage <= 100)
-	{
-		for(ix = 0; ix < 16; ix++)
-			if(percentage <= perc_to_sdm[ix][0])
-				break;
-
-		util_abort_on_esp_err("sdm_channel_set_pulse_density", sdm_channel_set_pulse_density(sdm_channel_handle, perc_to_sdm[ix][1]));
-	}
+	pwm_led_channel_set(pwm_led_channel, ((1UL << 14) * percentage) / 100);
 }
-
