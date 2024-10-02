@@ -137,7 +137,7 @@ static void led_timer_handler(struct tmrTimerControl *)
 	if(!led_blinking)
 		return;
 
-	if((led_counter % (led_blinking_fast ? 1 : 10)) <= 5)
+	if((led_counter % (led_blinking_fast ? 1 : 50)) <= 25)
 		pwm_led_channel_set(led_pwm_channel, led_dim_duty);
 	else
 		pwm_led_channel_set(led_pwm_channel, 0);
