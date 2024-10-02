@@ -75,7 +75,8 @@ static phase_t phase;
 
 static void ledpixel_timer_handler(struct tmrTimerControl *)
 {
-	assert(inited);
+	if(!inited)
+		return;
 
 	ledpixel_set(ledpixel, 0, phase_colour[phase].g, phase_colour[phase].r, phase_colour[phase].b);
 	ledpixel_flush(ledpixel);
@@ -85,11 +86,13 @@ static void ledpixel_timer_handler(struct tmrTimerControl *)
 	phase = (phase + 1) % phase_size;
 }
 
-void notify_init(void)
+bool notify_init(void)
 {
-	assert(!inited);
+	if(inited)
+		return(false);
 
-	ledpixel = ledpixel_new(1, CONFIG_BSP_LED_GPIO);
+	if(!(ledpixel = ledpixel_new(1, CONFIG_BSP_LED_GPIO)))
+		return(false);
 
 	for(phase = 0; phase < phase_size; phase++)
 	{
@@ -98,27 +101,36 @@ void notify_init(void)
 		phase_colour[phase].b = 0;
 	}
 
-	ledpixel_set(ledpixel, 0, 0x00, 0x00, 0x00);
-	ledpixel_flush(ledpixel);
+	if(!ledpixel_set(ledpixel, 0, 0x00, 0x00, 0x00))
+		return(false);
+
+	if(!ledpixel_flush(ledpixel))
+		return(false);
+
+	phase_timer = xTimerCreate("notify-phase", pdMS_TO_TICKS(500), pdFALSE, (void *)0, ledpixel_timer_handler);
+
+	if(!phase_timer)
+		return(false);
 
 	phase = 0;
 	inited = true;
-
-	phase_timer = xTimerCreate("notify-phase", pdMS_TO_TICKS(500), pdFALSE, (void *)0, ledpixel_timer_handler);
-	assert(phase_timer);
-
 	xTimerStart(phase_timer, 0);
+
+	return(true);
 }
 
-void notify(notify_t notification)
+bool notify(notify_t notification)
 {
 	const notification_info_t *info;
 
-	assert(notification < notify_size);
+	if(!inited || (notification >= notify_size))
+		return(false);
 
 	info = &notification_info[notification];
 
 	phase_colour[info->phase] = info->colour;
+
+	return(true);
 }
 #else
 #if defined(CONFIG_BSP_LED_HAVE_LED)
@@ -130,11 +142,11 @@ static bool led_blinking;
 static bool led_blinking_fast;
 static unsigned int led_dim_duty;
 static unsigned int led_counter;
-static unsigned int led_pwm_channel;
+static int led_pwm_channel;
 
 static void led_timer_handler(struct tmrTimerControl *)
 {
-	if(!led_blinking)
+	if(!inited || !led_blinking)
 		return;
 
 	if((led_counter % (led_blinking_fast ? 1 : 50)) <= 25)
@@ -147,30 +159,35 @@ static void led_timer_handler(struct tmrTimerControl *)
 	xTimerStart(state_timer, 0);
 }
 
-void notify_init(void)
+bool notify_init(void)
 {
 	led_blinking = false;
 	led_blinking_fast = false;
 	led_dim_duty = duty_full;
 	led_counter = 0;
-	led_pwm_channel = pwm_led_channel_new(CONFIG_BSP_LED_GPIO, plt_14bit_5khz);
 
-	state_timer = xTimerCreate("notify-gpio", pdMS_TO_TICKS(50), pdFALSE, (void *)0, led_timer_handler);
-	assert(state_timer);
+	if((led_pwm_channel = pwm_led_channel_new(CONFIG_BSP_LED_GPIO, plt_14bit_5khz)) < 0)
+		return(false);
+
+	if(!(state_timer = xTimerCreate("notify-gpio", pdMS_TO_TICKS(50), pdFALSE, (void *)0, led_timer_handler)))
+		return(false);
 
 	inited = true;
+
+	return(true);
 }
 
-void notify(notify_t notification)
+bool notify(notify_t notification)
 {
 	const notification_info_t *info;
 
-	assert(notification < notify_size);
+	if(!inited || (notification >= notify_size))
+		return(false);
 
 	info = &notification_info[notification];
 
 	if(!info->led.enabled)
-		return;
+		return(true);
 
 	led_dim_duty = info->led.dim ? duty_dim : duty_full;
 
@@ -185,15 +202,20 @@ void notify(notify_t notification)
 	{
 		led_blinking = false;
 
-		pwm_led_channel_set(led_pwm_channel, info->led.on ? led_dim_duty : 0);
+		if(!pwm_led_channel_set(led_pwm_channel, info->led.on ? led_dim_duty : 0))
+			return(false);
 	}
+
+	return(true);
 }
 #else
-void notify_init(void)
+bool notify_init(void)
 {
+	return(true);
 }
-void notify(unsigned int new_state, unsigned int r, unsigned g, unsigned int b)
+bool notify(unsigned int new_state, unsigned int r, unsigned g, unsigned int b)
 {
+	return(true);
 }
 #endif
 #endif

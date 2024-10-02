@@ -14,5 +14,5 @@ void _log_format(bool append_strerror, const char *f, ...) __attribute__ ((forma
 #define log_format(f, ...) do { _log_format(false, f, __VA_ARGS__); } while(0)
 #define log_format_errno(f, ...) do { _log_format(true, f, __VA_ARGS__); } while(0)
 
-void log_get_display_queue(QueueHandle_t *handle);
+QueueHandle_t log_get_display_queue(void);
 void log_get_entry(unsigned int entry, time_t *stamp, unsigned int text_buffer_size, char *text_buffer);

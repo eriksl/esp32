@@ -4,10 +4,11 @@
 
 #if defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
 
-#include "string.h"
 #include "ledpixel.h"
+#include "string.h"
 #include "log.h"
 #include "util.h"
+
 #include <led_strip.h>
 
 typedef struct
@@ -19,11 +20,14 @@ typedef struct
 
 static bool inited = false;
 
-void ledpixel_init(void)
+bool ledpixel_init(void)
 {
-	assert(!inited);
+	if(inited)
+		return(false);
 
 	inited = true;
+
+	return(true);
 }
 
 ledpixel_t ledpixel_new(unsigned int max_leds, unsigned int gpio)
@@ -41,24 +45,33 @@ ledpixel_t ledpixel_new(unsigned int max_leds, unsigned int gpio)
 	_ledpixel->rmt_config.mem_block_symbols = 0;
 	_ledpixel->rmt_config.flags.with_dma = 0;
 
-	util_abort_on_esp_err("led_strip_new_rmt_device", led_strip_new_rmt_device(&_ledpixel->config, &_ledpixel->rmt_config, &_ledpixel->handle));
-	util_abort_on_esp_err("led_strip_clear", led_strip_clear(_ledpixel->handle));
+	if(led_strip_new_rmt_device(&_ledpixel->config, &_ledpixel->rmt_config, &_ledpixel->handle) != ESP_OK)
+		return((ledpixel_t)0);
+
+	if(led_strip_clear(_ledpixel->handle) != ESP_OK)
+		return((ledpixel_t)0);
 
 	return((ledpixel_t)_ledpixel);
 }
 
-void ledpixel_set(ledpixel_t ledpixel, unsigned int index, unsigned int red, unsigned int green, unsigned int blue)
+bool ledpixel_set(ledpixel_t ledpixel, unsigned int index, unsigned int red, unsigned int green, unsigned int blue)
 {
 	_ledpixel_t *_ledpixel = (_ledpixel_t *)ledpixel;
 
-	util_abort_on_esp_err("led_string_set_pixel", led_strip_set_pixel(_ledpixel->handle, index, red, green, blue));
+	if(!_ledpixel)
+		return(false);
+
+	return(led_strip_set_pixel(_ledpixel->handle, index, red, green, blue) == ESP_OK);
 }
 
-void ledpixel_flush(ledpixel_t ledpixel)
+bool ledpixel_flush(ledpixel_t ledpixel)
 {
 	_ledpixel_t *_ledpixel = (_ledpixel_t *)ledpixel;
 
-	util_abort_on_esp_err("led_strip_refresh", led_strip_refresh(_ledpixel->handle));
+	if(!_ledpixel)
+		return(false);
+
+	return(led_strip_refresh(_ledpixel->handle) == ESP_OK);
 }
 
 #endif

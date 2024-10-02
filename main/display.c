@@ -136,7 +136,7 @@ static bool font_valid = false;
 static uint32_t *unicode_buffer = (uint32_t *)0;
 static unsigned int columns, rows;
 static unsigned int x_size, y_size;
-static QueueHandle_t log_display_queue;
+static QueueHandle_t log_display_queue = (QueueHandle_t)0;
 static bool log_mode = true;
 static SemaphoreHandle_t page_data_mutex;
 static unsigned int display_log_y;
@@ -507,12 +507,13 @@ static void run_display_log(void *)
 	char log_line[64];
 	unsigned int unicode_length;
 
-	assert(log_display_queue);
-
 	display_log_y = 0;
 
 	for(;;)
 	{
+		if(!log_display_queue && !(log_display_queue = log_get_display_queue()))
+			continue;
+
 		assert(xQueueReceive(log_display_queue, &entry, portMAX_DELAY));
 
 		if(font_valid && log_mode && (display_type != dt_no_display) && info[display_type].write_fn)
@@ -1086,9 +1087,6 @@ void display_init(void)
 	unicode_buffer = (uint32_t *)util_memory_alloc_spiram(sizeof(uint32_t) * unicode_buffer_size);
 
 	clear(dc_black);
-
-	log_get_display_queue(&log_display_queue);
-	assert(log_display_queue);
 
 	page_data_mutex = xSemaphoreCreateMutex();
 	assert(page_data_mutex);

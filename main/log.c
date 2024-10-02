@@ -48,7 +48,7 @@ static_assert(sizeof(log_t) < log_buffer_size);
 RTC_NOINIT_ATTR static char rtc_slow_memory[log_buffer_size];
 static bool inited = false;
 static log_t *log_buffer = (log_t *)0;
-static QueueHandle_t log_display_queue;
+static QueueHandle_t log_display_queue = (QueueHandle_t)0;
 
 static void log_clear(void)
 {
@@ -66,7 +66,8 @@ static void log_clear(void)
 
 static void log_signal_display(unsigned int item)
 {
-	xQueueSend(log_display_queue, &item, (TickType_t)0);
+	if(log_display_queue)
+		xQueueSend(log_display_queue, &item, (TickType_t)0);
 }
 
 void _log_cstr(bool append_strerror, const char *string)
@@ -163,11 +164,9 @@ static int logging_function(const char *fmt, va_list ap)
 	return(length);
 }
 
-void log_get_display_queue(QueueHandle_t *handle)
+QueueHandle_t log_get_display_queue(void)
 {
-	assert(log_display_queue);
-
-	*handle = log_display_queue;
+	return(log_display_queue);
 }
 
 void log_get_entry(unsigned int entry_index, time_t *stamp, unsigned int text_buffer_size, char *text_buffer)
@@ -208,7 +207,7 @@ void log_init(void)
 
 	esp_log_set_vprintf(logging_function);
 
-	assert((log_display_queue = xQueueCreate(log_buffer_entries, sizeof(unsigned int))));
+	log_display_queue = xQueueCreate(log_buffer_entries, sizeof(unsigned int));
 
 	log("boot");
 }
