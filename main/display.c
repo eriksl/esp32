@@ -23,7 +23,7 @@ static_assert(offsetof(font_t, extra_glyph) == 17464);
 
 enum
 {
-	unicode_buffer_size = 64,
+	unicode_buffer_size = 128,
 	display_page_lines_size = 12,
 	page_border_size = 3,
 	page_text_offset = 1,
@@ -499,8 +499,8 @@ static void run_display_log(void *)
 	unsigned int entry;
 	time_t stamp;
 	struct tm tm;
-	char entry_text[64];
-	char log_line[64];
+	char entry_text[128];
+	char log_line[128 + 16];
 	unsigned int unicode_length;
 
 	display_log_y = 0;
