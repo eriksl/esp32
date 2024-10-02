@@ -36,9 +36,7 @@ typedef enum
 	dv_if,
 	dv_x_size,
 	dv_y_size,
-	dv_x_mirror,
-	dv_y_mirror,
-	dv_rotate,
+	dv_flip,
 	dv_invert,
 	dv_error,
 	dv_size = dv_error,
@@ -86,9 +84,7 @@ static const char * const display_variable[dv_size][3] =
 	[dv_if] =		{	"interface",		"display.if",		"interface, 0 = SPI2, 1 = SPI3",		},
 	[dv_x_size] =	{	"x size",			"display.x.size",	"x size (width)",						},
 	[dv_y_size] =	{	"y size",			"display.y.size",	"y size (height)",						},
-	[dv_x_mirror] = {	"x mirror",			"display.x.mirror",	"x mirror (optional)",					},
-	[dv_y_mirror] = {	"y mirror",			"display.y.mirror",	"y mirror (optional)",					},
-	[dv_rotate] =	{	"rotate",			"display.rotate",	"rotate display (optional)",			},
+	[dv_flip] =		{	"flip",				"display.flip",		"flip display (optional)",				},
 	[dv_invert] =	{	"invert",			"display.invert",	"invert display (optional)",			},
 };
 
@@ -1032,9 +1028,7 @@ void display_init(void)
 		.interface_index = -1,
 		.x_size = -1,
 		.y_size = -1,
-		.x_mirror = -1,
-		.y_mirror = -1,
-		.rotate = -1,
+		.flip = -1,
 		.invert = -1,
 	};
 
@@ -1058,14 +1052,8 @@ void display_init(void)
 	if(config_get_uint_cstr(display_variable[dv_y_size][1], &value))
 		display_init_parameters.y_size = y_size = (int)value;
 
-	if(config_get_uint_cstr(display_variable[dv_x_mirror][1], &value))
-		display_init_parameters.x_mirror = (int)value;
-
-	if(config_get_uint_cstr(display_variable[dv_y_mirror][1], &value))
-		display_init_parameters.y_mirror = (int)value;
-
-	if(config_get_uint_cstr(display_variable[dv_rotate][1], &value))
-		display_init_parameters.rotate = (int)value;
+	if(config_get_uint_cstr(display_variable[dv_flip][1], &value))
+		display_init_parameters.flip = (int)value;
 
 	if(config_get_uint_cstr(display_variable[dv_invert][1], &value))
 		display_init_parameters.invert = (int)value;

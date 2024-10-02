@@ -93,8 +93,7 @@ static SemaphoreHandle_t spi_mutex;
 static unsigned int spi_pending;
 static unsigned int pwm_led_channel;
 static unsigned int x_size, y_size;
-static unsigned int x_mirror, y_mirror;
-static unsigned int rotate;
+static unsigned int flip;
 static unsigned int invert;
 static unsigned int madctl;
 
@@ -537,19 +536,11 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 	x_size = parameters->x_size;
 	y_size = parameters->y_size;
 
-	x_mirror = 0;
-	y_mirror = 0;
-	rotate = 0;
+	flip = 0;
 	invert = 0;
 
-	if(parameters->x_mirror >= 0)
-		y_mirror = parameters->x_mirror;
-
-	if(parameters->y_mirror >= 0)
-		x_mirror = parameters->y_mirror;
-
-	if(parameters->rotate >= 0)
-		rotate = parameters->rotate;
+	if(parameters->flip >= 0)
+		flip = parameters->flip;
 
 	if(parameters->invert >= 0)
 		invert = parameters->invert;
@@ -630,14 +621,8 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 
 	madctl = madctl_bgr;
 
-	if(rotate)
-		madctl |= madctl_mv;
-
-	if(!x_mirror)
-		madctl |= madctl_my;
-
-	if(!y_mirror)
-		madctl |= madctl_mx;
+	if(!flip)
+		madctl |= madctl_my | madctl_mx;
 
 	send_command_data_1(cmd_madctl, madctl);
 

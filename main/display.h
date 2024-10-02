@@ -41,9 +41,7 @@ typedef struct
 	int interface_index;
 	int x_size;
 	int y_size;
-	int x_mirror;
-	int y_mirror;
-	int rotate;
+	int flip;
 	int invert;
 } display_init_parameters_t;
 
