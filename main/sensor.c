@@ -439,4 +439,56 @@ void command_sensor_info(cli_command_call_t *call)
 
 	data_mutex_give();
 }
+
+void command_sensor_dump(cli_command_call_t *call)
+{
+	data_t *dataptr;
+	i2c_slave_t slave;
+	const char *name;
+	i2c_module_t module;
+	i2c_bus_t bus;
+	unsigned int address;
+	sensor_type_t type;
+	unsigned int ix;
+
+	assert(call->parameter_count == 0);
+
+	string_assign_cstr(call->result, "SENSOR dump");
+
+	data_mutex_take();
+
+	for(dataptr = data; dataptr; dataptr = dataptr->next)
+	{
+		slave = dataptr->slave;
+
+		if(!slave)
+		{
+			string_append_cstr(call->result, "\nslave = NULL");
+			continue;
+		}
+
+		if(!i2c_get_slave_info(slave, &module, &bus, &address, &name))
+			string_append_cstr(call->result, "\n- unknown slave");
+		else
+		{
+			string_format_append(call->result, "\n- sensor %s at module %u, bus %u, address 0x%x", name, (unsigned int)module, (unsigned int)bus, address);
+			string_append_cstr(call->result, "\n  values:");
+
+			for(type = sensor_type_first; type < sensor_type_size; type++)
+				if(data->info->type & (1 << type))
+					string_format_append(call->result, " %s=%.*f", sensor_type_info[type].type, data->info->precision, data->value[type]);
+
+			string_append_cstr(call->result, "\n  raw integer values:");
+
+			for(ix = 0; ix < data_int_value_size; ix++)
+				string_format_append(call->result, " %u=%u", ix, data->int_value[ix]);
+
+			string_append_cstr(call->result, "\n  raw float values:");
+
+			for(ix = 0; ix < data_float_value_size; ix++)
+				string_format_append(call->result, " %u=%.2f", ix, data->float_value[ix]);
+		}
+	}
+
+	data_mutex_give();
 }

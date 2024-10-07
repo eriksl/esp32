@@ -446,6 +446,10 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
+	{ "sensor-dump", "sd", "dump registered sensors", command_sensor_dump,
+		{},
+	},
+
 	{ "sensor-info", "si", "info about registered sensors", command_sensor_info,
 		{},
 	},
