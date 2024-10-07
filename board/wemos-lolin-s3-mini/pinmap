@@ -7,9 +7,9 @@ WEMOS Lolin S3 mini
 2	*			*				GPIO D/C SPI 2
 3	*			*				board boot select
 4	*			*				backlight SPI 2 SDM
-5	*												I2C 1 SDA
-6	*												I2C 1 SCL
-7	*												I2C 1 INT
+5	*												I2C 0 SDA
+6	*												I2C 0 SCL
+7	*												I2C 0 INT
 8	*												PWM 1
 9	*							[FSPIHD=IO_D3]		PWM 3
 10	*			*				FSPICS0=CS0
@@ -35,12 +35,12 @@ WEMOS Lolin S3 mini
 30				*				[SP0/1 CLK=CLK]
 31				*				[SP0/1 Q=IO_D1]
 32				*				[SP0/1 D=IO_D0]
-33	*							[SP0/1 IO4=IO_D4]	I2C 2 INT
+33	*							[SP0/1 IO4=IO_D4]	I2C 1 INT
 34	*							[SP0/1 IO5=IO_D5]	PDM 2
 35	*							[SP0/1 IO6=IO_D6]	led pixel 1
 36	*							[SP0/1 IO7=IO_D7]	led pixel 2
-37	*							[SP0/1 DQS]			I2C 2 SDA
-38	*												I2C 2 SCL
+37	*							[SP0/1 DQS]			I2C 1 SDA
+38	*												I2C 1 SCL
 39								[JTAG MTCK]
 40								[JTAG MTDO]
 41								[JTAG MDTI]
@@ -64,3 +64,9 @@ D/C			 2	D/C		R-1-3		21	D/C		R-1-5		7	purple			D2	red			25	/WR(D/C)
 BL			 4	SDM		L-1-3		17	SDM		R-1-6		8	grey			D5	green		29	BL_ON/OFF
 
 *) IOMUX fixed assigned
+
+I2C			I2C 0					I2C 1
+
+SDA			5						37
+SCL			6						38
+INT			7						33

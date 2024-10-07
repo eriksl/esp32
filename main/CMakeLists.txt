@@ -7,6 +7,7 @@ idf_component_register(
 		"display.c"
 		"display-spi-generic.c"
 		"fs.c"
+        "i2c.c"
 		"info.c"
 		"init.c"
 		"ledpixel.c"
@@ -18,6 +19,7 @@ idf_component_register(
         "pwm-led.c"
 		"ramdisk.c"
 		"string.c"
+		"sensor.c"
 		"util.c"
 		"wlan.c"
 	INCLUDE_DIRS

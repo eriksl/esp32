@@ -19,6 +19,8 @@
 #include "notify.h"
 #include "display.h"
 #include "pwm-led.h"
+#include "i2c.h"
+#include "sensor.h"
 
 void app_main(void)
 {
@@ -39,6 +41,8 @@ void app_main(void)
 	perftest_init();
 	console_init_2();
 	display_init();
+	i2c_init();
+	sensor_init();
 	notify(notify_sys_booting_finished);
 	vTaskSuspend(NULL);
 	util_abort("init: vTaskSuspend returned");

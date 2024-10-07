@@ -48,4 +48,22 @@ menu "BSP - do not change, set automically, when invoked using script idf"
 
 	config BSP_SPI3_MISO
 		int "GPIO used for SPI3 MISO"
+
+	config BSP_I2C0_SDA
+		int "GPIO used for SDA on first I2C module"
+
+	config BSP_I2C0_SCL
+		int "GPIO used for SCL on first I2C module"
+
+	config BSP_I2C0_INT
+		int "GPIO used for INT on first I2C module"
+
+	config BSP_I2C1_SDA
+		int "GPIO used for SDA on second I2C module"
+
+	config BSP_I2C1_SCL
+		int "GPIO used for SCL on second I2C module"
+
+	config BSP_I2C1_INT
+		int "GPIO used for INT on second I2C module"
 endmenu

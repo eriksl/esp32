@@ -353,6 +353,10 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
+	{ "i2c-info", "i2i", "info about the I2C interfaces", command_i2c_info,
+		{},
+	},
+
 	{ "info", (const char *)0, "show some generic information", info_command_info,
 		{}
 	},
@@ -442,10 +446,13 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
-	{ "string-info", "si", "show information about all strings", string_command_info,
-		{}
+	{ "sensor-info", "si", "info about registered sensors", command_sensor_info,
+		{},
 	},
 
+	{ "string-info", "sti", "show information about all strings", string_command_info,
+		{}
+	},
 
 	{ "wlan-client-config", "wcc", "set wireless ssid and password in client mode", wlan_command_client_config,
 		{	2,
