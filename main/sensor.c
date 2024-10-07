@@ -22,7 +22,7 @@ typedef struct data_T
 	i2c_slave_t slave;
 	int int_value[data_int_value_size];
 	float float_value[data_float_value_size];
-	float value;
+	float value[sensor_type_size];
 	const struct info_T *info;
 	struct data_T *next;
 } data_t;
@@ -34,13 +34,27 @@ typedef struct info_T
 	sensor_t parent;
 	sensor_t child;
 	unsigned int address;
-	sensor_type_t type;
-	const char *unity;
+	sensor_type_t type; // bitmask!
 	unsigned int precision;
 	bool (*const detect_fn)(data_t *);
 	bool (*const init_fn)(data_t *);
 	bool (*const poll_fn)(data_t *);
 } info_t;
+
+typedef struct
+{
+	const char *type;
+	const char *unity;
+} sensor_type_info_t;
+
+static const sensor_type_info_t sensor_type_info[sensor_type_size] =
+{
+	[sensor_type_visible_light] =
+	{
+		.type = "visible light",
+		.unity = "lx",
+	},
+};
 
 static bool inited = false;
 static SemaphoreHandle_t data_mutex;
@@ -166,7 +180,7 @@ bool bh1750_init_fn(data_t *data)
 	data->int_value[bh1750_int_raw_value] = 0;
 	data->int_value[bh1750_int_scaling] = 0;
 	data->int_value[bh1750_int_state] = bh1750_start_measurement;
-	data->value = 0;
+	data->value[sensor_type_visible_light] = 0;
 
 	return(true);
 }
@@ -226,7 +240,7 @@ bool bh1750_poll_fn(data_t *data)
 			if(raw_value < 0xffff)
 			{
 				data->int_value[bh1750_int_raw_value] = raw_value;
-				data->value = ((float)raw_value * factor) + offset;
+				data->value[sensor_type_visible_light] = ((float)raw_value * factor) + offset;
 			}
 			else
 				log_format("bh1750: warning: measurement out of range: %u", raw_value);
@@ -253,8 +267,7 @@ static const info_t info[sensor_size] =
 		.parent = sensor_none,
 		.child = sensor_none,
 		.address = 0x23,
-		.type = sensor_type_visible_light,
-		.unity = "lx",
+		.type = (1 << sensor_type_visible_light),
 		.precision = 0,
 		.detect_fn = bh1750_detect_fn,
 		.init_fn = bh1750_init_fn,
@@ -271,6 +284,8 @@ static void run_sensors(void *) // FIXME one thread per module parallel polling
 	i2c_bus_t bus;
 	i2c_slave_t slave;
 	unsigned int buses;
+	sensor_type_t type;
+	unsigned int ix;
 
 	for(module = i2c_module_first; module < i2c_module_size; module++)
 	{
@@ -299,6 +314,15 @@ static void run_sensors(void *) // FIXME one thread per module parallel polling
 
 				new_data = (data_t *)util_memory_alloc_spiram(sizeof(*new_data));
 				assert(new_data);
+
+				for(type = sensor_type_first; type < sensor_type_size; type++)
+					new_data->value[type] = 0;
+
+				for(ix = 0; ix < data_int_value_size; ix++)
+					new_data->int_value[ix] = 0;
+
+				for(ix = 0; ix < data_float_value_size; ix++)
+					new_data->float_value[ix] = 0;
 
 				new_data->slave = slave;
 				new_data->info = infoptr;
@@ -383,6 +407,7 @@ void command_sensor_info(cli_command_call_t *call)
 	i2c_module_t module;
 	i2c_bus_t bus;
 	unsigned int address;
+	sensor_type_t type;
 
 	assert(call->parameter_count == 0);
 
@@ -404,9 +429,11 @@ void command_sensor_info(cli_command_call_t *call)
 			string_append_cstr(call->result, "\n- unknown slave");
 		else
 		{
-			string_format_append(call->result, "\n- slave \"%s\" at module %u, bus %u, address 0x%x", name, (unsigned int)module, (unsigned int)bus, address);
-			string_format_append(call->result, "\n  value: %.02f, int[0]: %u, int[1]: %u, int[2]: %u", dataptr->value,
-						dataptr->int_value[0], dataptr->int_value[1], dataptr->int_value[2]);
+			string_format_append(call->result, "\n- %s@%u/%u/%x:", name, module, bus, address);
+
+			for(type = sensor_type_first; type < sensor_type_size; type++)
+				if(data->info->type & (1 << type))
+					string_format_append(call->result, " %s: %.*f %s", sensor_type_info[type].type, data->info->precision, data->value[type], sensor_type_info[type].unity);
 		}
 	}
 

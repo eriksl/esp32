@@ -11,8 +11,12 @@ typedef enum
 
 typedef enum
 {
-	sensor_type_none = 0,
-	sensor_type_visible_light = (1 << 0),
+	sensor_type_visible_light,
+	sensor_type_first = sensor_type_visible_light,
+	sensor_type_size,
+	sensor_type_error = sensor_type_size,
 } sensor_type_t;
+
+_Static_assert(sensor_type_size < 32); // used as bitmask
 
 void sensor_init(void);
