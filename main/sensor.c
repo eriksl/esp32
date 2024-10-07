@@ -324,6 +324,8 @@ static void run_sensors(void *) // FIXME one thread per module parallel polling
 					continue;
 				}
 
+				data_mutex_take();
+
 				if(!(dataptr = data))
 					data = new_data;
 				else
@@ -335,6 +337,8 @@ static void run_sensors(void *) // FIXME one thread per module parallel polling
 
 					dataptr->next = new_data;
 				}
+
+				data_mutex_give();
 			}
 		}
 	}
@@ -362,6 +366,9 @@ void sensor_init(void)
 {
 	assert(!inited);
 
+	data_mutex = xSemaphoreCreateMutex();
+	assert(data_mutex);
+
 	inited = true;
 
 	if(xTaskCreatePinnedToCore(run_sensors, "sensors", 3 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
@@ -380,6 +387,8 @@ void command_sensor_info(cli_command_call_t *call)
 	assert(call->parameter_count == 0);
 
 	string_assign_cstr(call->result, "SENSOR info");
+
+	data_mutex_take();
 
 	for(dataptr = data; dataptr; dataptr = dataptr->next)
 	{
@@ -400,4 +409,7 @@ void command_sensor_info(cli_command_call_t *call)
 						dataptr->int_value[0], dataptr->int_value[1], dataptr->int_value[2]);
 		}
 	}
+
+	data_mutex_give();
+}
 }
