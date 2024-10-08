@@ -227,7 +227,6 @@ bool bh1750_poll_fn(data_t *data)
 			if(raw_value == 0)
 			{
 				log("bh1750: warning: measurement unfinished");
-				data->int_value[bh1750_int_state] = bh1750_reading_measurement;
 				break;
 			}
 
