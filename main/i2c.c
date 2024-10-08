@@ -202,7 +202,7 @@ void i2c_init(void)
 			.trans_queue_depth = 0,
 			.flags =
 			{
-				.enable_internal_pullup = 0,
+				.enable_internal_pullup = 1, // this is not necessary but suppresses a spurious warning
 			},
 		},
 		[i2c_module_1_slow] =
@@ -216,7 +216,7 @@ void i2c_init(void)
 			.trans_queue_depth = 0,
 			.flags =
 			{
-				.enable_internal_pullup = 0,
+				.enable_internal_pullup = 1, // this is not necessary but suppresses a spurious warning
 			},
 		},
 	};
