@@ -296,9 +296,9 @@ static void run_sensors(void *) // FIXME one thread per module parallel polling
 			{
 				infoptr = &info[sensor];
 
-				if(i2c_find_first_slave(module, bus, infoptr->address))
+				if(i2c_find_slave(module, bus, infoptr->address))
 				{
-					log_format("sensor: warning: already present on bus %u, skip", (unsigned int)bus);
+					log_format("sensor: warning: skip probe on bus %u, already present", (unsigned int)bus);
 					continue;
 				}
 
