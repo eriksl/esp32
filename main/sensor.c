@@ -475,6 +475,139 @@ static bool lm75_poll(data_t *data)
 	return(true);
 }
 
+enum
+{
+	opt3001_int_raw_value_0 = 0,
+	opt3001_int_raw_value_1,
+	opt3001_int_size,
+};
+
+_Static_assert((unsigned int)opt3001_int_size < (unsigned int)data_int_value_size);
+
+enum
+{
+	opt3001_reg_result =		0x00,
+	opt3001_reg_conf =			0x01,
+	opt3001_reg_limit_low =		0x02,
+	opt3001_reg_limit_high =	0x03,
+	opt3001_reg_id_manuf =		0x7e,
+	opt3001_reg_id_dev =		0x7f,
+} opt3001_register;
+
+enum
+{
+	opt3001_id_manuf_ti =		0x5449,
+	opt3001_id_dev_opt3001 =	0x3001,
+} opt3001_id;
+
+enum
+{
+	opt3001_conf_fault_count =		0b0000000000000011,
+	opt3001_conf_mask_exp =			0b0000000000000100,
+	opt3001_conf_pol =				0b0000000000001000,
+	opt3001_conf_latch =			0b0000000000010000,
+	opt3001_conf_flag_low =			0b0000000000100000,
+	opt3001_conf_flag_high =		0b0000000001000000,
+	opt3001_conf_flag_ready =		0b0000000010000000,
+	opt3001_conf_flag_ovf =			0b0000000100000000,
+	opt3001_conf_conv_mode =		0b0000011000000000,
+	opt3001_conf_conv_time =		0b0000100000000000,
+	opt3001_conf_range =			0b1111000000000000,
+
+	opt3001_conf_range_auto =		0b1100000000000000,
+	opt3001_conf_conv_time_100 =	0b0000000000000000,
+	opt3001_conf_conv_time_800 =	0b0000100000000000,
+	opt3001_conf_conv_mode_shut =	0b0000000000000000,
+	opt3001_conf_conv_mode_single =	0b0000001000000000,
+	opt3001_conf_conv_mode_cont =	0b0000011000000000,
+} opt3001_conf;
+
+static bool opt3001_detect(data_t *data)
+{
+	uint8_t buffer[4];
+	unsigned int id;
+
+	if(!i2c_send_1_receive(data->slave, opt3001_reg_id_manuf, 2, buffer))
+		return(false);
+
+	id = (buffer[0] << 8) | (buffer[1] << 0);
+
+	if(id != opt3001_id_manuf_ti)
+		return(false);
+
+	if(!i2c_send_1_receive(data->slave, opt3001_reg_id_dev, 2, buffer))
+		return(false);
+
+	id = (buffer[0] << 8) | (buffer[1] << 0);
+
+	if(id != opt3001_id_dev_opt3001)
+		return(false);
+
+	return(true);
+}
+
+static bool opt3001_init(data_t *data)
+{
+	uint8_t buffer[4];
+	static const unsigned int config = opt3001_conf_range_auto | opt3001_conf_conv_time_800 | opt3001_conf_conv_mode_cont;
+	unsigned int read_config;
+
+	buffer[0] = opt3001_reg_conf;
+	buffer[1] = (config & 0xff00) >> 8;
+	buffer[2] = (config & 0x00ff) >> 0;
+
+	if(!i2c_send(data->slave, 3, buffer))
+		return(false);
+
+	if(!i2c_send_1_receive(data->slave, opt3001_reg_conf, 2, buffer))
+		return(false);
+
+	read_config = ((buffer[0] << 8) | (buffer[1] << 0)) & (opt3001_conf_mask_exp | opt3001_conf_conv_mode | opt3001_conf_conv_time | opt3001_conf_range);
+
+	if(read_config != config)
+		return(false);
+
+	return(true);
+}
+
+static bool opt3001_poll(data_t *data)
+{
+	uint8_t buffer[2];
+	unsigned int config, exponent, mantissa;
+
+	if(!i2c_send_1_receive(data->slave, opt3001_reg_conf, 2, buffer))
+	{
+		log("opt3001 poll: error 1");
+		return(false);
+	}
+
+	config = (buffer[0] << 8) | (buffer[1] << 0);
+
+	if(!(config & opt3001_conf_flag_ready))
+		return(true);
+
+	if(config & opt3001_conf_flag_ovf)
+	{
+		log("opt3001 poll: overflow");
+		return(true);
+	}
+
+	if(!i2c_send_1_receive(data->slave, opt3001_reg_result, 2, buffer))
+	{
+		log("opt3001 poll: error 2");
+		return(false);
+	}
+
+	exponent = (buffer[0] & 0xf0) >> 4;
+	mantissa = ((buffer[0] & 0x0f) << 8) | buffer[1];
+
+	data->int_value[opt3001_int_raw_value_0] = exponent;
+	data->int_value[opt3001_int_raw_value_1] = mantissa;
+	data->value[sensor_type_visible_light] = 0.01 * (float)(1 << exponent) * (float)mantissa;
+
+	return(true);
+}
+
 static const info_t info[sensor_size] =
 {
 	[sensor_bh1750] =
@@ -509,6 +642,17 @@ static const info_t info[sensor_size] =
 		.detect_fn = lm75_detect,
 		.init_fn = lm75_init,
 		.poll_fn = lm75_poll,
+	},
+	[sensor_opt3001] =
+	{
+		.name = "opt3001",
+		.id = sensor_opt3001,
+		.address = 0x45,
+		.type = (1 << sensor_type_visible_light),
+		.precision = 2,
+		.detect_fn = opt3001_detect,
+		.init_fn = opt3001_init,
+		.poll_fn = opt3001_poll,
 	},
 };
 
