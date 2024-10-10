@@ -47,15 +47,15 @@ typedef struct
 
 static const char *bus_name[i2c_bus_size] =
 {
-	[i2c_bus_none] = "none",
-	[i2c_bus_0] = "bus 0",
-	[i2c_bus_1] = "bus 1",
-	[i2c_bus_2] = "bus 2",
-	[i2c_bus_3] = "bus 3",
-	[i2c_bus_4] = "bus 4",
-	[i2c_bus_5] = "bus 5",
-	[i2c_bus_6] = "bus 6",
-	[i2c_bus_7] = "bus 7",
+	[i2c_bus_none] = "root bus",
+	[i2c_bus_0] = "mux bus 1",
+	[i2c_bus_1] = "mux bus 2",
+	[i2c_bus_2] = "mux bus 3",
+	[i2c_bus_3] = "mux bus 4",
+	[i2c_bus_4] = "mux bus 5",
+	[i2c_bus_5] = "mux bus 6",
+	[i2c_bus_6] = "mux bus 7",
+	[i2c_bus_7] = "mux bus 8",
 };
 
 static module_t module_data[i2c_module_size] =
@@ -651,7 +651,7 @@ void command_i2c_info(cli_command_call_t *call)
 		{
 			if((bus = module->bus[bus_index]))
 			{
-				string_format_append(call->result, "\n-  i2c bus %u: mux %s", bus->id, bus_name[bus->id]);
+				string_format_append(call->result, "\n-  i2c bus %u: %s", bus->id, bus_name[bus->id]);
 
 				for(slave = bus->slaves; slave; slave = slave->next)
 					string_format_append(call->result, "\n-   slave [0x%x]: name: %s, module: %u, bus: %u, handle: %p",
