@@ -153,7 +153,7 @@ static bool bh1750_start_measuring(data_t *data)
 	return(true);
 }
 
-bool bh1750_detect_fn(data_t *data)
+bool bh1750_detect(data_t *data)
 {
 	uint8_t buffer[8];
 
@@ -167,7 +167,7 @@ bool bh1750_detect_fn(data_t *data)
 	return(true);
 }
 
-bool bh1750_init_fn(data_t *data)
+bool bh1750_init(data_t *data)
 {
 	if(!i2c_send_1(data->slave, bh1750_opcode_poweron))
 		return(false);
@@ -183,7 +183,7 @@ bool bh1750_init_fn(data_t *data)
 	return(true);
 }
 
-bool bh1750_poll_fn(data_t *data)
+bool bh1750_poll(data_t *data)
 {
 	float factor, offset;
 	unsigned int scale_down_threshold, scale_up_threshold;
