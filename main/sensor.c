@@ -52,6 +52,11 @@ static const sensor_type_info_t sensor_type_info[sensor_type_size] =
 		.type = "visible light",
 		.unity = "lx",
 	},
+	[sensor_type_temperature] =
+	{
+		.type = "temperature",
+		.unity = "C",
+	},
 };
 
 static bool inited = false;
@@ -255,6 +260,223 @@ bool bh1750_poll(data_t *data)
 	return(true);
 }
 
+enum
+{
+	tmp75_int_raw_value_0 = 0,
+	tmp75_int_raw_value_1,
+	tmp75_int_size,
+};
+
+_Static_assert((unsigned int)tmp75_int_size < (unsigned int)data_int_value_size);
+
+enum
+{
+	tmp75_reg_temp =	0x00,
+	tmp75_reg_conf =	0x01,
+	tmp75_reg_tlow =	0x02,
+	tmp75_reg_thigh =	0x03,
+
+	tmp75_reg_conf_os =			0b10000000,
+	tmp75_reg_conf_res_9 =		0b00000000,
+	tmp75_reg_conf_res_10 =		0b00100000,
+	tmp75_reg_conf_res_11 =		0b01000000,
+	tmp75_reg_conf_res_12 =		0b01100000,
+	tmp75_reg_conf_f_queue =	0b00011000,
+	tmp75_reg_conf_pol =		0b00000100,
+	tmp75_reg_conf_tm =			0b00000010,
+	tmp75_reg_conf_shutdown =	0b00000001,
+	tmp75_reg_conf_no_shut =	0b00000000,
+
+	tmp75_probe_04 =		0x04,
+	tmp75_probe_a1 =		0xa1,
+	tmp75_probe_a2 =		0xa2,
+	tmp75_probe_aa =		0xaa,
+	tmp75_probe_ac =		0xac,
+
+	tmp75_probe_tl_h =		0x4b,
+	tmp75_probe_tl_l =		0x00,
+	tmp75_probe_th_h =		0x50,
+	tmp75_probe_th_l =		0x00,
+	tmp75_probe_conf =		0b00000000,
+	tmp75_probe_conf_mask =	0b10000000,
+};
+
+static bool tmp75_detect(data_t *data)
+{
+	uint8_t buffer[2];
+
+	if(!i2c_send_1_receive(data->slave, tmp75_reg_conf, 2, buffer))
+		return(false);
+
+	if((buffer[0] & tmp75_probe_conf_mask) != tmp75_probe_conf)
+		return(false);
+
+	if(!i2c_send_1_receive(data->slave, tmp75_reg_tlow, 2, buffer))
+		return(false);
+
+	if((buffer[0] != tmp75_probe_tl_h) || (buffer[1] != tmp75_probe_tl_l))
+		return(false);
+
+	if(!i2c_send_1_receive(data->slave, tmp75_reg_thigh, 2, buffer))
+		return(false);
+
+	if((buffer[0] != tmp75_probe_th_h) || (buffer[1] != tmp75_probe_th_l))
+		return(false);
+
+	if(i2c_send_1(data->slave, tmp75_probe_04))
+		return(false);
+
+	if(i2c_send_1(data->slave, tmp75_probe_a1))
+		return(false);
+
+	if(i2c_send_1(data->slave, tmp75_probe_a2))
+		return(false);
+
+	if(i2c_send_1(data->slave, tmp75_probe_aa))
+		return(false);
+
+	if(i2c_send_1(data->slave, tmp75_probe_ac))
+		return(false);
+
+	return(true);
+}
+
+static bool tmp75_init(data_t *data)
+{
+	uint8_t buffer[2];
+
+	if(!i2c_send_2(data->slave, tmp75_reg_conf, tmp75_reg_conf_res_12 | tmp75_reg_conf_no_shut))
+		return(false);
+
+	if(!i2c_send_1_receive(data->slave, tmp75_reg_conf, 2, buffer))
+		return(false);
+
+	if(buffer[0] != (tmp75_reg_conf_res_12 | tmp75_reg_conf_no_shut))
+		return(false);
+
+	return(true);
+}
+
+static bool tmp75_poll(data_t *data)
+{
+	uint8_t buffer[2];
+	float raw_temperature;
+
+	if(!i2c_send_1_receive(data->slave, tmp75_reg_temp, 2, buffer))
+	{
+		log("sensor: error in poll tmp75");
+		return(false);
+	}
+
+	data->int_value[tmp75_int_raw_value_0] = buffer[0];
+	data->int_value[tmp75_int_raw_value_1] = buffer[1];
+	raw_temperature = (buffer[0] << 8) | buffer[1];
+	data->value[sensor_type_temperature] = raw_temperature / 256.0;
+
+	return(true);
+}
+
+enum
+{
+	lm75_int_raw_value_0 = 0,
+	lm75_int_raw_value_1,
+	lm75_int_size,
+};
+
+_Static_assert((unsigned int)lm75_int_size < (unsigned int)data_int_value_size);
+
+enum
+{
+	lm75_reg_temp =				0x00,
+	lm75_reg_conf =				0x01,
+	lm75_reg_thyst =			0x02,
+	lm75_reg_tos =				0x03,
+
+	lm75_reg_conf_reserved =	0b11100000,
+	lm75_reg_conf_f_queue =		0b00011000,
+	lm75_reg_conf_pol =			0b00000100,
+	lm75_reg_conf_comp_int =	0b00000010,
+	lm75_reg_conf_shutdown =	0b00000001,
+	lm75_reg_conf_no_shutdown =	0b00000000,
+
+	lm75_probe_thyst_h =		0x4b,
+	lm75_probe_thyst_l =		0x00,
+	lm75_probe_tos_1_h =		0x50,
+	lm75_probe_tos_1_l =		0x00,
+	lm75_probe_tos_2_h =		0x00,
+	lm75_probe_tos_2_l =		0x00,
+	lm75_probe_conf =			0b00000000,
+	lm75_probe_conf_mask =		0b10011111,
+};
+
+static bool lm75_detect(data_t *data)
+{
+	uint8_t buffer[2];
+	i2c_module_t module;
+	i2c_bus_t bus;
+	unsigned int address;
+	const char *name;
+
+	i2c_get_slave_info(data->slave, &module, &bus, &address, &name);
+
+	log_format("lm75 probed at %u/%u/0x%x", module, bus, address);
+
+	if(!i2c_send_1_receive(data->slave, lm75_reg_conf, 2, buffer))
+		return(false);
+
+	if(((buffer[0] & lm75_probe_conf_mask) != lm75_probe_conf))
+		return(false);
+
+	if(!i2c_send_1_receive(data->slave, lm75_reg_thyst, 2, buffer))
+		return(false);
+
+	if((buffer[0] != lm75_probe_thyst_h) || (buffer[1] != lm75_probe_thyst_l))
+		return(false);
+
+	if(!i2c_send_1_receive(data->slave, lm75_reg_tos, 2, buffer))
+		return(false);
+
+	if(((buffer[0] != lm75_probe_tos_1_h) || (buffer[1] != lm75_probe_tos_1_l)) && ((buffer[0] != lm75_probe_tos_2_h) || (buffer[1] != lm75_probe_tos_2_l)))
+		return(false);
+
+	return(true);
+}
+
+static bool lm75_init(data_t *data)
+{
+	uint8_t buffer[2];
+
+	if(!i2c_send_2(data->slave, lm75_reg_conf, lm75_reg_conf_no_shutdown))
+		return(false);
+
+	if(!i2c_send_1_receive(data->slave, lm75_reg_conf, 2, buffer))
+		return(false);
+
+	if((buffer[0] & ~lm75_reg_conf_reserved) != lm75_reg_conf_no_shutdown)
+		return(false);
+
+	return(true);
+}
+
+static bool lm75_poll(data_t *data)
+{
+	uint8_t buffer[2];
+	float raw_temperature;
+
+	if(!i2c_send_1_receive(data->slave, lm75_reg_temp, 2, buffer))
+	{
+		log("lm75: poll error");
+		return(false);
+	}
+
+	data->int_value[lm75_int_raw_value_0] = buffer[0];
+	data->int_value[lm75_int_raw_value_1] = buffer[1];
+	raw_temperature = (buffer[0] << 8) | buffer[1];
+	data->value[sensor_type_temperature] = raw_temperature / 256.0;
+
+	return(true);
+}
+
 static const info_t info[sensor_size] =
 {
 	[sensor_bh1750] =
@@ -264,9 +486,31 @@ static const info_t info[sensor_size] =
 		.address = 0x23,
 		.type = (1 << sensor_type_visible_light),
 		.precision = 0,
-		.detect_fn = bh1750_detect_fn,
-		.init_fn = bh1750_init_fn,
-		.poll_fn = bh1750_poll_fn,
+		.detect_fn = bh1750_detect,
+		.init_fn = bh1750_init,
+		.poll_fn = bh1750_poll,
+	},
+	[sensor_tmp75] =
+	{
+		.name = "tmp75",
+		.id = sensor_tmp75,
+		.address = 0x48,
+		.type = (1 << sensor_type_temperature),
+		.precision = 1,
+		.detect_fn = tmp75_detect,
+		.init_fn = tmp75_init,
+		.poll_fn = tmp75_poll,
+	},
+	[sensor_lm75] =
+	{
+		.name = "lm75",
+		.id = sensor_lm75,
+		.address = 0x48,
+		.type = (1 << sensor_type_temperature),
+		.precision = 1,
+		.detect_fn = lm75_detect,
+		.init_fn = lm75_init,
+		.poll_fn = lm75_poll,
 	},
 };
 

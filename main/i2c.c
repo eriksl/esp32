@@ -534,6 +534,13 @@ bool i2c_send_1(i2c_slave_t slave, unsigned int byte)
 	return(i2c_send(slave, 1, buffer));
 }
 
+bool i2c_send_2(i2c_slave_t slave, unsigned int byte_1, unsigned int byte_2)
+{
+	uint8_t buffer[2] = { byte_1, byte_2 };
+
+	return(i2c_send(slave, 2, buffer));
+}
+
 bool i2c_receive(i2c_slave_t slave, unsigned int receive_buffer_size, uint8_t *receive_buffer)
 {
 	slave_t *_slave = (slave_t *)slave;
@@ -555,6 +562,38 @@ bool i2c_receive(i2c_slave_t slave, unsigned int receive_buffer_size, uint8_t *r
 	util_warn_on_esp_err("i2c_master_receive", rv = i2c_master_receive(_slave->handle, receive_buffer, receive_buffer_size, i2c_timeout_ms));
 
 	return(rv == ESP_OK);
+}
+
+bool i2c_send_receive(i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t *send_buffer, unsigned int receive_buffer_size, uint8_t *receive_buffer)
+{
+	slave_t *_slave = (slave_t *)slave;
+	unsigned int rv;
+
+	assert(inited);
+	assert(_slave);
+
+	if((send_buffer_length == 0) || (receive_buffer_size == 0))
+		return(true);
+
+	assert(send_buffer);
+	assert(receive_buffer);
+
+	if(!slave_check(_slave))
+		return(false);
+
+	set_mux(_slave->module, _slave->bus);
+
+	util_warn_on_esp_err("i2c_master_transmit_receive", rv =
+			i2c_master_transmit_receive(_slave->handle, send_buffer, send_buffer_length, receive_buffer, receive_buffer_size, i2c_timeout_ms));
+
+	return(rv == ESP_OK);
+}
+
+bool i2c_send_1_receive(i2c_slave_t slave, unsigned int byte, unsigned int receive_buffer_size, uint8_t *receive_buffer)
+{
+	uint8_t send_buffer[1] = { byte };
+
+	return(i2c_send_receive(slave, 1, send_buffer, receive_buffer_size, receive_buffer));
 }
 
 bool i2c_get_slave_info(i2c_slave_t slave, i2c_module_t *module, i2c_bus_t *bus, unsigned int *address, const char **name)
