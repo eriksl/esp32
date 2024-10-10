@@ -431,8 +431,9 @@ void command_sensor_info(cli_command_call_t *call)
 			string_format_append(call->result, "\n- %s@%u/%u/%x:", name, module, bus, address);
 
 			for(type = sensor_type_first; type < sensor_type_size; type++)
-				if(data->info->type & (1 << type))
-					string_format_append(call->result, " %s: %.*f %s", sensor_type_info[type].type, data->info->precision, data->value[type], sensor_type_info[type].unity);
+				if(dataptr->info->type & (1 << type))
+					string_format_append(call->result, " %s: %.*f %s", sensor_type_info[type].type,
+							dataptr->info->precision, dataptr->value[type], sensor_type_info[type].unity);
 		}
 	}
 
@@ -474,18 +475,18 @@ void command_sensor_dump(cli_command_call_t *call)
 			string_append_cstr(call->result, "\n  values:");
 
 			for(type = sensor_type_first; type < sensor_type_size; type++)
-				if(data->info->type & (1 << type))
-					string_format_append(call->result, " %s=%.*f", sensor_type_info[type].type, data->info->precision, data->value[type]);
+				if(dataptr->info->type & (1 << type))
+					string_format_append(call->result, " %s=%.*f", sensor_type_info[type].type, dataptr->info->precision, dataptr->value[type]);
 
 			string_append_cstr(call->result, "\n  raw integer values:");
 
 			for(ix = 0; ix < data_int_value_size; ix++)
-				string_format_append(call->result, " %u=%u", ix, data->int_value[ix]);
+				string_format_append(call->result, " %u=%u", ix, dataptr->int_value[ix]);
 
 			string_append_cstr(call->result, "\n  raw float values:");
 
 			for(ix = 0; ix < data_float_value_size; ix++)
-				string_format_append(call->result, " %u=%.2f", ix, data->float_value[ix]);
+				string_format_append(call->result, " %u=%.2f", ix, dataptr->float_value[ix]);
 		}
 	}
 
