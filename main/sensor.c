@@ -419,8 +419,6 @@ static bool lm75_detect(data_t *data)
 
 	i2c_get_slave_info(data->slave, &module, &bus, &address, &name);
 
-	log_format("lm75 probed at %u/%u/0x%x", module, bus, address);
-
 	if(!i2c_send_1_receive(data->slave, lm75_reg_conf, 2, buffer))
 		return(false);
 
