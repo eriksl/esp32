@@ -31,8 +31,6 @@ typedef struct info_T
 {
 	const char *name;
 	sensor_t id;
-	sensor_t parent;
-	sensor_t child;
 	unsigned int address;
 	sensor_type_t type; // bitmask!
 	unsigned int precision;
@@ -263,8 +261,6 @@ static const info_t info[sensor_size] =
 	{
 		.name = "bh1750",
 		.id = sensor_bh1750,
-		.parent = sensor_none,
-		.child = sensor_none,
 		.address = 0x23,
 		.type = (1 << sensor_type_visible_light),
 		.precision = 0,
