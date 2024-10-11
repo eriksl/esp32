@@ -7,6 +7,7 @@ typedef enum
 	sensor_tmp75, // do not change order between tmp75 and lm75
 	sensor_lm75,
 	sensor_opt3001,
+	sensor_max44009,
 	sensor_size,
 	sensor_error = sensor_size,
 	sensor_none = sensor_size,

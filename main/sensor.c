@@ -608,6 +608,135 @@ static bool opt3001_poll(data_t *data)
 	return(true);
 }
 
+enum
+{
+	max44009_int_raw_value_0 = 0,
+	max44009_int_raw_value_1,
+	max44009_int_size,
+};
+
+_Static_assert((unsigned int)max44009_int_size < (unsigned int)data_int_value_size);
+
+enum
+{
+	max44009_reg_ints =			0x00,
+	max44009_reg_inte =			0x01,
+	max44009_reg_conf =			0x02,
+	max44009_reg_data_msb =		0x03,
+	max44009_reg_data_lsb =		0x04,
+	max44009_reg_thresh_msb =	0x05,
+	max44009_reg_thresh_lsb =	0x06,
+	max44009_reg_thresh_timer =	0x07,
+
+	max44009_conf_tim_800 =		(0 << 2) | (0 << 1) | (0 << 0),
+	max44009_conf_tim_400 =		(0 << 2) | (0 << 1) | (1 << 0),
+	max44009_conf_tim_200 =		(0 << 2) | (1 << 1) | (0 << 0),
+	max44009_conf_tim_100 =		(0 << 2) | (1 << 1) | (1 << 0),
+	max44009_conf_tim_50 =		(1 << 2) | (0 << 1) | (0 << 0),
+	max44009_conf_tim_25 =		(1 << 2) | (0 << 1) | (1 << 0),
+	max44009_conf_tim_12 =		(1 << 2) | (1 << 1) | (0 << 0),
+	max44009_conf_tim_6 =		(1 << 2) | (1 << 1) | (1 << 0),
+	max44009_conf_cdr =			(1 << 3),
+	max44009_conf_reserved4 =	(1 << 4),
+	max44009_conf_reserved5 =	(1 << 5),
+	max44009_conf_manual =		(1 << 6),
+	max44009_conf_cont =		(1 << 7),
+
+	max44009_probe_ints =			0x00,
+	max44009_probe_inte =			0x00,
+	max44009_probe_thresh_msb =		0xef,
+	max44009_probe_thresh_lsb =		0x00,
+	max44009_probe_thresh_timer =	0xff,
+};
+
+static bool max44009_detect(data_t *data)
+{
+	uint8_t buffer[2];
+
+	if(!i2c_send_1_receive(data->slave, max44009_reg_ints, 2, buffer))
+		return(false);
+
+	if((buffer[0] != max44009_probe_ints) || (buffer[1] != max44009_probe_ints))
+		return(false);
+
+	if(!i2c_send_1_receive(data->slave, max44009_reg_inte, 2, buffer))
+		return(false);
+
+	if((buffer[0] != max44009_probe_inte) || (buffer[1] != max44009_probe_inte))
+		return(false);
+
+	if(!i2c_send_1_receive(data->slave, max44009_reg_thresh_msb, 2, buffer))
+		return(false);
+
+	if((buffer[0] != max44009_probe_thresh_msb) || (buffer[1] != max44009_probe_thresh_msb))
+		return(false);
+
+	if(!i2c_send_1_receive(data->slave, max44009_reg_thresh_lsb, 2, buffer))
+		return(false);
+
+	if((buffer[0] != max44009_probe_thresh_lsb) || (buffer[1] != max44009_probe_thresh_lsb))
+		return(false);
+
+	if(!i2c_send_1_receive(data->slave, max44009_reg_thresh_timer, sizeof(buffer), buffer))
+		return(false);
+
+	if((buffer[0] != max44009_probe_thresh_timer) || (buffer[1] != max44009_probe_thresh_timer))
+		return(false);
+
+	return(true);
+}
+
+static bool max44009_init(data_t *data)
+{
+	uint8_t buffer[2];
+
+	if(!i2c_send_2(data->slave, max44009_reg_conf, max44009_conf_cont))
+	{
+		log("sensors: max44009: init error 1");
+		return(false);
+	}
+
+	if(!i2c_send_1_receive(data->slave, max44009_reg_conf, 2, buffer))
+	{
+		log("sensors: max44009: init error 2");
+		return(false);
+	}
+
+	if((buffer[0] & (max44009_conf_cont | max44009_conf_manual)) != max44009_conf_cont)
+	{
+		log("sensors: max44009: init error 3");
+		return(false);
+	}
+
+	return(true);
+}
+
+static bool max44009_poll(data_t *data)
+{
+	uint8_t		buffer[2];
+	int			exponent, mantissa;
+
+	if(!i2c_send_1_receive(data->slave, max44009_reg_data_msb, 2, buffer))
+	{
+		log("sensors: max44009: poll error 1");
+		return(false);
+	}
+
+	exponent =	(buffer[0] & 0xf0) >> 4;
+	mantissa =	(buffer[0] & 0x0f) << 4;
+	mantissa |=	(buffer[1] & 0x0f) << 0;
+
+	data->int_value[max44009_int_raw_value_0] = exponent;
+	data->int_value[max44009_int_raw_value_1] = mantissa;
+
+	if(exponent == 0b1111)
+		log("sensors: max44009: overflow");
+	else
+		data->value[sensor_type_visible_light] = (1 << exponent) * mantissa * 0.045;
+
+	return(true);
+}
+
 static const info_t info[sensor_size] =
 {
 	[sensor_bh1750] =
@@ -653,6 +782,17 @@ static const info_t info[sensor_size] =
 		.detect_fn = opt3001_detect,
 		.init_fn = opt3001_init,
 		.poll_fn = opt3001_poll,
+	},
+	[sensor_max44009] =
+	{
+		.name = "max44009",
+		.id = sensor_max44009,
+		.address = 0x4a,
+		.type = (1 << sensor_type_visible_light),
+		.precision = 2,
+		.detect_fn = max44009_detect,
+		.init_fn = max44009_init,
+		.poll_fn = max44009_poll,
 	},
 };
 
