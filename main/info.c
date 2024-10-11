@@ -53,24 +53,24 @@ void info_command_info(cli_command_call_t *call)
 
 	unsigned major_rev = chip_info.revision / 100;
 	unsigned minor_rev = chip_info.revision % 100;
-	string_format_append(call->result, "\nRevision: %d.%d", major_rev, minor_rev);
+	string_format_append(call->result, "\nRevision: %u.%u", major_rev, minor_rev);
 
 	esp_flash_get_size(NULL, &flash_size);
 
 	string_format_append(call->result, "\nFlash: %lu MB %s", flash_size / (1024 * 1024),
 		(chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
 
-	string_format_append(call->result, "\nBSP:\n- board name: %s\n- flash size: %u MB\n- SPI RAM size: %u MB",
+	string_format_append(call->result, "\nBSP:\n- board name: %s\n- flash size: %d MB\n- SPI RAM size: %d MB",
 			CONFIG_BSP_BOARD_TYPE_NAME,
 			CONFIG_BSP_FLASH_SIZE / 1024,
 			CONFIG_BSP_SPIRAM_SIZE / 1024);
 #if defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
-	string_format_append(call->result, "\n- LEDpixel at GPIO %u", CONFIG_BSP_LED_GPIO);
+	string_format_append(call->result, "\n- LEDpixel at GPIO %d", CONFIG_BSP_LED_GPIO);
 #else
 	string_append_cstr(call->result, "\n- no LEDpixel");
 #endif
 #if defined(CONFIG_BSP_LED_HAVE_LED)
-	string_format_append(call->result, "\n- status LED at GPIO %u", CONFIG_BSP_LED_GPIO);
+	string_format_append(call->result, "\n- status LED at GPIO %d", CONFIG_BSP_LED_GPIO);
 #else
 	string_append_cstr(call->result, "\n- no status LED");
 #endif

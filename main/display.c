@@ -708,7 +708,7 @@ static void run_display_info(void *)
 					if((y + font->net.height) > y_size)
 						break;
 
-					unicode_length = utf8_to_unicode((uint8_t *)string_cstr(display_pages_current->text.line[row]), unicode_buffer_size, unicode_buffer);
+					unicode_length = utf8_to_unicode((const uint8_t *)string_cstr(display_pages_current->text.line[row]), unicode_buffer_size, unicode_buffer);
 					write_fn(font, dc_black, dc_white,
 							page_border_size, y, (x_size - 1) - page_border_size, y + (font->net.height - 1),
 							unicode_length, unicode_buffer);
@@ -974,7 +974,7 @@ static void display_info(string_t output)
 	string_format_append(output, "\n- raw height: %u", (unsigned int)font->raw.height);
 	string_format_append(output, "\n- net width: %u", (unsigned int)font->net.width);
 	string_format_append(output, "\n- net height: %u", (unsigned int)font->net.height);
-	string_format_append(output, "\n- basic glyphs: %u", font_basic_glyphs_size);
+	string_format_append(output, "\n- basic glyphs: %d", font_basic_glyphs_size);
 	string_format_append(output, "\n- extra glyphs: %u", (unsigned int)font->extra_glyphs);
 	string_format_append(output, "\n- columns: %u", columns);
 	string_format_append(output, "\n- rows: %u", rows);

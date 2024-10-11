@@ -105,7 +105,7 @@ static void write_console(unsigned int length, const char data[])
 	}
 }
 
-static void prompt()
+static void prompt(void)
 {
 	string_auto(prompt, 32);
 
@@ -350,7 +350,7 @@ static void run_console(void *)
 	}
 }
 
-void console_init_1()
+void console_init_1(void)
 {
 	usb_serial_jtag_driver_config_t usb_serial_jtag_config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
 	unsigned int ix;
@@ -377,7 +377,7 @@ void console_init_1()
 	inited_1 = true;
 }
 
-void console_init_2()
+void console_init_2(void)
 {
 	string_auto(hostname_in, 16);
 	string_auto_init(hostname_key, "hostname");

@@ -31,7 +31,7 @@ typedef enum
 	i2c_bus_error = i2c_bus_size,
 } i2c_bus_t;
 
-struct i2c_opaque_t {};
+struct i2c_opaque_t {} __attribute__((aligned(sizeof(int))));
 
 typedef struct i2c_opaque_t *i2c_slave_t;
 typedef const struct i2c_opaque_t *const_i2c_slave_t;

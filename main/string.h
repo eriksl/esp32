@@ -5,18 +5,18 @@ enum
 	string_header_length = 20,
 };
 
-struct string_opaque_t {};
+struct string_opaque_t {} __attribute__((aligned(sizeof(int))));
 
 typedef struct string_opaque_t *string_t;
 typedef const struct string_opaque_t *const_string_t;
 
 #define string_auto(_name, _length) \
-	char _ ## _name ## _data[string_header_length + /* terminator */ 1 + _length]; \
+	uint32_t _ ## _name ## _data[(string_header_length + /* terminator */ 1 + _length) / 4 + 3] __attribute__((aligned(8))); \
 	string_t _name = (string_t)_ ## _name ## _data; \
 	_string_auto(_name, _length)
 
 #define string_auto_init(_name, _string) \
-	char _ ## _name ## _data[string_header_length + /* terminator */ 1 + sizeof(_string)]; \
+	uint32_t _ ## _name ## _data[(string_header_length + /* terminator */ 1 + sizeof(_string)) / 4 + 3] __attribute__((aligned(8))); \
 	string_t _name = (string_t)_ ## _name ## _data; \
 	_string_auto(_name, sizeof(_string)); string_assign_cstr(_name, _string)
 

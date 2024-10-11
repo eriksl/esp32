@@ -40,7 +40,7 @@ static void ota_abort(void)
 
 void command_ota_start(cli_command_call_t *call)
 {
-	int rv;
+	unsigned int rv;
 	unsigned int length;
 	const esp_partition_t *partition;
 
@@ -120,7 +120,7 @@ void command_ota_write(cli_command_call_t *call)
 
 	if(checksum_chunk && (length != 32))
 	{
-		string_format(call->result, "ERROR: invalid checksum chunk length (%u vs. %u)", length, 32);
+		string_format(call->result, "ERROR: invalid checksum chunk length (%u vs. %u)", length, 32U);
 		return(ota_abort());
 	}
 
@@ -138,7 +138,7 @@ void command_ota_write(cli_command_call_t *call)
 
 void command_ota_finish(cli_command_call_t *call)
 {
-	int rv;
+	unsigned int rv;
 	unsigned char ota_sha256_hash[32];
 	string_auto(ota_sha256_hash_text, (sizeof(ota_sha256_hash) * 2) + 1);
 
@@ -174,7 +174,7 @@ void command_ota_finish(cli_command_call_t *call)
 
 void command_ota_commit(cli_command_call_t *call)
 {
-	esp_err_t rv;
+	unsigned int rv;
 	unsigned char local_sha256_hash[32];
 	string_auto(local_sha256_hash_text, (sizeof(local_sha256_hash) * 2) + 1);
 	string_t remote_sha256_hash_text;
@@ -234,7 +234,7 @@ void command_ota_commit(cli_command_call_t *call)
 
 void command_ota_confirm(cli_command_call_t *call)
 {
-	int rv;
+	unsigned int rv;
 
 	assert(call->parameter_count == 0);
 

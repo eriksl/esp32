@@ -61,7 +61,7 @@ static const sensor_type_info_t sensor_type_info[sensor_type_size] =
 
 static bool inited = false;
 static SemaphoreHandle_t data_mutex;
-static data_t *data = (data_t *)0;
+static data_t *data_root = (data_t *)0;
 
 static inline void data_mutex_take(void)
 {
@@ -158,7 +158,7 @@ static bool bh1750_start_measuring(data_t *data)
 	return(true);
 }
 
-bool bh1750_detect(data_t *data)
+static bool bh1750_detect(data_t *data)
 {
 	uint8_t buffer[8];
 
@@ -172,7 +172,7 @@ bool bh1750_detect(data_t *data)
 	return(true);
 }
 
-bool bh1750_init(data_t *data)
+static bool bh1750_init(data_t *data)
 {
 	if(!i2c_send_1(data->slave, bh1750_opcode_poweron))
 		return(false);
@@ -188,7 +188,7 @@ bool bh1750_init(data_t *data)
 	return(true);
 }
 
-bool bh1750_poll(data_t *data)
+static bool bh1750_poll(data_t *data)
 {
 	float factor, offset;
 	unsigned int scale_down_threshold, scale_up_threshold;
@@ -245,14 +245,14 @@ bool bh1750_poll(data_t *data)
 				data->value[sensor_type_visible_light] = ((float)raw_value * factor) + offset;
 			}
 			else
-				log_format("bh1750: warning: measurement out of range: %u", raw_value);
+				log_format("bh1750: warning: measurement out of range: %d", raw_value);
 
 			break;
 		}
 
 		default:
 		{
-			log_format("bh1750: poll: invalid state: %u", data->int_value[bh1750_int_state]);
+			log_format("bh1750: poll: invalid state: %d", data->int_value[bh1750_int_state]);
 			return(false);
 		}
 	}
@@ -371,7 +371,7 @@ static bool tmp75_poll(data_t *data)
 	data->int_value[tmp75_int_raw_value_0] = buffer[0];
 	data->int_value[tmp75_int_raw_value_1] = buffer[1];
 	raw_temperature = (buffer[0] << 8) | buffer[1];
-	data->value[sensor_type_temperature] = raw_temperature / 256.0;
+	data->value[sensor_type_temperature] = raw_temperature / 256.0F;
 
 	return(true);
 }
@@ -470,7 +470,7 @@ static bool lm75_poll(data_t *data)
 	data->int_value[lm75_int_raw_value_0] = buffer[0];
 	data->int_value[lm75_int_raw_value_1] = buffer[1];
 	raw_temperature = (buffer[0] << 8) | buffer[1];
-	data->value[sensor_type_temperature] = raw_temperature / 256.0;
+	data->value[sensor_type_temperature] = raw_temperature / 256.0F;
 
 	return(true);
 }
@@ -603,7 +603,7 @@ static bool opt3001_poll(data_t *data)
 
 	data->int_value[opt3001_int_raw_value_0] = exponent;
 	data->int_value[opt3001_int_raw_value_1] = mantissa;
-	data->value[sensor_type_visible_light] = 0.01 * (float)(1 << exponent) * (float)mantissa;
+	data->value[sensor_type_visible_light] = 0.01F * (float)(1 << exponent) * (float)mantissa;
 
 	return(true);
 }
@@ -680,7 +680,7 @@ static void run_sensors(void *) // FIXME one thread per module parallel polling
 
 				if(i2c_find_slave(module, bus, infoptr->address))
 				{
-					log_format("sensor: warning: skip probe on bus %u, already present", (unsigned int)bus);
+					log_format("sensor: warning: skip probe of %s on bus %u, address %#x already used", infoptr->name, (unsigned int)bus, infoptr->address);
 					continue;
 				}
 
@@ -731,8 +731,8 @@ static void run_sensors(void *) // FIXME one thread per module parallel polling
 
 				data_mutex_take();
 
-				if(!(dataptr = data))
-					data = new_data;
+				if(!(dataptr = data_root))
+					data_root = new_data;
 				else
 				{
 					for(; dataptr && dataptr->next; dataptr = dataptr->next)
@@ -750,7 +750,7 @@ static void run_sensors(void *) // FIXME one thread per module parallel polling
 
 	for(;;)
 	{
-		for(dataptr = data; dataptr; dataptr = dataptr->next)
+		for(dataptr = data_root; dataptr; dataptr = dataptr->next)
 		{
 			if(dataptr->info->poll_fn)
 			{
@@ -796,7 +796,7 @@ void command_sensor_info(cli_command_call_t *call)
 
 	data_mutex_take();
 
-	for(dataptr = data; dataptr; dataptr = dataptr->next)
+	for(dataptr = data_root; dataptr; dataptr = dataptr->next)
 	{
 		slave = dataptr->slave;
 
@@ -815,7 +815,7 @@ void command_sensor_info(cli_command_call_t *call)
 			for(type = sensor_type_first; type < sensor_type_size; type++)
 				if(dataptr->info->type & (1 << type))
 					string_format_append(call->result, " %s: %.*f %s", sensor_type_info[type].type,
-							dataptr->info->precision, dataptr->value[type], sensor_type_info[type].unity);
+							(int)dataptr->info->precision, (double)dataptr->value[type], sensor_type_info[type].unity);
 		}
 	}
 
@@ -839,7 +839,7 @@ void command_sensor_dump(cli_command_call_t *call)
 
 	data_mutex_take();
 
-	for(dataptr = data; dataptr; dataptr = dataptr->next)
+	for(dataptr = data_root; dataptr; dataptr = dataptr->next)
 	{
 		slave = dataptr->slave;
 
@@ -858,17 +858,17 @@ void command_sensor_dump(cli_command_call_t *call)
 
 			for(type = sensor_type_first; type < sensor_type_size; type++)
 				if(dataptr->info->type & (1 << type))
-					string_format_append(call->result, " %s=%.*f", sensor_type_info[type].type, dataptr->info->precision, dataptr->value[type]);
+					string_format_append(call->result, " %s=%.*f", sensor_type_info[type].type, (int)dataptr->info->precision, (double)dataptr->value[type]);
 
 			string_append_cstr(call->result, "\n  raw integer values:");
 
 			for(ix = 0; ix < data_int_value_size; ix++)
-				string_format_append(call->result, " %u=%u", ix, dataptr->int_value[ix]);
+				string_format_append(call->result, " %u=%d", ix, dataptr->int_value[ix]);
 
 			string_append_cstr(call->result, "\n  raw float values:");
 
 			for(ix = 0; ix < data_float_value_size; ix++)
-				string_format_append(call->result, " %u=%.2f", ix, dataptr->float_value[ix]);
+				string_format_append(call->result, " %u=%.2f", ix, (double)dataptr->float_value[ix]);
 		}
 	}
 

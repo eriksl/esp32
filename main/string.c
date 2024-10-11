@@ -90,7 +90,7 @@ void string_module_init(void)
 
 const_string_t string_empty_string(void)
 {
-	return((string_t)&empty_string);
+	return((const const_string_t)&empty_string);
 }
 
 static void _string_init_header(_string_t *_dst, unsigned int size, bool header_const, bool header_from_malloc, bool data_const, bool data_from_malloc)
@@ -117,6 +117,9 @@ void _string_auto(string_t dst, unsigned int size)
 
 	auto_called++;
 
+	assert((((unsigned int)(void *)_dst) & 0x3) == 0);
+	assert((((unsigned int)(void *)_dst->data_start) & 0x3) == 0);
+
 	_string_init_header(_dst, size, false, false, false, false);
 	_dst->data = _dst->data_start;
 	_dst->data[0] = '\0';
@@ -131,6 +134,8 @@ string_t _string_new(unsigned int size, const char *file, unsigned int line)
 	_dst = util_memory_alloc_spiram(sizeof(_string_t) + size + 1); // NOTE: length < size and [length + 1] must be able to contain \0
 
 	assert(_dst);
+	assert((((unsigned int)(void *)_dst) & 0x3) == 0);
+	assert((((unsigned int)(void *)_dst->data_start) & 0x3) == 0);
 
 	_string_init_header(_dst, size, false, true, false, false);
 	_dst->data = _dst->data_start;
@@ -181,6 +186,8 @@ string_t _string_const(const char *const_string, const char *file, unsigned int 
 	_dst = util_memory_alloc_spiram(sizeof(_string_t));
 
 	assert(_dst);
+	assert((((unsigned int)(void *)_dst) & 0x3) == 0);
+	assert((((unsigned int)(const void *)const_string) & 0x3) == 0);
 
 	_string_init_header(_dst, length, false, true, true, false);
 	_dst->length = length;
@@ -203,7 +210,7 @@ void _string_free(string_t *string, const char *file, unsigned int line)
 
 	if(!_dst)
 	{
-		log_format("string_free(null) at %s:%d", file, line);
+		log_format("string_free(null) at %s:%u", file, line);
 		return;
 	}
 
@@ -233,7 +240,7 @@ void _string_free(string_t *string, const char *file, unsigned int line)
 
 unsigned int string_length(const const_string_t src)
 {
-	_string_t *_src = (_string_t *)src;
+	const _string_t *_src = (const _string_t *)src;
 
 	_string_check_const(_src);
 
@@ -242,7 +249,7 @@ unsigned int string_length(const const_string_t src)
 
 unsigned int string_length_utf8(const const_string_t src)
 {
-	_string_t *_src = (_string_t *)src;
+	const _string_t *_src = (const _string_t *)src;
     unsigned int ix, rv;
 
 	_string_check_const(_src);
@@ -256,7 +263,7 @@ unsigned int string_length_utf8(const const_string_t src)
 
 unsigned int string_size(const const_string_t src)
 {
-	_string_t *_src = (_string_t *)src;
+	const _string_t *_src = (const _string_t *)src;
 
 	_string_check_const(_src);
 
@@ -302,7 +309,7 @@ void string_append_data(string_t dst, unsigned int length, const uint8_t *src)
 
 void string_append_string(string_t dst, const const_string_t src)
 {
-	_string_t *_src = (_string_t *)src;
+	const _string_t *_src = (const _string_t *)src;
 
 	_string_check_const(_src);
 
@@ -375,6 +382,9 @@ unsigned int string_assign_mbuf(string_t dst, const void *src)
 	return(string_append_mbuf(dst, src));
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsuggest-attribute=format"
+
 static void _string_format(string_t dst, bool append, const char *fmt, va_list ap)
 {
 	_string_t *_dst = (_string_t *)dst;
@@ -405,6 +415,8 @@ static void _string_format(string_t dst, bool append, const char *fmt, va_list a
 	_dst->data[_dst->length] = '\0';
 }
 
+#pragma GCC diagnostic pop
+
 void string_format_append(string_t dst, const char *fmt, ...)
 {
 	va_list ap;
@@ -429,7 +441,7 @@ void string_format(string_t dst, const char *fmt, ...)
 
 const char *string_cstr(const const_string_t src)
 {
-	_string_t *_src = (_string_t *)src;
+	const _string_t *_src = (const _string_t *)src;
 
 	_string_check_const(_src);
 
@@ -444,7 +456,7 @@ const uint8_t *string_data(const const_string_t src)
 void string_to_cstr(const const_string_t src, unsigned int dst_size, char *dst)
 {
 	unsigned int length;
-	_string_t *_src = (_string_t *)src;
+	const _string_t *_src = (const _string_t *)src;
 
 	_string_check_const(_src);
 	assert(dst_size > 0);
@@ -460,7 +472,7 @@ void string_to_cstr(const const_string_t src, unsigned int dst_size, char *dst)
 
 char string_at(const const_string_t src, unsigned int offset)
 {
-	_string_t *_src = (_string_t *)src;
+	const _string_t *_src = (const _string_t *)src;
 
 	_string_check_const(_src);
 
@@ -473,7 +485,7 @@ char string_at(const const_string_t src, unsigned int offset)
 char string_at_back(const const_string_t src)
 {
 	unsigned int length;
-	_string_t *_src = (_string_t *)src;
+	const _string_t *_src = (const _string_t *)src;
 
 	_string_check_const(_src);
 
@@ -538,7 +550,7 @@ void string_truncate(string_t dst, unsigned int length)
 string_t string_parse(const const_string_t src, unsigned int *offset)
 {
 	unsigned int start, length;
-	_string_t *_src = (_string_t *)src;
+	const _string_t *_src = (const _string_t *)src;
 	string_t dst;
 
 	uint64_t time_start, time_spent;
@@ -594,7 +606,7 @@ error:
 
 bool string_equal_data(const const_string_t dst, unsigned int length, const uint8_t *src)
 {
-	_string_t *_dst = (_string_t *)dst;
+	const _string_t *_dst = (const _string_t *)dst;
 
 	assert(src);
 	_string_check_const(_dst);
@@ -616,8 +628,8 @@ bool string_equal_cstr(const const_string_t dst, const char *src)
 
 bool string_equal_string(const const_string_t dst, const const_string_t src)
 {
-	_string_t *_src = (_string_t *)src;
-	_string_t *_dst = (_string_t *)dst;
+	const _string_t *_src = (const _string_t *)src;
+	const _string_t *_dst = (const _string_t *)dst;
 
 	_string_check_const(_src);
 	_string_check_const(_dst);
@@ -627,7 +639,7 @@ bool string_equal_string(const const_string_t dst, const const_string_t src)
 
 bool string_uint(const const_string_t src, unsigned int base, unsigned int *value)
 {
-	_string_t *_src = (_string_t *)src;
+	const _string_t *_src = (const _string_t *)src;
 	char *endptr;
 
 	_string_check_const(_src);
@@ -653,7 +665,7 @@ bool string_uint(const const_string_t src, unsigned int base, unsigned int *valu
 
 bool string_int(const const_string_t src, unsigned int base, int *value)
 {
-	_string_t *_src = (_string_t *)src;
+	const _string_t *_src = (const _string_t *)src;
 	char *endptr;
 
 	_string_check_const(_src);
@@ -679,7 +691,7 @@ bool string_int(const const_string_t src, unsigned int base, int *value)
 
 bool string_float(const const_string_t src, float *value)
 {
-	_string_t *_src = (_string_t *)src;
+	const _string_t *_src = (const _string_t *)src;
 	char *endptr;
 
 	_string_check_const(_src);

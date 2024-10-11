@@ -768,7 +768,7 @@ static void run_receive_queue(void *)
 
 						if((parameter_description->lower_bound_required) && (value < parameter_description->fp.lower_bound))
 						{
-							string_format(error, "ERROR: invalid float value: %f, smaller than lower bound: %f", value, parameter_description->fp.lower_bound);
+							string_format(error, "ERROR: invalid float value: %f, smaller than lower bound: %f", (double)value, (double)parameter_description->fp.lower_bound);
 							packet_encapsulate(&cli_buffer, error, (string_t)0);
 							send_queue_push(&cli_buffer);
 							goto error;
@@ -776,7 +776,7 @@ static void run_receive_queue(void *)
 
 						if((parameter_description->upper_bound_required) && (value > parameter_description->fp.upper_bound))
 						{
-							string_format(error, "ERROR: invalid float value: %f, larger than upper bound: %f", value, parameter_description->fp.upper_bound);
+							string_format(error, "ERROR: invalid float value: %f, larger than upper bound: %f", (double)value, (double)parameter_description->fp.upper_bound);
 							packet_encapsulate(&cli_buffer, error, (string_t)0);
 							send_queue_push(&cli_buffer);
 							goto error;

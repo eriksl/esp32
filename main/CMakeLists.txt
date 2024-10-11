@@ -24,3 +24,55 @@ idf_component_register(
 		"wlan.c"
 	INCLUDE_DIRS
 		"")
+
+target_compile_options(${COMPONENT_TARGET} PRIVATE
+		-Wall
+		-Wextra
+		-Werror
+		-Wformat-overflow=2
+		-Wshift-overflow=2
+		-Wimplicit-fallthrough=5
+		-Wformat-signedness
+		-Wformat-truncation=1
+		-Wstringop-overflow=4
+		-Wunused-const-variable=2
+		-Walloca
+		-Warray-bounds=2
+		-Wswitch-bool
+		-Wduplicated-branches
+		-Wduplicated-cond
+		-Wlto-type-mismatch
+		-Wnull-dereference
+		-Wpacked
+		-Wfloat-equal
+		-Wmissing-include-dirs
+		-Wmissing-noreturn
+		-Wbool-compare
+		-Wsuggest-attribute=noreturn
+		-Wsuggest-attribute=format
+		-Wmissing-format-attribute
+		-Wtrampolines
+		-Wframe-larger-than=2048
+		-Wunsafe-loop-optimizations
+		-Wshadow
+		-Wpointer-arith
+		-Wbad-function-cast
+		-Wcast-qual
+		-Wwrite-strings
+		-Wlogical-op
+		-Wvla
+		-Wdisabled-optimization
+		-Wunreachable-code
+		-Wdiscarded-array-qualifiers
+		-Wmissing-prototypes
+		-Wold-style-definition
+		-Wmissing-declarations
+		-Wcast-align
+		-Wmultistatement-macros
+		-Warray-bounds=2
+		-Wdouble-promotion
+		-Wno-redundant-decls
+		-Wno-inline
+		-Wno-packed
+		-Wno-pointer-sign
+	)

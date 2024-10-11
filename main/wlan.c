@@ -129,7 +129,7 @@ static void set_state(wlan_state_t state_new)
 	if((state_new == ws_associating) || (!(state_info[state].valid_transitions & (1 << state_new))))
 	{
 		if(!(state_info[state].valid_transitions & (1 << state_new)))
-			log_format("wlan: invalid state transition from %s (%d) to %s (%d), %x, reassociating", state_string, state, state_new_string, state_new, (unsigned int)state_info[state].valid_transitions);
+			log_format("wlan: invalid state transition from %s (%u) to %s (%u), %x, reassociating", state_string, state, state_new_string, state_new, (unsigned int)state_info[state].valid_transitions);
 		else
 			if((state != ws_init) && (state != ws_associating))
 				log_format("wlan: reassociate, switch from %s to %s", state_string, state_new_string);
@@ -165,7 +165,7 @@ static void set_state(wlan_state_t state_new)
 	notify(state_info[state].notification);
 }
 
-void state_callback(TimerHandle_t handle)
+static void state_callback(TimerHandle_t handle)
 {
 	static wifi_config_t config_ap =
 	{
@@ -844,7 +844,7 @@ void wlan_command_info(cli_command_call_t *call)
 	esp_ip6_addr_t esp_ip6_addr[8];
 	wifi_mode_t wlan_mode;
 	wifi_ps_type_t ps_type;
-	int ix, rv;
+	unsigned int ix, rv;
 
 	assert(inited);
 	assert(call->parameter_count == 0);
@@ -876,7 +876,7 @@ void wlan_command_info(cli_command_call_t *call)
 
 	string_append_cstr(call->result, "\ninterface:");
 	string_format_append(call->result, "\n- number of interfaces: %u", esp_netif_get_nr_of_ifs());
-	string_format_append(call->result, "\n- index: %u", esp_netif_get_netif_impl_index(netif));
+	string_format_append(call->result, "\n- index: %d", esp_netif_get_netif_impl_index(netif));
 
 	util_abort_on_esp_err("esp_netif_get_netif_impl_name", esp_netif_get_netif_impl_name(netif, ifname));
 
@@ -1007,10 +1007,10 @@ void wlan_command_info(cli_command_call_t *call)
 			string_append_cstr(call->result, "\n- channel: ");
 
 			if(ap_info.second == WIFI_SECOND_CHAN_ABOVE)
-				string_format_append(call->result, "%u+%u", ap_info.primary, ap_info.primary + 1);
+				string_format_append(call->result, "%u+%u", ap_info.primary, ap_info.primary + 1U);
 			else
 				if(ap_info.second == WIFI_SECOND_CHAN_BELOW)
-					string_format_append(call->result, "%u+%u", ap_info.primary, ap_info.primary - 1);
+					string_format_append(call->result, "%u+%u", ap_info.primary, ap_info.primary - 1U);
 				else
 					string_format_append(call->result, "%u", ap_info.primary);
 
@@ -1074,7 +1074,7 @@ void wlan_command_info(cli_command_call_t *call)
 
 			string_format_append(call->result, "\n- group cipher: %s", key);
 			string_format_append(call->result, "\n- country: %.2s [%u-%u], max power: %d dB",
-					ap_info.country.cc, ap_info.country.schan, ap_info.country.nchan - ap_info.country.schan + 1, ap_info.country.max_tx_power);
+					ap_info.country.cc, ap_info.country.schan, ap_info.country.nchan - ap_info.country.schan + 1U, ap_info.country.max_tx_power);
 		}
 
 		string_append_cstr(call->result, "\n- protocols:");
@@ -1129,7 +1129,7 @@ void wlan_command_info(cli_command_call_t *call)
 		}
 
 		string_format_append(call->result, "\n- phy mode: %s", key);
-		string_format_append(call->result, "\n- TSF timestamp: %llu", esp_wifi_get_tsf_time(WIFI_IF_STA));
+		string_format_append(call->result, "\n- TSF timestamp: %llu", (unsigned long long int)esp_wifi_get_tsf_time(WIFI_IF_STA));
 		string_append_cstr(call->result, "\n- configured inactive time: ");
 
 		if((rv = esp_wifi_get_inactive_time(WIFI_IF_STA, &timeout)))

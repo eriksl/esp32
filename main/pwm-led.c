@@ -135,8 +135,8 @@ void command_pwm_led_info(cli_command_call_t *call)
 		return;
 
 	string_assign_cstr(call->result, "PWM LED INFO:");
-	string_format_append(call->result, "\n- timers hardware available: %u, in use: %u", led_pwm_timers, plt_size);
-	string_format_append(call->result, "\n- channels hardware available: %u, in use: %u", led_pwm_channels, channels_size);
+	string_format_append(call->result, "\n- timers hardware available: %u, in use: %u", (unsigned int)led_pwm_timers, (unsigned int)plt_size);
+	string_format_append(call->result, "\n- channels hardware available: %u, in use: %u", (unsigned int)led_pwm_channels, (unsigned int)channels_size);
 	string_append_cstr(call->result, "\nCHANNELS:");
 
 	for(ix = 0; ix < channels_size; ix++)

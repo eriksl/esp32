@@ -81,7 +81,7 @@ void _log_cstr(bool append_strerror, const char *string)
 		entry->timestamp = time((time_t *)0);
 
 		if(append_strerror)
-			snprintf(entry->data, sizeof(entry->data), "%s: %s (%u)",
+			snprintf(entry->data, sizeof(entry->data), "%s: %s (%d)",
 				string, strerror(errno), errno);
 		else
 			snprintf(entry->data, sizeof(entry->data), "%s", string);
@@ -117,7 +117,7 @@ void _log_format(bool append_strerror, const char *fmt, ...)
 		if(append_strerror)
 		{
 			offset = strlen(entry->data);
-			snprintf(entry->data + offset, sizeof(entry->data) - offset, ": %s (%u)",
+			snprintf(entry->data + offset, sizeof(entry->data) - offset, ": %s (%d)",
 					strerror(errno), errno);
 		}
 
@@ -131,6 +131,9 @@ void _log_format(bool append_strerror, const char *fmt, ...)
 	else
 		console_write_line(fmt);
 }
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsuggest-attribute=format"
 
 static int logging_function(const char *fmt, va_list ap)
 {
@@ -164,6 +167,8 @@ static int logging_function(const char *fmt, va_list ap)
 	return(length);
 }
 
+#pragma GCC diagnostic pop
+
 QueueHandle_t log_get_display_queue(void)
 {
 	return(log_display_queue);
@@ -194,7 +199,7 @@ void log_init(void)
 	assert(!inited);
 	assert(rtc_slow_memory == (char *)0x50000000);
 
-	log_buffer = (log_t *)rtc_slow_memory;
+	log_buffer = (log_t *)(void *)rtc_slow_memory;
 
 	inited = true;
 
@@ -252,7 +257,7 @@ void log_command_log(cli_command_call_t *call)
 	{
 		util_time_to_string(timestring, &log_buffer->entry[log_buffer->out].timestamp);
 
-		string_format_append(call->result, "\n%3d %s %s",
+		string_format_append(call->result, "\n%3u %s %s",
 				log_buffer->out,
 				string_cstr(timestring),
 				log_buffer->entry[log_buffer->out].data);

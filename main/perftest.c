@@ -3,9 +3,10 @@
 #include <sys/socket.h>
 #include <sdkconfig.h>
 
+#include "perftest.h"
+
 #if defined(CONFIG_BUILD_NETPERF_CODE)
 
-#include "perftest.h"
 #include "string.h"
 #include "log.h"
 #include "util.h"

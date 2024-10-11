@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "ramdisk.h"
 #include "string.h"
 #include "log.h"
 #include "util.h"
@@ -161,7 +162,7 @@ static bool file_in_use(const char *filename, int flags)
 
 static ramdisk_file_metadata_t *get_dir_entry(const char *filename, int *index)
 {
-	int ix;
+	unsigned int ix;
 	ramdisk_file_metadata_t *entry;
 
 	for(entry = root, ix = 0; entry; entry = entry->next, ix++)
@@ -298,12 +299,13 @@ static int ramdisk_close(int fd)
 	return(0);
 }
 
-ssize_t ramdisk_read(int fd, void *data, size_t size)
+static ssize_t ramdisk_read(int fd, void *data_in, size_t size)
 {
 	ramdisk_file_descriptor_t *fdp;
 	ramdisk_file_metadata_t *metadata;
 	unsigned int block, offset_in_block, available_in_block, chunk;
 	ssize_t rv = 0;
+	uint8_t *data = (uint8_t *)data_in;
 
 	mutex_take();
 
@@ -363,12 +365,13 @@ ssize_t ramdisk_read(int fd, void *data, size_t size)
 	return(rv);
 }
 
-ssize_t ramdisk_write(int fd, const void *data, size_t size)
+static ssize_t ramdisk_write(int fd, const void *data_in, size_t size)
 {
 	ramdisk_file_descriptor_t *fdp;
 	ramdisk_file_metadata_t *metadata;
 	unsigned int block, blocks, offset_in_block, available_in_block, chunk;
 	ssize_t rv = size;
+	const uint8_t *data = (const uint8_t *)data_in;
 
 	mutex_take();
 
@@ -545,7 +548,7 @@ static DIR *ramdisk_opendir(const char *name)
 
 static struct dirent *ramdisk_readdir(DIR *pdir)
 {
-	vfs_ramdisk_dir_t *dir = (vfs_ramdisk_dir_t *)pdir;
+	vfs_ramdisk_dir_t *dir = (vfs_ramdisk_dir_t *)(void *)pdir;
 	struct dirent *dirent = &dir->dirent;
 	ramdisk_file_metadata_t *entry;
 	unsigned int ix;
@@ -574,7 +577,7 @@ static struct dirent *ramdisk_readdir(DIR *pdir)
 
 static int ramdisk_closedir(DIR *pdir)
 {
-	vfs_ramdisk_dir_t *dir = (vfs_ramdisk_dir_t *)pdir;
+	vfs_ramdisk_dir_t *dir = (vfs_ramdisk_dir_t *)(void *)pdir;
 
 	free(dir->path);
 	free(dir);
@@ -582,7 +585,7 @@ static int ramdisk_closedir(DIR *pdir)
 	return(0);
 }
 
-void ramdisk_format(void)
+static void ramdisk_format(void)
 {
 	ramdisk_file_metadata_t *entry, *next;
 
@@ -596,7 +599,7 @@ void ramdisk_format(void)
 	}
 }
 
-off_t ramdisk_lseek(int fd, off_t offset_requested, int mode)
+static off_t ramdisk_lseek(int fd, off_t offset_requested, int mode)
 {
 	ramdisk_file_descriptor_t *fdp;
 	ramdisk_file_metadata_t *metadata;
@@ -656,7 +659,7 @@ off_t ramdisk_lseek(int fd, off_t offset_requested, int mode)
 
 		if(!metadata->datablocks[block])
 		{
-			log_format("ramdisk: lseek: requesting block %d of file %s which is not allocated", block, metadata->filename);
+			log_format("ramdisk: lseek: requesting block %u of file %s which is not allocated", block, metadata->filename);
 			mutex_give();
 			errno = EINVAL;
 			return(-1);

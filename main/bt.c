@@ -204,7 +204,7 @@ static void server_advertise(void)
 	fields.uuids16_is_complete = 1;
 
 	name = ble_svc_gap_device_name();
-	fields.name = (uint8_t *)name;
+	fields.name = (const uint8_t *)name;
 	fields.name_len = strlen(name);
 	fields.name_is_complete = 1;
 
@@ -225,7 +225,7 @@ static void server_advertise(void)
 
 static void callback_reset(int reason)
 {
-	log_format("bt: resetting state, reason: 0x%x", reason);
+	log_format("bt: resetting state, reason: 0x%x", (unsigned int)reason);
 }
 
 static void callback_sync(void)

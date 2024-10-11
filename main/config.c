@@ -260,7 +260,7 @@ static bool get_value_as_string(const char *namespace, const string_t key, const
 			if(type)
 				*type = "int8";
 			util_abort_on_esp_err("nvs_get_i8", nvs_get_i8(handle, info->key, &raw_value));
-			string_format(dst, "%d (%#02x)", raw_value, raw_value);
+			string_format(dst, "%d (%#02x)", raw_value, (unsigned int)raw_value);
 			break;
 		}
 		case(NVS_TYPE_U16):
@@ -278,7 +278,7 @@ static bool get_value_as_string(const char *namespace, const string_t key, const
 			if(type)
 				*type = "int16";
 			util_abort_on_esp_err("nvs_get_i16", nvs_get_i16(handle, info->key, &raw_value));
-			string_format(dst, "%d (%#04x)", raw_value, raw_value);
+			string_format(dst, "%d (%#04x)", raw_value, (unsigned int)raw_value);
 			break;
 		}
 		case(NVS_TYPE_U32):
@@ -296,7 +296,7 @@ static bool get_value_as_string(const char *namespace, const string_t key, const
 			if(type)
 				*type = "int32";
 			util_abort_on_esp_err("nvs_get_i32", nvs_get_i32(handle, info->key, &raw_value));
-			string_format(dst, "%ld (%#08lx)", raw_value, raw_value);
+			string_format(dst, "%ld (%#08x)", raw_value, (unsigned int)raw_value);
 			break;
 		}
 		case(NVS_TYPE_U64):
@@ -314,7 +314,7 @@ static bool get_value_as_string(const char *namespace, const string_t key, const
 			if(type)
 				*type = "int64";
 			util_abort_on_esp_err("nvs_get_i64", nvs_get_i64(handle, info->key, &raw_value));
-			string_format(dst, "%lld (%#016llx)", raw_value, raw_value);
+			string_format(dst, "%lld (%#016llx)", raw_value, (uint64_t)raw_value);
 			break;
 		}
 		case(NVS_TYPE_STR):
@@ -333,7 +333,7 @@ static bool get_value_as_string(const char *namespace, const string_t key, const
 			else
 				util_abort_on_esp_err("nvs_get_str", rv);
 
-			string_format(dst, "%.*s", length, raw_value);
+			string_format(dst, "%.*s", (int)length, raw_value);
 			break;
 		}
 		case(NVS_TYPE_BLOB):

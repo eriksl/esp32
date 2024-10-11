@@ -491,7 +491,7 @@ void display_spi_generic_plot_line(unsigned int from_x, unsigned int from_y, uns
 	pixel_buffer_flush(-1, false);
 }
 
-void pre_callback(spi_transaction_t *transaction)
+static void pre_callback(spi_transaction_t *transaction)
 {
 	assert(inited);
 	assert(transaction);
@@ -522,7 +522,7 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 
 		default:
 		{
-			log_format("init display-lcd-spi: unknown spi interface %u, use 0 for SPI2 or 1 for SPI3", parameters->interface_index);
+			log_format("init display-lcd-spi: unknown spi interface %d, use 0 for SPI2 or 1 for SPI3", parameters->interface_index);
 			return(false);
 		}
 	}

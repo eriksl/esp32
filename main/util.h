@@ -50,7 +50,7 @@ void util_hexdump_cstr(string_t dst, unsigned int src_length, const uint8_t *src
 void util_hexdump(string_t dst, const string_t src);
 uint32_t util_crc32cksum_byte(uint32_t crc, void const *mem, size_t len);
 
-static inline void util_abort_on_esp_err(const char *what, int rv)
+static inline void util_abort_on_esp_err(const char *what, unsigned int rv)
 {
 	if(rv)
 	{
@@ -59,7 +59,7 @@ static inline void util_abort_on_esp_err(const char *what, int rv)
 	}
 }
 
-static inline void util_warn_on_esp_err(const char *what, int rv)
+static inline void util_warn_on_esp_err(const char *what, unsigned int rv)
 {
 	if(rv)
 		log_format("warning: %s (%s) [0x%x]", what, esp_err_to_name(rv), rv);

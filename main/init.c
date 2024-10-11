@@ -22,6 +22,8 @@
 #include "i2c.h"
 #include "sensor.h"
 
+__attribute__((noreturn)) void app_main(void);
+
 void app_main(void)
 {
 	pwm_led_init();
@@ -46,4 +48,5 @@ void app_main(void)
 	notify(notify_sys_booting_finished);
 	vTaskSuspend(NULL);
 	util_abort("init: vTaskSuspend returned");
+	for(;;);
 }

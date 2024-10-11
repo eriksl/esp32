@@ -14,7 +14,7 @@
 
 bool packet_valid(const const_string_t data)
 {
-	packet_header_t *packet_header = (packet_header_t *)string_data(data);
+	const packet_header_t *packet_header = (const packet_header_t *)string_data(data);
 
 	return((string_length(data) >= sizeof(*packet_header)) &&
 			(packet_header->soh == packet_header_soh) &&
@@ -24,7 +24,7 @@ bool packet_valid(const const_string_t data)
 
 bool packet_complete(const const_string_t data)
 {
-    const packet_header_t *packet_header = (packet_header_t *)string_data(data);
+    const packet_header_t *packet_header = (const packet_header_t *)string_data(data);
 
     return(string_length(data) >= (unsigned int)(packet_header->header_length + packet_header->payload_length + packet_header->oob_length));
 }
@@ -110,13 +110,13 @@ void packet_decapsulate(const cli_buffer_t *src, string_t *data, string_t *oob_d
 
 	if(src->packetised)
 	{
-		const packet_header_t *packet_header = (packet_header_t *)string_data(src->data);
+		const packet_header_t *packet_header = (const packet_header_t *)string_data(src->data);
 
 		if(packet_header->header_length != sizeof(*packet_header))
 			log_format("decapsulate: invalid packet header length, expected: %u, received: %u", sizeof(*packet_header), (unsigned int)packet_header->header_length);
 
 		if((unsigned int)(packet_header->header_length + packet_header->payload_length + packet_header->oob_length) != string_length(src->data))
-			log_format("decapsulate: invalid packet length, expected: %u, received: %u",
+			log_format("decapsulate: invalid packet length, expected: %d, received: %u",
 					(packet_header->header_length + packet_header->payload_length + packet_header->oob_length), string_length(src->data));
 
 		our_checksum = util_crc32cksum_byte(0, (void *)0, 0);
@@ -166,7 +166,7 @@ void packet_decapsulate(const cli_buffer_t *src, string_t *data, string_t *oob_d
 
 			if(oob_offset >= string_length(src->data))
 			{
-				log_format("decapsulate: invalid oob data, offset: %d, data length: %d", oob_offset, string_length(src->data));
+				log_format("decapsulate: invalid oob data, offset: %u, data length: %u", oob_offset, string_length(src->data));
 				goto error;
 			}
 
