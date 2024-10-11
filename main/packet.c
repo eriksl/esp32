@@ -170,10 +170,6 @@ void packet_decapsulate(const cli_buffer_t *src, string_t *data, string_t *oob_d
 				goto error;
 			}
 
-			//log_format("! oob_offset: %d", oob_offset);
-			//log_format("! oob_length %d", oob_length);
-			//log_format("! data length: %d", string_length(src->data));
-
 			*data = string_new(oob_offset);
 			string_assign_data(*data, oob_offset, &(string_data(src->data)[0]));
 			*oob_data = string_new(oob_length);
