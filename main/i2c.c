@@ -123,8 +123,8 @@ static bool slave_check(slave_t *slave)
 {
 	module_t *module;
 	bus_t *bus;
-	slave_t *next;
-	bool found;
+	slave_t *search_slave;
+	bool rv = false;
 
 	if(!slave)
 	{
@@ -163,7 +163,7 @@ static bool slave_check(slave_t *slave)
 	if(!(bus = module->bus[slave->bus]))
 	{
 		log_format("i2c: check slave: bus unknown %u", slave->bus);
-		goto error;
+		goto finish;
 	}
 
 	if(bus->id >= i2c_bus_size)
@@ -175,54 +175,34 @@ static bool slave_check(slave_t *slave)
 	if(bus->id != slave->bus)
 	{
 		log_format("i2c: check slave: bus->bus %u != slave->bus %u", slave->bus, bus->id);
-		goto error;
+		goto finish;
 	}
 
 	if(!bus->slaves)
 	{
 		log_format("i2c: check slave: no slaves on this bus: %u", slave->bus);
-		goto error;
-	}
-
-	if(bus->slaves->address == slave->address)
-	{
-		if(bus->slaves != slave)
-		{
-			log_format("i2c: check slave: slave address incorrect (1): %p vs %p", bus->slaves, slave);
-			goto error;
-		}
-
 		goto finish;
 	}
 
-	for(next = bus->slaves->next, found = false; next->next; next = next->next)
+	for(search_slave = bus->slaves; search_slave; search_slave = search_slave->next)
+		if(search_slave->address == slave->address)
+			goto found;
+
+	log_format("i2c: check slave: slave %#x not found", slave->address);
+	goto finish;
+
+found:
+	if(search_slave != slave)
 	{
-		if(next->next->address == slave->address)
-		{
-			found = true;
-			break;
-		}
+		log_format("i2c: check slave: slave address incorrect (2): %p vs %p", search_slave, slave);
+		goto finish;
 	}
 
-	if(!found)
-	{
-		log_format("i2c: check slave: slave %u not found", slave->address);
-		goto error;
-	}
-
-	if(next->next != slave)
-	{
-		log_format("i2c: check slave: slave address incorrect (2): %p vs %p", next->next, slave);
-		goto error;
-	}
+	rv = true;
 
 finish:
 	data_mutex_give();
-	return(true);
-
-error:
-	data_mutex_give();
-	return(false);
+	return(rv);
 }
 
 void i2c_init(void)
@@ -379,7 +359,7 @@ i2c_slave_t i2c_register_slave(const char *name, i2c_module_t module, i2c_bus_t 
 
 	if(!slave_check(new_slave))
 	{
-		log_format("failed to register slave %u/%u/%u:%s", new_slave->module, new_slave->bus, new_slave->address, new_slave->name);
+		log_format("failed to register slave %u/%u/%#x:%s", new_slave->module, new_slave->bus, new_slave->address, new_slave->name);
 		i2c_unregister_slave((i2c_slave_t *)&new_slave);
 		goto finish;
 	}
@@ -397,8 +377,7 @@ bool i2c_unregister_slave(i2c_slave_t *slave)
 	slave_t **_slave;
 	module_t *module;
 	bus_t *bus;
-	slave_t *next;
-	bool found;
+	slave_t *slaveptr;
 	bool error;
 
 	error = true;
@@ -417,15 +396,13 @@ bool i2c_unregister_slave(i2c_slave_t *slave)
 	module = &module_data[(**_slave).module];
 
 	assert(module);
-	assert(module->id < i2c_module_size);
+	assert(module->id == (**_slave).module);
 
 	if(!(bus = module->bus[(**_slave).bus]))
 	{
 		log_format("i2c unregister slave: bus unknown %u", (**_slave).bus);
 		goto finish;
 	}
-
-	assert(bus->id < i2c_bus_size);
 
 	if(bus->id != (**_slave).bus)
 	{
@@ -452,28 +429,21 @@ bool i2c_unregister_slave(i2c_slave_t *slave)
 		goto finish;
 	}
 
-	for(next = bus->slaves->next, found = false; next->next; next = next->next)
-	{
-		if(next->next->address == (**_slave).address)
-		{
-			found = true;
-			break;
-		}
-	}
+	for(slaveptr = bus->slaves; slaveptr->next; slaveptr = slaveptr->next)
+		if(slaveptr->next->address == (**_slave).address)
+			goto found;
 
-	if(!found)
+	log_format("i2c unregister slave: slave %#x not found", (**_slave).address);
+	goto finish;
+
+found:
+	if(slaveptr->next != *_slave)
 	{
-		log_format("i2c unregister slave: slave %u not found", (**_slave).address);
+		log_format("i2c unregister slave: slave address incorrect (2): %p vs %p", slaveptr->next, *_slave);
 		goto finish;
 	}
 
-	if(next->next != *_slave)
-	{
-		log_format("i2c unregister slave: slave address incorrect (2): %p vs %p", next->next, *_slave);
-		goto finish;
-	}
-
-	next->next = (**_slave).next;
+	slaveptr->next = (**_slave).next;
 	error = false;
 
 finish:
