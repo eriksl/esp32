@@ -84,6 +84,7 @@ static module_t module_data[i2c_module_size] =
 
 static bool inited = false;
 static SemaphoreHandle_t data_mutex;
+static SemaphoreHandle_t module_mutex[i2c_module_size];
 
 static inline void data_mutex_take(void)
 {
@@ -93,6 +94,16 @@ static inline void data_mutex_take(void)
 static inline void data_mutex_give(void)
 {
 	assert(xSemaphoreGive(data_mutex));
+}
+
+static inline void module_mutex_take(i2c_module_t module)
+{
+	assert(xSemaphoreTake(module_mutex[module], portMAX_DELAY));
+}
+
+static inline void module_mutex_give(i2c_module_t module)
+{
+	assert(xSemaphoreGive(module_mutex[module]));
 }
 
 _Static_assert(i2c_bus_none == 0);
@@ -116,7 +127,9 @@ static void set_mux(i2c_module_t module, i2c_bus_t bus)
 	else
 		reg[0] = (1 << (bus - i2c_bus_0));
 
+	module_mutex_take(module);
 	util_warn_on_esp_err("i2c_master_transmit mux", i2c_master_transmit(module_ptr->mux_dev_handle, reg, 1, i2c_timeout_ms));
+	module_mutex_give(module);
 }
 
 static bool slave_check(slave_t *slave)
@@ -252,11 +265,19 @@ void i2c_init(void)
 
 	for(module = i2c_module_first; module < i2c_module_size; module++)
 	{
+		module_mutex[module] = xSemaphoreCreateMutex();
+		assert(module_mutex[module]);
+	}
+
+	for(module = i2c_module_first; module < i2c_module_size; module++)
+	{
 		module_ptr = &module_data[module];
 
 		util_abort_on_esp_err("i2c_new_master_bus", i2c_new_master_bus(&module_config[module], &module_ptr->handle));
 
+		module_mutex_take(module);
 		rv = i2c_master_probe(module_ptr->handle, i2c_bus_mux_address, i2c_timeout_ms);
+		module_mutex_give(module);
 
 		if(rv != ESP_ERR_NOT_FOUND)
 			util_warn_on_esp_err("i2c_master_probe mux", rv);
@@ -270,7 +291,9 @@ void i2c_init(void)
 			dev_config_mux.flags.disable_ack_check = 0;
 
 			buses = i2c_bus_size;
+			module_mutex_take(module);
 			util_warn_on_esp_err("i2c master bus add device mux", i2c_master_bus_add_device(module_ptr->handle, &dev_config_mux, &module_ptr->mux_dev_handle));
+			module_mutex_give(module);
 		}
 		else
 		{
@@ -320,7 +343,9 @@ i2c_slave_t i2c_register_slave(const char *name, i2c_module_t module, i2c_bus_t 
 	dev_config.scl_wait_us = 0;
 	dev_config.flags.disable_ack_check = 0;
 
+	module_mutex_take(module);
 	rv = i2c_master_bus_add_device(module_ptr->handle, &dev_config, &dev_handle);
+	module_mutex_give(module);
 
 	if(rv != ESP_OK)
 	{
@@ -389,7 +414,9 @@ bool i2c_unregister_slave(i2c_slave_t *slave)
 	assert((**_slave).module < i2c_module_size);
 	assert((**_slave).bus < i2c_bus_size);
 
+	module_mutex_take((**_slave).module);
 	util_abort_on_esp_err("i2c_master_bus_rm_device", i2c_master_bus_rm_device((**_slave).handle));
+	module_mutex_give((**_slave).module);
 
 	data_mutex_take();
 
@@ -466,7 +493,9 @@ bool i2c_probe_slave(i2c_module_t module, i2c_bus_t bus, unsigned int address)
 
 	set_mux(module, bus);
 
+	module_mutex_take(module);
 	rv = i2c_master_probe(module_data[module].handle, address, i2c_timeout_ms);
+	module_mutex_give(module);
 
 	if(rv != ESP_ERR_NOT_FOUND)
 		util_warn_on_esp_err("i2c_master_probe", rv);
@@ -492,7 +521,9 @@ bool i2c_send(i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t 
 
 	set_mux(_slave->module, _slave->bus);
 
+	module_mutex_take(_slave->module);
 	util_warn_on_esp_err("i2c_master_transmit", rv = i2c_master_transmit(_slave->handle, send_buffer, send_buffer_length, i2c_timeout_ms));
+	module_mutex_give(_slave->module);
 
 	return(rv == ESP_OK);
 }
@@ -529,7 +560,9 @@ bool i2c_receive(i2c_slave_t slave, unsigned int receive_buffer_size, uint8_t *r
 
 	set_mux(_slave->module, _slave->bus);
 
+	module_mutex_take(_slave->module);
 	util_warn_on_esp_err("i2c_master_receive", rv = i2c_master_receive(_slave->handle, receive_buffer, receive_buffer_size, i2c_timeout_ms));
+	module_mutex_give(_slave->module);
 
 	return(rv == ESP_OK);
 }
@@ -553,8 +586,10 @@ bool i2c_send_receive(i2c_slave_t slave, unsigned int send_buffer_length, const 
 
 	set_mux(_slave->module, _slave->bus);
 
+	module_mutex_take(_slave->module);
 	util_warn_on_esp_err("i2c_master_transmit_receive", rv =
 			i2c_master_transmit_receive(_slave->handle, send_buffer, send_buffer_length, receive_buffer, receive_buffer_size, i2c_timeout_ms));
+	module_mutex_give(_slave->module);
 
 	return(rv == ESP_OK);
 }
