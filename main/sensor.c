@@ -45,6 +45,11 @@ typedef struct
 	const char *unity;
 } sensor_type_info_t;
 
+typedef struct
+{
+	i2c_module_t module;
+} run_parameters_t;
+
 static const sensor_type_info_t sensor_type_info[sensor_type_size] =
 {
 	[sensor_type_visible_light] =
@@ -790,7 +795,7 @@ static const info_t info[sensor_size] =
 	},
 };
 
-static void run_sensors(void *) // FIXME one thread per module parallel polling
+static void run_sensors(void *parameters)
 {
 	const info_t *infoptr;
 	sensor_t sensor;
@@ -801,84 +806,86 @@ static void run_sensors(void *) // FIXME one thread per module parallel polling
 	unsigned int buses;
 	sensor_type_t type;
 	unsigned int ix;
+	const run_parameters_t *run = (const run_parameters_t *)parameters;
 
-	for(module = i2c_module_first; module < i2c_module_size; module++)
+	module = run->module;
+
+	buses = i2c_buses(module);
+
+	for(bus = i2c_bus_first; bus < buses; bus++)
 	{
-		buses = i2c_buses(module);
-
-		for(bus = i2c_bus_first; bus < buses; bus++)
+		for(sensor = sensor_first; sensor < sensor_size; sensor++)
 		{
-			for(sensor = sensor_first; sensor < sensor_size; sensor++)
+			infoptr = &info[sensor];
+
+			if(i2c_find_slave(module, bus, infoptr->address))
 			{
-				infoptr = &info[sensor];
-
-				if(i2c_find_slave(module, bus, infoptr->address))
-				{
-					log_format("sensor: warning: skip probe of %s on bus %u, address %#x already used", infoptr->name, (unsigned int)bus, infoptr->address);
-					continue;
-				}
-
-				if(!i2c_probe_slave(module, bus, infoptr->address))
-					continue;
-
-				if(!(slave = i2c_register_slave(infoptr->name, module, bus, infoptr->address)))
-				{
-					log_format("sensor: warning: cannot register sensor %s", infoptr->name);
-					continue;
-				}
-
-				new_data = (data_t *)util_memory_alloc_spiram(sizeof(*new_data));
-				assert(new_data);
-
-				for(type = sensor_type_first; type < sensor_type_size; type++)
-					new_data->value[type] = 0;
-
-				for(ix = 0; ix < data_int_value_size; ix++)
-					new_data->int_value[ix] = 0;
-
-				for(ix = 0; ix < data_float_value_size; ix++)
-					new_data->float_value[ix] = 0;
-
-				new_data->slave = slave;
-				new_data->info = infoptr;
-				new_data->next = (data_t *)0;
-
-				assert(infoptr->detect_fn);
-
-				if(!infoptr->detect_fn(new_data))
-				{
-					log_format("sensor: warning: failed to detect sensor %s", infoptr->name);
-					i2c_unregister_slave(&slave);
-					free(new_data);
-					continue;
-				}
-
-				assert(infoptr->init_fn);
-
-				if(!infoptr->init_fn(new_data))
-				{
-					log_format("sensor: warning: failed to init sensor %s", infoptr->name);
-					i2c_unregister_slave(&slave);
-					free(new_data);
-					continue;
-				}
-
-				data_mutex_take();
-
-				if(!(dataptr = data_root))
-					data_root = new_data;
-				else
-				{
-					for(; dataptr && dataptr->next; dataptr = dataptr->next)
-						(void)0;
-
-					assert(dataptr);
-
-					dataptr->next = new_data;
-				}
-
-				data_mutex_give();
+				continue;
 			}
+
+
+			if(!i2c_probe_slave(module, bus, infoptr->address))
+				continue;
+
+
+			if(!(slave = i2c_register_slave(infoptr->name, module, bus, infoptr->address)))
+			{
+				log_format("sensor: warning: cannot register sensor %s", infoptr->name);
+				continue;
+			}
+
+			new_data = (data_t *)util_memory_alloc_spiram(sizeof(*new_data));
+			assert(new_data);
+
+			for(type = sensor_type_first; type < sensor_type_size; type++)
+				new_data->value[type] = 0;
+
+			for(ix = 0; ix < data_int_value_size; ix++)
+				new_data->int_value[ix] = 0;
+
+			for(ix = 0; ix < data_float_value_size; ix++)
+				new_data->float_value[ix] = 0;
+
+			new_data->slave = slave;
+			new_data->info = infoptr;
+			new_data->next = (data_t *)0;
+
+			assert(infoptr->detect_fn);
+
+			if(!infoptr->detect_fn(new_data))
+			{
+				i2c_unregister_slave(&slave);
+				free(new_data);
+				continue;
+			}
+
+			stat_sensors_confirmed[module]++;
+
+			assert(infoptr->init_fn);
+
+			if(!infoptr->init_fn(new_data))
+			{
+				log_format("sensor: warning: failed to init sensor %s", infoptr->name);
+				i2c_unregister_slave(&slave);
+				free(new_data);
+				continue;
+			}
+
+			data_mutex_take();
+
+			if(!(dataptr = data_root))
+				data_root = new_data;
+			else
+			{
+				for(; dataptr && dataptr->next; dataptr = dataptr->next)
+					(void)0;
+
+				assert(dataptr);
+
+				dataptr->next = new_data;
+			}
+
+			data_mutex_give();
 		}
 	}
 
@@ -903,6 +910,18 @@ static void run_sensors(void *) // FIXME one thread per module parallel polling
 
 void sensor_init(void)
 {
+	static run_parameters_t run[2] =
+	{
+		[i2c_module_0_fast] =
+		{
+			.module = i2c_module_0_fast,
+		},
+		[i2c_module_1_slow] =
+		{
+			.module = i2c_module_1_slow,
+		},
+	};
+
 	assert(!inited);
 
 	data_mutex = xSemaphoreCreateMutex();
@@ -910,8 +929,13 @@ void sensor_init(void)
 
 	inited = true;
 
-	if(xTaskCreatePinnedToCore(run_sensors, "sensors", 3 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
-		util_abort("sensor: xTaskCreatePinnedToNode sensors thread");
+	if(xTaskCreatePinnedToCore(run_sensors, "sensors 1", 3 * 1024, &run[i2c_module_0_fast], 1, (TaskHandle_t *)0, 1) != pdPASS)
+		util_abort("sensor: xTaskCreatePinnedToNode sensors thread 0");
+
+	util_sleep(100);
+
+	if(xTaskCreatePinnedToCore(run_sensors, "sensors 2", 3 * 1024, &run[i2c_module_1_slow], 1, (TaskHandle_t *)0, 1) != pdPASS)
+		util_abort("sensor: xTaskCreatePinnedToNode sensors thread 1");
 }
 
 void command_sensor_info(cli_command_call_t *call)
