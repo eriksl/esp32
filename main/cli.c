@@ -454,6 +454,10 @@ static const cli_command_t cli_commands[] =
 		{},
 	},
 
+	{ "sensor-stats", "ss", "sensors statistics", command_sensor_stats,
+		{},
+	},
+
 	{ "string-info", "sti", "show information about all strings", string_command_info,
 		{}
 	},

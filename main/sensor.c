@@ -68,6 +68,14 @@ static bool inited = false;
 static SemaphoreHandle_t data_mutex;
 static data_t *data_root = (data_t *)0;
 
+static unsigned int stat_sensors_skipped[i2c_module_size] = { 0 };
+static unsigned int stat_sensors_probed[i2c_module_size] = { 0 };
+static unsigned int stat_sensors_found[i2c_module_size] = { 0 };
+static unsigned int stat_sensors_confirmed[i2c_module_size] = { 0 };
+static unsigned int stat_poll_run[i2c_module_size] = { 0 };
+static unsigned int stat_poll_ok[i2c_module_size] = { 0 };
+static unsigned int stat_poll_error[i2c_module_size] = { 0 };
+
 static inline void data_mutex_take(void)
 {
 	assert(xSemaphoreTake(data_mutex, portMAX_DELAY));
@@ -820,13 +828,16 @@ static void run_sensors(void *parameters)
 
 			if(i2c_find_slave(module, bus, infoptr->address))
 			{
+				stat_sensors_skipped[module]++;
 				continue;
 			}
 
+			stat_sensors_probed[module]++;
 
 			if(!i2c_probe_slave(module, bus, infoptr->address))
 				continue;
 
+			stat_sensors_found[module]++;
 
 			if(!(slave = i2c_register_slave(infoptr->name, module, bus, infoptr->address)))
 			{
@@ -891,13 +902,15 @@ static void run_sensors(void *parameters)
 
 	for(;;)
 	{
+		stat_poll_run[module]++;
+
 		for(dataptr = data_root; dataptr; dataptr = dataptr->next)
 		{
 			if(dataptr->info->poll_fn)
-			{
-				if(!dataptr->info->poll_fn(dataptr))
-					log_format("sensor: warning: poll failed sensor %s", dataptr->info->name);
-			}
+				if(dataptr->info->poll_fn(dataptr))
+					stat_poll_ok[module]++;
+				else
+					stat_poll_error[module]++;
 			else
 				log_format("sensor: error: no poll function for sensor %s", dataptr->info->name);
 		}
@@ -1031,4 +1044,25 @@ void command_sensor_dump(cli_command_call_t *call)
 	}
 
 	data_mutex_give();
+}
+
+void command_sensor_stats(cli_command_call_t *call)
+{
+	i2c_module_t module;
+
+	assert(call->parameter_count == 0);
+
+	string_assign_cstr(call->result, "SENSOR statistics");
+
+	for(module = i2c_module_first; module < i2c_module_size; module++)
+	{
+		string_format_append(call->result, "\n- module %u", (unsigned int)module);
+		string_format_append(call->result, "\n-  sensors skipped: %u", stat_sensors_skipped[module]);
+		string_format_append(call->result, "\n-  sensors probed: %u", stat_sensors_probed[module]);
+		string_format_append(call->result, "\n-  sensors found: %u", stat_sensors_found[module]);
+		string_format_append(call->result, "\n-  sensors confirmed: %u", stat_sensors_confirmed[module]);
+		string_format_append(call->result, "\n-  complete poll runs: %u", stat_poll_run[module]);
+		string_format_append(call->result, "\n-  sensor poll succeeded: %u", stat_poll_ok[module]);
+		string_format_append(call->result, "\n-  sensor poll failed: %u", stat_poll_error[module]);
+	}
 }
