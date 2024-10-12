@@ -227,12 +227,6 @@ static bool bh1750_poll(data_t *data)
 
 			raw_value = (buffer[0] << 8) | (buffer[1] << 0);
 
-			if(raw_value == 0)
-			{
-				log("bh1750: warning: measurement unfinished");
-				break;
-			}
-
 			if((raw_value < scale_down_threshold) && (*scaling > 0))
 				(*scaling)--;
 
