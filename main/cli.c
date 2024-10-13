@@ -381,6 +381,33 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
+	{ "io-read", "ior", "read from I/O", command_io_read,
+		{	2,
+			{
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "I/O id", {} },
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "pin", {} },
+			},
+		}
+	},
+
+	{ "io-dump", "iod", "dump everything known about found IOs", command_io_dump,
+		{}
+	},
+
+	{ "io-stats", "ios", "statistics about IOs", command_io_stats,
+		{}
+	},
+
+	{ "io-write", "iow", "write to I/O", command_io_write,
+		{	3,
+			{
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "I/O id", {} },
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "pin", {} },
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "value", {} },
+			},
+		}
+	},
+
 	{ "ipv6-config", "ip6c", "set ipv6 static address and netmask", wlan_command_ipv6_config,
 		{	1,
 			{

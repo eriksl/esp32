@@ -9,6 +9,7 @@ idf_component_register(
 		"fs.c"
         "i2c.c"
 		"info.c"
+		"io.c"
 		"init.c"
 		"ledpixel.c"
 		"log.c"
