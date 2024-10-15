@@ -213,7 +213,7 @@ bool notify_init(void)
 {
 	return(true);
 }
-bool notify(unsigned int new_state, unsigned int r, unsigned g, unsigned int b)
+bool notify(notify_t notification)
 {
 	return(true);
 }
