@@ -232,7 +232,7 @@ static const cli_command_t cli_commands[] =
 	},
 
 	{ "display-configure", "dc", "configure display", command_display_configure,
-		{	6,
+		{	7,
 			{
 				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "display type", .unsigned_int = { 0, 2 }},
 				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "interface", .unsigned_int = { 0, 1 }},
@@ -240,6 +240,7 @@ static const cli_command_t cli_commands[] =
 				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "y-size", .unsigned_int = { 16, 1024 }},
 				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "flip", .unsigned_int = { 0, 1 }},
 				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "invert", .unsigned_int = { 0, 1 }},
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "rotate", .unsigned_int = { 0, 1 }},
 			}
 		}
 	},

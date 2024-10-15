@@ -94,6 +94,7 @@ static unsigned int spi_pending;
 static unsigned int pwm_led_channel;
 static unsigned int x_size, y_size;
 static unsigned int flip;
+static unsigned int rotate;
 static unsigned int invert;
 static unsigned int madctl;
 
@@ -538,12 +539,16 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 
 	flip = 0;
 	invert = 0;
+	rotate = 0;
 
 	if(parameters->flip >= 0)
 		flip = parameters->flip;
 
 	if(parameters->invert >= 0)
 		invert = parameters->invert;
+
+	if(parameters->rotate >= 0)
+		rotate = parameters->rotate;
 
 	callback_data_gpio_on.gpio = spi_signal->dc;
 	callback_data_gpio_on.level = 1;
@@ -620,6 +625,9 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 	send_command(invert ? cmd_invon : cmd_invoff);
 
 	madctl = madctl_bgr;
+
+	if(rotate)
+		madctl |= madctl_mv;
 
 	if(!flip)
 		madctl |= madctl_my | madctl_mx;

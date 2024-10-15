@@ -43,6 +43,7 @@ typedef struct
 	int y_size;
 	int flip;
 	int invert;
+	int rotate;
 } display_init_parameters_t;
 
 enum

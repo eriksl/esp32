@@ -38,6 +38,7 @@ typedef enum
 	dv_y_size,
 	dv_flip,
 	dv_invert,
+	dv_rotate,
 	dv_error,
 	dv_size = dv_error,
 } dv_t;
@@ -86,6 +87,7 @@ static const char * const display_variable[dv_size][3] =
 	[dv_y_size] =	{	"y size",			"display.y.size",	"y size (height)",						},
 	[dv_flip] =		{	"flip",				"display.flip",		"flip display (optional)",				},
 	[dv_invert] =	{	"invert",			"display.invert",	"invert display (optional)",			},
+	[dv_rotate] =	{	"rotate",			"display.rotate",	"rotate display (optional)",			},
 };
 
 static const display_info_t info[dt_size] =
@@ -1033,6 +1035,7 @@ void display_init(void)
 		.y_size = -1,
 		.flip = -1,
 		.invert = -1,
+		.rotate = -1,
 	};
 
 	if(!config_get_uint_cstr(display_variable[dv_type][1], &type))
@@ -1060,6 +1063,9 @@ void display_init(void)
 
 	if(config_get_uint_cstr(display_variable[dv_invert][1], &value))
 		display_init_parameters.invert = (int)value;
+
+	if(config_get_uint_cstr(display_variable[dv_rotate][1], &value))
+		display_init_parameters.rotate = (int)value;
 
 	assert(info[display_type].init_fn);
 
@@ -1121,7 +1127,7 @@ void command_display_configure(cli_command_call_t *call)
 {
 	dv_t ix;
 
-	assert((call->parameter_count <= 8));
+	assert((call->parameter_count <= 9));
 
 	if(call->parameter_count == 0)
 	{
