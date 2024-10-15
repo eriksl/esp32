@@ -10,10 +10,13 @@ case "$IDF_BSP" in
 	;;
 	"lilygo-t7-s3")
 	;;
+	"espressif-s3-box3")
+	;;
 	*)
 		echo "set IDF_BSP environment variable to the name of the board:"
 		echo "- wemos-lolin-s3-mini"
 		echo "- lilygo-t7-s3"
+		echo "- espressif-s3-box3"
 		exit 1
 	;;
 esac
