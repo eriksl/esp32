@@ -382,7 +382,11 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
-	{ "io-read", "ior", "read from I/O", command_io_read,
+	{ "io-dump", "iod", "dump everything known about found IOs", command_io_dump,
+		{}
+	},
+
+	{ "io-read", "ior", "read from I/O pin", command_io_read,
 		{	2,
 			{
 				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "I/O id", {} },
@@ -391,15 +395,11 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "io-dump", "iod", "dump everything known about found IOs", command_io_dump,
-		{}
-	},
-
 	{ "io-stats", "ios", "statistics about IOs", command_io_stats,
 		{}
 	},
 
-	{ "io-write", "iow", "write to I/O", command_io_write,
+	{ "io-write", "iow", "write to I/O pin", command_io_write,
 		{	3,
 			{
 				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "I/O id", {} },

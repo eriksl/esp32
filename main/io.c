@@ -366,9 +366,10 @@ void command_io_stats(cli_command_call_t *call)
 	assert(call->parameter_count == 0);
 
 	string_assign_cstr(call->result, "IO STATS");
-	string_format_append(call->result, "\n- probe skipped: %u", stat_probe_skipped);
-	string_format_append(call->result, "\n- probe tried: %u", stat_probe_tried);
-	string_format_append(call->result, "\n- probe found: %u", stat_probe_found);
+	string_assign_cstr(call->result, "\n- probing");
+	string_format_append(call->result, "\n-  skipped: %u", stat_probe_skipped);
+	string_format_append(call->result, "\n-  tried: %u", stat_probe_tried);
+	string_format_append(call->result, "\n-  found: %u", stat_probe_found);
 }
 
 static io_data_t *get_data(unsigned int io)
