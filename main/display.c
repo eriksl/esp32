@@ -332,7 +332,7 @@ static void page_add_text(const const_string_t name, unsigned int lifetime, cons
 
 	new_page->name = string_dup(name);
 	new_page->type = dpt_text;
-	new_page->expiry = time((time_t *)0) + lifetime;
+	new_page->expiry = (lifetime > 0) ? time((time_t *)0) + lifetime : 0;
 
 	current = '\0';
 	previous = '\0';
@@ -390,7 +390,7 @@ static void page_add_image(const const_string_t name, unsigned int lifetime, con
 
 	new_page->name = string_dup(name);
 	new_page->type = dpt_image;
-	new_page->expiry = time((time_t *)0) + lifetime;
+	new_page->expiry = (lifetime > 0) ? time((time_t *)0) + lifetime : 0;
 	new_page->image.filename = string_dup(filename);
 
 	page_add(new_page);
@@ -913,7 +913,7 @@ finish1:
 		if(current_colour >= dc_size)
 			current_colour = dc_black + 1;
 
-		if(time((time_t *)0) > display_pages_current->expiry)
+		if((display_pages_current->expiry > 0) && (time((time_t *)0) > display_pages_current->expiry))
 		{
 			display_pages_next = display_pages_current->next;
 			page_data_mutex_give();
@@ -985,7 +985,10 @@ static void display_info(string_t output)
 
 	for(current_page = display_pages; current_page; current_page = current_page->next)
 	{
-		util_time_to_string(datetime, &current_page->expiry);
+		if(current_page->expiry > 0)
+			util_time_to_string(datetime, &current_page->expiry);
+		else
+			string_assign_cstr(datetime, "<infinite>");
 
 		if(current_page->type == dpt_text)
 		{
