@@ -143,12 +143,12 @@ static unsigned int stat_display_show = 0;
 
 static inline void page_data_mutex_take(void)
 {
-	assert(xSemaphoreTake(page_data_mutex, portMAX_DELAY));
+	xSemaphoreTake(page_data_mutex, portMAX_DELAY);
 }
 
 static inline void page_data_mutex_give(void)
 {
-	assert(xSemaphoreGive(page_data_mutex));
+	xSemaphoreGive(page_data_mutex);
 }
 
 static unsigned int utf8_to_unicode(const uint8_t *src, unsigned int dst_size, uint32_t *dst)
