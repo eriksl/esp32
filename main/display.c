@@ -808,7 +808,6 @@ static void run_display_info(void *)
 					png_set_palette_to_rgb(png_ptr);
 				if(png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS))
 					png_set_tRNS_to_alpha(png_ptr);
-				png_set_gamma(png_ptr, PNG_DEFAULT_sRGB, 0.45455); // FIXME required?
 				png_set_packing(png_ptr);
 				png_read_update_info(png_ptr, info_ptr);
 				image_x_size = png_get_image_width(png_ptr, info_ptr);
