@@ -1031,7 +1031,7 @@ void display_init(void)
 	if(xTaskCreatePinnedToCore(run_display_log, "display-log", 3 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
 		util_abort("display: xTaskCreatePinnedToNode display log");
 
-	if(xTaskCreatePinnedToCore(run_display_info, "display-info", 4 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
+	if(xTaskCreatePinnedToCore(run_display_info, "display-info", 5 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
 		util_abort("display: xTaskCreatePinnedToNode display run");
 }
 
