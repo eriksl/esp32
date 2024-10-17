@@ -1048,7 +1048,7 @@ unsigned int display_image_y_size(void)
 	if((display_type == dt_no_display) || !font_valid || !font)
 		return(0);
 
-	return(y_size - (2 * page_border_size) - page_text_offset - font->net.height);
+	return(y_size - ((2 * page_border_size) + page_text_offset + font->net.height - 1));
 }
 
 void command_display_brightness(cli_command_call_t *call)
