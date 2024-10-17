@@ -138,7 +138,6 @@ static QueueHandle_t log_display_queue = (QueueHandle_t)0;
 static bool log_mode = true;
 static SemaphoreHandle_t page_data_mutex;
 static unsigned int display_log_y;
-static bool png_error_status = true;
 static unsigned int stat_display_show = 0;
 
 static inline void page_data_mutex_take(void)
@@ -590,8 +589,7 @@ static void user_read_data(png_structp png_ptr, png_bytep data, size_t length)
 static void user_error(png_structp png_ptr, png_const_charp msg)
 {
 	log_format("fatal error in libpng: %s", msg);
-	png_error_status = true;
-	util_abort("libpng"); // should be using longjmp but it's complicated
+	png_longjmp(png_ptr, 1);
 }
 
 static void user_warning(png_structp png_ptr, png_const_charp msg)
@@ -602,26 +600,29 @@ static void user_warning(png_structp png_ptr, png_const_charp msg)
 
 static void run_display_info(void *)
 {
-	unsigned int current_page;
-	display_page_t *display_pages_ptr;
-	display_colour_t current_colour;
-	unsigned int row, y;
-	unsigned int image_x_size, image_y_size, row_bytes, colour_type, bit_depth;
-	int pad, chop;
-	unsigned int unicode_length;
-	time_t stamp;
-	struct tm tm;
-	char stamp_line[16];
-	char title_line[64];
-	void (*write_fn)(const font_t *font, display_colour_t fg, display_colour_t bg,
+	// all static due to prevent clobbering by longjmp
+
+	static unsigned int current_page;
+	static display_page_t *display_pages_ptr;
+	static display_colour_t current_colour;
+	static unsigned int row, y;
+	static unsigned int image_x_size, image_y_size, row_bytes, colour_type, bit_depth;
+	static int pad, chop;
+	static unsigned int unicode_length;
+	static time_t stamp;
+	static struct tm tm;
+	static char stamp_line[16];
+	static char title_line[64];
+	static void (*write_fn)(const font_t *font, display_colour_t fg, display_colour_t bg,
 				unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
 				unsigned int line_unicode_length, const uint32_t *line_unicode);
-	png_structp png_ptr = (png_structp)0;
-	png_infop info_ptr = (png_infop)0;
-	png_bytep row_pointer = (png_bytep)0;
-	int fd = -1;
-	user_png_io_ptr_t user_io_ptr;
-	uint64_t time_start, time_spent;
+	static png_structp png_ptr = (png_structp)0;
+	static png_infop info_ptr = (png_infop)0;
+	static png_bytep row_pointer = (png_bytep)0;
+	static int fd = -1;
+	static user_png_io_ptr_t user_io_ptr;
+	static uint64_t time_start, time_spent;
+	static bool fastskip = false;
 
 	current_colour = dc_black + 1;
 
@@ -741,11 +742,13 @@ static void run_display_info(void *)
 
 			case(dpt_image):
 			{
+				row_pointer = (png_bytep)0;
 
 				if((fd = open(string_cstr(display_pages_ptr->image.filename), O_RDONLY, 0)) < 0)
 				{
 					log_format("display: cannot open image file: %s", string_cstr(display_pages_ptr->image.filename));
-					goto finish1;
+					fastskip = true;
+					goto skip;
 				}
 
 				assert(sizeof(title_line) > 8);
@@ -753,19 +756,16 @@ static void run_display_info(void *)
 				if(read(fd, title_line, 8) != 8)
 				{
 					log_format("display: cannot read signature: %s", string_cstr(display_pages_ptr->image.filename));
-					goto finish1;
+					fastskip = true;
+					goto skip;
 				}
-
-				png_error_status = false;
 
 				if(png_sig_cmp((png_const_bytep)title_line, 0, 8))
 				{
 					log_format("display: invalid PNG signature: %s", string_cstr(display_pages_ptr->image.filename));
-					goto finish1;
+					fastskip = true;
+					goto skip;
 				}
-
-				if(png_error_status)
-					goto finish1;
 
 				png_ptr = png_create_read_struct_2(PNG_LIBPNG_VER_STRING, (png_voidp)0, user_error, user_warning, (png_voidp)0, user_png_malloc, user_png_free);
 				assert(png_ptr);
@@ -773,31 +773,20 @@ static void run_display_info(void *)
 				info_ptr = png_create_info_struct(png_ptr);
 				assert(info_ptr);
 
-				if(png_error_status)
-					goto finish1;
+				if(setjmp(png_jmpbuf(png_ptr)))
+				{
+					log("display: libpng returned via longjmp");
+					fastskip = true;
+					goto abort;
+				}
 
 				user_io_ptr.magic_word = user_png_io_ptr_magic_word;
 				user_io_ptr.fd = fd;
 
 				png_set_read_fn(png_ptr, (png_bytep)&user_io_ptr, user_read_data);
-
-				if(png_error_status)
-					goto finish;
-
 				png_set_sig_bytes(png_ptr, 8);
-
-				if(png_error_status)
-					goto finish;
-
 				png_read_info(png_ptr, info_ptr);
-
-				if(png_error_status)
-					goto finish;
-
 				png_get_IHDR(png_ptr, info_ptr, (png_uint_32 *)0, (png_uint_32 *)0, (int *)0, (int *)0, (int *)0, (int *)0, (int *)0);
-
-				if(png_error_status)
-					goto finish;
 
 				png_color_16 default_background =
 				{
@@ -809,78 +798,24 @@ static void run_display_info(void *)
 				};
 
 				png_set_background(png_ptr, &default_background, PNG_BACKGROUND_GAMMA_SCREEN, 0, 1);
-
-				if(png_error_status)
-					goto finish;
-
 				colour_type = png_get_color_type(png_ptr, info_ptr);
-
-				if(png_error_status)
-					goto finish;
-
 				bit_depth = png_get_bit_depth(png_ptr, info_ptr);
-
-				if(png_error_status)
-					goto finish;
-
 				if (colour_type == PNG_COLOR_TYPE_GRAY || colour_type == PNG_COLOR_TYPE_GRAY_ALPHA)
 					png_set_gray_to_rgb(png_ptr);
-
-				if(png_error_status)
-					goto finish;
-
 				if((colour_type == PNG_COLOR_TYPE_GRAY) && (bit_depth < 8))
 					png_set_expand_gray_1_2_4_to_8(png_ptr);
-
-				if(png_error_status)
-					goto finish;
-
 				if(colour_type == PNG_COLOR_TYPE_PALETTE)
 					png_set_palette_to_rgb(png_ptr);
-
-				if(png_error_status)
-					goto finish;
-
 				if(png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS))
 					png_set_tRNS_to_alpha(png_ptr);
-
-				if(png_error_status)
-					goto finish;
-
 				png_set_gamma(png_ptr, PNG_DEFAULT_sRGB, 0.45455); // FIXME required?
-
-				if(png_error_status)
-					goto finish;
-
 				png_set_packing(png_ptr);
-
-				if(png_error_status)
-					goto finish;
-
 				png_read_update_info(png_ptr, info_ptr);
-
-				if(png_error_status)
-					goto finish;
-
 				image_x_size = png_get_image_width(png_ptr, info_ptr);
-
-				if(png_error_status)
-					goto finish;
-
 				image_y_size = png_get_image_height(png_ptr, info_ptr);
-
-				if(png_error_status)
-					goto finish;
-
 				row_bytes = png_get_rowbytes(png_ptr, info_ptr);
-
-				if(png_error_status)
-					goto finish;
-
 				assert(row_bytes == (image_x_size * 3));
-
 				row_pointer = (png_bytep)util_memory_alloc_spiram(row_bytes);
-
 				assert(row_pointer);
 
 				for(row = 0; row < image_y_size; row++)
@@ -891,16 +826,12 @@ static void run_display_info(void *)
 						break;
 
 					png_read_row(png_ptr, row_pointer, (png_bytep)0);
-
-					if(png_error_status)
-						goto finish;
-
 					plot_line(page_border_size, page_border_size + page_text_offset + (font->net.height - 1) + row, (x_size - 1) - page_border_size, image_x_size, row_pointer);
 				}
 
 				png_read_end(png_ptr, (png_infop)0);
 
-finish:
+abort:
 				assert(png_ptr);
 				assert(info_ptr);
 
@@ -915,9 +846,12 @@ finish:
 					row_pointer = (png_bytep)0;
 				}
 
-finish1:
+skip:
 				if(fd >= 0)
+				{
 					close(fd);
+					fd = -1;
+				}
 
 				break;
 			}
@@ -936,7 +870,8 @@ finish1:
 next1:
 		page_data_mutex_give();
 next2:
-		util_sleep(5000);
+		util_sleep(fastskip ? 500 : 5000);
+		fastskip = false;
 	}
 
 	util_abort("run_display_info returns");
