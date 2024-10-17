@@ -258,6 +258,18 @@ static void page_free(display_page_t **page)
 	*page = (display_page_t *)0;
 }
 
+static display_page_t *page_get(unsigned int index)
+{
+	display_page_t *current;
+	unsigned int count;
+
+	for(current = display_pages, count = 0; current; current = current->next, count++)
+		if(count == index)
+			break;
+
+	return(current);
+}
+
 static void page_add(display_page_t *new_page)
 {
 	display_page_t root, *before, *current;
@@ -389,6 +401,7 @@ static void page_add_image(const const_string_t name, unsigned int lifetime, con
 	display_page_t *new_page;
 
 	new_page = util_memory_alloc_spiram(sizeof(*new_page));
+	assert(new_page);
 
 	new_page->name = string_dup(name);
 	new_page->type = dpt_image;
@@ -589,7 +602,8 @@ static void user_warning(png_structp png_ptr, png_const_charp msg)
 
 static void run_display_info(void *)
 {
-	display_page_t *display_pages_current, *display_pages_next;
+	unsigned int current_page;
+	display_page_t *display_pages_ptr;
 	display_colour_t current_colour;
 	unsigned int row, y;
 	unsigned int image_x_size, image_y_size, row_bytes, colour_type, bit_depth;
@@ -609,33 +623,26 @@ static void run_display_info(void *)
 	user_png_io_ptr_t user_io_ptr;
 	uint64_t time_start, time_spent;
 
-	display_pages_current = display_pages;
 	current_colour = dc_black + 1;
 
-	for(;;)
+	for(current_page = 0;; current_page++)
 	{
 		if(!font_valid || (display_type == dt_no_display) || (!(write_fn = info[display_type].write_fn)))
 			goto next2;
 
 		page_data_mutex_take();
 
-		if(!display_pages_current)
+		if(!display_pages)
 		{
-			display_pages_current = display_pages;
-			current_colour = dc_black + 1;
-
-			if(!display_pages_current)
+			if(!log_mode)
 			{
-				if(!log_mode)
-				{
-					font_valid = load_font("font_small");
-					log_mode = true;
-					clear(dc_black);
-					display_log_y = 0;
-				}
-
-				goto next1;
+				font_valid = load_font("font_small");
+				log_mode = true;
+				clear(dc_black);
+				display_log_y = 0;
 			}
+
+			goto next1;
 		}
 
 		if(log_mode)
@@ -645,8 +652,17 @@ static void run_display_info(void *)
 			if(!((font_valid = load_font("font_big"))))
 				goto next1;
 
-			current_colour = dc_black + 1;
+			current_page = 0;
 		}
+
+		if(!(display_pages_ptr = page_get(current_page)))
+		{
+			current_page = 0;
+			display_pages_ptr = page_get(current_page);
+			assert(display_pages_ptr);
+		}
+
+		current_colour = (current_page + dc_black + 1) % dc_size;
 
 		assert(page_border_size > 0);
 
@@ -663,7 +679,7 @@ static void run_display_info(void *)
 
 		if(strlen(stamp_line) > columns)
 		{
-			chop = string_length_utf8(display_pages_current->name);
+			chop = string_length_utf8(display_pages_ptr->name);
 
 			if(chop > columns)
 			{
@@ -671,16 +687,16 @@ static void run_display_info(void *)
 				pad = 0;
 			}
 			else
-				pad = columns - string_length_utf8(display_pages_current->name);
+				pad = columns - string_length_utf8(display_pages_ptr->name);
 
 			assert(pad >= 0);
 
 			snprintf(title_line, sizeof(title_line), "%.*s%*s",
-					chop, string_cstr(display_pages_current->name), pad, "");
+					chop, string_cstr(display_pages_ptr->name), pad, "");
 		}
 		else
 		{
-			chop = string_length_utf8(display_pages_current->name);
+			chop = string_length_utf8(display_pages_ptr->name);
 
 			if((chop + strlen(stamp_line)) > columns)
 				chop = columns - strlen(stamp_line);
@@ -691,7 +707,7 @@ static void run_display_info(void *)
 			assert(pad >= 0);
 
 			snprintf(title_line, sizeof(title_line), "%.*s%*s%s",
-				chop, string_cstr(display_pages_current->name), pad, "", stamp_line);
+				chop, string_cstr(display_pages_ptr->name), pad, "", stamp_line);
 		}
 
 		unicode_length = utf8_to_unicode((uint8_t *)title_line, unicode_buffer_size, unicode_buffer);
@@ -699,18 +715,18 @@ static void run_display_info(void *)
 				page_border_size, page_border_size, (x_size - 1) - page_border_size, page_text_offset + page_border_size + (font->net.height - 1),
 				unicode_length, unicode_buffer);
 
-		switch(display_pages_current->type)
+		switch(display_pages_ptr->type)
 		{
 			case(dpt_text):
 			{
 				y = font->net.height + page_border_size + page_text_offset;
 
-				for(row = 0; (row < display_page_lines_size) && display_pages_current->text.line[row]; row++)
+				for(row = 0; (row < display_page_lines_size) && display_pages_ptr->text.line[row]; row++)
 				{
 					if((y + font->net.height) > y_size)
 						break;
 
-					unicode_length = utf8_to_unicode((const uint8_t *)string_cstr(display_pages_current->text.line[row]), unicode_buffer_size, unicode_buffer);
+					unicode_length = utf8_to_unicode((const uint8_t *)string_cstr(display_pages_ptr->text.line[row]), unicode_buffer_size, unicode_buffer);
 					write_fn(font, dc_black, dc_white,
 							page_border_size, y, (x_size - 1) - page_border_size, y + (font->net.height - 1),
 							unicode_length, unicode_buffer);
@@ -726,9 +742,9 @@ static void run_display_info(void *)
 			case(dpt_image):
 			{
 
-				if((fd = open(string_cstr(display_pages_current->image.filename), O_RDONLY, 0)) < 0)
+				if((fd = open(string_cstr(display_pages_ptr->image.filename), O_RDONLY, 0)) < 0)
 				{
-					log_format("display: cannot open image file: %s", string_cstr(display_pages_current->image.filename));
+					log_format("display: cannot open image file: %s", string_cstr(display_pages_ptr->image.filename));
 					goto finish1;
 				}
 
@@ -736,7 +752,7 @@ static void run_display_info(void *)
 
 				if(read(fd, title_line, 8) != 8)
 				{
-					log_format("display: cannot read signature: %s", string_cstr(display_pages_current->image.filename));
+					log_format("display: cannot read signature: %s", string_cstr(display_pages_ptr->image.filename));
 					goto finish1;
 				}
 
@@ -744,7 +760,7 @@ static void run_display_info(void *)
 
 				if(png_sig_cmp((png_const_bytep)title_line, 0, 8))
 				{
-					log_format("display: invalid PNG signature: %s", string_cstr(display_pages_current->image.filename));
+					log_format("display: invalid PNG signature: %s", string_cstr(display_pages_ptr->image.filename));
 					goto finish1;
 				}
 
@@ -907,24 +923,12 @@ finish1:
 			}
 		}
 
-		current_colour++;
-
-		if((current_colour == dc_white) || (current_colour == dc_black))
-			current_colour++;
-
-		if(current_colour >= dc_size)
-			current_colour = dc_black + 1;
-
-		if((display_pages_current->expiry > 0) && (time((time_t *)0) > display_pages_current->expiry))
+		if((display_pages_ptr->expiry > 0) && (time((time_t *)0) > display_pages_ptr->expiry))
 		{
-			display_pages_next = display_pages_current->next;
 			page_data_mutex_give();
-			page_erase(display_pages_current->name);
+			page_erase(display_pages_ptr->name);
 			page_data_mutex_take();
-			display_pages_current = display_pages_next;
 		}
-		else
-			display_pages_current = display_pages_current->next;
 
 		time_spent = esp_timer_get_time() - time_start;
 		stat_display_show = time_spent / 1000ULL;
