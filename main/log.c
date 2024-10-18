@@ -91,7 +91,10 @@ void _log_cstr(bool append_strerror, const char *string)
 		if(log_buffer->in++ >= log_buffer_entries)
 			log_buffer->in = 0;
 
-		console_write_line(entry->data);
+		if(strlen(string) >= sizeof(entry->data))
+			console_write_line(string);
+		else
+			console_write_line(entry->data);
 	}
 	else
 		console_write_line(string);
