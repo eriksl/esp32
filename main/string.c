@@ -536,6 +536,9 @@ void string_cut(string_t dst, const const_string_t src, unsigned int from, unsig
 	_string_check_const(_src);
 	_string_check(_dst);
 
+	if(length > _src->length)
+		length = _src->length;
+
 	if((from + length) > _src->length)
 		length = _src->length - from;
 
