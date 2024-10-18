@@ -245,14 +245,33 @@ static void page_free(display_page_t **page)
 {
 	unsigned int ix;
 
-	if((**page).type == dpt_text)
+	switch((**page).type)
 	{
-		for(ix = 0; ix < display_page_lines_size; ix++)
-			if((**page).text.line[ix])
-				string_free(&(**page).text.line[ix]);
+		case(dpt_text):
+		{
+			for(ix = 0; ix < display_page_lines_size; ix++)
+				if((**page).text.line[ix])
+					string_free(&(**page).text.line[ix]);
+
+			break;
+		}
+
+		case(dpt_image):
+		{
+			if(unlink(string_cstr((**page).image.filename)))
+				log_format("display: page free: unlink image %s failed", string_cstr((**page).image.filename));
+
+			string_free(&(**page).image.filename);
+
+			break;
+		}
+
+		default:
+		{
+			log("display: page free: unknown page type");
+			break;
+		}
 	}
-	else
-		string_free(&(**page).image.filename);
 
 	string_free(&(**page).name);
 
