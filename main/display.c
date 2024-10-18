@@ -1,14 +1,6 @@
 #include <stdint.h>
 #include <stdbool.h>
-#include <assert.h>
-#include <mbedtls/sha256.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <string.h>
-#include <freertos/FreeRTOS.h>
-#include <png.h>
-#include <zlib.h>
-#include <esp_timer.h>
 
 #include "string.h"
 #include "log.h"
@@ -16,6 +8,16 @@
 #include "display.h"
 #include "config.h"
 #include "cli-command.h"
+
+#include <assert.h>
+#include <mbedtls/sha256.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <freertos/FreeRTOS.h>
+#include <png.h>
+#include <zlib.h>
+#include <esp_timer.h>
+#include <errno.h>
 
 static_assert(sizeof(font_glyph_t) == 68);
 static_assert(offsetof(font_t, basic_glyph) == 56);
