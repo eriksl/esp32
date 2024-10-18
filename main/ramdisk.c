@@ -16,8 +16,12 @@
 
 enum
 {
+	fd_table_size = 8,
+	file_name_size = 64,
 	block_size = 4096,
-	meta_magic_word = 0x12345678UL,
+	block_ptr_size = 1004,
+	meta_magic_word_1 = 0x12345678UL,
+	meta_magic_word_2 = 0xfedcba98UL,
 };
 
 typedef struct
@@ -29,20 +33,23 @@ _Static_assert(sizeof(data_block_t) == block_size);
 
 typedef struct file_metadata_T
 {
+	unsigned int magic_word_1;
 	struct file_metadata_T *next;
 	unsigned int length;
-	char filename[64];
-	unsigned int magic_word;
-	data_block_t *datablocks[1005];
+	char filename[file_name_size];
+	data_block_t *datablocks[block_ptr_size];
+	unsigned int magic_word_2;
 } file_metadata_t;
 
 _Static_assert(sizeof(file_metadata_t) == block_size);
 
 typedef struct file_descriptor_T
 {
-	struct file_descriptor_T *next;
-	int fd;
-	int open_flags;
+	struct
+	{
+		unsigned int open:1;
+	};
+	int fcntl_flags;
 	file_metadata_t *metadata;
 	unsigned int offset;
 } file_descriptor_t;
@@ -56,6 +63,7 @@ typedef struct
 } vfs_ramdisk_dir_t;
 
 static bool inited = false;
+static file_descriptor_t *fd_table = (file_descriptor_t *)0;
 static file_metadata_t *root = (file_metadata_t *)0;
 static SemaphoreHandle_t data_mutex;
 
@@ -69,97 +77,34 @@ static void data_mutex_give(void)
 	xSemaphoreGive(data_mutex);
 }
 
-static file_descriptor_t *new_fd(file_metadata_t *meta, int open_flags)
+static bool meta_valid(const file_metadata_t *meta)
 {
-	int highest, fd;
-	file_descriptor_t *entry, *last;
+	if((meta->magic_word_1 == meta_magic_word_1) && (meta->magic_word_2 == meta_magic_word_2))
+		return(true);
 
-	assert(inited);
-
-	for(entry = fds, last = (file_descriptor_t *)0, highest = -1; entry; entry = entry->next)
-	{
-		if(entry->next)
-			last = entry->next;
-
-		if(entry->fd > highest)
-			highest = entry->fd;
-	}
-
-	for(fd = 0; fd < highest; fd++)
-	{
-		for(entry = fds; entry; entry = entry->next)
-			if(entry->fd == fd)
-				break;
-
-		if(!entry)
-			break;
-	}
-
-	entry = util_memory_alloc_spiram(sizeof(*entry));
-	entry->next = (file_descriptor_t *)0;
-	entry->fd = fd;
-	entry->open_flags = open_flags;
-	entry->metadata = meta;
-	entry->offset = 0;
-
-	if(last)
-		last->next = entry;
-	else
-		fds = entry;
-
-	return(entry);
+	return(false);
 }
 
-static file_descriptor_t *get_fd(int fd)
+static bool file_in_use(const char *filename, unsigned int fcntl_flags)
 {
-	file_descriptor_t *entry;
+	unsigned int fd;
+	const file_descriptor_t *fdp;
 
 	assert(inited);
 
-	for(entry = fds; entry; entry = entry->next)
-		if(entry->fd == fd)
-			break;
-
-	return(entry);
-}
-
-static int delete_fd(int fd)
-{
-	file_descriptor_t *entry, *previous;
-
-	assert(inited);
-
-	for(entry = fds, previous = (file_descriptor_t *)0; entry; previous = entry, entry = entry->next)
-		if(entry->fd == fd)
-			break;
-
-	if(!entry)
-		return(-1);
-
-	if(previous)
-		previous = entry->next;
-	else
-		fds = entry->next;
-
-	free(entry);
-
-	return(0);
-}
-
-static bool file_in_use(const char *filename, int flags)
-{
-	file_descriptor_t *entry;
-
-	assert(inited);
-
-	for(entry = fds; entry; entry = entry->next)
+	for(fd = 0; fd < fd_table_size; fd++)
 	{
-		if(!strcmp(entry->metadata->filename, filename))
+		fdp = &fd_table[fd];
+
+		if(!fdp->open)
+			continue;
+
+		if(!strcmp(fdp->metadata->filename, filename))
 		{
-			if((flags & O_WRONLY) || (flags & O_RDWR))
+			if((fcntl_flags & O_WRONLY) || (fcntl_flags & O_RDWR))
 				return(true);
 
-			if((entry->open_flags & O_WRONLY) || (entry->open_flags & O_RDWR))
+			if((fdp->fcntl_flags & O_WRONLY) || (fdp->fcntl_flags & O_RDWR))
 				return(true);
 		}
 	}
@@ -176,8 +121,8 @@ static file_metadata_t *get_dir_entry(const char *filename, int *index)
 
 	for(entry = root, ix = 0; entry; entry = entry->next, ix++)
 	{
-		if(entry->magic_word != meta_magic_word)
-			log_format("ramdisk: invalid magic word at entry %u", ix);
+		if(!meta_valid(entry))
+			log_format("ramdisk: metadata corrupt at entry %u", ix);
 
 		if(!strcmp(filename, entry->filename))
 			break;
@@ -195,35 +140,6 @@ static file_metadata_t *get_dir_entry(const char *filename, int *index)
 		*index = ix;
 
 	return(entry);
-}
-
-static file_metadata_t *create_file(const char *filename)
-{
-	file_metadata_t *parent, *new;
-	unsigned int datablock, datablocks;
-
-	assert(inited);
-
-	new = util_memory_alloc_spiram(sizeof(*new));
-
-	new->next = (file_metadata_t *)0;
-	new->length = 0;
-	new->magic_word = meta_magic_word;
-	strlcpy(new->filename, filename, sizeof(new->filename));
-
-	datablocks = sizeof(new->datablocks) / sizeof(*new->datablocks);
-
-	for(datablock = 0; datablock < datablocks; datablock++)
-		new->datablocks[datablock] = (data_block_t *)0;
-
-	for(parent = root; parent && parent->next; parent = parent->next);
-
-	if(parent)
-		parent->next = new;
-	else
-		root = new;
-
-	return(new);
 }
 
 static void truncate_file(file_metadata_t *meta)
@@ -246,11 +162,13 @@ static void truncate_file(file_metadata_t *meta)
 	meta->length = 0;
 }
 
-static int ramdisk_open(const char *path, int flags, int file_access_mode)
+static int ramdisk_open(const char *path, int fcntl_flags, int file_access_mode)
 {
-	file_metadata_t *entry;
+	file_metadata_t *entry, *parent;
 	file_descriptor_t *fdp;
 	const char *relpath;
+	unsigned int fd;
+	unsigned int datablock, datablocks;
 
 	assert(inited);
 
@@ -261,7 +179,7 @@ static int ramdisk_open(const char *path, int flags, int file_access_mode)
 
 	data_mutex_take();
 
-	if(file_in_use(relpath, flags))
+	if(file_in_use(relpath, fcntl_flags))
 	{
 		errno = EBUSY;
 		data_mutex_give();
@@ -270,10 +188,33 @@ static int ramdisk_open(const char *path, int flags, int file_access_mode)
 
 	if(!(entry = get_dir_entry(relpath, (int *)0)))
 	{
-		if(flags & O_CREAT)
+		if(fcntl_flags & O_CREAT)
 		{
-			if(!(entry = create_file(relpath)))
-				return(-1);
+			entry = (file_metadata_t *)util_memory_alloc_spiram(sizeof(file_metadata_t));
+
+			assert(entry);
+
+			entry->next = (file_metadata_t *)0;
+			entry->length = 0;
+			entry->magic_word_1 = meta_magic_word_1;
+			entry->magic_word_2 = meta_magic_word_2;
+			strlcpy(entry->filename, relpath, sizeof(entry->filename));
+
+			datablocks = sizeof(entry->datablocks) / sizeof(*entry->datablocks);
+
+			for(datablock = 0; datablock < datablocks; datablock++)
+				entry->datablocks[datablock] = (data_block_t *)0;
+
+			for(parent = root; parent && parent->next; parent = parent->next)
+				(void)0;
+
+			if(parent)
+			{
+				assert(!parent->next);
+				parent->next = entry;
+			}
+			else
+				root = entry;
 		}
 		else
 		{
@@ -283,35 +224,49 @@ static int ramdisk_open(const char *path, int flags, int file_access_mode)
 		}
 	}
 
-	if(flags & O_TRUNC)
+	for(fd = 0; fd < fd_table_size; fd++)
+		if(!fd_table[fd].open)
+			break;
+
+	if(fd >= fd_table_size)
+	{
+		errno = ENOMEM;
+		data_mutex_give();
+		return(-1);
+	}
+
+	if(fcntl_flags & O_TRUNC)
 		truncate_file(entry);
 
-	fdp = new_fd(entry, flags);
+	fdp = &fd_table[fd];
 
-	if(flags & O_APPEND)
-		fdp->offset = entry->length;
-	else
-		fdp->offset = 0;
+	fdp->metadata = entry;
+	fdp->fcntl_flags = fcntl_flags;
+	fdp->offset = (fcntl_flags & O_APPEND) ? entry->length : 0;
+	fdp->open = 1;
 
 	data_mutex_give();
 
-	return(fdp->fd);
+	return((int)fd);
 }
 
 static int ramdisk_close(int fd)
 {
 	assert(inited);
 
-	data_mutex_take();
-
-	if(delete_fd(fd))
+	if((fd < 0) || (fd >= fd_table_size))
 	{
-		data_mutex_give();
 		errno = EBADF;
 		return(-1);
 	}
 
-	data_mutex_give();
+	if(!fd_table[fd].open)
+	{
+		errno = EBADF;
+		return(-1);
+	}
+
+	fd_table[fd].open = 0;
 
 	return(0);
 }
@@ -326,23 +281,29 @@ static ssize_t ramdisk_read(int fd, void *data_in, size_t size)
 
 	assert(inited);
 
-	data_mutex_take();
-
-	if(!(fdp = get_fd(fd)))
-	{
-		data_mutex_give();
-		errno = EBADF;
-		return(-1);
-	}
-
 	if(!data)
 	{
-		data_mutex_give();
 		errno = EINVAL;
 		return(-1);
 	}
 
-	metadata = fdp->metadata;
+	if((fd < 0) || (fd >= fd_table_size))
+	{
+		errno = EBADF;
+		return(-1);
+	}
+
+	data_mutex_take();
+
+	if(!fd_table[fd].open)
+	{
+		errno = EBADF;
+		data_mutex_give();
+		return(-1);
+	}
+
+	metadata = fd_table[fd].metadata;
+	fdp = &fd_table[fd];
 
 	if(fdp->offset > metadata->length)
 	{
@@ -394,23 +355,30 @@ static ssize_t ramdisk_write(int fd, const void *data_in, size_t size)
 
 	assert(inited);
 
-	data_mutex_take();
-
-	if(!(fdp = get_fd(fd)))
-	{
-		data_mutex_give();
-		errno = EBADF;
-		return(-1);
-	}
-
 	if(!data)
 	{
-		data_mutex_give();
 		errno = EINVAL;
 		return(-1);
 	}
 
-	if(!(fdp->open_flags & O_WRONLY) && !(fdp->open_flags & O_RDWR))
+	if((fd < 0) || (fd >= fd_table_size))
+	{
+		errno = EBADF;
+		return(-1);
+	}
+
+	data_mutex_take();
+
+	if(!fd_table[fd].open)
+	{
+		errno = EBADF;
+		data_mutex_give();
+		return(-1);
+	}
+
+	fdp = &fd_table[fd];
+
+	if(!(fdp->fcntl_flags & O_WRONLY) && !(fdp->fcntl_flags & O_RDWR))
 	{
 		data_mutex_give();
 		errno = EPERM;
@@ -585,8 +553,8 @@ static struct dirent *ramdisk_readdir(DIR *pdir)
 	data_mutex_take();
 
 	for(entry = root, ix = 0; entry && (ix < dir->offset); entry = entry->next, ix++)
-		if(entry->magic_word != meta_magic_word)
-			log_format("ramdisk: invalid magic word in entry %u", ix);
+		if(!meta_valid(entry))
+			log_format("ramdisk: metadata corrupt in entry %u", ix);
 
 	if(!entry)
 	{
@@ -622,8 +590,8 @@ static void ramdisk_format(void)
 
 	for(entry = root; entry; entry = next)
 	{
-		if(entry->magic_word != meta_magic_word)
-			log("ramdisk: invalid magic word");
+		if(!meta_valid(entry))
+			log("ramdisk: format: metadata corrupt");
 
 		next = entry->next;
 		free(entry);
@@ -639,15 +607,22 @@ static off_t ramdisk_lseek(int fd, off_t offset_requested, int mode)
 
 	assert(inited);
 
-	data_mutex_take();
-
-	if(!(fdp = get_fd(fd)))
+	if((fd < 0) || (fd >= fd_table_size))
 	{
-		data_mutex_give();
 		errno = EBADF;
 		return(-1);
 	}
 
+	data_mutex_take();
+
+	if(!fd_table[fd].open)
+	{
+		errno = EBADF;
+		data_mutex_give();
+		return(-1);
+	}
+
+	fdp = &fd_table[fd];
 	metadata = fdp->metadata;
 
 	switch(mode)
@@ -709,6 +684,7 @@ static off_t ramdisk_lseek(int fd, off_t offset_requested, int mode)
 void ramdisk_init(void)
 {
 	static esp_vfs_t esp_vfs_ramdisk;
+	unsigned int fd;
 
 	assert(!inited);
 	assert(root == (file_metadata_t *)0);
@@ -720,6 +696,11 @@ void ramdisk_init(void)
 	data_mutex_take();
 
 	ramdisk_format();
+
+	fd_table = (file_descriptor_t *)util_memory_alloc_spiram(sizeof(file_descriptor_t) * fd_table_size);
+
+	for(fd = 0; fd < fd_table_size; fd++)
+		fd_table[fd].open = 0;
 
 	memset(&esp_vfs_ramdisk, 0, sizeof(esp_vfs_ramdisk));
 
