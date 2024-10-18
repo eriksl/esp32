@@ -16,36 +16,36 @@
 
 enum
 {
-	ramdisk_block_size = 4096,
+	block_size = 4096,
 	meta_magic_word = 0x12345678UL,
 };
 
-typedef struct ramdisk_data_block_T
+typedef struct
 {
-	uint8_t data[ramdisk_block_size];
-} ramdisk_data_block_t;
+	uint8_t data[block_size];
+} data_block_t;
 
-_Static_assert(sizeof(ramdisk_data_block_t) == ramdisk_block_size);
+_Static_assert(sizeof(data_block_t) == block_size);
 
-typedef struct ramdisk_file_metadata_T
+typedef struct file_metadata_T
 {
-	struct ramdisk_file_metadata_T *next;
+	struct file_metadata_T *next;
 	unsigned int length;
 	char filename[64];
 	unsigned int magic_word;
-	ramdisk_data_block_t *datablocks[1005];
-} ramdisk_file_metadata_t;
+	data_block_t *datablocks[1005];
+} file_metadata_t;
 
-_Static_assert(sizeof(ramdisk_file_metadata_t) == ramdisk_block_size);
+_Static_assert(sizeof(file_metadata_t) == block_size);
 
-typedef struct ramdisk_file_descriptor_T
+typedef struct file_descriptor_T
 {
-	struct ramdisk_file_descriptor_T *next;
+	struct file_descriptor_T *next;
 	int fd;
 	int open_flags;
-	ramdisk_file_metadata_t *metadata;
+	file_metadata_t *metadata;
 	unsigned int offset;
-} ramdisk_file_descriptor_t;
+} file_descriptor_t;
 
 typedef struct
 {
@@ -56,7 +56,7 @@ typedef struct
 } vfs_ramdisk_dir_t;
 
 static bool inited = false;
-static ramdisk_file_metadata_t *root = (ramdisk_file_metadata_t *)0;
+static file_metadata_t *root = (file_metadata_t *)0;
 static SemaphoreHandle_t data_mutex;
 
 static void data_mutex_take(void)
@@ -69,14 +69,14 @@ static void data_mutex_give(void)
 	xSemaphoreGive(data_mutex);
 }
 
-static ramdisk_file_descriptor_t *new_fd(ramdisk_file_metadata_t *meta, int open_flags)
+static file_descriptor_t *new_fd(file_metadata_t *meta, int open_flags)
 {
 	int highest, fd;
-	ramdisk_file_descriptor_t *entry, *last;
+	file_descriptor_t *entry, *last;
 
 	assert(inited);
 
-	for(entry = fds, last = (ramdisk_file_descriptor_t *)0, highest = -1; entry; entry = entry->next)
+	for(entry = fds, last = (file_descriptor_t *)0, highest = -1; entry; entry = entry->next)
 	{
 		if(entry->next)
 			last = entry->next;
@@ -96,7 +96,7 @@ static ramdisk_file_descriptor_t *new_fd(ramdisk_file_metadata_t *meta, int open
 	}
 
 	entry = util_memory_alloc_spiram(sizeof(*entry));
-	entry->next = (ramdisk_file_descriptor_t *)0;
+	entry->next = (file_descriptor_t *)0;
 	entry->fd = fd;
 	entry->open_flags = open_flags;
 	entry->metadata = meta;
@@ -110,9 +110,9 @@ static ramdisk_file_descriptor_t *new_fd(ramdisk_file_metadata_t *meta, int open
 	return(entry);
 }
 
-static ramdisk_file_descriptor_t *get_fd(int fd)
+static file_descriptor_t *get_fd(int fd)
 {
-	ramdisk_file_descriptor_t *entry;
+	file_descriptor_t *entry;
 
 	assert(inited);
 
@@ -125,11 +125,11 @@ static ramdisk_file_descriptor_t *get_fd(int fd)
 
 static int delete_fd(int fd)
 {
-	ramdisk_file_descriptor_t *entry, *previous;
+	file_descriptor_t *entry, *previous;
 
 	assert(inited);
 
-	for(entry = fds, previous = (ramdisk_file_descriptor_t *)0; entry; previous = entry, entry = entry->next)
+	for(entry = fds, previous = (file_descriptor_t *)0; entry; previous = entry, entry = entry->next)
 		if(entry->fd == fd)
 			break;
 
@@ -148,7 +148,7 @@ static int delete_fd(int fd)
 
 static bool file_in_use(const char *filename, int flags)
 {
-	ramdisk_file_descriptor_t *entry;
+	file_descriptor_t *entry;
 
 	assert(inited);
 
@@ -167,10 +167,10 @@ static bool file_in_use(const char *filename, int flags)
 	return(false);
 }
 
-static ramdisk_file_metadata_t *get_dir_entry(const char *filename, int *index)
+static file_metadata_t *get_dir_entry(const char *filename, int *index)
 {
 	unsigned int ix;
-	ramdisk_file_metadata_t *entry;
+	file_metadata_t *entry;
 
 	assert(inited);
 
@@ -188,7 +188,7 @@ static ramdisk_file_metadata_t *get_dir_entry(const char *filename, int *index)
 		if(index)
 			*index = -1;
 
-		return((ramdisk_file_metadata_t *)0);
+		return((file_metadata_t *)0);
 	}
 
 	if(index)
@@ -197,16 +197,16 @@ static ramdisk_file_metadata_t *get_dir_entry(const char *filename, int *index)
 	return(entry);
 }
 
-static ramdisk_file_metadata_t *create_file(const char *filename)
+static file_metadata_t *create_file(const char *filename)
 {
-	ramdisk_file_metadata_t *parent, *new;
+	file_metadata_t *parent, *new;
 	unsigned int datablock, datablocks;
 
 	assert(inited);
 
 	new = util_memory_alloc_spiram(sizeof(*new));
 
-	new->next = (ramdisk_file_metadata_t *)0;
+	new->next = (file_metadata_t *)0;
 	new->length = 0;
 	new->magic_word = meta_magic_word;
 	strlcpy(new->filename, filename, sizeof(new->filename));
@@ -214,7 +214,7 @@ static ramdisk_file_metadata_t *create_file(const char *filename)
 	datablocks = sizeof(new->datablocks) / sizeof(*new->datablocks);
 
 	for(datablock = 0; datablock < datablocks; datablock++)
-		new->datablocks[datablock] = (ramdisk_data_block_t *)0;
+		new->datablocks[datablock] = (data_block_t *)0;
 
 	for(parent = root; parent && parent->next; parent = parent->next);
 
@@ -226,7 +226,7 @@ static ramdisk_file_metadata_t *create_file(const char *filename)
 	return(new);
 }
 
-static void truncate_file(ramdisk_file_metadata_t *meta)
+static void truncate_file(file_metadata_t *meta)
 {
 	unsigned int datablock, datablocks;
 
@@ -239,7 +239,7 @@ static void truncate_file(ramdisk_file_metadata_t *meta)
 		if(meta->datablocks[datablock])
 		{
 			free(meta->datablocks[datablock]);
-			meta->datablocks[datablock] = (ramdisk_data_block_t *)0;
+			meta->datablocks[datablock] = (data_block_t *)0;
 		}
 	}
 
@@ -248,8 +248,8 @@ static void truncate_file(ramdisk_file_metadata_t *meta)
 
 static int ramdisk_open(const char *path, int flags, int file_access_mode)
 {
-	ramdisk_file_metadata_t *entry;
-	ramdisk_file_descriptor_t *fdp;
+	file_metadata_t *entry;
+	file_descriptor_t *fdp;
 	const char *relpath;
 
 	assert(inited);
@@ -318,8 +318,8 @@ static int ramdisk_close(int fd)
 
 static ssize_t ramdisk_read(int fd, void *data_in, size_t size)
 {
-	ramdisk_file_descriptor_t *fdp;
-	ramdisk_file_metadata_t *metadata;
+	file_descriptor_t *fdp;
+	file_metadata_t *metadata;
 	unsigned int block, offset_in_block, available_in_block, chunk;
 	ssize_t rv = 0;
 	uint8_t *data = (uint8_t *)data_in;
@@ -355,9 +355,9 @@ static ssize_t ramdisk_read(int fd, void *data_in, size_t size)
 
 	while(size > 0)
 	{
-		block = fdp->offset / ramdisk_block_size;
-		offset_in_block = fdp->offset - (ramdisk_block_size * block);
-		available_in_block = ramdisk_block_size - offset_in_block;
+		block = fdp->offset / block_size;
+		offset_in_block = fdp->offset - (block_size * block);
+		available_in_block = block_size - offset_in_block;
 
 		if(!metadata->datablocks[block])
 		{
@@ -386,8 +386,8 @@ static ssize_t ramdisk_read(int fd, void *data_in, size_t size)
 
 static ssize_t ramdisk_write(int fd, const void *data_in, size_t size)
 {
-	ramdisk_file_descriptor_t *fdp;
-	ramdisk_file_metadata_t *metadata;
+	file_descriptor_t *fdp;
+	file_metadata_t *metadata;
 	unsigned int block, blocks, offset_in_block, available_in_block, chunk;
 	ssize_t rv = size;
 	const uint8_t *data = (const uint8_t *)data_in;
@@ -435,7 +435,7 @@ static ssize_t ramdisk_write(int fd, const void *data_in, size_t size)
 		}
 
 		blocks = sizeof(metadata->datablocks) / sizeof(*metadata->datablocks);
-		block = fdp->offset / ramdisk_block_size;
+		block = fdp->offset / block_size;
 
 		if(block >= blocks)
 		{
@@ -444,11 +444,11 @@ static ssize_t ramdisk_write(int fd, const void *data_in, size_t size)
 			return(-1);
 		}
 
-		offset_in_block = fdp->offset - (ramdisk_block_size * block);
-		available_in_block = ramdisk_block_size - offset_in_block;
+		offset_in_block = fdp->offset - (block_size * block);
+		available_in_block = block_size - offset_in_block;
 
 		if(!metadata->datablocks[block])
-			metadata->datablocks[block] = util_memory_alloc_spiram(sizeof(ramdisk_data_block_t));
+			metadata->datablocks[block] = util_memory_alloc_spiram(sizeof(data_block_t));
 
 		chunk = size;
 
@@ -472,7 +472,7 @@ static ssize_t ramdisk_write(int fd, const void *data_in, size_t size)
 
 static int ramdisk_unlink(const char *filename)
 {
-	ramdisk_file_metadata_t *meta, *parent;
+	file_metadata_t *meta, *parent;
 	const char *relpath;
 
 	assert(inited);
@@ -528,7 +528,7 @@ static int ramdisk_unlink(const char *filename)
 static int ramdisk_stat(const char *path, struct stat *st)
 {
 	int ix;
-	ramdisk_file_metadata_t *entry;
+	file_metadata_t *entry;
 	const char *relpath;
 
 	assert(inited);
@@ -551,8 +551,8 @@ static int ramdisk_stat(const char *path, struct stat *st)
 
 	st->st_ino = ix;
 	st->st_size = entry->length;
-	st->st_blksize = ramdisk_block_size;
-	st->st_blocks = (entry->length / ramdisk_block_size) + 1;
+	st->st_blksize = block_size;
+	st->st_blocks = (entry->length / block_size) + 1;
 
 	data_mutex_give();
 
@@ -577,7 +577,7 @@ static struct dirent *ramdisk_readdir(DIR *pdir)
 {
 	vfs_ramdisk_dir_t *dir = (vfs_ramdisk_dir_t *)(void *)pdir;
 	struct dirent *dirent = &dir->dirent;
-	ramdisk_file_metadata_t *entry;
+	file_metadata_t *entry;
 	unsigned int ix;
 
 	assert(inited);
@@ -618,7 +618,7 @@ static int ramdisk_closedir(DIR *pdir)
 
 static void ramdisk_format(void)
 {
-	ramdisk_file_metadata_t *entry, *next;
+	file_metadata_t *entry, *next;
 
 	for(entry = root; entry; entry = next)
 	{
@@ -632,8 +632,8 @@ static void ramdisk_format(void)
 
 static off_t ramdisk_lseek(int fd, off_t offset_requested, int mode)
 {
-	ramdisk_file_descriptor_t *fdp;
-	ramdisk_file_metadata_t *metadata;
+	file_descriptor_t *fdp;
+	file_metadata_t *metadata;
 	off_t start_offset, offset;
 	unsigned int block;
 
@@ -688,7 +688,7 @@ static off_t ramdisk_lseek(int fd, off_t offset_requested, int mode)
 
 	if(offset > 0)
 	{
-		block = (offset - 1) / ramdisk_block_size;
+		block = (offset - 1) / block_size;
 
 		if(!metadata->datablocks[block])
 		{
@@ -711,7 +711,7 @@ void ramdisk_init(void)
 	static esp_vfs_t esp_vfs_ramdisk;
 
 	assert(!inited);
-	assert(root == (ramdisk_file_metadata_t *)0);
+	assert(root == (file_metadata_t *)0);
 
 	data_mutex = xSemaphoreCreateMutex();
 
