@@ -247,6 +247,20 @@ unsigned int string_length(const const_string_t src)
 	return(_src->length);
 }
 
+bool string_blank(const const_string_t src)
+{
+	const _string_t *_src = (const _string_t *)src;
+	unsigned int ix;
+
+	_string_check_const(_src);
+
+	for(ix = 0; ix < _src->length; ix++)
+		if((_src->data[ix] != ' ') && (_src->data[ix] != '\n'))
+			return(false);
+
+	return(true);
+}
+
 unsigned int string_length_utf8(const const_string_t src)
 {
 	const _string_t *_src = (const _string_t *)src;

@@ -357,10 +357,11 @@ static void page_erase(const const_string_t name)
 
 static void page_add_text(const const_string_t name, unsigned int lifetime, const const_string_t contents)
 {
-	string_auto(line_string, 64);
+	string_auto(line_string, 128);
 	unsigned int ix, line;
 	display_page_t *new_page;
-	uint8_t previous, current;
+	uint8_t current;
+	unsigned int content_length;
 
 	new_page = util_memory_alloc_spiram(sizeof(*new_page));
 
@@ -368,46 +369,47 @@ static void page_add_text(const const_string_t name, unsigned int lifetime, cons
 	new_page->type = dpt_text;
 	new_page->expiry = (lifetime > 0) ? time((time_t *)0) + lifetime : 0;
 
-	current = '\0';
-	previous = '\0';
 	line = 0;
 	string_clear(line_string);
 
-	for(ix = 0; (ix < string_length(contents)) && (line < display_page_lines_size); ix++)
+	content_length = string_length(contents);
+
+	for(ix = 0; (ix < content_length) && (line < display_page_lines_size); ix++)
 	{
-		previous = current;
 		current = string_at(contents, ix);
 
-		if((ix > 0) && (previous == '\\') && (current == 'n'))
+		switch(current)
 		{
-			if(string_at_back(line_string) == 'n')
-				string_pop_back(line_string);
+			case('\\'):
+			{
+				if(((ix + 1) >= content_length) || (string_at(contents, ix + 1) != 'n'))
+				{
+					string_append(line_string, current);
+					continue;
+				}
 
-			if(string_at_back(line_string) == '\\')
-				string_pop_back(line_string);
+				ix++;
+				[[fallthrough]];
+			}
 
-			goto new_line;
+			case('\n'):
+			{
+				goto new_line;
+			}
+
+			default:
+			{
+				string_append(line_string, current);
+				continue;
+			}
 		}
-
-		if(current == '\n')
-		{
-			if(string_at_back(line_string) == '\n')
-				string_pop_back(line_string);
-
-			goto new_line;
-		}
-
-		string_append(line_string, current);
-		continue;
 
 new_line:
 		new_page->text.line[line++] = string_dup(line_string);
 		string_clear(line_string);
-		previous = '\0';
-		current = '\0';
 	}
 
-	if(string_length(line_string) > 0)
+	if(!string_blank(line_string))
 		new_page->text.line[line++] = string_dup(line_string);
 
 	for(; line < display_page_lines_size; line++)
