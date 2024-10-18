@@ -25,7 +25,7 @@ typedef struct ramdisk_data_block_T
 	uint8_t data[ramdisk_block_size];
 } ramdisk_data_block_t;
 
-static_assert(sizeof(ramdisk_data_block_t) == ramdisk_block_size);
+_Static_assert(sizeof(ramdisk_data_block_t) == ramdisk_block_size);
 
 typedef struct ramdisk_file_metadata_T
 {
@@ -36,7 +36,7 @@ typedef struct ramdisk_file_metadata_T
 	ramdisk_data_block_t *datablocks[1005];
 } ramdisk_file_metadata_t;
 
-static_assert(sizeof(ramdisk_file_metadata_t) == ramdisk_block_size);
+_Static_assert(sizeof(ramdisk_file_metadata_t) == ramdisk_block_size);
 
 typedef struct ramdisk_file_descriptor_T
 {
@@ -57,23 +57,24 @@ typedef struct
 
 static bool inited = false;
 static ramdisk_file_metadata_t *root = (ramdisk_file_metadata_t *)0;
-static ramdisk_file_descriptor_t *fds = (ramdisk_file_descriptor_t *)0;
-static SemaphoreHandle_t mutex;
+static SemaphoreHandle_t data_mutex;
 
 static void mutex_take(void)
 {
-	assert(xSemaphoreTake(mutex, portMAX_DELAY));
+	xSemaphoreTake(data_mutex, portMAX_DELAY);
 }
 
 static void mutex_give(void)
 {
-	assert(xSemaphoreGive(mutex));
+	xSemaphoreGive(data_mutex);
 }
 
 static ramdisk_file_descriptor_t *new_fd(ramdisk_file_metadata_t *meta, int open_flags)
 {
 	int highest, fd;
 	ramdisk_file_descriptor_t *entry, *last;
+
+	assert(inited);
 
 	for(entry = fds, last = (ramdisk_file_descriptor_t *)0, highest = -1; entry; entry = entry->next)
 	{
@@ -113,6 +114,8 @@ static ramdisk_file_descriptor_t *get_fd(int fd)
 {
 	ramdisk_file_descriptor_t *entry;
 
+	assert(inited);
+
 	for(entry = fds; entry; entry = entry->next)
 		if(entry->fd == fd)
 			break;
@@ -123,6 +126,8 @@ static ramdisk_file_descriptor_t *get_fd(int fd)
 static int delete_fd(int fd)
 {
 	ramdisk_file_descriptor_t *entry, *previous;
+
+	assert(inited);
 
 	for(entry = fds, previous = (ramdisk_file_descriptor_t *)0; entry; previous = entry, entry = entry->next)
 		if(entry->fd == fd)
@@ -145,6 +150,8 @@ static bool file_in_use(const char *filename, int flags)
 {
 	ramdisk_file_descriptor_t *entry;
 
+	assert(inited);
+
 	for(entry = fds; entry; entry = entry->next)
 	{
 		if(!strcmp(entry->metadata->filename, filename))
@@ -164,6 +171,8 @@ static ramdisk_file_metadata_t *get_dir_entry(const char *filename, int *index)
 {
 	unsigned int ix;
 	ramdisk_file_metadata_t *entry;
+
+	assert(inited);
 
 	for(entry = root, ix = 0; entry; entry = entry->next, ix++)
 	{
@@ -193,6 +202,8 @@ static ramdisk_file_metadata_t *create_file(const char *filename)
 	ramdisk_file_metadata_t *parent, *new;
 	unsigned int datablock, datablocks;
 
+	assert(inited);
+
 	new = util_memory_alloc_spiram(sizeof(*new));
 
 	new->next = (ramdisk_file_metadata_t *)0;
@@ -219,6 +230,8 @@ static void truncate_file(ramdisk_file_metadata_t *meta)
 {
 	unsigned int datablock, datablocks;
 
+	assert(inited);
+
 	datablocks = sizeof(meta->datablocks) / sizeof(*meta->datablocks);
 
 	for(datablock = 0; datablock < datablocks; datablock++)
@@ -238,6 +251,8 @@ static int ramdisk_open(const char *path, int flags, int file_access_mode)
 	ramdisk_file_metadata_t *entry;
 	ramdisk_file_descriptor_t *fdp;
 	const char *relpath;
+
+	assert(inited);
 
 	if(*path == '/')
 		relpath = &path[1];
@@ -285,6 +300,8 @@ static int ramdisk_open(const char *path, int flags, int file_access_mode)
 
 static int ramdisk_close(int fd)
 {
+	assert(inited);
+
 	mutex_take();
 
 	if(delete_fd(fd))
@@ -306,6 +323,8 @@ static ssize_t ramdisk_read(int fd, void *data_in, size_t size)
 	unsigned int block, offset_in_block, available_in_block, chunk;
 	ssize_t rv = 0;
 	uint8_t *data = (uint8_t *)data_in;
+
+	assert(inited);
 
 	mutex_take();
 
@@ -372,6 +391,8 @@ static ssize_t ramdisk_write(int fd, const void *data_in, size_t size)
 	unsigned int block, blocks, offset_in_block, available_in_block, chunk;
 	ssize_t rv = size;
 	const uint8_t *data = (const uint8_t *)data_in;
+
+	assert(inited);
 
 	mutex_take();
 
@@ -454,6 +475,8 @@ static int ramdisk_unlink(const char *filename)
 	ramdisk_file_metadata_t *meta, *parent;
 	const char *relpath;
 
+	assert(inited);
+
 	if(*filename == '/')
 		relpath = &filename[1];
 	else
@@ -508,6 +531,8 @@ static int ramdisk_stat(const char *path, struct stat *st)
 	ramdisk_file_metadata_t *entry;
 	const char *relpath;
 
+	assert(inited);
+
 	if(*path == '/')
 		relpath = &path[1];
 	else
@@ -538,6 +563,8 @@ static DIR *ramdisk_opendir(const char *name)
 {
 	vfs_ramdisk_dir_t *dir;
 
+	assert(inited);
+
 	dir = util_memory_alloc_spiram(sizeof(*dir));
 
 	dir->offset = 0;
@@ -552,6 +579,8 @@ static struct dirent *ramdisk_readdir(DIR *pdir)
 	struct dirent *dirent = &dir->dirent;
 	ramdisk_file_metadata_t *entry;
 	unsigned int ix;
+
+	assert(inited);
 
 	mutex_take();
 
@@ -579,6 +608,8 @@ static int ramdisk_closedir(DIR *pdir)
 {
 	vfs_ramdisk_dir_t *dir = (vfs_ramdisk_dir_t *)(void *)pdir;
 
+	assert(inited);
+
 	free(dir->path);
 	free(dir);
 
@@ -605,6 +636,8 @@ static off_t ramdisk_lseek(int fd, off_t offset_requested, int mode)
 	ramdisk_file_metadata_t *metadata;
 	off_t start_offset, offset;
 	unsigned int block;
+
+	assert(inited);
 
 	mutex_take();
 
@@ -679,7 +712,10 @@ void ramdisk_init(void)
 
 	assert(!inited);
 	assert(root == (ramdisk_file_metadata_t *)0);
-	assert((mutex = xSemaphoreCreateMutex()));
+
+	data_mutex = xSemaphoreCreateMutex();
+
+	assert(data_mutex);
 
 	mutex_take();
 
