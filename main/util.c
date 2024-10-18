@@ -196,7 +196,7 @@ void util_hexdump_cstr(string_t dst, unsigned int src_length, const uint8_t *src
 	}
 }
 
-void util_hexdump(string_t dst, const string_t src)
+void util_hexdump(string_t dst, const const_string_t src)
 {
 	assert(src);
 

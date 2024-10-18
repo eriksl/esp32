@@ -47,7 +47,7 @@ void *_util_memory_alloc_spiram(unsigned int amount, const char *file, unsigned 
 void *_util_memory_alloc_dma(unsigned int amount, const char *file, unsigned int line);
 void _util_memcpy(void *to, const void *from, unsigned int length, const char *file, unsigned int line);
 void util_hexdump_cstr(string_t dst, unsigned int src_length, const uint8_t *src);
-void util_hexdump(string_t dst, const string_t src);
+void util_hexdump(string_t dst, const const_string_t src);
 uint32_t util_crc32cksum_byte(uint32_t crc, void const *mem, size_t len);
 
 static inline void util_abort_on_esp_err(const char *what, unsigned int rv)
