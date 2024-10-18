@@ -597,16 +597,20 @@ static void user_png_free(png_structp png_ptr, png_voidp ptr)
 static void user_read_data(png_structp png_ptr, png_bytep data, size_t length)
 {
 	const user_png_io_ptr_t *io_ptr;
-	size_t read_length;
+	ssize_t read_length;
 
 	io_ptr = (const user_png_io_ptr_t *)png_get_io_ptr(png_ptr);
 
 	assert(io_ptr->magic_word == user_png_io_ptr_magic_word);
 
+	errno = 0;
 	read_length = read(io_ptr->fd, data, length);
 
 	if(length != read_length)
+	{
+		log_format_errno("display: user_read_data: read error: requested: %u, received: %d, fd: %d", length, read_length, io_ptr->fd);
 		png_error(png_ptr, "read error");
+	}
 }
 
 static void user_error(png_structp png_ptr, png_const_charp msg)
