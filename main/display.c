@@ -953,19 +953,30 @@ static void display_info(string_t output)
 		else
 			string_assign_cstr(datetime, "<infinite>");
 
-		if(current_page->type == dpt_text)
+		switch(current_page->type)
 		{
-			string_format_append(output, "\ntext: %s [%s]", string_cstr(current_page->name), string_cstr(datetime));
+			case(dpt_text):
+			{
+				string_format_append(output, "\ntext: %s [%s]", string_cstr(current_page->name), string_cstr(datetime));
 
-			for(line = 0; (line < display_page_lines_size) && current_page->text.line[line]; line++)
-				string_format_append(output, "\n- [%u]: %s", line, string_cstr(current_page->text.line[line]));
-		}
-		else
-		{
-			if(current_page->type == dpt_image)
+				for(line = 0; (line < display_page_lines_size); line++)
+					if(current_page->text.line[line])
+						string_format_append(output, "\n- [%u]: %s", line, string_cstr(current_page->text.line[line]));
+
+				break;
+			}
+
+			case(dpt_image):
+			{
 				string_format_append(output, "\nimage: %s, file: %s [%s]", string_cstr(current_page->name), string_cstr(current_page->image.filename), string_cstr(datetime));
-			else
+				break;
+			}
+
+			default:
+			{
 				string_format_append(output, "\ninvalid type: %u", current_page->type);
+				break;
+			}
 		}
 	}
 
