@@ -165,7 +165,7 @@ void util_hash_to_string(string_t dst, unsigned int hash_size, const uint8_t *ha
 
 void util_hexdump_cstr(string_t dst, unsigned int src_length, const uint8_t *src)
 {
-	unsigned int in, out, value;
+	unsigned int current, nibble, value, nibble_value;
 
 	assert(inited);
 	assert(src);
@@ -173,26 +173,28 @@ void util_hexdump_cstr(string_t dst, unsigned int src_length, const uint8_t *src
 
 	string_clear(dst);
 
-	for(in = 0, out = 0; (in < src_length) && (out < string_size(dst)); out++)
+	for(current = 0; current < src_length; current++)
 	{
-		if(out & 0x1)
-		{
-			value = (src[in] & 0x0f) >> 0;
-			in++;
-		}
+		value = src[current];
+
+		if((value > ' ') && (value <= '~'))
+			string_append(dst, value);
 		else
 		{
-			if(in != 0)
-				string_append_cstr(dst, " ");
+			string_append_cstr(dst, "[0x");
+			for(nibble = 0; nibble < 2; nibble++)
+			{
+				nibble_value = nibble ? (value & 0x0f) >> 0 : (value & 0xf0) >> 4;
 
-			string_append_cstr(dst, "0x");
-			value = (src[in] & 0xf0) >> 4;
+				assert(nibble_value < 16);
+
+				if(nibble_value >= 10)
+					string_append(dst, (nibble_value - 10) + 'a');
+				else
+					string_append(dst, (nibble_value -  0) + '0');
+			}
+			string_append_cstr(dst, "]");
 		}
-
-		if(value >= 0xa)
-			string_append(dst, (value - 10) + 'a');
-		else
-			string_append(dst, (value -  0) + '0');
 	}
 }
 
