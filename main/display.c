@@ -635,6 +635,8 @@ static void run_display_info(void *)
 	static time_t stamp;
 	static struct tm tm;
 	static char stamp_line[16];
+	static char name_tmp[64];
+	static unsigned int ix;
 	static char title_line[64];
 	static void (*write_fn)(const font_t *font, display_colour_t fg, display_colour_t bg,
 				unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
@@ -715,8 +717,14 @@ static void run_display_info(void *)
 
 			assert(pad >= 0);
 
+			strlcpy(name_tmp, string_cstr(display_pages_ptr->name), sizeof(name_tmp));
+
+			for(ix = strlen(name_tmp) + 1; ix > 0; ix--)
+				if(name_tmp[ix] == '_')
+					name_tmp[ix] = ' ';
+
 			snprintf(title_line, sizeof(title_line), "%.*s%*s",
-					chop, string_cstr(display_pages_ptr->name), pad, "");
+					chop, name_tmp, pad, "");
 		}
 		else
 		{
@@ -730,8 +738,14 @@ static void run_display_info(void *)
 			assert(chop >= 0);
 			assert(pad >= 0);
 
+			strlcpy(name_tmp, string_cstr(display_pages_ptr->name), sizeof(name_tmp));
+
+			for(ix = strlen(name_tmp) + 1; ix > 0; ix--)
+				if(name_tmp[ix] == '_')
+					name_tmp[ix] = ' ';
+
 			snprintf(title_line, sizeof(title_line), "%.*s%*s%s",
-				chop, string_cstr(display_pages_ptr->name), pad, "", stamp_line);
+				chop, name_tmp, pad, "", stamp_line);
 		}
 
 		unicode_length = utf8_to_unicode((uint8_t *)title_line, unicode_buffer_size, unicode_buffer);
