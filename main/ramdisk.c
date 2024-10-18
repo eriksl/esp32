@@ -59,12 +59,12 @@ static bool inited = false;
 static ramdisk_file_metadata_t *root = (ramdisk_file_metadata_t *)0;
 static SemaphoreHandle_t data_mutex;
 
-static void mutex_take(void)
+static void data_mutex_take(void)
 {
 	xSemaphoreTake(data_mutex, portMAX_DELAY);
 }
 
-static void mutex_give(void)
+static void data_mutex_give(void)
 {
 	xSemaphoreGive(data_mutex);
 }
@@ -259,12 +259,12 @@ static int ramdisk_open(const char *path, int flags, int file_access_mode)
 	else
 		relpath = path;
 
-	mutex_take();
+	data_mutex_take();
 
 	if(file_in_use(relpath, flags))
 	{
 		errno = EBUSY;
-		mutex_give();
+		data_mutex_give();
 		return(-1);
 	}
 
@@ -278,7 +278,7 @@ static int ramdisk_open(const char *path, int flags, int file_access_mode)
 		else
 		{
 			errno = ENOENT;
-			mutex_give();
+			data_mutex_give();
 			return(-1);
 		}
 	}
@@ -293,7 +293,7 @@ static int ramdisk_open(const char *path, int flags, int file_access_mode)
 	else
 		fdp->offset = 0;
 
-	mutex_give();
+	data_mutex_give();
 
 	return(fdp->fd);
 }
@@ -302,16 +302,16 @@ static int ramdisk_close(int fd)
 {
 	assert(inited);
 
-	mutex_take();
+	data_mutex_take();
 
 	if(delete_fd(fd))
 	{
-		mutex_give();
+		data_mutex_give();
 		errno = EBADF;
 		return(-1);
 	}
 
-	mutex_give();
+	data_mutex_give();
 
 	return(0);
 }
@@ -326,18 +326,18 @@ static ssize_t ramdisk_read(int fd, void *data_in, size_t size)
 
 	assert(inited);
 
-	mutex_take();
+	data_mutex_take();
 
 	if(!(fdp = get_fd(fd)))
 	{
-		mutex_give();
+		data_mutex_give();
 		errno = EBADF;
 		return(-1);
 	}
 
 	if(!data)
 	{
-		mutex_give();
+		data_mutex_give();
 		errno = EINVAL;
 		return(-1);
 	}
@@ -362,7 +362,7 @@ static ssize_t ramdisk_read(int fd, void *data_in, size_t size)
 		if(!metadata->datablocks[block])
 		{
 			log_format("ramdisk: read: block #%u not allocated", block);
-			mutex_give();
+			data_mutex_give();
 			errno = EINVAL;
 			return(-1);
 		}
@@ -380,7 +380,7 @@ static ssize_t ramdisk_read(int fd, void *data_in, size_t size)
 		fdp->offset += chunk;
 	}
 
-	mutex_give();
+	data_mutex_give();
 	return(rv);
 }
 
@@ -394,25 +394,25 @@ static ssize_t ramdisk_write(int fd, const void *data_in, size_t size)
 
 	assert(inited);
 
-	mutex_take();
+	data_mutex_take();
 
 	if(!(fdp = get_fd(fd)))
 	{
-		mutex_give();
+		data_mutex_give();
 		errno = EBADF;
 		return(-1);
 	}
 
 	if(!data)
 	{
-		mutex_give();
+		data_mutex_give();
 		errno = EINVAL;
 		return(-1);
 	}
 
 	if(!(fdp->open_flags & O_WRONLY) && !(fdp->open_flags & O_RDWR))
 	{
-		mutex_give();
+		data_mutex_give();
 		errno = EPERM;
 		return(-1);
 	}
@@ -429,7 +429,7 @@ static ssize_t ramdisk_write(int fd, const void *data_in, size_t size)
 	{
 		if((heap_caps_get_free_size(MALLOC_CAP_SPIRAM) * 2) < initial_free_spiram)
 		{
-			mutex_give();
+			data_mutex_give();
 			errno = ENOSPC;
 			return(-1);
 		}
@@ -439,7 +439,7 @@ static ssize_t ramdisk_write(int fd, const void *data_in, size_t size)
 
 		if(block >= blocks)
 		{
-			mutex_give();
+			data_mutex_give();
 			errno = EFBIG;
 			return(-1);
 		}
@@ -465,7 +465,7 @@ static ssize_t ramdisk_write(int fd, const void *data_in, size_t size)
 			metadata->length = fdp->offset;
 	}
 
-	mutex_give();
+	data_mutex_give();
 
 	return(rv);
 }
@@ -482,18 +482,18 @@ static int ramdisk_unlink(const char *filename)
 	else
 		relpath = filename;
 
-	mutex_take();
+	data_mutex_take();
 
 	if(file_in_use(relpath, O_RDWR))
 	{
-		mutex_give();
+		data_mutex_give();
 		errno = EBUSY;
 		return(-1);
 	}
 
 	if(!(meta = get_dir_entry(relpath, (int *)0)))
 	{
-		mutex_give();
+		data_mutex_give();
 		errno = ENOENT;
 		return(-1);
 	}
@@ -510,7 +510,7 @@ static int ramdisk_unlink(const char *filename)
 
 		if(!parent)
 		{
-			mutex_give();
+			data_mutex_give();
 			log("ramdisk: unlink: no parent");
 			errno = EIO;
 			return(-1);
@@ -520,7 +520,7 @@ static int ramdisk_unlink(const char *filename)
 
 	free(meta);
 
-	mutex_give();
+	data_mutex_give();
 
 	return(0);
 }
@@ -538,11 +538,11 @@ static int ramdisk_stat(const char *path, struct stat *st)
 	else
 		relpath = path;
 
-	mutex_take();
+	data_mutex_take();
 
 	if(!(entry = get_dir_entry(relpath, &ix)))
 	{
-		mutex_give();
+		data_mutex_give();
 		errno = ENOENT;
 		return(-1);
 	}
@@ -554,7 +554,7 @@ static int ramdisk_stat(const char *path, struct stat *st)
 	st->st_blksize = ramdisk_block_size;
 	st->st_blocks = (entry->length / ramdisk_block_size) + 1;
 
-	mutex_give();
+	data_mutex_give();
 
 	return(0);
 }
@@ -582,7 +582,7 @@ static struct dirent *ramdisk_readdir(DIR *pdir)
 
 	assert(inited);
 
-	mutex_take();
+	data_mutex_take();
 
 	for(entry = root, ix = 0; entry && (ix < dir->offset); entry = entry->next, ix++)
 		if(entry->magic_word != meta_magic_word)
@@ -590,7 +590,7 @@ static struct dirent *ramdisk_readdir(DIR *pdir)
 
 	if(!entry)
 	{
-		mutex_give();
+		data_mutex_give();
 		return(struct dirent *)0;
 	}
 
@@ -600,7 +600,7 @@ static struct dirent *ramdisk_readdir(DIR *pdir)
 
 	dir->offset++;
 
-	mutex_give();
+	data_mutex_give();
 	return(dirent);
 }
 
@@ -639,11 +639,11 @@ static off_t ramdisk_lseek(int fd, off_t offset_requested, int mode)
 
 	assert(inited);
 
-	mutex_take();
+	data_mutex_take();
 
 	if(!(fdp = get_fd(fd)))
 	{
-		mutex_give();
+		data_mutex_give();
 		errno = EBADF;
 		return(-1);
 	}
@@ -681,7 +681,7 @@ static off_t ramdisk_lseek(int fd, off_t offset_requested, int mode)
 
 	if((offset < 0) || (offset > metadata->length))
 	{
-		mutex_give();
+		data_mutex_give();
 		errno = EINVAL;
 		return(-1);
 	}
@@ -693,7 +693,7 @@ static off_t ramdisk_lseek(int fd, off_t offset_requested, int mode)
 		if(!metadata->datablocks[block])
 		{
 			log_format("ramdisk: lseek: requesting block %u of file %s which is not allocated", block, metadata->filename);
-			mutex_give();
+			data_mutex_give();
 			errno = EINVAL;
 			return(-1);
 		}
@@ -701,7 +701,7 @@ static off_t ramdisk_lseek(int fd, off_t offset_requested, int mode)
 
 	fdp->offset = offset;
 
-	mutex_give();
+	data_mutex_give();
 
 	return(fdp->offset);
 }
@@ -717,7 +717,7 @@ void ramdisk_init(void)
 
 	assert(data_mutex);
 
-	mutex_take();
+	data_mutex_take();
 
 	ramdisk_format();
 
@@ -739,5 +739,5 @@ void ramdisk_init(void)
 
 	inited = true;
 
-	mutex_give();
+	data_mutex_give();
 }
