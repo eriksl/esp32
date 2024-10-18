@@ -816,7 +816,6 @@ static void run_display_info(void *)
 
 				if(setjmp(png_jmpbuf(png_ptr)))
 				{
-					log("display: libpng returned via longjmp");
 					fastskip = true;
 					goto abort;
 				}
