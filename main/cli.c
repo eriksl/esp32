@@ -273,7 +273,7 @@ static const cli_command_t cli_commands[] =
 		},
 	},
 
-	{ "display_page-remove", "dpr", "remove page from display", command_display_page_remove,
+	{ "display-page-remove", "dpr", "remove page from display", command_display_page_remove,
 		{
 			1,
 			{
