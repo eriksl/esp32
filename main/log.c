@@ -70,7 +70,7 @@ static void log_signal_display(unsigned int item)
 		xQueueSend(log_display_queue, &item, (TickType_t)0);
 }
 
-void _log_cstr(bool append_strerror, const char *string)
+static void _log_cstr(bool append_strerror, const char *string)
 {
 	if(inited)
 	{
@@ -100,9 +100,26 @@ void _log_cstr(bool append_strerror, const char *string)
 		console_write_line(string);
 }
 
-void _log_format(bool append_strerror, const char *fmt, ...)
+void log_cstr(const char *line)
 {
-	va_list ap;
+	_log_cstr(false, line);
+}
+
+void log_errno(const char *line)
+{
+	_log_cstr(true, line);
+}
+
+void log_cstr_errno(const char *line)
+{
+	_log_cstr(true, line);
+}
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsuggest-attribute=format"
+
+static void _log_format(bool append_strerror, const char *fmt, va_list ap)
+{
 	unsigned int offset;
 
 	if(inited)
@@ -113,9 +130,7 @@ void _log_format(bool append_strerror, const char *fmt, ...)
 
 		entry->timestamp = time((time_t *)0);
 
-		va_start(ap, fmt);
 		vsnprintf(entry->data, sizeof(entry->data), fmt, ap);
-		va_end(ap);
 
 		if(append_strerror)
 		{
@@ -133,6 +148,24 @@ void _log_format(bool append_strerror, const char *fmt, ...)
 	}
 	else
 		console_write_line(fmt);
+}
+
+#pragma GCC diagnostic pop
+
+void log_format(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	_log_format(false, fmt, ap);
+	va_end(ap);
+}
+
+void log_format_errno(const char *fmt, ...)
+{
+	va_list ap;
+	_log_format(true, fmt, ap);
+	va_end(ap);
 }
 
 #pragma GCC diagnostic push
