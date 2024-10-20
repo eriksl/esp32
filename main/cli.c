@@ -853,7 +853,7 @@ static void run_receive_queue(void *)
 					{
 						unsigned int length;
 
-						free(parameter->string);
+						string_free(&parameter->string);
 						parameter->string = string_new(string_length(data));
 
 						while((previous_string_parse_offset < string_length(data)) && (string_at(data, previous_string_parse_offset) == ' '))
