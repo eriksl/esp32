@@ -455,6 +455,7 @@ static int ramdisk_unlink(const char *filename)
 	if(file_in_use(relpath, O_RDWR))
 	{
 		data_mutex_give();
+		log_format("ramdisk: unlink: file %s in use", relpath);
 		errno = EBUSY;
 		return(-1);
 	}
@@ -479,7 +480,7 @@ static int ramdisk_unlink(const char *filename)
 		if(!parent)
 		{
 			data_mutex_give();
-			log("ramdisk: unlink: no parent");
+			log_format("ramdisk: unlink: file %s: no parent", relpath);
 			errno = EIO;
 			return(-1);
 		}
