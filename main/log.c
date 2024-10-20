@@ -49,6 +49,17 @@ RTC_NOINIT_ATTR static char rtc_slow_memory[log_buffer_size];
 static bool inited = false;
 static log_t *log_buffer = (log_t *)0;
 static QueueHandle_t log_display_queue = (QueueHandle_t)0;
+static SemaphoreHandle_t data_mutex;
+
+static inline void data_mutex_take(void)
+{
+	xSemaphoreTake(data_mutex, portMAX_DELAY);
+}
+
+static inline void data_mutex_give(void)
+{
+	xSemaphoreGive(data_mutex);
+}
 
 static void log_clear(void)
 {
@@ -56,12 +67,16 @@ static void log_clear(void)
 
 	random_value = esp_random();
 
+	data_mutex_take();
+
 	log_buffer->magic_word = log_buffer_magic_word;
 	log_buffer->random_salt = random_value;
 	log_buffer->magic_word_salted = log_buffer_magic_word ^ random_value;
 	log_buffer->entries = log_buffer_entries;
 	log_buffer->in = 0;
 	log_buffer->out = 0;
+
+	data_mutex_give();
 }
 
 static void log_signal_display(unsigned int item)
@@ -75,6 +90,8 @@ static void _log_cstr(bool append_strerror, const char *string)
 	if(inited)
 	{
 		log_entry_t *entry;
+
+		data_mutex_take();
 
 		entry = &log_buffer->entry[log_buffer->in];
 
@@ -95,6 +112,8 @@ static void _log_cstr(bool append_strerror, const char *string)
 			console_write_line(string);
 		else
 			console_write_line(entry->data);
+
+		data_mutex_give();
 	}
 	else
 		console_write_line(string);
@@ -126,6 +145,8 @@ static void _log_format(bool append_strerror, const char *fmt, va_list ap)
 	{
 		log_entry_t *entry;
 
+		data_mutex_take();
+
 		entry = &log_buffer->entry[log_buffer->in];
 
 		entry->timestamp = time((time_t *)0);
@@ -145,6 +166,8 @@ static void _log_format(bool append_strerror, const char *fmt, va_list ap)
 			log_buffer->in = 0;
 
 		console_write_line(entry->data);
+
+		data_mutex_give();
 	}
 	else
 		console_write_line(fmt);
@@ -221,6 +244,8 @@ void log_get_entry(unsigned int entry_index, time_t *stamp, unsigned int text_bu
 	*stamp = (time_t)0;
 	text_buffer[0] = '\0';
 
+	data_mutex_take();
+
 	if(entry_index >= log_buffer->entries)
 		return;
 
@@ -228,6 +253,8 @@ void log_get_entry(unsigned int entry_index, time_t *stamp, unsigned int text_bu
 
 	*stamp = entry->timestamp;
 	strlcpy(text_buffer, entry->data, text_buffer_size);
+
+	data_mutex_give();
 }
 
 void log_init(void)
@@ -236,6 +263,9 @@ void log_init(void)
 	assert(rtc_slow_memory == (char *)0x50000000);
 
 	log_buffer = (log_t *)(void *)rtc_slow_memory;
+
+	data_mutex = xSemaphoreCreateMutex();
+	assert(data_mutex);
 
 	inited = true;
 
@@ -257,6 +287,8 @@ void log_command_info(cli_command_call_t *call)
 {
 	assert(inited);
 
+	data_mutex_take();
+
 	string_format(call->result, "logging");
 	string_format_append(call->result, "\n  buffer: 0x%08lx", (uint32_t)log_buffer);
 	string_format_append(call->result, "\n  magic word: %08lx", log_buffer->magic_word);
@@ -265,6 +297,8 @@ void log_command_info(cli_command_call_t *call)
 	string_format_append(call->result, "\n  entries: %u", log_buffer->entries);
 	string_format_append(call->result, "\n  last entry added: %u", log_buffer->in);
 	string_format_append(call->result, "\n  last entry viewed: %u", log_buffer->out);
+
+	data_mutex_give();
 }
 
 void log_command_log(cli_command_call_t *call)
@@ -274,6 +308,8 @@ void log_command_log(cli_command_call_t *call)
 
 	assert(inited);
 	assert((call->parameter_count == 0) || (call->parameter_count == 1));
+
+	data_mutex_take();
 
 	if(call->parameter_count == 1)
 		log_buffer->out = call->parameters[0].unsigned_int;
@@ -301,6 +337,8 @@ void log_command_log(cli_command_call_t *call)
 		if(++log_buffer->out >= log_buffer_entries)
 			log_buffer->out = 0;
 	}
+
+	data_mutex_give();
 
 	if(amount != entries)
 		string_format_append(call->result, "\n[%u more]", entries - amount);
