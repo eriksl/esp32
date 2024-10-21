@@ -25,8 +25,12 @@ static_assert(offsetof(font_t, extra_glyph) == 17464);
 
 enum
 {
-	unicode_buffer_size = 128,
-	display_page_lines_size = 12,
+	display_page_size = 16,
+	display_page_name_size = 32,
+	display_page_filename_size = 64,
+	display_page_text_size = 64,
+	display_page_text_lines_size = 12,
+	unicode_buffer_size = display_page_text_size * 4,
 	page_border_size = 3,
 	page_text_offset = 1,
 };
@@ -47,27 +51,27 @@ typedef enum
 
 typedef enum
 {
+	dpt_unused,
 	dpt_text,
+	dpt_first = dpt_text,
 	dpt_image,
+	dpt_size,
+	dpt_error = dpt_size,
 } display_page_type_t;
 
 typedef struct display_page_T
 {
-	struct display_page_T *next;
 	string_t name;
 	time_t expiry;
 	display_page_type_t type;
-	union
+	struct
 	{
-		struct
-		{
-			string_t line[display_page_lines_size];
-		} text;
-		struct
-		{
-			string_t filename;
-		} image;
-	};
+		string_t line[display_page_text_lines_size];
+	} text;
+	struct
+	{
+		string_t filename;
+	} image;
 } display_page_t;
 
 typedef enum
@@ -129,12 +133,13 @@ const display_rgb_t display_colour_map[dc_size] =
 	[dc_white] =	{	0xff,	0xff,	0xff	},
 };
 
-static display_page_t *display_pages = (display_page_t *)0;
+static bool inited = false;
+static display_page_t *display_pages;
 static display_type_t display_type = dt_no_display;
 static font_t *font = (font_t *)0;
 static bool font_valid = false;
 static uint32_t *unicode_buffer = (uint32_t *)0;
-static unsigned int columns, rows;
+static unsigned int display_columns, display_rows;
 static unsigned int x_size, y_size;
 static QueueHandle_t log_display_queue = (QueueHandle_t)0;
 static bool log_mode = true;
@@ -168,7 +173,10 @@ static unsigned int utf8_to_unicode(const uint8_t *src, unsigned int dst_size, u
 	unsigned int dst_index;
 	unsigned int unicode;
 
-	for(src_index = 0, dst_index = 0, state = u8p_state_base, unicode = 0; src && dst && (dst_index < dst_size) && src[src_index]; src_index++)
+	assert(src);
+	assert(dst);
+
+	for(src_index = 0, dst_index = 0, state = u8p_state_base, unicode = 0; (dst_index < dst_size) && src[src_index]; src_index++)
 	{
 		src_current = src[src_index];
 
@@ -241,140 +249,98 @@ static unsigned int utf8_to_unicode(const uint8_t *src, unsigned int dst_size, u
 	return(dst_index);
 }
 
-static void page_free(display_page_t **page)
+static void page_erase(display_page_t *page_ptr)
 {
-	unsigned int ix;
+	assert(inited);
+	assert(page_ptr);
 
-	switch((**page).type)
+	if(page_ptr->type == dpt_image)
 	{
-		case(dpt_text):
-		{
-			for(ix = 0; ix < display_page_lines_size; ix++)
-				if((**page).text.line[ix])
-					string_free(&(**page).text.line[ix]);
-
-			break;
-		}
-
-		case(dpt_image):
-		{
-			if(unlink(string_cstr((**page).image.filename)))
-				log_format("display: page free: unlink image %s failed", string_cstr((**page).image.filename));
-
-			string_free(&(**page).image.filename);
-
-			break;
-		}
-
-		default:
-		{
-			log("display: page free: unknown page type");
-			break;
-		}
+		if(unlink(string_cstr(page_ptr->image.filename)))
+			log_format("display: page erase: unlink image %s failed", string_cstr(page_ptr->image.filename));
 	}
 
-	string_free(&(**page).name);
-
-	*page = (display_page_t *)0;
+	page_ptr->type = dpt_unused;
 }
 
-static display_page_t *page_get(unsigned int index)
+static unsigned int page_count(void)
 {
-	display_page_t *current;
-	unsigned int count;
+	unsigned int page_index, count;
 
-	for(current = display_pages, count = 0; current; current = current->next, count++)
-		if(count == index)
-			break;
+	assert(inited);
 
-	return(current);
+	for(page_index = 0, count = 0; page_index < display_page_size; page_index++)
+		if(display_pages[page_index].type != dpt_unused)
+			count++;
+
+	return(count);
 }
 
-static void page_add(display_page_t *new_page)
+static int page_find(const const_string_t name)
 {
-	display_page_t root, *before, *current;
+	unsigned int page_index;
+	const display_page_t *page_ptr;
 
-	assert(new_page);
+	assert(inited);
 
-	page_data_mutex_take();
-
-	root.next = display_pages;
-
-	for(before = &root, current = root.next; before && current; before = before->next, current = current->next)
-		if(string_equal_string(current->name, new_page->name))
-			break;
-
-	if(current && string_equal_string(current->name, new_page->name))
+	for(page_index = 0; page_index < display_page_size; page_index++)
 	{
-		new_page->next = current->next;
+		page_ptr = &display_pages[page_index];
 
-		if(before == &root)
-			display_pages = new_page;
-		else
-			before->next = new_page;
+		if(page_ptr->type == dpt_unused)
+			continue;
 
-		page_free(&current);
-	}
-	else
-	{
-		new_page->next = (display_page_t *)0;
-
-		if(before == &root)
-			display_pages = new_page;
-		else
-			before->next = new_page;
+		if(string_equal_string(page_ptr->name, name))
+			return(page_index);
 	}
 
-	page_data_mutex_give();
+	return(-1);
 }
 
-static void page_erase(const const_string_t name)
+static int page_new(void)
 {
-	display_page_t root, *before, *current;
+	unsigned int page_index;
 
-	assert(name);
+	assert(inited);
 
-	page_data_mutex_take();
+	for(page_index = 0; page_index < display_page_size; page_index++)
+		if(display_pages[page_index].type == dpt_unused)
+			return(page_index);
 
-	root.next = display_pages;
-
-	for(before = &root, current = root.next; before && current; before = before->next, current = current->next)
-		if(string_equal_string(current->name, name))
-			break;
-
-	if(current && string_equal_string(current->name, name))
-	{
-		if(before == &root)
-			display_pages = current->next;
-		else
-			before->next = current->next;
-
-		page_free(&current);
-	}
-
-	page_data_mutex_give();
+	return(-1);
 }
 
-static void page_add_text(const const_string_t name, unsigned int lifetime, const const_string_t contents)
+static bool page_add_text(const const_string_t name, unsigned int lifetime, const const_string_t contents)
 {
-	string_auto(line_string, 128);
+	int page;
 	unsigned int ix, line;
-	display_page_t *new_page;
+	display_page_t *page_ptr;
 	uint8_t current;
 	unsigned int content_length;
 
-	new_page = util_memory_alloc_spiram(sizeof(*new_page));
+	assert(inited);
 
-	new_page->name = string_dup(name);
-	new_page->type = dpt_text;
-	new_page->expiry = (lifetime > 0) ? time((time_t *)0) + lifetime : 0;
+	if((page = page_find(name)) < 0)
+		page = page_new();
+
+	if(page < 0)
+	{
+		log_format("display: out of slots for %s", string_cstr(name));
+		return(false);
+	}
+
+	page_ptr = &display_pages[page];
+
+	string_assign_string(page_ptr->name, name);
+	page_ptr->type = dpt_text;
+	page_ptr->expiry = (lifetime > 0) ? time((time_t *)0) + lifetime : 0;
 
 	line = 0;
-	string_clear(line_string);
+	string_clear(page_ptr->text.line[line]);
 
 	content_length = string_length(contents);
 
-	for(ix = 0; (ix < content_length) && (line < display_page_lines_size); ix++)
+	for(ix = 0; (ix < content_length) && (line < display_page_text_lines_size); ix++)
 	{
 		current = string_at(contents, ix);
 
@@ -384,53 +350,68 @@ static void page_add_text(const const_string_t name, unsigned int lifetime, cons
 			{
 				if(((ix + 1) >= content_length) || (string_at(contents, ix + 1) != 'n'))
 				{
-					string_append(line_string, current);
+					string_append(page_ptr->text.line[line], current);
 					continue;
 				}
 
 				ix++;
-				[[fallthrough]];
+				line++;
+
+				if(line < display_page_text_lines_size)
+					string_clear(page_ptr->text.line[line]);
+
+				break;
 			}
 
 			case('\n'):
 			{
-				goto new_line;
+				line++;
+
+				if(line < display_page_text_lines_size)
+					string_clear(page_ptr->text.line[line]);
+
+				break;
 			}
 
 			default:
 			{
-				string_append(line_string, current);
+				string_append(page_ptr->text.line[line], current);
 				continue;
 			}
 		}
-
-new_line:
-		new_page->text.line[line++] = string_dup(line_string);
-		string_clear(line_string);
 	}
 
-	if(!string_blank(line_string))
-		new_page->text.line[line++] = string_dup(line_string);
+	for(; line < display_page_text_lines_size; line++)
+		string_clear(page_ptr->text.line[line]);
 
-	for(; line < display_page_lines_size; line++)
-		new_page->text.line[line] = (string_t)0;
-
-	page_add(new_page);
+	return(true);
 }
 
-static void page_add_image(const const_string_t name, unsigned int lifetime, const const_string_t filename)
+static bool page_add_image(const const_string_t name, unsigned int lifetime, const const_string_t filename)
 {
-	display_page_t *new_page;
+	int page;
+	display_page_t *page_ptr;
 
-	new_page = util_memory_alloc_spiram(sizeof(*new_page));
-	assert(new_page);
+	assert(inited);
 
-	new_page->name = string_dup(name);
-	new_page->type = dpt_image;
-	new_page->expiry = (lifetime > 0) ? time((time_t *)0) + lifetime : 0;
-	new_page->image.filename = string_dup(filename);
+	if((page = page_find(name)) < 0)
+		page = page_new();
 
-	page_add(new_page);
+	if(page < 0)
+	{
+		log_format("display: out of slots for %s", string_cstr(name));
+		return(false);
+	}
+
+	page_ptr = &display_pages[page];
+
+	page_erase(page_ptr);
+	string_assign_string(page_ptr->name, name);
+	page_ptr->type = dpt_image;
+	page_ptr->expiry = (lifetime > 0) ? time((time_t *)0) + lifetime : 0;
+	string_assign_string(page_ptr->image.filename, filename);
+
+	return(true);
 }
 
 static bool load_font(const char *fontname)
@@ -483,8 +464,8 @@ static bool load_font(const char *fontname)
 		goto error;
 	}
 
-	columns = (x_size - (2 * page_border_size)) / font->net.width;
-	rows = (y_size - page_text_offset - (2 * page_border_size)) / font->net.height;
+	display_columns = (x_size - (2 * page_border_size)) / font->net.width;
+	display_rows = (y_size - page_text_offset - (2 * page_border_size)) / font->net.height;
 
 	return(true);
 
@@ -495,14 +476,16 @@ error:
 	if(font)
 		free(font);
 
-	columns = 0;
-	rows = 0;
+	display_columns = 0;
+	display_rows = 0;
 
 	return(false);
 }
 
 static bool clear(display_colour_t bg)
 {
+	assert(inited);
+
 	if((display_type == dt_no_display) || !info[display_type].clear_fn)
 		return(false);
 
@@ -513,6 +496,8 @@ static bool clear(display_colour_t bg)
 
 static bool box(display_colour_t colour, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y)
 {
+	assert(inited);
+
 	if((display_type == dt_no_display) || !info[display_type].box_fn)
 		return(false);
 
@@ -523,6 +508,8 @@ static bool box(display_colour_t colour, unsigned int from_x, unsigned int from_
 
 static bool plot_line(unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int length_pixels, const png_bytep pixels)
 {
+	assert(inited);
+
 	if((display_type == dt_no_display) || !info[display_type].plot_line_fn)
 		return(false);
 
@@ -629,7 +616,7 @@ static void run_display_info(void *)
 {
 	// all static due to prevent clobbering by longjmp
 
-	static unsigned int current_page;
+	static int current_page;
 	static display_page_t *display_pages_ptr;
 	static display_colour_t current_colour;
 	static unsigned int row, y;
@@ -653,16 +640,16 @@ static void run_display_info(void *)
 	static uint64_t time_start, time_spent;
 	static bool fastskip = false;
 
-	current_colour = dc_black + 1;
+	current_colour = dc_black;
 
-	for(current_page = 0;; current_page++)
+	for(current_page = 0; current_page < display_page_size; current_page++)
 	{
 		if(!font_valid || (display_type == dt_no_display) || (!(write_fn = info[display_type].write_fn)))
 			goto next2;
 
 		page_data_mutex_take();
 
-		if(!display_pages)
+		if(page_count() == 0)
 		{
 			if(!log_mode)
 			{
@@ -685,14 +672,33 @@ static void run_display_info(void *)
 			current_page = 0;
 		}
 
-		if(!(display_pages_ptr = page_get(current_page)))
+		for(; current_page < display_page_size; current_page++)
 		{
-			current_page = 0;
-			display_pages_ptr = page_get(current_page);
-			assert(display_pages_ptr);
+			display_pages_ptr = &display_pages[current_page];
+
+			if(display_pages_ptr->type != dpt_unused)
+				break;
 		}
 
+		if(current_page >= display_page_size)
+		{
+			current_colour = dc_black;
+
+			for(current_page = 0; current_page < display_page_size; current_page++)
+			{
+				display_pages_ptr = &display_pages[current_page];
+
+				if(display_pages_ptr->type != dpt_unused)
+					break;
+			}
+		}
+
+		assert(display_pages_ptr->type != dpt_unused);
+
 		current_colour = (current_page + dc_black + 1) % dc_size;
+
+		if(current_colour == dc_white)
+			current_colour = dc_black;
 
 		assert(page_border_size > 0);
 
@@ -707,17 +713,17 @@ static void run_display_info(void *)
 		localtime_r(&stamp, &tm);
 		strftime(stamp_line, sizeof(stamp_line), "%d/%m %H:%M", &tm);
 
-		if(strlen(stamp_line) > columns)
+		if(strlen(stamp_line) > display_columns)
 		{
 			chop = string_length_utf8(display_pages_ptr->name);
 
-			if(chop > columns)
+			if(chop > display_columns)
 			{
-				chop = columns;
+				chop = display_columns;
 				pad = 0;
 			}
 			else
-				pad = columns - string_length_utf8(display_pages_ptr->name);
+				pad = display_columns - string_length_utf8(display_pages_ptr->name);
 
 			assert(pad >= 0);
 
@@ -734,10 +740,10 @@ static void run_display_info(void *)
 		{
 			chop = string_length_utf8(display_pages_ptr->name);
 
-			if((chop + strlen(stamp_line)) > columns)
-				chop = columns - strlen(stamp_line);
+			if((chop + strlen(stamp_line)) > display_columns)
+				chop = display_columns - strlen(stamp_line);
 
-			pad = columns - strlen(stamp_line) - chop;
+			pad = display_columns - strlen(stamp_line) - chop;
 
 			assert(chop >= 0);
 			assert(pad >= 0);
@@ -763,11 +769,8 @@ static void run_display_info(void *)
 			{
 				y = font->net.height + page_border_size + page_text_offset;
 
-				for(row = 0; (row < display_page_lines_size) && display_pages_ptr->text.line[row]; row++)
+				for(row = 0; (row < display_page_text_lines_size) && (row < display_rows) && string_length(display_pages_ptr->text.line[row]); row++)
 				{
-					if((y + font->net.height) > y_size)
-						break;
-
 					unicode_length = utf8_to_unicode((const uint8_t *)string_cstr(display_pages_ptr->text.line[row]), unicode_buffer_size, unicode_buffer);
 					write_fn(font, dc_black, dc_white,
 							page_border_size, y, (x_size - 1) - page_border_size, y + (font->net.height - 1),
@@ -776,7 +779,8 @@ static void run_display_info(void *)
 					y += font->net.height;
 				}
 
-				box(dc_white, page_border_size, y, (x_size - 1) - page_border_size, (y_size - 1) - page_border_size);
+				if(y < ((y_size - 1) - page_border_size))
+					box(dc_white, page_border_size, y, (x_size - 1) - page_border_size, (y_size - 1) - page_border_size);
 
 				break;
 			}
@@ -894,14 +898,22 @@ skip:
 
 				break;
 			}
+
+			case(dpt_unused):
+			{
+				fastskip = true;
+				break;
+			}
+
+			default:
+			{
+				log_format("display: unknown page type: %u", display_pages_ptr->type);
+				break;
+			}
 		}
 
 		if((display_pages_ptr->expiry > 0) && (time((time_t *)0) > display_pages_ptr->expiry))
-		{
-			page_data_mutex_give();
-			page_erase(display_pages_ptr->name);
-			page_data_mutex_take();
-		}
+			page_erase(display_pages_ptr);
 
 		time_spent = esp_timer_get_time() - time_start;
 		stat_display_show = time_spent / 1000ULL;
@@ -909,7 +921,7 @@ skip:
 next1:
 		page_data_mutex_give();
 next2:
-		util_sleep(fastskip ? 500 : 5000);
+		util_sleep(fastskip ? 100 : 8000);
 		fastskip = false;
 	}
 
@@ -920,19 +932,21 @@ static void display_info(string_t output)
 {
 	uint32_t value;
 	unsigned int found;
-	dv_t ix;
-	unsigned int line;
-	display_page_t *current_page;
+	dv_t dv;
+	unsigned int line, page;
+	display_page_t *page_ptr;
 	string_auto(datetime, 32);
+
+	assert(inited);
 
 	string_assign_cstr(output, "DISPLAY configuration:");
 
-	for(ix = dv_start, found = 0; ix < dv_size; ix++)
+	for(dv = dv_start, found = 0; dv < dv_size; dv++)
 	{
-		if(config_get_uint_cstr(display_variable[ix][1], &value))
+		if(config_get_uint_cstr(display_variable[dv][1], &value))
 		{
 			found++;
-			string_format_append(output, "\n- %s: %u", display_variable[ix][0], (unsigned int)value);
+			string_format_append(output, "\n- %s: %u", display_variable[dv][0], (unsigned int)value);
 		}
 	}
 
@@ -956,48 +970,51 @@ static void display_info(string_t output)
 	string_format_append(output, "\n- net height: %u", (unsigned int)font->net.height);
 	string_format_append(output, "\n- basic glyphs: %d", font_basic_glyphs_size);
 	string_format_append(output, "\n- extra glyphs: %u", (unsigned int)font->extra_glyphs);
-	string_format_append(output, "\n- columns: %u", columns);
-	string_format_append(output, "\n- rows: %u", rows);
+	string_format_append(output, "\n- columns: %u", display_columns);
+	string_format_append(output, "\n- rows: %u", display_rows);
 
 	string_append_cstr(output, "\nPAGES:");
 
-	page_data_mutex_take();
-
-	for(current_page = display_pages; current_page; current_page = current_page->next)
+	for(page = 0; page < display_page_size; page++)
 	{
-		if(current_page->expiry > 0)
-			util_time_to_string(datetime, &current_page->expiry);
+		page_ptr = &display_pages[page];
+
+		if(page_ptr->expiry > 0)
+			util_time_to_string(datetime, &page_ptr->expiry);
 		else
 			string_assign_cstr(datetime, "<infinite>");
 
-		switch(current_page->type)
+		switch(page_ptr->type)
 		{
 			case(dpt_text):
 			{
-				string_format_append(output, "\ntext: %s [%s]", string_cstr(current_page->name), string_cstr(datetime));
+				string_format_append(output, "\ntext: %s [%s]", string_cstr(page_ptr->name), string_cstr(datetime));
 
-				for(line = 0; (line < display_page_lines_size); line++)
-					if(current_page->text.line[line])
-						string_format_append(output, "\n- [%u]: %s", line, string_cstr(current_page->text.line[line]));
+				for(line = 0; (line < display_page_text_lines_size); line++)
+				{
+					if(!string_length(page_ptr->text.line[line]))
+						break;
+
+					string_format_append(output, "\n- [%u]: %s", line, string_cstr(page_ptr->text.line[line]));
+				}
 
 				break;
 			}
 
 			case(dpt_image):
 			{
-				string_format_append(output, "\nimage: %s, file: %s [%s]", string_cstr(current_page->name), string_cstr(current_page->image.filename), string_cstr(datetime));
+				string_format_append(output, "\nimage: %s, file: %s [%s]", string_cstr(page_ptr->name), string_cstr(page_ptr->image.filename), string_cstr(datetime));
 				break;
 			}
 
 			default:
 			{
-				string_format_append(output, "\ninvalid type: %u", current_page->type);
-				break;
+				goto done;
 			}
 		}
+done:
+		(void)0;
 	}
-
-	page_data_mutex_give();
 
 	string_append_cstr(output, "\nSTATS:");
 	string_format_append(output, "\n- display draw time: %u ms", stat_display_show);
@@ -1005,6 +1022,8 @@ static void display_info(string_t output)
 
 static bool brightness(unsigned int percentage)
 {
+	assert(inited);
+
 	if((display_type == dt_no_display) || !info[display_type].bright_fn)
 		return(false);
 
@@ -1016,6 +1035,8 @@ static bool brightness(unsigned int percentage)
 void display_init(void)
 {
 	uint32_t type, value;
+	unsigned int page, line;
+	display_page_t *page_ptr;
 
 	static display_init_parameters_t display_init_parameters =
 	{
@@ -1072,11 +1093,32 @@ void display_init(void)
 
 	unicode_buffer = (uint32_t *)util_memory_alloc_spiram(sizeof(uint32_t) * unicode_buffer_size);
 
-	clear(dc_black);
-
 	page_data_mutex = xSemaphoreCreateMutex();
 	assert(page_data_mutex);
 
+	display_pages = (display_page_t *)util_memory_alloc_spiram(sizeof(display_page_t[display_page_size]));
+	assert(display_pages);
+
+	for(page = 0; page < display_page_size; page++)
+	{
+		page_ptr = &display_pages[page];
+		page_ptr->name = string_new(display_page_name_size);
+		assert(page_ptr->name);
+		page_ptr->expiry = 0;
+		page_ptr->type = dpt_unused;
+		page_ptr->image.filename = string_new(display_page_filename_size);
+		assert(page_ptr->image.filename);
+
+		for(line = 0; line < display_page_text_lines_size; line++)
+		{
+			page_ptr->text.line[line] = string_new(display_page_text_size);
+			assert(page_ptr->text.line[line]);
+		}
+	}
+
+	inited = true;
+
+	clear(dc_black);
 	brightness(75);
 
 	if(xTaskCreatePinnedToCore(run_display_log, "display-log", 3 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
@@ -1163,32 +1205,55 @@ void command_display_info(cli_command_call_t *call)
 {
 	assert(call->parameter_count == 0);
 
+	page_data_mutex_take();
 	display_info(call->result);
+	page_data_mutex_give();
 }
 
 void command_display_page_add_text(cli_command_call_t *call)
 {
+	bool rv;
+
 	assert(call->parameter_count == 3);
 
-	page_add_text(call->parameters[0].string, call->parameters[1].unsigned_int, call->parameters[2].string);
+	page_data_mutex_take();
+	rv = page_add_text(call->parameters[0].string, call->parameters[1].unsigned_int, call->parameters[2].string);
+	page_data_mutex_give();
 
-	string_format(call->result, "display-page-add-text added \"%s\"", string_cstr(call->parameters[0].string));
+	string_format(call->result, "display-page-add-text%sadded \"%s\"", rv ? " " : " not ", string_cstr(call->parameters[0].string));
 }
 
 void command_display_page_add_image(cli_command_call_t *call)
 {
+	bool rv;
+
 	assert(call->parameter_count == 3);
 
-	page_add_image(call->parameters[0].string, call->parameters[1].unsigned_int, call->parameters[2].string);
+	page_data_mutex_take();
+	rv = page_add_image(call->parameters[0].string, call->parameters[1].unsigned_int, call->parameters[2].string);
+	page_data_mutex_give();
 
-	string_format(call->result, "display-page-add-image added \"%s\"", string_cstr(call->parameters[0].string));
+	string_format(call->result, "display-page-add-image%sadded \"%s\"", rv ? " " : " not ", string_cstr(call->parameters[0].string));
 }
 
 void command_display_page_remove(cli_command_call_t *call)
 {
+	int page;
+
 	assert(call->parameter_count == 1);
 
-	page_erase(call->parameters[0].string);
+	page_data_mutex_take();
+	page = page_find(call->parameters[0].string);
+
+	if(page < 0)
+	{
+		page_data_mutex_give();
+		string_format(call->result, "display-page-remove not found \"%s\"", string_cstr(call->parameters[0].string));
+		return;
+	}
+
+	page_erase(&display_pages[page]);
+	page_data_mutex_give();
 
 	string_format(call->result, "display-page-remove removed \"%s\"", string_cstr(call->parameters[0].string));
 }
