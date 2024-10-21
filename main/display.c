@@ -642,287 +642,290 @@ static void __attribute__((noreturn)) run_display_info(void *)
 
 	current_colour = dc_black;
 
-	for(current_page = 0; current_page < display_page_size; current_page++)
+	for(;;)
 	{
-		if(!font_valid || (display_type == dt_no_display) || (!(write_fn = info[display_type].write_fn)))
-			goto next2;
-
-		page_data_mutex_take();
-
-		if(page_count() == 0)
+		for(current_page = 0; current_page < display_page_size; current_page++)
 		{
-			if(!log_mode)
+			if(!font_valid || (display_type == dt_no_display) || (!(write_fn = info[display_type].write_fn)))
+				goto next2;
+
+			page_data_mutex_take();
+
+			if(page_count() == 0)
 			{
-				font_valid = load_font("font_small");
-				log_mode = true;
-				clear(dc_black);
-				display_log_y = 0;
+				if(!log_mode)
+				{
+					font_valid = load_font("font_small");
+					log_mode = true;
+					clear(dc_black);
+					display_log_y = 0;
+				}
+
+				goto next1;
 			}
 
-			goto next1;
-		}
+			if(log_mode)
+			{
+				log_mode = false;
 
-		if(log_mode)
-		{
-			log_mode = false;
+				if(!((font_valid = load_font("font_big"))))
+					goto next1;
 
-			if(!((font_valid = load_font("font_big"))))
-				goto next1;
+				current_page = 0;
+			}
 
-			current_page = 0;
-		}
-
-		for(; current_page < display_page_size; current_page++)
-		{
-			display_pages_ptr = &display_pages[current_page];
-
-			if(display_pages_ptr->type != dpt_unused)
-				break;
-		}
-
-		if(current_page >= display_page_size)
-		{
-			current_colour = dc_black;
-
-			for(current_page = 0; current_page < display_page_size; current_page++)
+			for(; current_page < display_page_size; current_page++)
 			{
 				display_pages_ptr = &display_pages[current_page];
 
 				if(display_pages_ptr->type != dpt_unused)
 					break;
 			}
-		}
 
-		assert(display_pages_ptr->type != dpt_unused);
-
-		current_colour = (current_page + dc_black + 1) % dc_size;
-
-		if(current_colour == dc_white)
-			current_colour = dc_black;
-
-		assert(page_border_size > 0);
-
-		time_start = esp_timer_get_time();
-
-		box(current_colour,	0,										0,										x_size - 1,				page_border_size - 1);
-		box(current_colour,	(x_size - 1) - (page_border_size - 1),	0,										x_size - 1,				y_size - 1);
-		box(current_colour,	0,										(y_size - 1) - (page_border_size - 1),	x_size - 1,				y_size - 1);
-		box(current_colour,	0,										0,										page_border_size - 1,	y_size - 1);
-
-		stamp = time((time_t *)0);
-		localtime_r(&stamp, &tm);
-		strftime(stamp_line, sizeof(stamp_line), "%d/%m %H:%M", &tm);
-
-		if(strlen(stamp_line) > display_columns)
-		{
-			chop = string_length_utf8(display_pages_ptr->name);
-
-			if(chop > display_columns)
+			if(current_page >= display_page_size)
 			{
-				chop = display_columns;
-				pad = 0;
+				current_colour = dc_black;
+
+				for(current_page = 0; current_page < display_page_size; current_page++)
+				{
+					display_pages_ptr = &display_pages[current_page];
+
+					if(display_pages_ptr->type != dpt_unused)
+						break;
+				}
+			}
+
+			assert(display_pages_ptr->type != dpt_unused);
+
+			current_colour = (current_page + dc_black + 1) % dc_size;
+
+			if(current_colour == dc_white)
+				current_colour = dc_black;
+
+			assert(page_border_size > 0);
+
+			time_start = esp_timer_get_time();
+
+			box(current_colour,	0,										0,										x_size - 1,				page_border_size - 1);
+			box(current_colour,	(x_size - 1) - (page_border_size - 1),	0,										x_size - 1,				y_size - 1);
+			box(current_colour,	0,										(y_size - 1) - (page_border_size - 1),	x_size - 1,				y_size - 1);
+			box(current_colour,	0,										0,										page_border_size - 1,	y_size - 1);
+
+			stamp = time((time_t *)0);
+			localtime_r(&stamp, &tm);
+			strftime(stamp_line, sizeof(stamp_line), "%d/%m %H:%M", &tm);
+
+			if(strlen(stamp_line) > display_columns)
+			{
+				chop = string_length_utf8(display_pages_ptr->name);
+
+				if(chop > display_columns)
+				{
+					chop = display_columns;
+					pad = 0;
+				}
+				else
+					pad = display_columns - string_length_utf8(display_pages_ptr->name);
+
+				assert(pad >= 0);
+
+				strlcpy(name_tmp, string_cstr(display_pages_ptr->name), sizeof(name_tmp));
+
+				for(ix = strlen(name_tmp) + 1; ix > 0; ix--)
+					if(name_tmp[ix] == '_')
+						name_tmp[ix] = ' ';
+
+				snprintf(title_line, sizeof(title_line), "%.*s%*s",
+						chop, name_tmp, pad, "");
 			}
 			else
-				pad = display_columns - string_length_utf8(display_pages_ptr->name);
-
-			assert(pad >= 0);
-
-			strlcpy(name_tmp, string_cstr(display_pages_ptr->name), sizeof(name_tmp));
-
-			for(ix = strlen(name_tmp) + 1; ix > 0; ix--)
-				if(name_tmp[ix] == '_')
-					name_tmp[ix] = ' ';
-
-			snprintf(title_line, sizeof(title_line), "%.*s%*s",
-					chop, name_tmp, pad, "");
-		}
-		else
-		{
-			chop = string_length_utf8(display_pages_ptr->name);
-
-			if((chop + strlen(stamp_line)) > display_columns)
-				chop = display_columns - strlen(stamp_line);
-
-			pad = display_columns - strlen(stamp_line) - chop;
-
-			assert(chop >= 0);
-			assert(pad >= 0);
-
-			strlcpy(name_tmp, string_cstr(display_pages_ptr->name), sizeof(name_tmp));
-
-			for(ix = strlen(name_tmp) + 1; ix > 0; ix--)
-				if(name_tmp[ix] == '_')
-					name_tmp[ix] = ' ';
-
-			snprintf(title_line, sizeof(title_line), "%.*s%*s%s",
-				chop, name_tmp, pad, "", stamp_line);
-		}
-
-		unicode_length = utf8_to_unicode((uint8_t *)title_line, unicode_buffer_size, unicode_buffer);
-		write_fn(font, dc_white, current_colour,
-				page_border_size, page_border_size, (x_size - 1) - page_border_size, page_text_offset + page_border_size + (font->net.height - 1),
-				unicode_length, unicode_buffer);
-
-		switch(display_pages_ptr->type)
-		{
-			case(dpt_text):
 			{
-				y = font->net.height + page_border_size + page_text_offset;
+				chop = string_length_utf8(display_pages_ptr->name);
 
-				for(row = 0; (row < display_page_text_lines_size) && (row < display_rows) && string_length(display_pages_ptr->text.line[row]); row++)
-				{
-					unicode_length = utf8_to_unicode((const uint8_t *)string_cstr(display_pages_ptr->text.line[row]), unicode_buffer_size, unicode_buffer);
-					write_fn(font, dc_black, dc_white,
-							page_border_size, y, (x_size - 1) - page_border_size, y + (font->net.height - 1),
-							unicode_length, unicode_buffer);
+				if((chop + strlen(stamp_line)) > display_columns)
+					chop = display_columns - strlen(stamp_line);
 
-					y += font->net.height;
-				}
+				pad = display_columns - strlen(stamp_line) - chop;
 
-				if(y < ((y_size - 1) - page_border_size))
-					box(dc_white, page_border_size, y, (x_size - 1) - page_border_size, (y_size - 1) - page_border_size);
+				assert(chop >= 0);
+				assert(pad >= 0);
 
-				break;
+				strlcpy(name_tmp, string_cstr(display_pages_ptr->name), sizeof(name_tmp));
+
+				for(ix = strlen(name_tmp) + 1; ix > 0; ix--)
+					if(name_tmp[ix] == '_')
+						name_tmp[ix] = ' ';
+
+				snprintf(title_line, sizeof(title_line), "%.*s%*s%s",
+					chop, name_tmp, pad, "", stamp_line);
 			}
 
-			case(dpt_image):
+			unicode_length = utf8_to_unicode((uint8_t *)title_line, unicode_buffer_size, unicode_buffer);
+			write_fn(font, dc_white, current_colour,
+					page_border_size, page_border_size, (x_size - 1) - page_border_size, page_text_offset + page_border_size + (font->net.height - 1),
+					unicode_length, unicode_buffer);
+
+			switch(display_pages_ptr->type)
 			{
-				row_pointer = (png_bytep)0;
-
-				if((fd = open(string_cstr(display_pages_ptr->image.filename), O_RDONLY, 0)) < 0)
+				case(dpt_text):
 				{
-					log_format("display: cannot open image file: %s", string_cstr(display_pages_ptr->image.filename));
-					fastskip = true;
-					goto skip;
+					y = font->net.height + page_border_size + page_text_offset;
+
+					for(row = 0; (row < display_page_text_lines_size) && (row < display_rows) && string_length(display_pages_ptr->text.line[row]); row++)
+					{
+						unicode_length = utf8_to_unicode((const uint8_t *)string_cstr(display_pages_ptr->text.line[row]), unicode_buffer_size, unicode_buffer);
+						write_fn(font, dc_black, dc_white,
+								page_border_size, y, (x_size - 1) - page_border_size, y + (font->net.height - 1),
+								unicode_length, unicode_buffer);
+
+						y += font->net.height;
+					}
+
+					if(y < ((y_size - 1) - page_border_size))
+						box(dc_white, page_border_size, y, (x_size - 1) - page_border_size, (y_size - 1) - page_border_size);
+
+					break;
 				}
 
-				assert(sizeof(title_line) > 8);
-
-				if(read(fd, title_line, 8) != 8)
+				case(dpt_image):
 				{
-					log_format("display: cannot read signature: %s", string_cstr(display_pages_ptr->image.filename));
-					fastskip = true;
-					goto skip;
-				}
-
-				if(png_sig_cmp((png_const_bytep)title_line, 0, 8))
-				{
-					log_format("display: invalid PNG signature: %s", string_cstr(display_pages_ptr->image.filename));
-					fastskip = true;
-					goto skip;
-				}
-
-				png_ptr = png_create_read_struct_2(PNG_LIBPNG_VER_STRING, (png_voidp)0, user_error, user_warning, (png_voidp)0, user_png_malloc, user_png_free);
-				assert(png_ptr);
-
-				info_ptr = png_create_info_struct(png_ptr);
-				assert(info_ptr);
-
-				if(setjmp(png_jmpbuf(png_ptr)))
-				{
-					fastskip = true;
-					goto abort;
-				}
-
-				user_io_ptr.magic_word = user_png_io_ptr_magic_word;
-				user_io_ptr.fd = fd;
-
-				png_set_read_fn(png_ptr, (png_bytep)&user_io_ptr, user_read_data);
-				png_set_sig_bytes(png_ptr, 8);
-				png_read_info(png_ptr, info_ptr);
-				png_get_IHDR(png_ptr, info_ptr, (png_uint_32 *)0, (png_uint_32 *)0, (int *)0, (int *)0, (int *)0, (int *)0, (int *)0);
-
-				png_color_16 default_background =
-				{
-					.index = 255,
-					.red = 0,
-					.green = 0,
-					.blue = 0,
-					.gray = 0,
-				};
-
-				png_set_background(png_ptr, &default_background, PNG_BACKGROUND_GAMMA_SCREEN, 0, 1);
-				colour_type = png_get_color_type(png_ptr, info_ptr);
-				bit_depth = png_get_bit_depth(png_ptr, info_ptr);
-				if (colour_type == PNG_COLOR_TYPE_GRAY || colour_type == PNG_COLOR_TYPE_GRAY_ALPHA)
-					png_set_gray_to_rgb(png_ptr);
-				if((colour_type == PNG_COLOR_TYPE_GRAY) && (bit_depth < 8))
-					png_set_expand_gray_1_2_4_to_8(png_ptr);
-				if(colour_type == PNG_COLOR_TYPE_PALETTE)
-					png_set_palette_to_rgb(png_ptr);
-				if(png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS))
-					png_set_tRNS_to_alpha(png_ptr);
-				png_set_packing(png_ptr);
-				png_read_update_info(png_ptr, info_ptr);
-				image_x_size = png_get_image_width(png_ptr, info_ptr);
-				image_y_size = png_get_image_height(png_ptr, info_ptr);
-				row_bytes = png_get_rowbytes(png_ptr, info_ptr);
-				assert(row_bytes == (image_x_size * 3));
-				row_pointer = (png_bytep)util_memory_alloc_spiram(row_bytes);
-				assert(row_pointer);
-
-				for(row = 0; row < image_y_size; row++)
-				{
-					y = page_border_size + page_text_offset + (font->net.height - 1) + row;
-
-					if((y + page_border_size) > y_size)
-						break;
-
-					png_read_row(png_ptr, row_pointer, (png_bytep)0);
-					plot_line(page_border_size, page_border_size + page_text_offset + (font->net.height - 1) + row, (x_size - 1) - page_border_size, image_x_size, row_pointer);
-				}
-
-				png_read_end(png_ptr, (png_infop)0);
-
-abort:
-				assert(png_ptr);
-				assert(info_ptr);
-
-				png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp)0);
-
-				assert(png_ptr == (png_structp)0);
-				assert(info_ptr == (png_infop)0);
-
-				if(row_pointer)
-				{
-					free(row_pointer);
 					row_pointer = (png_bytep)0;
+
+					if((fd = open(string_cstr(display_pages_ptr->image.filename), O_RDONLY, 0)) < 0)
+					{
+						log_format("display: cannot open image file: %s", string_cstr(display_pages_ptr->image.filename));
+						fastskip = true;
+						goto skip;
+					}
+
+					assert(sizeof(title_line) > 8);
+
+					if(read(fd, title_line, 8) != 8)
+					{
+						log_format("display: cannot read signature: %s", string_cstr(display_pages_ptr->image.filename));
+						fastskip = true;
+						goto skip;
+					}
+
+					if(png_sig_cmp((png_const_bytep)title_line, 0, 8))
+					{
+						log_format("display: invalid PNG signature: %s", string_cstr(display_pages_ptr->image.filename));
+						fastskip = true;
+						goto skip;
+					}
+
+					png_ptr = png_create_read_struct_2(PNG_LIBPNG_VER_STRING, (png_voidp)0, user_error, user_warning, (png_voidp)0, user_png_malloc, user_png_free);
+					assert(png_ptr);
+
+					info_ptr = png_create_info_struct(png_ptr);
+					assert(info_ptr);
+
+					if(setjmp(png_jmpbuf(png_ptr)))
+					{
+						fastskip = true;
+						goto abort;
+					}
+
+					user_io_ptr.magic_word = user_png_io_ptr_magic_word;
+					user_io_ptr.fd = fd;
+
+					png_set_read_fn(png_ptr, (png_bytep)&user_io_ptr, user_read_data);
+					png_set_sig_bytes(png_ptr, 8);
+					png_read_info(png_ptr, info_ptr);
+					png_get_IHDR(png_ptr, info_ptr, (png_uint_32 *)0, (png_uint_32 *)0, (int *)0, (int *)0, (int *)0, (int *)0, (int *)0);
+
+					png_color_16 default_background =
+					{
+						.index = 255,
+						.red = 0,
+						.green = 0,
+						.blue = 0,
+						.gray = 0,
+					};
+
+					png_set_background(png_ptr, &default_background, PNG_BACKGROUND_GAMMA_SCREEN, 0, 1);
+					colour_type = png_get_color_type(png_ptr, info_ptr);
+					bit_depth = png_get_bit_depth(png_ptr, info_ptr);
+					if (colour_type == PNG_COLOR_TYPE_GRAY || colour_type == PNG_COLOR_TYPE_GRAY_ALPHA)
+						png_set_gray_to_rgb(png_ptr);
+					if((colour_type == PNG_COLOR_TYPE_GRAY) && (bit_depth < 8))
+						png_set_expand_gray_1_2_4_to_8(png_ptr);
+					if(colour_type == PNG_COLOR_TYPE_PALETTE)
+						png_set_palette_to_rgb(png_ptr);
+					if(png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS))
+						png_set_tRNS_to_alpha(png_ptr);
+					png_set_packing(png_ptr);
+					png_read_update_info(png_ptr, info_ptr);
+					image_x_size = png_get_image_width(png_ptr, info_ptr);
+					image_y_size = png_get_image_height(png_ptr, info_ptr);
+					row_bytes = png_get_rowbytes(png_ptr, info_ptr);
+					assert(row_bytes == (image_x_size * 3));
+					row_pointer = (png_bytep)util_memory_alloc_spiram(row_bytes);
+					assert(row_pointer);
+
+					for(row = 0; row < image_y_size; row++)
+					{
+						y = page_border_size + page_text_offset + (font->net.height - 1) + row;
+
+						if((y + page_border_size) > y_size)
+							break;
+
+						png_read_row(png_ptr, row_pointer, (png_bytep)0);
+						plot_line(page_border_size, page_border_size + page_text_offset + (font->net.height - 1) + row, (x_size - 1) - page_border_size, image_x_size, row_pointer);
+					}
+
+					png_read_end(png_ptr, (png_infop)0);
+
+	abort:
+					assert(png_ptr);
+					assert(info_ptr);
+
+					png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp)0);
+
+					assert(png_ptr == (png_structp)0);
+					assert(info_ptr == (png_infop)0);
+
+					if(row_pointer)
+					{
+						free(row_pointer);
+						row_pointer = (png_bytep)0;
+					}
+
+	skip:
+					if(fd >= 0)
+					{
+						close(fd);
+						fd = -1;
+					}
+
+					break;
 				}
 
-skip:
-				if(fd >= 0)
+				case(dpt_unused):
 				{
-					close(fd);
-					fd = -1;
+					fastskip = true;
+					break;
 				}
 
-				break;
+				default:
+				{
+					log_format("display: unknown page type: %u", display_pages_ptr->type);
+					break;
+				}
 			}
 
-			case(dpt_unused):
-			{
-				fastskip = true;
-				break;
-			}
+			if((display_pages_ptr->expiry > 0) && (time((time_t *)0) > display_pages_ptr->expiry))
+				page_erase(display_pages_ptr);
 
-			default:
-			{
-				log_format("display: unknown page type: %u", display_pages_ptr->type);
-				break;
-			}
+			time_spent = esp_timer_get_time() - time_start;
+			stat_display_show = time_spent / 1000ULL;
+
+	next1:
+			page_data_mutex_give();
+	next2:
+			util_sleep(fastskip ? 100 : 8000);
+			fastskip = false;
 		}
-
-		if((display_pages_ptr->expiry > 0) && (time((time_t *)0) > display_pages_ptr->expiry))
-			page_erase(display_pages_ptr);
-
-		time_spent = esp_timer_get_time() - time_start;
-		stat_display_show = time_spent / 1000ULL;
-
-next1:
-		page_data_mutex_give();
-next2:
-		util_sleep(fastskip ? 100 : 8000);
-		fastskip = false;
 	}
 
 	util_abort("run_display_info returns");
