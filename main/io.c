@@ -14,7 +14,8 @@
 
 typedef enum
 {
-	io_bus_i2c = 0,
+	io_bus_none = 0,
+	io_bus_i2c,
 	io_bus_first = io_bus_i2c,
 	io_bus_size,
 	io_bus_error = io_bus_size,
@@ -46,9 +47,11 @@ typedef struct
 			unsigned int address;
 		} i2c;
 	};
+	void (*info_fn)(const struct io_data_T *data, string_t result);
 	bool (*init_fn)(struct io_data_T *data);
 	bool (*read_fn)(struct io_data_T *data, unsigned int pin, unsigned int *value);
 	bool (*write_fn)(struct io_data_T *data, unsigned int pin, unsigned int value);
+	void (*pin_info_fn)(const struct io_data_T *data, unsigned int pin, string_t result);
 } io_info_t;
 
 typedef struct io_data_T
@@ -70,6 +73,12 @@ typedef struct io_data_T
 static bool inited = false;
 static io_data_t *data_root = (io_data_t *)0;
 static SemaphoreHandle_t data_mutex;
+static const char *cap_to_string[io_cap_size] =
+{
+	[io_cap_input] = "input",
+	[io_cap_output] = "output",
+};
+
 static unsigned int stat_probe_skipped;
 static unsigned int stat_probe_tried;
 static unsigned int stat_probe_found;
@@ -93,8 +102,17 @@ static inline void data_mutex_give(void)
 	assert(xSemaphoreGive(data_mutex));
 }
 
+static void pcf8574_info(const io_data_t *dataptr, string_t result)
+{
+	string_append_cstr(result, "\npin cache");
+	string_format_append(result, "\n- input %#02x", (unsigned int)dataptr->int_value[pcf8574_in_cache]);
+	string_format_append(result, "\n- output %#02x", (unsigned int)dataptr->int_value[pcf8574_out_cache]);
+}
+
 static bool pcf8574_init(io_data_t *dataptr)
 {
+	assert(inited);
+
 	dataptr->int_value[pcf8574_in_cache] = 0xff;
 	dataptr->int_value[pcf8574_out_cache] = 0xff;
 
@@ -110,6 +128,8 @@ static bool pcf8574_init(io_data_t *dataptr)
 static bool pcf8574_read(io_data_t *dataptr, unsigned int pin, unsigned int *value)
 {
 	uint8_t buffer[1];
+
+	assert(inited);
 
 	assert(dataptr);
 	assert(dataptr->info);
@@ -130,12 +150,21 @@ static bool pcf8574_write(io_data_t *dataptr, unsigned int pin, unsigned int val
 	assert(pin < dataptr->info->pins);
 	assert(value <= dataptr->info->max_value);
 
+	assert(inited);
+
 	if(value)
 		dataptr->int_value[pcf8574_out_cache] &= ~(1 << pin);
 	else
 		dataptr->int_value[pcf8574_out_cache] |= (1 << pin);
 
 	return(i2c_send_1(dataptr->i2c.slave, dataptr->int_value[pcf8574_out_cache]));
+}
+
+static void pcf8574_pin_info(const io_data_t *dataptr, unsigned int pin, string_t result)
+{
+	string_format_append(result, "gpio binary I/O, current I/O value: %u/%u",
+			(unsigned int)!(dataptr->int_value[pcf8574_in_cache] & (1 << pin)),
+			(unsigned int)!(dataptr->int_value[pcf8574_out_cache] & (1 << pin)));
 }
 
 static const io_info_t info[io_id_size] =
@@ -149,9 +178,11 @@ static const io_info_t info[io_id_size] =
 		.max_value = 1,
 		.bus = io_bus_i2c,
 		.i2c.address = 0x26,
+		.info_fn = pcf8574_info,
 		.init_fn = pcf8574_init,
 		.read_fn = pcf8574_read,
 		.write_fn = pcf8574_write,
+		.pin_info_fn = pcf8574_pin_info,
 	},
 	[io_id_pcf8574_3a] =
 	{
@@ -162,9 +193,11 @@ static const io_info_t info[io_id_size] =
 		.max_value = 1,
 		.bus = io_bus_i2c,
 		.i2c.address = 0x3a,
+		.info_fn = pcf8574_info,
 		.init_fn = pcf8574_init,
 		.read_fn = pcf8574_read,
 		.write_fn = pcf8574_write,
+		.pin_info_fn = pcf8574_pin_info,
 	},
 };
 
@@ -309,67 +342,13 @@ void io_init(void)
 				log("io: invalid io type in info");
 				break;
 			}
-		}
-	}
-}
-
-void command_io_dump(cli_command_call_t *call)
-{
-	const io_data_t *dataptr;
-	i2c_module_t module;
-	i2c_bus_t bus;
-	unsigned int address, sequence;
-	const char *name;
-	io_int_value_t ix;
-
-	assert(call->parameter_count == 0);
-	assert(inited);
-
-	string_assign_cstr(call->result, "IO DUMP");
-
-	sequence = 0;
-
-	data_mutex_take();
-
-	for(dataptr = data_root; dataptr; dataptr = dataptr->next)
-	{
-		string_format_append(call->result, "\n- [%u]", sequence++);
-
-		switch(dataptr->info->bus)
-		{
-			case(io_bus_i2c):
-			{
-				i2c_get_slave_info(dataptr->i2c.slave, &module, &bus, &address, &name);
-
-				string_format_append(call->result, " IO %s at I2C:%u/%u/%#x", name, module, bus, address);
-
-				break;
-			}
 
 			default:
 			{
-				string_format_append(call->result, " unknown IO type %u: %s", dataptr->info->bus, dataptr->info->name);
+				break;
 			}
 		}
-
-		string_append_cstr(call->result, ", int values:");
-
-		for(ix = io_int_value_first; ix < io_int_value_size; ix++)
-			string_format_append(call->result, " %u=%d", ix, dataptr->int_value[ix]);
 	}
-
-	data_mutex_give();
-}
-
-void command_io_stats(cli_command_call_t *call)
-{
-	assert(call->parameter_count == 0);
-
-	string_assign_cstr(call->result, "IO STATS");
-	string_assign_cstr(call->result, "\n- probing");
-	string_format_append(call->result, "\n-  skipped: %u", stat_probe_skipped);
-	string_format_append(call->result, "\n-  tried: %u", stat_probe_tried);
-	string_format_append(call->result, "\n-  found: %u", stat_probe_found);
 }
 
 static io_data_t *get_data(unsigned int io)
@@ -387,8 +366,31 @@ static io_data_t *get_data(unsigned int io)
 	return(dataptr);
 }
 
+static void io_info_x(string_t result, const io_data_t *dataptr)
+{
+	io_capabilities_t cap;
+
+	assert(inited);
+	assert(result);
+	assert(dataptr);
+
+	string_append_cstr(result, dataptr->info->name);
+	string_format_append(result, "\n- id: %u", (unsigned int)dataptr->info->id);
+	string_format_append(result, "\n- pins: %u", dataptr->info->pins);
+	string_format_append(result, "\n- max value per pin: %u", dataptr->info->max_value);
+	string_append_cstr(result, "\n- capabilities:");
+
+	for(cap = io_cap_first; cap < io_cap_size; cap++)
+		if(dataptr->info->caps & (1 << cap))
+			string_format_append(result, " %s", cap_to_string[cap]);
+
+	if(dataptr->info->info_fn)
+		dataptr->info->info_fn(dataptr, result);
+}
+
 static bool io_read_x(string_t result, io_data_t *dataptr, unsigned int pin, unsigned int *value)
 {
+	assert(inited);
 	assert(dataptr);
 
 	if(!(dataptr->info->caps & (1 << io_cap_input)))
@@ -426,6 +428,7 @@ static bool io_read_x(string_t result, io_data_t *dataptr, unsigned int pin, uns
 
 static bool io_write_x(string_t result, io_data_t *dataptr, unsigned int pin, unsigned int value)
 {
+	assert(inited);
 	assert(dataptr);
 
 	if(!(dataptr->info->caps & (1 << io_cap_output)))
@@ -461,9 +464,35 @@ static bool io_write_x(string_t result, io_data_t *dataptr, unsigned int pin, un
 	return(true);
 }
 
+static void io_pin_info_x(string_t result, const io_data_t *dataptr, unsigned int pin)
+{
+	if(dataptr->info->pin_info_fn)
+		dataptr->info->pin_info_fn(dataptr, pin, result);
+}
+
+bool io_info(string_t result, unsigned int io)
+{
+	const io_data_t *dataptr;
+
+	assert(inited);
+	assert(result);
+
+	if(!(dataptr = get_data(io)))
+	{
+		string_format_append(result, "no such I/O %u", io);
+		return(false);
+	}
+
+	io_info_x(result, dataptr);
+
+	return(true);
+}
+
 bool io_read(string_t result, unsigned int io, unsigned int pin, unsigned int *value)
 {
 	io_data_t *dataptr;
+
+	assert(inited);
 
 	if(!(dataptr = get_data(io)))
 	{
@@ -479,6 +508,8 @@ bool io_write(string_t result, unsigned int io, unsigned int pin, unsigned int v
 {
 	io_data_t *dataptr;
 
+	assert(inited);
+
 	if(!(dataptr = get_data(io)))
 	{
 		if(result)
@@ -489,10 +520,99 @@ bool io_write(string_t result, unsigned int io, unsigned int pin, unsigned int v
 	return(io_write_x(result, dataptr, pin, value));
 }
 
+bool io_pin_info(string_t result, unsigned int io, unsigned int pin)
+{
+	io_data_t *dataptr;
+
+	assert(inited);
+
+	if(!(dataptr = get_data(io)))
+	{
+		if(result)
+			string_format_append(result, "no such I/O %u", io);
+		return(false);
+	}
+
+	if(pin >= dataptr->info->pins)
+	{
+		if(result)
+			string_format_append(result, "no such pin %u", pin);
+		return(false);
+	}
+
+	io_pin_info_x(result, dataptr, pin);
+
+	return(true);
+}
+
+void command_io_dump(cli_command_call_t *call)
+{
+	const io_data_t *dataptr;
+	i2c_module_t module;
+	i2c_bus_t bus;
+	unsigned int address, sequence;
+	const char *name;
+	unsigned int pin;
+
+	assert(inited);
+	assert(call->parameter_count == 0);
+
+	string_assign_cstr(call->result, "I/O DUMP\n");
+
+	sequence = 0;
+
+	data_mutex_take();
+
+	for(dataptr = data_root; dataptr; dataptr = dataptr->next)
+	{
+		string_format_append(call->result, "[%u]: ", sequence++);
+
+		io_info_x(call->result, dataptr);
+
+		switch(dataptr->info->bus)
+		{
+			case(io_bus_i2c):
+			{
+				i2c_get_slave_info(dataptr->i2c.slave, &module, &bus, &address, &name);
+				string_format_append(call->result, "\nbus info\n- I2C device %s at %u/%u/%#x", name, module, bus, address);
+
+				break;
+			}
+
+			default:
+			{
+				string_format_append(call->result, " unknown IO type %u: %s", dataptr->info->bus, dataptr->info->name);
+			}
+		}
+		string_append_cstr(call->result, "\npins:");
+
+		for(pin = 0; pin < dataptr->info->pins; pin++)
+		{
+			string_format_append(call->result, "\n- pin %2u: ", pin);
+			io_pin_info_x(call->result, dataptr, pin);
+		}
+	}
+
+	data_mutex_give();
+}
+
+void command_io_stats(cli_command_call_t *call)
+{
+	assert(inited);
+	assert(call->parameter_count == 0);
+
+	string_assign_cstr(call->result, "IO STATS");
+	string_assign_cstr(call->result, "\n- probing");
+	string_format_append(call->result, "\n-  skipped: %u", stat_probe_skipped);
+	string_format_append(call->result, "\n-  tried: %u", stat_probe_tried);
+	string_format_append(call->result, "\n-  found: %u", stat_probe_found);
+}
+
 void command_io_read(cli_command_call_t *call)
 {
 	unsigned int value;
 
+	assert(inited);
 	assert(call->parameter_count == 2);
 
 	string_assign_cstr(call->result, "io-read: ");
@@ -503,6 +623,7 @@ void command_io_read(cli_command_call_t *call)
 
 void command_io_write(cli_command_call_t *call)
 {
+	assert(inited);
 	assert(call->parameter_count == 3);
 
 	string_assign_cstr(call->result, "io-write: ");

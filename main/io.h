@@ -21,5 +21,7 @@ typedef enum
 _Static_assert(io_cap_size < 32); // bitmap
 
 void io_init(void);
+bool io_info(string_t result, unsigned int io);
 bool io_read(string_t result, unsigned int io, unsigned int pin, unsigned int *value);
 bool io_write(string_t result, unsigned int io, unsigned int pin, unsigned int value);
+bool io_pin_info(string_t result, unsigned int io, unsigned int pin);
