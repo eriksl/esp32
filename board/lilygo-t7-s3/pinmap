@@ -3,11 +3,11 @@ LilyGO T3 S3
 	AVAILABLE	USED	FREE
 
 0	*			*				board boot select
-1	*							PDM 2
+1	*							PDM
 2	*			*				board battery detect
 3	*			*				board boot select
 4	* 			*				backlight SPI 2 SDM
-5	*							PDM 1
+5	*							PWM 1 120 Hz
 6	*							[label: CLK]	I2C 1 SDA
 7	*											I2C 1 SCL
 8	*											I2C 1 INT
@@ -41,9 +41,9 @@ LilyGO T3 S3
 36	!			*				[SP0/1 IO7=IO_D7]	available but unusable due to OCT-SPI SPIRAM
 37	!			*				[SP0/1 DQS]			available but unusable due to OCT-SPI SPIRAM
 38	*			*				GPIO D/C SPI 2
-39	*							[JTAG MTCK, label: TCK]	PWM 1
-40	*							[JTAG MTDO, label: TDO] PWM 2
-41	*							[JTAG MTDI, label: TDI] PWM 3
+39	*							[JTAG MTCK, label: TCK]	PWM 2 120 Hz
+40	*							[JTAG MTDO, label: TDO] PWM 3 120 Hz
+41	*							[JTAG MTDI, label: TDI] PWM 4 5 kHz
 42	*			*				[JTAG MTMS, label: TMS] backlight SPI 3 SDM
 43	*					*		[UART TXD, label: TXD]
 44	*					*		[UART RXD, label: RXD]

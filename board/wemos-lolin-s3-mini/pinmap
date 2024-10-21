@@ -3,21 +3,21 @@ WEMOS Lolin S3 mini
 	AVAILABLE	USED	FREE
 
 0				*				board boot select
-1	*												PDM 1
+1	*												PDM
 2	*			*				GPIO D/C SPI 2
 3	*			*				board boot select
 4	*			*				backlight SPI 2 SDM
 5	*												I2C 0 SDA
 6	*												I2C 0 SCL
 7	*												I2C 0 INT
-8	*												PWM 1
-9	*							[FSPIHD=IO_D3]		PWM 3
+8	*												PWM 1 120 Hz
+9	*							[FSPIHD=IO_D3]		PWM 2 120 Hz
 10	*			*				FSPICS0=CS0
 11	*			*				FSPID=MOSI/IO_D0
 12	*			*				FSPCLK=SCK
 13	*			*				FSPIQ=MISO/IO_D1
 14	*					*		[FSPIWP=IO_D2]
-15	*												PWM 2
+15	*												PWM 3 120 Hz
 16	*			*				SPI 3 SCK
 17	*			*				backlight SPI 3 SDM
 18	*			*				SPI 3 MOSI
@@ -36,7 +36,7 @@ WEMOS Lolin S3 mini
 31				*				[SP0/1 Q=IO_D1]
 32				*				[SP0/1 D=IO_D0]
 33	*							[SP0/1 IO4=IO_D4]	I2C 1 INT
-34	*							[SP0/1 IO5=IO_D5]	PDM 2
+34	*							[SP0/1 IO5=IO_D5]	PDM 4 5 kHz
 35	*							[SP0/1 IO6=IO_D6]	led pixel 1
 36	*							[SP0/1 IO7=IO_D7]	led pixel 2
 37	*							[SP0/1 DQS]			I2C 1 SDA
