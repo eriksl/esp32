@@ -15,3 +15,4 @@ typedef enum
 bool pwm_led_init(void);
 int pwm_led_channel_new(unsigned int gpio, pwm_led_type_t type);
 bool pwm_led_channel_set(unsigned int channel, unsigned int duty);
+int pwm_led_channel_get(unsigned int channel);

@@ -2,8 +2,9 @@
 
 typedef enum
 {
-	io_id_pcf8574_26 = 0,
-	io_id_first = io_id_pcf8574_26,
+	io_id_esp32 = 0,
+	io_id_first = io_id_esp32,
+	io_id_pcf8574_26,
 	io_id_pcf8574_3a,
 	io_id_size,
 	io_id_error = io_id_size,

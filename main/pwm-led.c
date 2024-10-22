@@ -126,6 +126,16 @@ bool pwm_led_channel_set(unsigned int channel, unsigned int duty)
 	return(ledc_set_duty_and_update(LEDC_LOW_SPEED_MODE, channel, duty, 0) == ESP_OK);
 }
 
+int pwm_led_channel_get(unsigned int channel)
+{
+	assert(inited);
+
+	if(channel >= channels_size)
+		return(-1);
+
+	return(ledc_get_duty(LEDC_LOW_SPEED_MODE, channel));
+}
+
 void command_pwm_led_info(cli_command_call_t *call)
 {
 	pwm_led_type_t timer;
@@ -143,7 +153,9 @@ void command_pwm_led_info(cli_command_call_t *call)
 	{
 		timer = channel_to_timer_map[ix];
 
-		string_format_append(call->result, "\n- channel %u: timer: %u, resolution: %u, frequency: %u",
-					ix, (unsigned int)timer, timers[timer].resolution_bits, timers[timer].frequency_hz);
+		string_format_append(call->result, "\n- channel %u: timer: %u, resolution: %2u, frequency: %4u, duty: %5u, hpoint: %u",
+					ix, (unsigned int)timer, timers[timer].resolution_bits, timers[timer].frequency_hz,
+					(unsigned int)ledc_get_duty(LEDC_LOW_SPEED_MODE, ix),
+					(unsigned int)ledc_get_hpoint(LEDC_LOW_SPEED_MODE, ix));
 	}
 }

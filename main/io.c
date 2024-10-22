@@ -7,6 +7,7 @@
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
+#include "pwm-led.h"
 #include "io.h"
 
 #include <assert.h>
@@ -15,19 +16,22 @@
 typedef enum
 {
 	io_bus_none = 0,
+	io_bus_apb,
+	io_bus_first = io_bus_apb,
 	io_bus_i2c,
-	io_bus_first = io_bus_i2c,
 	io_bus_size,
 	io_bus_error = io_bus_size,
 } io_bus_t;
 
 typedef enum
 {
-	io_int_value_0 = 0,
-	io_int_value_first = io_int_value_0,
-	io_int_value_1,
-	io_int_value_size,
-	io_int_value_error = io_int_value_size,
+	io_value_0 = 0,
+	io_value_first = io_value_0,
+	io_value_1,
+	io_value_2,
+	io_value_3,
+	io_value_size,
+	io_value_error = io_value_size,
 } io_int_value_t;
 
 struct io_data_T;
@@ -65,7 +69,7 @@ typedef struct io_data_T
 		} i2c;
 		void *void_ptr;
 	};
-	int int_value[io_int_value_size];
+	int int_value[io_value_size];
 	const io_info_t *info;
 	struct io_data_T *next;
 } io_data_t;
@@ -79,18 +83,9 @@ static const char *cap_to_string[io_cap_size] =
 	[io_cap_output] = "output",
 };
 
-static unsigned int stat_probe_skipped;
-static unsigned int stat_probe_tried;
-static unsigned int stat_probe_found;
-
-enum
-{
-	pcf8574_in_cache = 0,
-	pcf8574_out_cache,
-	pcf8574_size,
-};
-
-_Static_assert((unsigned int)pcf8574_size <= (unsigned int)io_int_value_size);
+static unsigned int stat_i2c_probe_skipped;
+static unsigned int stat_i2c_probe_tried;
+static unsigned int stat_i2c_probe_found;
 
 static inline void data_mutex_take(void)
 {
@@ -102,19 +97,214 @@ static inline void data_mutex_give(void)
 	assert(xSemaphoreGive(data_mutex));
 }
 
+enum
+{
+	esp32_pin_pwm0 = 0,
+	esp32_pin_pwm1 = 1,
+	esp32_pin_pwm2 = 2,
+	esp32_pin_pwm3 = 3,
+	esp32_pin_pdm = 4,
+	esp32_pin_size
+};
+
+enum
+{
+	esp32_value_pwm0_channel = 0,
+	esp32_value_pwm1_channel,
+	esp32_value_pwm2_channel,
+	esp32_value_pwm3_channel,
+	esp32_value_size,
+};
+
+_Static_assert((unsigned int)esp32_value_size <= (unsigned int)io_value_size);
+
+static void esp32_info(const io_data_t *dataptr, string_t result)
+{
+	assert(inited);
+	assert(dataptr);
+
+	string_append_cstr(result, "ESP32 internal I/O (PWM and PWD)");
+}
+
+static bool esp32_init(io_data_t *dataptr)
+{
+	assert(inited);
+	assert(dataptr);
+
+#if(CONFIG_BSP_PWM0 >= 0)
+	if((dataptr->int_value[esp32_value_pwm0_channel] = pwm_led_channel_new(CONFIG_BSP_PWM0, plt_14bit_120hz)) < 0)
+	{
+		log_format("io esp32: error initialising PWM channel 0");
+		return(false);
+	}
+#else
+	dataptr->int_value[esp32_value_pwm0_channel] = -1;
+#endif
+
+#if(CONFIG_BSP_PWM1 >= 0)
+	if((dataptr->int_value[esp32_value_pwm1_channel] = pwm_led_channel_new(CONFIG_BSP_PWM1, plt_14bit_120hz)) < 0)
+	{
+		log_format("io esp32: error initialising PWM channel 1");
+		return(false);
+	}
+#else
+	dataptr->int_value[esp32_value_pwm1_channel] = -1;
+#endif
+
+#if(CONFIG_BSP_PWM2 >= 0)
+	if((dataptr->int_value[esp32_value_pwm2_channel] = pwm_led_channel_new(CONFIG_BSP_PWM2, plt_14bit_120hz)) < 0)
+	{
+		log_format("io esp32: error initialising PWM channel 2");
+		return(false);
+	}
+#else
+	dataptr->int_value[esp32_value_pwm2_channel] = -1;
+#endif
+
+#if(CONFIG_BSP_PWM3 >= 0)
+	if((dataptr->int_value[esp32_value_pwm3_channel] = pwm_led_channel_new(CONFIG_BSP_PWM3, plt_14bit_5khz)) < 0)
+	{
+		log_format("io esp32: error initialising PWM channel 3");
+		return(false);
+	}
+#else
+	dataptr->int_value[esp32_value_pwm3_channel] = -1;
+#endif
+
+	return(true);
+}
+
+static bool esp32_write(io_data_t *dataptr, unsigned int pin, unsigned int value)
+{
+	assert(inited);
+	assert(dataptr);
+	assert(pin < dataptr->info->pins);
+	assert(value <= dataptr->info->max_value);
+
+	switch(pin)
+	{
+#if(CONFIG_BSP_PWM0 >= 0)
+		case(esp32_pin_pwm0):
+		{
+			return(pwm_led_channel_set(dataptr->int_value[esp32_value_pwm0_channel], value));
+		}
+#endif
+
+#if(CONFIG_BSP_PWM1 >= 0)
+		case(esp32_pin_pwm1):
+		{
+			return(pwm_led_channel_set(dataptr->int_value[esp32_value_pwm1_channel], value));
+		}
+#endif
+
+#if(CONFIG_BSP_PWM2 >= 0)
+		case(esp32_pin_pwm2):
+		{
+			return(pwm_led_channel_set(dataptr->int_value[esp32_value_pwm2_channel], value));
+		}
+#endif
+
+#if(CONFIG_BSP_PWM3 >= 0)
+		case(esp32_pin_pwm3):
+		{
+			return(pwm_led_channel_set(dataptr->int_value[esp32_value_pwm3_channel], value));
+		}
+#endif
+
+#if(CONFIG_BSP_PDM >= 0)
+		case(esp32_pin_pdm):
+		{
+			return(false);
+		}
+#endif
+
+		default:
+		{
+			return(false);
+		}
+	}
+
+	return(true);
+}
+
+static void esp32_pin_info(const io_data_t *dataptr, unsigned int pin, string_t result)
+{
+	switch(pin)
+	{
+#if(CONFIG_BSP_PWM0 >= 0)
+		case(esp32_pin_pwm0):
+		{
+			string_format_append(result, "PWM 0 @ 120 Hz, GPIO %2d, channel: %d, duty: %u", CONFIG_BSP_PWM0, dataptr->int_value[esp32_value_pwm0_channel],
+					(unsigned int)pwm_led_channel_get(dataptr->int_value[esp32_value_pwm0_channel]));
+			break;
+		}
+#endif
+
+#if(CONFIG_BSP_PWM1 >= 0)
+		case(esp32_pin_pwm1):
+		{
+			string_format_append(result, "PWM 1 @ 120 Hz, GPIO %2d, channel: %d, duty: %u", CONFIG_BSP_PWM1, dataptr->int_value[esp32_value_pwm1_channel],
+					(unsigned int)pwm_led_channel_get(dataptr->int_value[esp32_value_pwm1_channel]));
+			break;
+		}
+#endif
+
+#if(CONFIG_BSP_PWM2 >= 0)
+		case(esp32_pin_pwm2):
+		{
+			string_format_append(result, "PWM 2 @ 120 Hz, GPIO %2d, channel: %d, duty: %u", CONFIG_BSP_PWM2, dataptr->int_value[esp32_value_pwm2_channel],
+					(unsigned int)pwm_led_channel_get(dataptr->int_value[esp32_value_pwm2_channel]));
+			break;
+		}
+#endif
+
+#if(CONFIG_BSP_PWM3 >= 0)
+		case(esp32_pin_pwm3):
+		{
+			string_format_append(result, "PWM 3 @  5 kHz, GPIO %2d, channel: %d, duty: %u", CONFIG_BSP_PWM3, dataptr->int_value[esp32_value_pwm3_channel],
+					(unsigned int)pwm_led_channel_get(dataptr->int_value[esp32_value_pwm3_channel]));
+			break;
+		}
+#endif
+
+#if(CONFIG_BSP_PDM >= 0)
+		case(esp32_pin_pdm):
+		{
+			string_format_append(result, "PDM @ 80 MHz, GPIO %d", CONFIG_BSP_PDM);
+			break;
+		}
+#endif
+
+		default:
+		{
+			string_format_append(result, "pin unvailable on this board");
+			break;
+		}
+	}
+}
+
+enum
+{
+	pcf8574_value_cache_in = 0,
+	pcf8574_value_cache_out,
+	pcf8574_value_size,
+};
+
+_Static_assert((unsigned int)pcf8574_value_size <= (unsigned int)io_value_size);
+
 static void pcf8574_info(const io_data_t *dataptr, string_t result)
 {
 	string_append_cstr(result, "\npin cache");
-	string_format_append(result, "\n- input %#02x", (unsigned int)dataptr->int_value[pcf8574_in_cache]);
-	string_format_append(result, "\n- output %#02x", (unsigned int)dataptr->int_value[pcf8574_out_cache]);
+	string_format_append(result, "\n- input %#02x", (unsigned int)dataptr->int_value[pcf8574_value_cache_in]);
+	string_format_append(result, "\n- output %#02x", (unsigned int)dataptr->int_value[pcf8574_value_cache_out]);
 }
 
 static bool pcf8574_init(io_data_t *dataptr)
 {
 	assert(inited);
 
-	dataptr->int_value[pcf8574_in_cache] = 0xff;
-	dataptr->int_value[pcf8574_out_cache] = 0xff;
+	dataptr->int_value[pcf8574_value_cache_in] = 0xff;
+	dataptr->int_value[pcf8574_value_cache_out] = 0xff;
 
 	if(!i2c_send_1(dataptr->i2c.slave, 0xff))
 	{
@@ -138,7 +328,9 @@ static bool pcf8574_read(io_data_t *dataptr, unsigned int pin, unsigned int *val
 	if(!i2c_receive(dataptr->i2c.slave, 1, buffer))
 		return(false);
 
-	*value = dataptr->int_value[pcf8574_in_cache] = (unsigned int)buffer[0];
+	dataptr->int_value[pcf8574_value_cache_in] = buffer[0];
+
+	*value = !!(buffer[0] & (1 << pin));
 
 	return(true);
 }
@@ -153,22 +345,36 @@ static bool pcf8574_write(io_data_t *dataptr, unsigned int pin, unsigned int val
 	assert(inited);
 
 	if(value)
-		dataptr->int_value[pcf8574_out_cache] &= ~(1 << pin);
+		dataptr->int_value[pcf8574_value_cache_out] &= ~(1 << pin);
 	else
-		dataptr->int_value[pcf8574_out_cache] |= (1 << pin);
+		dataptr->int_value[pcf8574_value_cache_out] |= (1 << pin);
 
-	return(i2c_send_1(dataptr->i2c.slave, dataptr->int_value[pcf8574_out_cache]));
+	return(i2c_send_1(dataptr->i2c.slave, dataptr->int_value[pcf8574_value_cache_out]));
 }
 
 static void pcf8574_pin_info(const io_data_t *dataptr, unsigned int pin, string_t result)
 {
-	string_format_append(result, "gpio binary I/O, current I/O value: %u/%u",
-			(unsigned int)!(dataptr->int_value[pcf8574_in_cache] & (1 << pin)),
-			(unsigned int)!(dataptr->int_value[pcf8574_out_cache] & (1 << pin)));
+	string_format_append(result, "binary I/O, current I/O value: %u/%u",
+			(unsigned int)!(dataptr->int_value[pcf8574_value_cache_in] & (1 << pin)),
+			(unsigned int)!(dataptr->int_value[pcf8574_value_cache_out] & (1 << pin)));
 }
 
 static const io_info_t info[io_id_size] =
 {
+	[io_id_esp32] =
+	{
+		.id = io_id_esp32,
+		.name = "ESP32 internal I/O",
+		.caps = (1 << io_cap_output),
+		.pins = esp32_pin_size,
+		.max_value = 16384,
+		.bus = io_bus_apb,
+		.info_fn = esp32_info,
+		.init_fn = esp32_init,
+		.read_fn = (void *)0,
+		.write_fn = esp32_write,
+		.pin_info_fn = esp32_pin_info,
+	},
 	[io_id_pcf8574_26] =
 	{
 		.id = io_id_pcf8574_26,
@@ -201,7 +407,7 @@ static const io_info_t info[io_id_size] =
 	},
 };
 
-static io_data_t *find_io(unsigned int parameter_1, unsigned int parameter_2, unsigned int parameter_3)
+static io_data_t *find_io(io_bus_t bus, unsigned int parameter_1, unsigned int parameter_2, unsigned int parameter_3)
 {
 	io_data_t *dataptr;
 
@@ -209,31 +415,39 @@ static io_data_t *find_io(unsigned int parameter_1, unsigned int parameter_2, un
 
 	for(dataptr = data_root; dataptr; dataptr = dataptr->next)
 	{
+		if(bus != dataptr->info->bus)
+			continue;
+
 		switch(dataptr->info->bus)
 		{
+			case(io_bus_apb):
+			{
+				goto found;
+			}
+
 			case(io_bus_i2c):
 			{
-				i2c_module_t module;
-				i2c_bus_t bus;
-				unsigned int address;
+				i2c_module_t i2c_module;
+				i2c_bus_t i2c_bus;
+				unsigned int i2c_address;
 				const char *name;
 
 				assert(parameter_1 < i2c_module_size);
 				assert(parameter_2 < i2c_bus_size);
 				assert(parameter_3 < 128);
 
-				i2c_get_slave_info(dataptr->i2c.slave, &module, &bus, &address, &name);
+				i2c_get_slave_info(dataptr->i2c.slave, &i2c_module, &i2c_bus, &i2c_address, &name);
 
-				if((i2c_module_t)parameter_1 != module)
+				if((i2c_module_t)parameter_1 != i2c_module)
 					continue;
 
-				if(parameter_3 != address)
+				if(parameter_3 != i2c_address)
 					continue;
 
-				if(((i2c_bus_t)parameter_2 == i2c_bus_none) || (bus == i2c_bus_none))
+				if(((i2c_bus_t)parameter_2 == i2c_bus_none) || (i2c_bus == i2c_bus_none))
 					goto found;
 
-				if((i2c_bus_t)parameter_2 == bus)
+				if((i2c_bus_t)parameter_2 == i2c_bus)
 					goto found;
 
 				break;
@@ -277,6 +491,38 @@ void io_init(void)
 
 		switch(infoptr->bus)
 		{
+			case(io_bus_apb):
+			{
+				dataptr = (io_data_t *)util_memory_alloc_spiram(sizeof(*dataptr));
+				assert(dataptr);
+
+				dataptr->id = id;
+				dataptr->info = infoptr;
+				dataptr->next = (io_data_t *)0;
+
+				assert(infoptr->init_fn);
+
+				if(!infoptr->init_fn(dataptr))
+				{
+					log_format("io: init %s failed", infoptr->name);
+					continue;
+				}
+
+				if(!data_root)
+					data_root = dataptr;
+				else
+				{
+					for(next = data_root; next->next; next = next->next)
+						(void)0;
+
+					assert(!next->next);
+
+					next->next = dataptr;
+				}
+
+				break;
+			}
+
 			case(io_bus_i2c):
 			{
 				for(module = i2c_module_first; module < i2c_module_size; module++)
@@ -285,13 +531,13 @@ void io_init(void)
 
 					for(bus = 0; bus < buses; bus++)
 					{
-						if(find_io((unsigned int)module, (unsigned int)bus, infoptr->i2c.address))
+						if(find_io(infoptr->bus, (unsigned int)module, (unsigned int)bus, infoptr->i2c.address))
 						{
-							stat_probe_skipped++;
+							stat_i2c_probe_skipped++;
 							continue;
 						}
 
-						stat_probe_tried++;
+						stat_i2c_probe_tried++;
 
 						if(!i2c_probe_slave(module, bus, infoptr->i2c.address))
 							continue;
@@ -318,7 +564,7 @@ void io_init(void)
 							continue;
 						}
 
-						stat_probe_found++;
+						stat_i2c_probe_found++;
 
 						if(!data_root)
 							data_root = dataptr;
@@ -337,14 +583,14 @@ void io_init(void)
 				break;
 			}
 
-			case(io_bus_error):
+			case(io_bus_none):
 			{
-				log("io: invalid io type in info");
 				break;
 			}
 
-			default:
+			case(io_bus_error):
 			{
+				log("io: invalid io type in info");
 				break;
 			}
 		}
@@ -384,6 +630,8 @@ static void io_info_x(string_t result, const io_data_t *dataptr)
 		if(dataptr->info->caps & (1 << cap))
 			string_format_append(result, " %s", cap_to_string[cap]);
 
+	string_append_cstr(result, "\n- extra device info: ");
+
 	if(dataptr->info->info_fn)
 		dataptr->info->info_fn(dataptr, result);
 }
@@ -392,8 +640,9 @@ static bool io_read_x(string_t result, io_data_t *dataptr, unsigned int pin, uns
 {
 	assert(inited);
 	assert(dataptr);
+	assert(value);
 
-	if(!(dataptr->info->caps & (1 << io_cap_input)))
+	if(!(dataptr->info->caps & (1 << io_cap_input)) || !dataptr->info->read_fn)
 	{
 		if(result)
 			string_append_cstr(result, "not input capable");
@@ -406,15 +655,6 @@ static bool io_read_x(string_t result, io_data_t *dataptr, unsigned int pin, uns
 			string_format_append(result, "no such pin %u", pin);
 		return(false);
 	}
-
-	if(*value > dataptr->info->max_value)
-	{
-		if(result)
-			string_format_append(result, "value %u out of range", *value);
-		return(false);
-	}
-
-	assert(dataptr->info->read_fn);
 
 	if(!dataptr->info->read_fn(dataptr, pin, value))
 	{
@@ -557,7 +797,7 @@ void command_io_dump(cli_command_call_t *call)
 	assert(inited);
 	assert(call->parameter_count == 0);
 
-	string_assign_cstr(call->result, "I/O DUMP\n");
+	string_assign_cstr(call->result, "I/O DUMP");
 
 	sequence = 0;
 
@@ -565,12 +805,18 @@ void command_io_dump(cli_command_call_t *call)
 
 	for(dataptr = data_root; dataptr; dataptr = dataptr->next)
 	{
-		string_format_append(call->result, "[%u]: ", sequence++);
+		string_format_append(call->result, "\n[%u]: ", sequence++);
 
 		io_info_x(call->result, dataptr);
 
 		switch(dataptr->info->bus)
 		{
+			case(io_bus_apb):
+			{
+				string_append_cstr(call->result, "\nbus info\n- APB device");
+				break;
+			}
+
 			case(io_bus_i2c):
 			{
 				i2c_get_slave_info(dataptr->i2c.slave, &module, &bus, &address, &name);
@@ -603,9 +849,9 @@ void command_io_stats(cli_command_call_t *call)
 
 	string_assign_cstr(call->result, "IO STATS");
 	string_assign_cstr(call->result, "\n- probing");
-	string_format_append(call->result, "\n-  skipped: %u", stat_probe_skipped);
-	string_format_append(call->result, "\n-  tried: %u", stat_probe_tried);
-	string_format_append(call->result, "\n-  found: %u", stat_probe_found);
+	string_format_append(call->result, "\n-  skipped: %u", stat_i2c_probe_skipped);
+	string_format_append(call->result, "\n-  tried: %u", stat_i2c_probe_tried);
+	string_format_append(call->result, "\n-  found: %u", stat_i2c_probe_found);
 }
 
 void command_io_read(cli_command_call_t *call)
