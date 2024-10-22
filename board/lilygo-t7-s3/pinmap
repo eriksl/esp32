@@ -1,59 +1,58 @@
 LilyGO T3 S3
 
-	AVAILABLE	USED	FREE
+	AVAILABLE	USED	FREE	designated function/marking		used
 
 0	*			*				board boot select
-1	*							PDM
+1	*															PDM
 2	*			*				board battery detect
 3	*			*				board boot select
-4	* 			*				backlight SPI 2 SDM
-5	*							PWM 1 120 Hz
-6	*							[label: CLK]	I2C 1 SDA
-7	*											I2C 1 SCL
-8	*											I2C 1 INT
-9	*							[FSPIHD=IO_D3]	led pixel 1
-10	*			*				FSPICS0=CS0		led pixel 2
-11	*			*				FSPID=MOSI/IO_D0
-12	*			*				FSPCLK=SCK
-13	*			*				FSPIQ=MISO/IO_D1
-14	*							[FSPIWP=IO_D2]
-15	*			 								I2C 0 SDA
-16	*											I2C 0 SCL
+4	* 			*												SPI 2 LCD backlight PWM 5kHz
+5	*															PWM 0 120 Hz
+6	*							label: CLK						I2C 1 SDA
+7	*															I2C 1 SCL
+8	*															external I/O interrupt
+9	*							FSPIHD=IO_D3					led pixel 1
+10	*			*				FSPICS0=CS0						SPI 2 CS
+11	*			*				FSPID=MOSI/IO_D0				SPI 2 MOSI
+12	*			*				FSPCLK=SCK						SPI 2 SCK
+13	*			*				FSPIQ=MISO/IO_D1				SPI 2 MISO
+14	*							[FSPIWP=IO_D2]					led pixel 2
+15	*			 												I2C 0 SDA
+16	*															I2C 0 SCL
 17	*			*				board status LED
-18	*											I2C 0 INT
-19				*				[USB D-]
-20				*				[USB D+]
-21	*			*				GPIO D/C SPI 3
+18	*					*
+19				*				USB D-
+20				*				USB D+
+21	*			*												SPI 3 LCD D/C
 [22]
 [23]
 [24]
 [25]
-26				*				[SP0/1 CS1=CS1]
-27				*				[SP0/1 HD=IO_D3]
-28				*				[SP0/1 WP=IO_D2]
-29				*				[SP0/1 CS0=CS0]
-30				*				[SP0/1 CLK=CLK]
-31				*				[SP0/1 Q=IO_D1]
-32				*				[SP0/1 D=IO_D0]
-33				*				[SP0/1 IO4=IO_D4]
-34				*				[SP0/1 IO5=IO_D5]
-35	!			*				[SP0/1 IO6=IO_D6]	available but unusable due to OCT-SPI SPIRAM
-36	!			*				[SP0/1 IO7=IO_D7]	available but unusable due to OCT-SPI SPIRAM
-37	!			*				[SP0/1 DQS]			available but unusable due to OCT-SPI SPIRAM
-38	*			*				GPIO D/C SPI 2
-39	*							[JTAG MTCK, label: TCK]	PWM 2 120 Hz
-40	*							[JTAG MTDO, label: TDO] PWM 3 120 Hz
-41	*							[JTAG MTDI, label: TDI] PWM 4 5 kHz
-42	*			*				[JTAG MTMS, label: TMS] backlight SPI 3 SDM
-43	*					*		[UART TXD, label: TXD]
-44	*					*		[UART RXD, label: RXD]
-45	*			*				SPI 3 GPIO MISO
-46	*			*				SPI 3 GPIO SCK
-47	*			*				SPI 3 GPIO MOSI
-48	*			*				SPI 3 GPIO CS
+26				*				SP0/1 CS1=CS1
+27				*				SP0/1 HD=IO_D3
+28				*				SP0/1 WP=IO_D2
+29				*				SP0/1 CS0=CS0
+30				*				SP0/1 CLK=CLK
+31				*				SP0/1 Q=IO_D1
+32				*				SP0/1 D=IO_D0
+33				*				SP0/1 IO4=IO_D4
+34				*				SP0/1 IO5=IO_D5
+35	!			*				SP0/1 IO6=IO_D6					*available but unusable due to OCT-SPI SPIRAM*
+36	!			*				SP0/1 IO7=IO_D7					*available but unusable due to OCT-SPI SPIRAM*
+37	!			*				SP0/1 DQS						*available but unusable due to OCT-SPI SPIRAM*
+38	*			*												SPI 2 LCD D/C
+39	*							JTAG MTCK, label: TCK			PWM 1 120 Hz
+40	*							JTAG MTDO, label: TDO			PWM 2 120 Hz
+41	*							JTAG MTDI, label: TDI			PWM 3 5 kHz
+42	*			*				JTAG MTMS, label: TMS			SPI 3 LCD backlight PWM 5 kHz
+43	*							UART TXD, label: TXD			UART TxD
+44	*							UART RXD, label: RXD			UART RxD
+45	*			*												SPI 3 GPIO MISO
+46	*			*												SPI 3 GPIO SCK
+47	*			*												SPI 3 GPIO MOSI
+48	*			*												SPI 3 GPIO CS
 
-SPI			SPI 2					SPI 3			 		IDC connector 		analyser		BuyDisplay connector
-
+*SPI*		SPI 2					SPI 3			 		IDC connector 		analyser		BuyDisplay connector
 MISO		13*	MISO	R-1-4		45	MISO	L-1-6		1	brown			D4	yellow		28	LCD_SDO
 Vdd			 5V	+5V		R-1-8		5V	+5V		R-1-8		2	red								 2	Vdd
 SCK			12*	SCK		R-2-3		46	SCK		L-1-5		3	orange			D1	brown		24	D/C(SCL)
@@ -61,12 +60,10 @@ MOSI		11*	MOSI	L-1-10		47	MOSI	L-1-4		4	yellow			D3	orange		27	LCD_SDI
 CS			10*	CS0		L-2-10		48	CS		L-1-3		5	green			D0	black		23	LCD_/CS
 Vss			GND	GND		R-2-1		GND GND		L-1-1		6	blue			GND	white		 1	Vss
 D/C			38	D/C		R-2-4		21	D/C		L-1-8		7	purple			D2	red			25	/WR(D/C)
-BL			4	SDM		R-2-6		42	SDM		L-1-7		8	grey			D5	green		29	BL_ON/OFF
+BL			4	PWM		R-2-6		42	PWM		L-1-7		8	grey			D5	green		29	BL_ON/OFF
 
 *) IOMUX fixed assigned
 
-I2C			I2C 0					I2C 1
-
+*I2C*		I2C 0					I2C 1
 SDA			15			L-2-2		6			R-2-10
 SCL			16			L-2-3		7			R-1-10
-INT			18			L-2-4		8			L-2-6

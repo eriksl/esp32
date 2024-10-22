@@ -1,53 +1,53 @@
-LilyGO T3 S3
+Espressif S3 Box3
 
-	AVAILABLE	USED	FREE
+	AVAILABLE	USED	FREE	designated function/marking		used
 
-0								board boot strapping
-1								mute_status_l
-2								i2s_mclk
-3								board boot strapping
-4								lcd_dc SPI3 DC
-5								lcd_cs SPI3 CS
-6								lcd_sda SPI3 MOSI
-7								lcd_sck SPI3 SCK
-8								i2c_sda 0
-9								goldfinger [SPI2 DC]
-10								goldfinger [SPI2 CS]
-11								goldfinger [SPI2 MOSI]
-12								goldfinger [SPI2 SCK]
-13								goldfinger [SPI2 MISO]
-14								goldfinger [SPI2 BL]
-15								i2s_codec_dsdin
-16								i2s_adc_sdout
-17								i2s_mclk
-18								i2c_scl 0
-19								[USB D-]
-20								[USB D+]
-21								goldfinger SPI3 MISO
+0				*				board boot strapping
+1				*				mute_status_l
+2				*				i2s_mclk
+3				*				board boot strapping
+4				*				lcd_dc							SPI 3 LCD D/C
+5				*				lcd_cs							SPI 3 CS
+6				*				lcd_sda							SPI 3 MOSI
+7				*				lcd_sck							SPI 3 SCK
+8				*				i2c_sda							I2C 0 SDA
+9	*			*				goldfinger						SPI 2 LCD D/C
+10	*			*				goldfinger						SPI 2 CS
+11	*			*				goldfinger						SPI 2 MOSI
+12	*			*				goldfinger						SPI 2 SCK
+13	*			*				goldfinger						SPI 2 MISO
+14	*			*				goldfinger						SPI 2 LCD backlight PWM 5kHz
+15				*				i2s_codec_dsdin					I2S data select in
+16				*				i2s_adc_sdout					I2S data select out
+17				*				i2s_mclk						I2C master clock
+18				*				i2c_scl 0						I2C 0 SCL
+19				*				USB D-
+20				*				USB D+
+21				*				goldfinger						SPI 3 MISO
 [22]
 [23]
 [24]
 [25]
-26								[SP0/1 CS1=CS1]
-27								[SP0/1 HD=IO_D3]
-28								[SP0/1 WP=IO_D2]
-29								[SP0/1 CS0=CS0]
-30								[SP0/1 CLK=CLK]
-31								[SP0/1 Q=IO_D1]
-32								[SP0/1 D=IO_D0]
-33								[SP0/1 IO4=IO_D4]
-34								[SP0/1 IO5=IO_D5]
-35								[SP0/1 IO6=IO_D6]
-36								[SP0/1 IO7=IO_D7]
-37								[SP0/1 DQS]
-38								goldfinger
-39								goldfinger
-40								goldfinger i2c_scl 1
-41								goldfinger i2c_sda	1
-42								goldfinger
-43								goldfinger u0txd
-44								goldfinger u0rxd
-45								board boot strapping, i2s_lrck
-46								board boot strapping, pa_ctrl
-47								lcd_ctrl SPI3 BL
-48								lcd_rst
+26								SP0/1 CS1=CS1
+27				*				SP0/1 HD=IO_D3
+28				*				SP0/1 WP=IO_D2
+29				*				SP0/1 CS0=CS0
+30				*				SP0/1 CLK=CLK
+31				*				SP0/1 Q=IO_D1
+32				*				SP0/1 D=IO_D0
+33				*				SP0/1 IO4=IO_D4
+34				*				SP0/1 IO5=IO_D5
+35				*				SP0/1 IO6=IO_D6
+36				*				SP0/1 IO7=IO_D7
+37				*				SP0/1 DQS
+38	*							goldfinger						PWM 0
+39	*					*		goldfinger
+40	*			*				goldfinger i2c_scl 1			I2C 1 SCL
+41	*			*				goldfinger i2c_sda	1			I2C 1 SDA
+42	*			*				goldfinger						external I/O interrupt
+43	*			*				goldfinger u0txd				UART TxD
+44	*			*				goldfinger u0rxd				UART RxD
+45				*				board boot strapping, i2s_lrck	I2S left/right pulse
+46				*				board boot strapping, pa_ctrl	GPIO mute control input
+47				*				lcd_ctrl SPI3 BL				SPI 3 LCD backlight PWM 5kHz
+48				*				lcd_rst							SPI 3 LCD reset
