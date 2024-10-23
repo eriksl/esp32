@@ -91,7 +91,7 @@ static callback_data_t callback_data_gpio_on;
 static callback_data_t callback_data_gpio_off;
 static SemaphoreHandle_t spi_mutex;
 static unsigned int spi_pending;
-static unsigned int pwm_led_channel;
+static pwm_led_t pwm_led_channel;
 static unsigned int x_size, y_size;
 static unsigned int flip;
 static unsigned int rotate;
@@ -610,7 +610,7 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 	pixel_buffer_rgb_size = pixel_buffer_size / sizeof(display_rgb_t);
 	pixel_buffer_rgb_length = 0;
 
-	pwm_led_channel = pwm_led_channel_new(spi_signal->bl, plt_14bit_5khz);
+	pwm_led_channel = pwm_led_channel_new(spi_signal->bl, plt_14bit_5khz, "backlight generic SPI LCD");
 
 	inited = true;
 

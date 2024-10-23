@@ -142,7 +142,7 @@ static bool led_blinking;
 static bool led_blinking_fast;
 static unsigned int led_dim_duty;
 static unsigned int led_counter;
-static int led_pwm_channel;
+static pwm_led_t led_pwm_channel;
 
 static void led_timer_handler(struct tmrTimerControl *)
 {
@@ -166,8 +166,7 @@ bool notify_init(void)
 	led_dim_duty = duty_full;
 	led_counter = 0;
 
-	if((led_pwm_channel = pwm_led_channel_new(CONFIG_BSP_LED_GPIO, plt_14bit_5khz)) < 0)
-		return(false);
+	led_pwm_channel = pwm_led_channel_new(CONFIG_BSP_LED_GPIO, plt_14bit_5khz, "notification LED");
 
 	if(!(state_timer = xTimerCreate("notify-gpio", pdMS_TO_TICKS(50), pdFALSE, (void *)0, led_timer_handler)))
 		return(false);
@@ -201,9 +200,7 @@ bool notify(notify_t notification)
 	else
 	{
 		led_blinking = false;
-
-		if(!pwm_led_channel_set(led_pwm_channel, info->led.on ? led_dim_duty : 0))
-			return(false);
+		pwm_led_channel_set(led_pwm_channel, info->led.on ? led_dim_duty : 0);
 	}
 
 	return(true);

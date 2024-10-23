@@ -25,14 +25,23 @@ typedef enum
 
 typedef enum
 {
-	io_value_0 = 0,
-	io_value_first = io_value_0,
-	io_value_1,
-	io_value_2,
-	io_value_3,
-	io_value_size,
-	io_value_error = io_value_size,
+	io_int_value_0 = 0,
+	io_int_value_first = io_int_value_0,
+	io_int_value_1,
+	io_int_value_size,
+	io_int_value_error = io_int_value_size,
 } io_int_value_t;
+
+typedef enum
+{
+	io_ptr_value_0 = 0,
+	io_ptr_value_first = io_ptr_value_0,
+	io_ptr_value_1,
+	io_ptr_value_2,
+	io_ptr_value_3,
+	io_ptr_value_size,
+	io_ptr_value_error = io_ptr_value_size,
+} io_ptr_value_t;
 
 struct io_data_T;
 
@@ -69,7 +78,8 @@ typedef struct io_data_T
 		} i2c;
 		void *void_ptr;
 	};
-	int int_value[io_value_size];
+	int int_value[io_int_value_size];
+	void *ptr_value[io_ptr_value_size];
 	const io_info_t *info;
 	struct io_data_T *next;
 } io_data_t;
@@ -109,14 +119,14 @@ enum
 
 enum
 {
-	esp32_value_pwm0_channel = 0,
-	esp32_value_pwm1_channel,
-	esp32_value_pwm2_channel,
-	esp32_value_pwm3_channel,
-	esp32_value_size,
+	esp32_ptr_value_pwm0_channel = 0,
+	esp32_ptr_value_pwm1_channel,
+	esp32_ptr_value_pwm2_channel,
+	esp32_ptr_value_pwm3_channel,
+	esp32_ptr_value_size,
 };
 
-_Static_assert((unsigned int)esp32_value_size <= (unsigned int)io_value_size);
+_Static_assert((unsigned int)esp32_ptr_value_size <= (unsigned int)io_ptr_value_size);
 
 static void esp32_info(const io_data_t *dataptr, string_t result)
 {
@@ -128,50 +138,40 @@ static void esp32_info(const io_data_t *dataptr, string_t result)
 
 static bool esp32_init(io_data_t *dataptr)
 {
+	bool rv = false;
+
 	assert(inited);
 	assert(dataptr);
 
 #if(CONFIG_BSP_PWM0 >= 0)
-	if((dataptr->int_value[esp32_value_pwm0_channel] = pwm_led_channel_new(CONFIG_BSP_PWM0, plt_14bit_120hz)) < 0)
-	{
-		log_format("io esp32: error initialising PWM channel 0");
-		return(false);
-	}
+	rv = true;
+	dataptr->ptr_value[esp32_ptr_value_pwm0_channel] = pwm_led_channel_new(CONFIG_BSP_PWM0, plt_14bit_120hz, "generic PWM channel 0");
 #else
-	dataptr->int_value[esp32_value_pwm0_channel] = -1;
+	dataptr->ptr_value[esp32_ptr_value_pwm0_channel] = (void *)0;
 #endif
 
 #if(CONFIG_BSP_PWM1 >= 0)
-	if((dataptr->int_value[esp32_value_pwm1_channel] = pwm_led_channel_new(CONFIG_BSP_PWM1, plt_14bit_120hz)) < 0)
-	{
-		log_format("io esp32: error initialising PWM channel 1");
-		return(false);
-	}
+	rv = true;
+	dataptr->ptr_value[esp32_ptr_value_pwm1_channel] = pwm_led_channel_new(CONFIG_BSP_PWM1, plt_14bit_120hz, "generic PWM channel 1");
 #else
-	dataptr->int_value[esp32_value_pwm1_channel] = -1;
+	dataptr->ptr_value[esp32_ptr_value_pwm1_channel] = (void *)0;
 #endif
 
 #if(CONFIG_BSP_PWM2 >= 0)
-	if((dataptr->int_value[esp32_value_pwm2_channel] = pwm_led_channel_new(CONFIG_BSP_PWM2, plt_14bit_120hz)) < 0)
-	{
-		log_format("io esp32: error initialising PWM channel 2");
-		return(false);
-	}
+	rv = true;
+	dataptr->ptr_value[esp32_ptr_value_pwm2_channel] = pwm_led_channel_new(CONFIG_BSP_PWM2, plt_14bit_120hz, "generic PWM channel 2");
 #else
-	dataptr->int_value[esp32_value_pwm2_channel] = -1;
+	dataptr->ptr_value[esp32_ptr_value_pwm2_channel] = (void *)0;
 #endif
 
 #if(CONFIG_BSP_PWM3 >= 0)
-	if((dataptr->int_value[esp32_value_pwm3_channel] = pwm_led_channel_new(CONFIG_BSP_PWM3, plt_14bit_5khz)) < 0)
-	{
-		log_format("io esp32: error initialising PWM channel 3");
-		return(false);
-	}
+	rv = true;
+	dataptr->ptr_value[esp32_ptr_value_pwm3_channel] = pwm_led_channel_new(CONFIG_BSP_PWM3, plt_14bit_5khz, "generic PWM channel 3");
 #else
-	dataptr->int_value[esp32_value_pwm3_channel] = -1;
+	dataptr->ptr_value[esp32_ptr_value_pwm3_channel] = (void *)0;
 #endif
 
-	return(true);
+	return(rv);
 }
 
 static bool esp32_write(io_data_t *dataptr, unsigned int pin, unsigned int value)
@@ -183,40 +183,51 @@ static bool esp32_write(io_data_t *dataptr, unsigned int pin, unsigned int value
 
 	switch(pin)
 	{
-#if(CONFIG_BSP_PWM0 >= 0)
 		case(esp32_pin_pwm0):
 		{
-			return(pwm_led_channel_set(dataptr->int_value[esp32_value_pwm0_channel], value));
-		}
-#endif
+			if(dataptr->ptr_value[esp32_ptr_value_pwm0_channel])
+				pwm_led_channel_set(dataptr->ptr_value[esp32_ptr_value_pwm0_channel], value);
+			else
+				return(false);
 
-#if(CONFIG_BSP_PWM1 >= 0)
+			break;
+
+		}
+
 		case(esp32_pin_pwm1):
 		{
-			return(pwm_led_channel_set(dataptr->int_value[esp32_value_pwm1_channel], value));
-		}
-#endif
+			if(dataptr->ptr_value[esp32_ptr_value_pwm1_channel])
+				pwm_led_channel_set(dataptr->ptr_value[esp32_ptr_value_pwm1_channel], value);
+			else
+				return(false);
 
-#if(CONFIG_BSP_PWM2 >= 0)
+			break;
+		}
+
 		case(esp32_pin_pwm2):
 		{
-			return(pwm_led_channel_set(dataptr->int_value[esp32_value_pwm2_channel], value));
-		}
-#endif
+			if(dataptr->ptr_value[esp32_ptr_value_pwm2_channel])
+				pwm_led_channel_set(dataptr->ptr_value[esp32_ptr_value_pwm2_channel], value);
+			else
+				return(false);
 
-#if(CONFIG_BSP_PWM3 >= 0)
+			break;
+		}
+
 		case(esp32_pin_pwm3):
 		{
-			return(pwm_led_channel_set(dataptr->int_value[esp32_value_pwm3_channel], value));
-		}
-#endif
+			if(dataptr->ptr_value[esp32_ptr_value_pwm3_channel])
+				pwm_led_channel_set(dataptr->ptr_value[esp32_ptr_value_pwm3_channel], value);
+			else
+				return(false);
 
-#if(CONFIG_BSP_PDM >= 0)
+			break;
+		}
+
 		case(esp32_pin_pdm):
 		{
 			return(false);
 		}
-#endif
 
 		default:
 		{
@@ -231,46 +242,42 @@ static void esp32_pin_info(const io_data_t *dataptr, unsigned int pin, string_t 
 {
 	switch(pin)
 	{
-#if(CONFIG_BSP_PWM0 >= 0)
 		case(esp32_pin_pwm0):
 		{
-			string_format_append(result, "PWM 0 @ 120 Hz, GPIO %2d, channel: %d, duty: %u", CONFIG_BSP_PWM0, dataptr->int_value[esp32_value_pwm0_channel],
-					(unsigned int)pwm_led_channel_get(dataptr->int_value[esp32_value_pwm0_channel]));
+			if(dataptr->ptr_value[esp32_ptr_value_pwm0_channel])
+				string_format_append(result, "PWM 0 @ 120 Hz, GPIO %2d, duty: %u", CONFIG_BSP_PWM0,
+						(unsigned int)pwm_led_channel_get(dataptr->ptr_value[esp32_ptr_value_pwm0_channel]));
 			break;
 		}
-#endif
 
-#if(CONFIG_BSP_PWM1 >= 0)
 		case(esp32_pin_pwm1):
 		{
-			string_format_append(result, "PWM 1 @ 120 Hz, GPIO %2d, channel: %d, duty: %u", CONFIG_BSP_PWM1, dataptr->int_value[esp32_value_pwm1_channel],
-					(unsigned int)pwm_led_channel_get(dataptr->int_value[esp32_value_pwm1_channel]));
+			if(dataptr->ptr_value[esp32_ptr_value_pwm1_channel])
+				string_format_append(result, "PWM 1 @ 120 Hz, GPIO %2d, duty: %u", CONFIG_BSP_PWM1,
+						(unsigned int)pwm_led_channel_get(dataptr->ptr_value[esp32_ptr_value_pwm1_channel]));
 			break;
 		}
-#endif
 
-#if(CONFIG_BSP_PWM2 >= 0)
 		case(esp32_pin_pwm2):
 		{
-			string_format_append(result, "PWM 2 @ 120 Hz, GPIO %2d, channel: %d, duty: %u", CONFIG_BSP_PWM2, dataptr->int_value[esp32_value_pwm2_channel],
-					(unsigned int)pwm_led_channel_get(dataptr->int_value[esp32_value_pwm2_channel]));
+			if(dataptr->ptr_value[esp32_ptr_value_pwm2_channel])
+				string_format_append(result, "PWM 2 @ 120 Hz, GPIO %2d, duty: %u", CONFIG_BSP_PWM2,
+						(unsigned int)pwm_led_channel_get(dataptr->ptr_value[esp32_ptr_value_pwm2_channel]));
 			break;
 		}
-#endif
 
-#if(CONFIG_BSP_PWM3 >= 0)
 		case(esp32_pin_pwm3):
 		{
-			string_format_append(result, "PWM 3 @  5 kHz, GPIO %2d, channel: %d, duty: %u", CONFIG_BSP_PWM3, dataptr->int_value[esp32_value_pwm3_channel],
-					(unsigned int)pwm_led_channel_get(dataptr->int_value[esp32_value_pwm3_channel]));
+			if(dataptr->ptr_value[esp32_ptr_value_pwm3_channel])
+				string_format_append(result, "PWM 3 @  5 kHz, GPIO %2d, duty: %u", CONFIG_BSP_PWM3,
+						(unsigned int)pwm_led_channel_get(dataptr->ptr_value[esp32_ptr_value_pwm3_channel]));
 			break;
 		}
-#endif
 
 #if(CONFIG_BSP_PDM >= 0)
 		case(esp32_pin_pdm):
 		{
-			string_format_append(result, "PDM @ 80 MHz, GPIO %d", CONFIG_BSP_PDM);
+			string_format_append(result, "PDM @ 80 mhz, gpio %d", CONFIG_BSP_PDM);
 			break;
 		}
 #endif
@@ -285,26 +292,26 @@ static void esp32_pin_info(const io_data_t *dataptr, unsigned int pin, string_t 
 
 enum
 {
-	pcf8574_value_cache_in = 0,
-	pcf8574_value_cache_out,
-	pcf8574_value_size,
+	pcf8574_int_value_cache_in = 0,
+	pcf8574_int_value_cache_out,
+	pcf8574_int_value_size,
 };
 
-_Static_assert((unsigned int)pcf8574_value_size <= (unsigned int)io_value_size);
+_Static_assert((unsigned int)pcf8574_int_value_size <= (unsigned int)io_ptr_value_size);
 
 static void pcf8574_info(const io_data_t *dataptr, string_t result)
 {
 	string_append_cstr(result, "\npin cache");
-	string_format_append(result, "\n- input %#02x", (unsigned int)dataptr->int_value[pcf8574_value_cache_in]);
-	string_format_append(result, "\n- output %#02x", (unsigned int)dataptr->int_value[pcf8574_value_cache_out]);
+	string_format_append(result, "\n- input %#02x", (unsigned int)dataptr->int_value[pcf8574_int_value_cache_in]);
+	string_format_append(result, "\n- output %#02x", (unsigned int)dataptr->int_value[pcf8574_int_value_cache_out]);
 }
 
 static bool pcf8574_init(io_data_t *dataptr)
 {
 	assert(inited);
 
-	dataptr->int_value[pcf8574_value_cache_in] = 0xff;
-	dataptr->int_value[pcf8574_value_cache_out] = 0xff;
+	dataptr->int_value[pcf8574_int_value_cache_in] = 0xff;
+	dataptr->int_value[pcf8574_int_value_cache_out] = 0xff;
 
 	if(!i2c_send_1(dataptr->i2c.slave, 0xff))
 	{
@@ -328,7 +335,7 @@ static bool pcf8574_read(io_data_t *dataptr, unsigned int pin, unsigned int *val
 	if(!i2c_receive(dataptr->i2c.slave, 1, buffer))
 		return(false);
 
-	dataptr->int_value[pcf8574_value_cache_in] = buffer[0];
+	dataptr->int_value[pcf8574_int_value_cache_in] = buffer[0];
 
 	*value = !!(buffer[0] & (1 << pin));
 
@@ -345,18 +352,18 @@ static bool pcf8574_write(io_data_t *dataptr, unsigned int pin, unsigned int val
 	assert(inited);
 
 	if(value)
-		dataptr->int_value[pcf8574_value_cache_out] &= ~(1 << pin);
+		dataptr->int_value[pcf8574_int_value_cache_out] &= ~(1 << pin);
 	else
-		dataptr->int_value[pcf8574_value_cache_out] |= (1 << pin);
+		dataptr->int_value[pcf8574_int_value_cache_out] |= (1 << pin);
 
-	return(i2c_send_1(dataptr->i2c.slave, dataptr->int_value[pcf8574_value_cache_out]));
+	return(i2c_send_1(dataptr->i2c.slave, dataptr->int_value[pcf8574_int_value_cache_out]));
 }
 
 static void pcf8574_pin_info(const io_data_t *dataptr, unsigned int pin, string_t result)
 {
 	string_format_append(result, "binary I/O, current I/O value: %u/%u",
-			(unsigned int)!(dataptr->int_value[pcf8574_value_cache_in] & (1 << pin)),
-			(unsigned int)!(dataptr->int_value[pcf8574_value_cache_out] & (1 << pin)));
+			(unsigned int)!(dataptr->int_value[pcf8574_int_value_cache_in] & (1 << pin)),
+			(unsigned int)!(dataptr->int_value[pcf8574_int_value_cache_out] & (1 << pin)));
 }
 
 static const io_info_t info[io_id_size] =
