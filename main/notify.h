@@ -2,9 +2,9 @@
 
 typedef enum
 {
-	notify_sys_booting = 0,
+	notify_none = 0,
+	notify_sys_booting,
 	notify_sys_booting_finished,
-	notify_net_init,
 	notify_net_associating,
 	notify_net_associating_finished,
 	notify_net_ipv4_acquired,

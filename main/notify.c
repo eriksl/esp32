@@ -3,25 +3,15 @@
 #include <sdkconfig.h>
 
 #include "notify.h"
+#include "info.h"
 
-#if defined(CONFIG_BSP_LED_HAVE_LEDPIXEL) || defined(CONFIG_BSP_LED_HAVE_LED)
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
 enum
 {
-	duty_dim = 1UL << 6,
-	duty_full = 1UL << 14,
+	phase_size = 4
 };
-
-typedef enum
-{
-	phase_system = 0,
-	phase_net,
-	phase_blank,
-	phase_error,
-	phase_size = phase_error,
-} phase_t;
 
 typedef struct
 {
@@ -32,58 +22,141 @@ typedef struct
 
 typedef struct
 {
-	bool enabled;
-	bool on;
-	bool blinking;
-	bool fast;
-	bool dim;
-} led_t;
+	unsigned int duty_pct;
+	unsigned int time_ms;
+	rgb_t colour;
+} phase_t;
 
 typedef struct
 {
-	phase_t phase;
-	rgb_t colour;
-	led_t led;
+	phase_t phase[phase_size];
 } notification_info_t;
 
 static const notification_info_t notification_info[notify_size] =
 {
-	[notify_sys_booting] =					{	phase_system,	{ 0xff, 0x00, 0x00 },	{ true,  true,  true,  true,  false, }},
-	[notify_sys_booting_finished] =			{	phase_system,	{ 0x00, 0x01, 0x00 },	{ true,  true,  false, false, false, }},
-	[notify_net_init] =						{	phase_net,		{ 0xff, 0x00, 0x00 },	{ false, false, false, false, false, }},
-	[notify_net_associating] =				{	phase_net,		{ 0x05, 0x00, 0x05 },	{ false, false, false, false, false, }},
-	[notify_net_associating_finished] =		{	phase_net,		{ 0x05, 0x00, 0x05 },	{ false, false, false, false, false, }},
-	[notify_net_ipv4_acquired] =			{	phase_net,		{ 0x00, 0x05, 0x00 },	{ true,  true,  true,  false, false, }},
-	[notify_net_ipv6_ll_active] =			{	phase_net,		{ 0x01, 0x00, 0x00 },	{ true,  true,  true,  true,  true,  }},
-	[notify_net_ipv6_slaac_acquired] =		{	phase_net,		{ 0x00, 0x00, 0x01 },	{ true,  true,  true,  false, true,  }},
-	[notify_net_ipv6_static_active] =		{	phase_net,		{ 0x00, 0x01, 0x00 },	{ false, false, false, false, false, }},
-	[notify_net_ap_mode_init] =				{	phase_net,		{ 0xff, 0x40, 0x40 },	{ false, false, false, false, false, }},
-	[notify_net_ap_mode_idle] =				{	phase_net,		{ 0xff, 0x88, 0x88 },	{ false, false, false, false, false, }},
-	[notify_net_ap_mode_associated] =		{	phase_net,		{ 0xff, 0xff, 0xff },	{ false, false, false, false, false, }},
+	[notify_none] = {{
+		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
+		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
+		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
+		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
+	}},
+	[notify_sys_booting] = {{
+		{ .duty_pct = 100, .time_ms =  100, .colour = { 0xff, 0x00, 0x00 }},
+		{ .duty_pct =   0, .time_ms =  100, .colour = { 0xff, 0x00, 0x00 }},
+		{ .duty_pct = 100, .time_ms =  100, .colour = { 0xff, 0x00, 0x00 }},
+		{ .duty_pct =   0, .time_ms =  100, .colour = { 0xff, 0x00, 0x00 }},
+	}},
+	[notify_sys_booting_finished] = {{
+		{ .duty_pct = 100, .time_ms =    0, .colour = { 0xff, 0x00, 0x00 }},
+		{ .duty_pct = 100, .time_ms =    0, .colour = { 0xff, 0x00, 0x00 }},
+		{ .duty_pct = 100, .time_ms =    0, .colour = { 0xff, 0x00, 0x00 }},
+		{ .duty_pct = 100, .time_ms =    0, .colour = { 0xff, 0x00, 0x00 }},
+	}},
+	[notify_net_associating] = {{
+		{ .duty_pct = 100, .time_ms =  500, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_pct =   0, .time_ms =  500, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_pct = 100, .time_ms =  500, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_pct =   0, .time_ms =  500, .colour = { 0x00, 0xff, 0x00 }},
+	}},
+	[notify_net_associating_finished] = {{
+		{ .duty_pct =   5, .time_ms =    0, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0xff, 0x00 }},
+	}},
+	[notify_net_ipv4_acquired] = {{
+		{ .duty_pct =   5, .time_ms =  500, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_pct =   0, .time_ms =  500, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_pct =   5, .time_ms =  500, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_pct =   0, .time_ms =  500, .colour = { 0x00, 0xff, 0x00 }},
+	}},
+	[notify_net_ipv6_ll_active] = {{
+		{ .duty_pct =   1, .time_ms =    0, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0xff, 0x00 }},
+	}},
+	[notify_net_ipv6_slaac_acquired] = {{
+		{ .duty_pct =   1, .time_ms = 1000, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_pct =   0, .time_ms = 1000, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_pct =   1, .time_ms = 1000, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_pct =   0, .time_ms = 1000, .colour = { 0x00, 0xff, 0x00 }},
+	}},
+	[notify_net_ipv6_static_active] = {{
+		{ .duty_pct =   1, .time_ms =  100, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_pct =   0, .time_ms =  100, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_pct =   1, .time_ms =  100, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_pct =   0, .time_ms =  100, .colour = { 0x00, 0xff, 0x00 }},
+	}},
+	[notify_net_ap_mode_init] = {{
+		{ .duty_pct = 100, .time_ms =  500, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_pct =  10, .time_ms =  500, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_pct = 100, .time_ms =  100, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_pct =  10, .time_ms =  100, .colour = { 0x00, 0x00, 0xff }},
+	}},
+	[notify_net_ap_mode_idle] = {{
+		{ .duty_pct = 100, .time_ms =  500, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_pct =  10, .time_ms =  200, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_pct = 100, .time_ms =  500, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_pct =  10, .time_ms =  200, .colour = { 0x00, 0x00, 0xff }},
+	}},
+	[notify_net_ap_mode_associated] = {{
+		{ .duty_pct = 100, .time_ms = 1000, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_pct =  10, .time_ms = 1000, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_pct = 100, .time_ms = 1000, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_pct =  10, .time_ms = 1000, .colour = { 0x00, 0x00, 0xff }},
+	}},
 };
 
 static bool inited = false;
-#endif
+static notify_t current_notification;
+static int current_phase;
+static TimerHandle_t phase_timer;
 
 #if defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
 #include "ledpixel.h"
-
 static ledpixel_t ledpixel;
-static TimerHandle_t phase_timer;
-static rgb_t phase_colour[phase_size];
-static phase_t phase;
+#endif
+#if defined(CONFIG_BSP_LED_HAVE_LED)
+#include "pwm-led.h"
+static pwm_led_t led_pwm_channel;
+#endif
 
-static void ledpixel_timer_handler(struct tmrTimerControl *)
+static void timer_handler(struct tmrTimerControl *)
 {
-	if(!inited)
+	if(!inited || (current_notification >= notify_size))
 		return;
 
-	ledpixel_set(ledpixel, 0, phase_colour[phase].g, phase_colour[phase].r, phase_colour[phase].b);
+	current_phase++;
+
+	if((current_phase < 0) || (current_phase >= phase_size))
+		current_phase = 0;
+
+#if defined(CONFIG_BSP_LED_HAVE_LED) || defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
+	const notification_info_t *info_ptr;
+	const phase_t *phase_ptr;
+
+	info_ptr = &notification_info[current_notification];
+	phase_ptr = &info_ptr->phase[current_phase];
+#endif
+
+#if defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
+	ledpixel_set(ledpixel, 0,
+			phase_ptr->colour.r * phase_ptr->duty_pct / 100,
+			phase_ptr->colour.g * phase_ptr->duty_pct / 100,
+			phase_ptr->colour.b * phase_ptr->duty_pct / 100);
 	ledpixel_flush(ledpixel);
+#endif
 
-	xTimerStart(phase_timer, 0);
+#if defined(CONFIG_BSP_LED_HAVE_LED)
+	pwm_led_channel_set(led_pwm_channel, ((1U << 14) * phase_ptr->duty_pct) / 100);
+#endif
 
-	phase = (phase + 1) % phase_size;
+#if defined(CONFIG_BSP_LED_HAVE_LED) || defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
+	if(phase_ptr->time_ms)
+		if(!xTimerChangePeriod(phase_timer, pdMS_TO_TICKS(phase_ptr->time_ms), pdMS_TO_TICKS(1000))) // this will start the timer as well
+			stat_notify_timer_failed++;
+#endif
 }
 
 bool notify_init(void)
@@ -91,128 +164,44 @@ bool notify_init(void)
 	if(inited)
 		return(false);
 
+#if defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
 	if(!(ledpixel = ledpixel_new(1, CONFIG_BSP_LED_GPIO)))
 		return(false);
-
-	for(phase = 0; phase < phase_size; phase++)
-	{
-		phase_colour[phase].r = 0;
-		phase_colour[phase].g = 0;
-		phase_colour[phase].b = 0;
-	}
 
 	if(!ledpixel_set(ledpixel, 0, 0x00, 0x00, 0x00))
 		return(false);
 
 	if(!ledpixel_flush(ledpixel))
 		return(false);
+#endif
 
-	phase_timer = xTimerCreate("notify-phase", pdMS_TO_TICKS(500), pdFALSE, (void *)0, ledpixel_timer_handler);
-
-	if(!phase_timer)
-		return(false);
-
-	phase = 0;
-	inited = true;
-	xTimerStart(phase_timer, 0);
-
-	return(true);
-}
-
-bool notify(notify_t notification)
-{
-	const notification_info_t *info;
-
-	if(!inited || (notification >= notify_size))
-		return(false);
-
-	info = &notification_info[notification];
-
-	phase_colour[info->phase] = info->colour;
-
-	return(true);
-}
-#else
 #if defined(CONFIG_BSP_LED_HAVE_LED)
-
-#include "pwm-led.h"
-
-static TimerHandle_t state_timer;
-static bool led_blinking;
-static bool led_blinking_fast;
-static unsigned int led_dim_duty;
-static unsigned int led_counter;
-static pwm_led_t led_pwm_channel;
-
-static void led_timer_handler(struct tmrTimerControl *)
-{
-	if(!inited || !led_blinking)
-		return;
-
-	if((led_counter % (led_blinking_fast ? 1 : 50)) <= 25)
-		pwm_led_channel_set(led_pwm_channel, led_dim_duty);
-	else
-		pwm_led_channel_set(led_pwm_channel, 0);
-
-	led_counter++;
-
-	xTimerStart(state_timer, 0);
-}
-
-bool notify_init(void)
-{
-	led_blinking = false;
-	led_blinking_fast = false;
-	led_dim_duty = duty_full;
-	led_counter = 0;
-
 	led_pwm_channel = pwm_led_channel_new(CONFIG_BSP_LED_GPIO, plt_14bit_5khz, "notification LED");
+#endif
 
-	if(!(state_timer = xTimerCreate("notify-gpio", pdMS_TO_TICKS(50), pdFALSE, (void *)0, led_timer_handler)))
-		return(false);
-
+	current_phase = -1;
+	current_notification = notify_none;
 	inited = true;
+
+	if(!(phase_timer = xTimerCreate("notify-phase", 1, pdFALSE, (void *)0, timer_handler)))
+		return(false);
 
 	return(true);
 }
 
 bool notify(notify_t notification)
 {
-	const notification_info_t *info;
-
 	if(!inited || (notification >= notify_size))
 		return(false);
 
-	info = &notification_info[notification];
-
-	if(!info->led.enabled)
+	if(notification == notify_none)
 		return(true);
 
-	led_dim_duty = info->led.dim ? duty_dim : duty_full;
+	current_notification = notification;
+	current_phase = -1;
 
-	if(info->led.blinking)
-	{
-		led_blinking = true;
-		led_blinking_fast = info->led.fast;
-
-		xTimerStart(state_timer, 0);
-	}
-	else
-	{
-		led_blinking = false;
-		pwm_led_channel_set(led_pwm_channel, info->led.on ? led_dim_duty : 0);
-	}
-
-	return(true);
-}
-#else
-bool notify_init(void)
-{
-	return(true);
-}
-bool notify(notify_t notification)
-{
-	return(true);
-}
+#if defined(CONFIG_BSP_LED_HAVE_LED) || defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
+	xTimerChangePeriod(phase_timer, pdMS_TO_TICKS(100), pdMS_TO_TICKS(1000)); // this will start the timer as well
 #endif
-#endif
+	return(true);
+}

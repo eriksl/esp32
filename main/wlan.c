@@ -79,9 +79,9 @@ typedef struct
 static const state_info_t state_info[ws_size] =
 {
 	[ws_invalid] =							{ (1 << ws_init),
-											"invalid", notify_net_init },
+											"invalid", notify_none },
 	[ws_init] =								{ (1 << ws_init) | (1 << ws_associating),
-											"init", notify_net_init },
+											"init", notify_none },
 	[ws_associating] =						{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_associated)  | (1 << ws_rescue_ap_mode_idle) | (1 << ws_rescue_ap_mode_associated),
 											"associating", notify_net_associating },
 	[ws_associated] =						{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv4_address_acquired) | (1 << ws_ipv6_link_local_address_acquired),

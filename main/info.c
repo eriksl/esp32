@@ -20,11 +20,14 @@
 #include "display.h"
 
 static bool inited = false;
+
 unsigned int initial_free_heap;
 unsigned int initial_free_spiram;
 unsigned int initial_free_internal;
 unsigned int initial_free_total;
 unsigned int initial_free_rtcram;
+
+unsigned int stat_notify_timer_failed;
 
 void info_command_info(cli_command_call_t *call)
 {
@@ -76,10 +79,12 @@ void info_command_info(cli_command_call_t *call)
 #endif
 
 	string_format_append(call->result,
-			"firmware\n"
+			"\nfirmware\n"
 			"- date: %s %s\n"
 			"- build start: %s %s\n",
 			__DATE__, __TIME__, desc->date, desc->time);
+
+	string_format_append(call->result, "stats:\n- notify timer failed: %u", stat_notify_timer_failed);
 }
 
 void info_command_info_board(cli_command_call_t *call)
