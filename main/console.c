@@ -24,7 +24,7 @@ enum
 	line_amount = 8,
 	usb_uart_rx_buffer_size = 128,
 	usb_uart_tx_buffer_size = 256,
-	usb_uart_tx_timeout_ms = 10,
+	usb_uart_tx_timeout_ms = 100,
 };
 
 static_assert(usb_uart_rx_buffer_size > 64); // required by driver
