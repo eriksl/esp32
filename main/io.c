@@ -8,6 +8,7 @@
 #include "util.h"
 #include "cli-command.h"
 #include "pwm-led.h"
+#include "pdm.h"
 #include "io.h"
 
 #include <assert.h>
@@ -109,34 +110,31 @@ static inline void data_mutex_give(void)
 
 enum
 {
-	esp32_pin_pwm0 = 0,
-	esp32_pin_pwm1 = 1,
-	esp32_pin_pwm2 = 2,
-	esp32_pin_pwm3 = 3,
-	esp32_pin_pdm = 4,
-	esp32_pin_size
+	esp32_led_pwm_pin_pwm0 = 0,
+	esp32_led_pwm_pin_pwm1 = 1,
+	esp32_led_pwm_pin_pwm2 = 2,
+	esp32_led_pwm_pin_pwm3 = 3,
+	esp32_led_pwm_pin_size
 };
 
 enum
 {
-	esp32_ptr_value_pwm0_channel = 0,
-	esp32_ptr_value_pwm1_channel,
-	esp32_ptr_value_pwm2_channel,
-	esp32_ptr_value_pwm3_channel,
-	esp32_ptr_value_size,
+	esp32_led_pwm_ptr_value_pwm0_channel = 0,
+	esp32_led_pwm_ptr_value_pwm1_channel,
+	esp32_led_pwm_ptr_value_pwm2_channel,
+	esp32_led_pwm_ptr_value_pwm3_channel,
+	esp32_led_pwm_ptr_value_size,
 };
 
-_Static_assert((unsigned int)esp32_ptr_value_size <= (unsigned int)io_ptr_value_size);
+_Static_assert((unsigned int)esp32_led_pwm_ptr_value_size <= (unsigned int)io_ptr_value_size);
 
-static void esp32_info(const io_data_t *dataptr, string_t result)
+static void esp32_led_pwm_info(const io_data_t *dataptr, string_t result)
 {
 	assert(inited);
 	assert(dataptr);
-
-	string_append_cstr(result, "ESP32 internal I/O (PWM and PWD)");
 }
 
-static bool esp32_init(io_data_t *dataptr)
+static bool esp32_led_pwm_init(io_data_t *dataptr)
 {
 	bool rv = false;
 
@@ -145,36 +143,36 @@ static bool esp32_init(io_data_t *dataptr)
 
 #if(CONFIG_BSP_PWM0 >= 0)
 	rv = true;
-	dataptr->ptr_value[esp32_ptr_value_pwm0_channel] = pwm_led_channel_new(CONFIG_BSP_PWM0, plt_14bit_120hz, "generic PWM channel 0");
+	dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm0_channel] = pwm_led_channel_new(CONFIG_BSP_PWM0, plt_14bit_120hz, "LED-PWM channel 0");
 #else
-	dataptr->ptr_value[esp32_ptr_value_pwm0_channel] = (void *)0;
+	dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm0_channel] = (void *)0;
 #endif
 
 #if(CONFIG_BSP_PWM1 >= 0)
 	rv = true;
-	dataptr->ptr_value[esp32_ptr_value_pwm1_channel] = pwm_led_channel_new(CONFIG_BSP_PWM1, plt_14bit_120hz, "generic PWM channel 1");
+	dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm1_channel] = pwm_led_channel_new(CONFIG_BSP_PWM1, plt_14bit_120hz, "LED-PWM channel 1");
 #else
-	dataptr->ptr_value[esp32_ptr_value_pwm1_channel] = (void *)0;
+	dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm1_channel] = (void *)0;
 #endif
 
 #if(CONFIG_BSP_PWM2 >= 0)
 	rv = true;
-	dataptr->ptr_value[esp32_ptr_value_pwm2_channel] = pwm_led_channel_new(CONFIG_BSP_PWM2, plt_14bit_120hz, "generic PWM channel 2");
+	dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm2_channel] = pwm_led_channel_new(CONFIG_BSP_PWM2, plt_14bit_120hz, "LED-PWM channel 2");
 #else
-	dataptr->ptr_value[esp32_ptr_value_pwm2_channel] = (void *)0;
+	dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm2_channel] = (void *)0;
 #endif
 
 #if(CONFIG_BSP_PWM3 >= 0)
 	rv = true;
-	dataptr->ptr_value[esp32_ptr_value_pwm3_channel] = pwm_led_channel_new(CONFIG_BSP_PWM3, plt_14bit_5khz, "generic PWM channel 3");
+	dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm3_channel] = pwm_led_channel_new(CONFIG_BSP_PWM3, plt_14bit_5khz, "LED-PWM channel 3");
 #else
-	dataptr->ptr_value[esp32_ptr_value_pwm3_channel] = (void *)0;
+	dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm3_channel] = (void *)0;
 #endif
 
 	return(rv);
 }
 
-static bool esp32_write(io_data_t *dataptr, unsigned int pin, unsigned int value)
+static bool esp32_led_pwm_write(io_data_t *dataptr, unsigned int pin, unsigned int value)
 {
 	assert(inited);
 	assert(dataptr);
@@ -183,10 +181,10 @@ static bool esp32_write(io_data_t *dataptr, unsigned int pin, unsigned int value
 
 	switch(pin)
 	{
-		case(esp32_pin_pwm0):
+		case(esp32_led_pwm_pin_pwm0):
 		{
-			if(dataptr->ptr_value[esp32_ptr_value_pwm0_channel])
-				pwm_led_channel_set(dataptr->ptr_value[esp32_ptr_value_pwm0_channel], value);
+			if(dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm0_channel])
+				pwm_led_channel_set(dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm0_channel], value);
 			else
 				return(false);
 
@@ -194,39 +192,34 @@ static bool esp32_write(io_data_t *dataptr, unsigned int pin, unsigned int value
 
 		}
 
-		case(esp32_pin_pwm1):
+		case(esp32_led_pwm_pin_pwm1):
 		{
-			if(dataptr->ptr_value[esp32_ptr_value_pwm1_channel])
-				pwm_led_channel_set(dataptr->ptr_value[esp32_ptr_value_pwm1_channel], value);
+			if(dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm1_channel])
+				pwm_led_channel_set(dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm1_channel], value);
 			else
 				return(false);
 
 			break;
 		}
 
-		case(esp32_pin_pwm2):
+		case(esp32_led_pwm_pin_pwm2):
 		{
-			if(dataptr->ptr_value[esp32_ptr_value_pwm2_channel])
-				pwm_led_channel_set(dataptr->ptr_value[esp32_ptr_value_pwm2_channel], value);
+			if(dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm2_channel])
+				pwm_led_channel_set(dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm2_channel], value);
 			else
 				return(false);
 
 			break;
 		}
 
-		case(esp32_pin_pwm3):
+		case(esp32_led_pwm_pin_pwm3):
 		{
-			if(dataptr->ptr_value[esp32_ptr_value_pwm3_channel])
-				pwm_led_channel_set(dataptr->ptr_value[esp32_ptr_value_pwm3_channel], value);
+			if(dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm3_channel])
+				pwm_led_channel_set(dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm3_channel], value);
 			else
 				return(false);
 
 			break;
-		}
-
-		case(esp32_pin_pdm):
-		{
-			return(false);
 		}
 
 		default:
@@ -238,56 +231,158 @@ static bool esp32_write(io_data_t *dataptr, unsigned int pin, unsigned int value
 	return(true);
 }
 
-static void esp32_pin_info(const io_data_t *dataptr, unsigned int pin, string_t result)
+static void esp32_led_pwm_pin_info(const io_data_t *dataptr, unsigned int pin, string_t result)
 {
 	switch(pin)
 	{
-		case(esp32_pin_pwm0):
+		case(esp32_led_pwm_pin_pwm0):
 		{
-			if(dataptr->ptr_value[esp32_ptr_value_pwm0_channel])
+			if(dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm0_channel])
 				string_format_append(result, "PWM 0 @ 120 Hz, GPIO %2d, duty: %u", CONFIG_BSP_PWM0,
-						(unsigned int)pwm_led_channel_get(dataptr->ptr_value[esp32_ptr_value_pwm0_channel]));
+						(unsigned int)pwm_led_channel_get(dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm0_channel]));
+			else
+				goto unavail;
+
 			break;
 		}
 
-		case(esp32_pin_pwm1):
+		case(esp32_led_pwm_pin_pwm1):
 		{
-			if(dataptr->ptr_value[esp32_ptr_value_pwm1_channel])
+			if(dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm1_channel])
 				string_format_append(result, "PWM 1 @ 120 Hz, GPIO %2d, duty: %u", CONFIG_BSP_PWM1,
-						(unsigned int)pwm_led_channel_get(dataptr->ptr_value[esp32_ptr_value_pwm1_channel]));
+						(unsigned int)pwm_led_channel_get(dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm1_channel]));
+			else
+				goto unavail;
+
 			break;
 		}
 
-		case(esp32_pin_pwm2):
+		case(esp32_led_pwm_pin_pwm2):
 		{
-			if(dataptr->ptr_value[esp32_ptr_value_pwm2_channel])
+			if(dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm2_channel])
 				string_format_append(result, "PWM 2 @ 120 Hz, GPIO %2d, duty: %u", CONFIG_BSP_PWM2,
-						(unsigned int)pwm_led_channel_get(dataptr->ptr_value[esp32_ptr_value_pwm2_channel]));
+						(unsigned int)pwm_led_channel_get(dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm2_channel]));
+			else
+				goto unavail;
+
 			break;
 		}
 
-		case(esp32_pin_pwm3):
+		case(esp32_led_pwm_pin_pwm3):
 		{
-			if(dataptr->ptr_value[esp32_ptr_value_pwm3_channel])
+			if(dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm3_channel])
 				string_format_append(result, "PWM 3 @  5 kHz, GPIO %2d, duty: %u", CONFIG_BSP_PWM3,
-						(unsigned int)pwm_led_channel_get(dataptr->ptr_value[esp32_ptr_value_pwm3_channel]));
-			break;
-		}
+						(unsigned int)pwm_led_channel_get(dataptr->ptr_value[esp32_led_pwm_ptr_value_pwm3_channel]));
+			else
+				goto unavail;
 
-#if(CONFIG_BSP_PDM >= 0)
-		case(esp32_pin_pdm):
-		{
-			string_format_append(result, "PDM @ 80 mhz, gpio %d", CONFIG_BSP_PDM);
 			break;
 		}
-#endif
 
 		default:
 		{
-			string_format_append(result, "pin unvailable on this board");
+			goto unavail;
 			break;
 		}
 	}
+
+	return;
+
+unavail:
+	string_append_cstr(result, "pin unvailable on this board");
+}
+
+enum
+{
+	esp32_pdm_pin_pdm0 = 0,
+	esp32_pdm_pin_size
+};
+
+enum
+{
+	esp32_pdm_ptr_value_pdm0_channel = 0,
+	esp32_pdm_ptr_value_size,
+};
+
+_Static_assert((unsigned int)esp32_pdm_ptr_value_size <= (unsigned int)io_ptr_value_size);
+
+static void esp32_pdm_info(const io_data_t *dataptr, string_t result)
+{
+	assert(inited);
+	assert(dataptr);
+}
+
+static bool esp32_pdm_init(io_data_t *dataptr)
+{
+	bool rv = false;
+
+	assert(inited);
+	assert(dataptr);
+
+#if(CONFIG_BSP_PDM0 >= 0)
+	rv = true;
+	dataptr->ptr_value[esp32_pdm_ptr_value_pdm0_channel] = pdm_channel_new(CONFIG_BSP_PDM0, "PDM channel 0");
+#else
+	dataptr->ptr_value[esp32_pdm_ptr_value_pdm0_channel] = (void *)0;
+#endif
+
+	return(rv);
+}
+
+static bool esp32_pdm_write(io_data_t *dataptr, unsigned int pin, unsigned int value)
+{
+	assert(inited);
+	assert(dataptr);
+	assert(pin < dataptr->info->pins);
+	assert(value <= dataptr->info->max_value);
+
+	switch(pin)
+	{
+		case(esp32_pdm_pin_pdm0):
+		{
+			if(dataptr->ptr_value[esp32_pdm_ptr_value_pdm0_channel])
+				pdm_channel_set(dataptr->ptr_value[esp32_pdm_ptr_value_pdm0_channel], value);
+			else
+				return(false);
+
+			break;
+
+		}
+		default:
+		{
+			return(false);
+		}
+	}
+
+	return(true);
+}
+
+static void esp32_pdm_pin_info(const io_data_t *dataptr, unsigned int pin, string_t result)
+{
+	switch(pin)
+	{
+		case(esp32_pdm_pin_pdm0):
+		{
+			if(dataptr->ptr_value[esp32_pdm_ptr_value_pdm0_channel])
+				string_format_append(result, "PDM @ 80 mhz, GPIO %2d, density: %u", CONFIG_BSP_PDM0,
+						pdm_channel_get(dataptr->ptr_value[esp32_pdm_ptr_value_pdm0_channel]));
+			else
+				goto unavail;
+
+			break;
+		}
+
+		default:
+		{
+			goto unavail;
+			break;
+		}
+	}
+
+	return;
+
+unavail:
+	string_append_cstr(result, "pin unvailable on this board");
 }
 
 enum
@@ -368,19 +463,33 @@ static void pcf8574_pin_info(const io_data_t *dataptr, unsigned int pin, string_
 
 static const io_info_t info[io_id_size] =
 {
-	[io_id_esp32] =
+	[io_id_esp32_pwm_led] =
 	{
-		.id = io_id_esp32,
-		.name = "ESP32 internal I/O",
+		.id = io_id_esp32_pwm_led,
+		.name = "ESP32 LED PWM",
 		.caps = (1 << io_cap_output),
-		.pins = esp32_pin_size,
+		.pins = esp32_led_pwm_pin_size,
 		.max_value = 16384,
 		.bus = io_bus_apb,
-		.info_fn = esp32_info,
-		.init_fn = esp32_init,
+		.info_fn = esp32_led_pwm_info,
+		.init_fn = esp32_led_pwm_init,
 		.read_fn = (void *)0,
-		.write_fn = esp32_write,
-		.pin_info_fn = esp32_pin_info,
+		.write_fn = esp32_led_pwm_write,
+		.pin_info_fn = esp32_led_pwm_pin_info,
+	},
+	[io_id_esp32_pdm] =
+	{
+		.id = io_id_esp32_pdm,
+		.name = "ESP32 PDM",
+		.caps = (1 << io_cap_output),
+		.pins = esp32_pdm_pin_size,
+		.max_value = 255,
+		.bus = io_bus_apb,
+		.info_fn = esp32_pdm_info,
+		.init_fn = esp32_pdm_init,
+		.read_fn = (void *)0,
+		.write_fn = esp32_pdm_write,
+		.pin_info_fn = esp32_pdm_pin_info,
 	},
 	[io_id_pcf8574_26] =
 	{

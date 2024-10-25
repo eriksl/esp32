@@ -3,7 +3,7 @@ WEMOS Lolin S3 mini
 	AVAILABLE	USED	FREE	designated function/marking		used
 
 0				*				board boot select
-1	*															PDM
+1	*															PDM 0
 2	*			*												SPI 2 LCD D/C
 3	*			*				board boot select
 4	*			*												SPI 2 LCD backlight PWM 5 kHz

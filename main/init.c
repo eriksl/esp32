@@ -22,6 +22,7 @@
 #include "i2c.h"
 #include "sensor.h"
 #include "io.h"
+#include "pdm.h"
 
 __attribute__((noreturn)) void app_main(void);
 
@@ -31,6 +32,7 @@ void app_main(void)
 	notify_init();
 	notify(notify_sys_booting);
 	console_init_1();
+	pdm_init();
 	info_init();
 	string_module_init();
 	log_init();
