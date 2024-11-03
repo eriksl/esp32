@@ -87,13 +87,16 @@ static void log_signal_display(unsigned int item)
 
 static void _log_cstr(bool append_strerror, const char *string)
 {
+	unsigned int current;
+	log_entry_t *entry;
+
 	if(inited)
 	{
-		log_entry_t *entry;
-
 		data_mutex_take();
 
-		entry = &log_buffer->entry[log_buffer->in];
+		current = log_buffer->in;
+
+		entry = &log_buffer->entry[current];
 
 		entry->timestamp = time((time_t *)0);
 
@@ -103,17 +106,17 @@ static void _log_cstr(bool append_strerror, const char *string)
 		else
 			snprintf(entry->data, sizeof(entry->data), "%s", string);
 
-		log_signal_display(log_buffer->in);
-
 		if(log_buffer->in++ >= log_buffer_entries)
 			log_buffer->in = 0;
+
+		data_mutex_give();
 
 		if(strlen(string) >= sizeof(entry->data))
 			console_write_line(string);
 		else
 			console_write_line(entry->data);
 
-		data_mutex_give();
+		log_signal_display(current);
 	}
 	else
 		console_write_line(string);
@@ -139,15 +142,16 @@ void log_cstr_errno(const char *line)
 
 static void _log_format(bool append_strerror, const char *fmt, va_list ap)
 {
-	unsigned int offset;
+	unsigned int offset, current;
+	log_entry_t *entry;
 
 	if(inited)
 	{
-		log_entry_t *entry;
-
 		data_mutex_take();
 
-		entry = &log_buffer->entry[log_buffer->in];
+		current = log_buffer->in;
+
+		entry = &log_buffer->entry[current];
 
 		entry->timestamp = time((time_t *)0);
 
@@ -160,14 +164,13 @@ static void _log_format(bool append_strerror, const char *fmt, va_list ap)
 					strerror(errno), errno);
 		}
 
-		log_signal_display(log_buffer->in);
-
 		if(log_buffer->in++ >= log_buffer_entries)
 			log_buffer->in = 0;
 
-		console_write_line(entry->data);
-
 		data_mutex_give();
+
+		console_write_line(entry->data);
+		log_signal_display(current);
 	}
 	else
 		console_write_line(fmt);
@@ -247,13 +250,14 @@ void log_get_entry(unsigned int entry_index, time_t *stamp, unsigned int text_bu
 	data_mutex_take();
 
 	if(entry_index >= log_buffer->entries)
-		return;
+		goto exit;
 
 	entry = &log_buffer->entry[entry_index];
 
 	*stamp = entry->timestamp;
 	strlcpy(text_buffer, entry->data, text_buffer_size);
 
+exit:
 	data_mutex_give();
 }
 
@@ -309,10 +313,10 @@ void log_command_log(cli_command_call_t *call)
 	assert(inited);
 	assert((call->parameter_count == 0) || (call->parameter_count == 1));
 
-	data_mutex_take();
-
 	if(call->parameter_count == 1)
 		log_buffer->out = call->parameters[0].unsigned_int;
+
+	data_mutex_take();
 
 	if(log_buffer->in > log_buffer->out)
 		entries = log_buffer->in - log_buffer->out;
