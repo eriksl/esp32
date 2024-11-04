@@ -22,7 +22,7 @@ typedef struct
 
 typedef struct
 {
-	unsigned int duty_pct;
+	unsigned int duty_shift;
 	unsigned int time_ms;
 	rgb_t colour;
 } phase_t;
@@ -35,76 +35,76 @@ typedef struct
 static const notification_info_t notification_info[notify_size] =
 {
 	[notify_none] = {{
-		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
-		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
-		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
-		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
+		{ .duty_shift =  0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
+		{ .duty_shift =  0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
+		{ .duty_shift =  0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
+		{ .duty_shift =  0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
 	}},
 	[notify_sys_booting] = {{
-		{ .duty_pct = 100, .time_ms =  100, .colour = { 0xff, 0x00, 0x00 }},
-		{ .duty_pct =   0, .time_ms =  100, .colour = { 0xff, 0x00, 0x00 }},
-		{ .duty_pct = 100, .time_ms =  100, .colour = { 0xff, 0x00, 0x00 }},
-		{ .duty_pct =   0, .time_ms =  100, .colour = { 0xff, 0x00, 0x00 }},
+		{ .duty_shift = 14, .time_ms =   50, .colour = { 0xff, 0x00, 0x00 }},
+		{ .duty_shift =  0, .time_ms =   50, .colour = { 0xff, 0x00, 0x00 }},
+		{ .duty_shift = 14, .time_ms =   50, .colour = { 0xff, 0x00, 0x00 }},
+		{ .duty_shift =  0, .time_ms =   50, .colour = { 0xff, 0x00, 0x00 }},
 	}},
 	[notify_sys_booting_finished] = {{
-		{ .duty_pct = 100, .time_ms =    0, .colour = { 0xff, 0x00, 0x00 }},
-		{ .duty_pct = 100, .time_ms =    0, .colour = { 0xff, 0x00, 0x00 }},
-		{ .duty_pct = 100, .time_ms =    0, .colour = { 0xff, 0x00, 0x00 }},
-		{ .duty_pct = 100, .time_ms =    0, .colour = { 0xff, 0x00, 0x00 }},
+		{ .duty_shift = 14, .time_ms =  300, .colour = { 0xff, 0x00, 0x00 }},
+		{ .duty_shift =  0, .time_ms =  300, .colour = { 0xff, 0x00, 0x00 }},
+		{ .duty_shift = 14, .time_ms =  300, .colour = { 0xff, 0x00, 0x00 }},
+		{ .duty_shift =  0, .time_ms =  300, .colour = { 0xff, 0x00, 0x00 }},
 	}},
 	[notify_net_associating] = {{
-		{ .duty_pct = 100, .time_ms =  500, .colour = { 0x00, 0xff, 0x00 }},
-		{ .duty_pct =   0, .time_ms =  500, .colour = { 0x00, 0xff, 0x00 }},
-		{ .duty_pct = 100, .time_ms =  500, .colour = { 0x00, 0xff, 0x00 }},
-		{ .duty_pct =   0, .time_ms =  500, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  9, .time_ms =   50, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  0, .time_ms =   50, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  9, .time_ms =   50, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  0, .time_ms =   50, .colour = { 0x00, 0xff, 0x00 }},
 	}},
 	[notify_net_associating_finished] = {{
-		{ .duty_pct =   5, .time_ms =    0, .colour = { 0x00, 0xff, 0x00 }},
-		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0xff, 0x00 }},
-		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0xff, 0x00 }},
-		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  9, .time_ms =  300, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  0, .time_ms =  300, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  9, .time_ms =  300, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  0, .time_ms =  300, .colour = { 0x00, 0xff, 0x00 }},
 	}},
 	[notify_net_ipv4_acquired] = {{
-		{ .duty_pct =   5, .time_ms =  500, .colour = { 0x00, 0xff, 0x00 }},
-		{ .duty_pct =   0, .time_ms =  500, .colour = { 0x00, 0xff, 0x00 }},
-		{ .duty_pct =   5, .time_ms =  500, .colour = { 0x00, 0xff, 0x00 }},
-		{ .duty_pct =   0, .time_ms =  500, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  9, .time_ms = 1000, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  0, .time_ms = 1000, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  9, .time_ms = 1000, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  0, .time_ms = 1000, .colour = { 0x00, 0xff, 0x00 }},
 	}},
 	[notify_net_ipv6_ll_active] = {{
-		{ .duty_pct =   1, .time_ms =    0, .colour = { 0x00, 0xff, 0x00 }},
-		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0xff, 0x00 }},
-		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0xff, 0x00 }},
-		{ .duty_pct =   0, .time_ms =    0, .colour = { 0x00, 0xff, 0x00 }},
-	}},
-	[notify_net_ipv6_slaac_acquired] = {{
-		{ .duty_pct =   1, .time_ms = 1000, .colour = { 0x00, 0xff, 0x00 }},
-		{ .duty_pct =   0, .time_ms = 1000, .colour = { 0x00, 0xff, 0x00 }},
-		{ .duty_pct =   1, .time_ms = 1000, .colour = { 0x00, 0xff, 0x00 }},
-		{ .duty_pct =   0, .time_ms = 1000, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  5, .time_ms =   50, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  0, .time_ms =   50, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  5, .time_ms =   50, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  0, .time_ms =   50, .colour = { 0x00, 0xff, 0x00 }},
 	}},
 	[notify_net_ipv6_static_active] = {{
-		{ .duty_pct =   1, .time_ms =  100, .colour = { 0x00, 0xff, 0x00 }},
-		{ .duty_pct =   0, .time_ms =  100, .colour = { 0x00, 0xff, 0x00 }},
-		{ .duty_pct =   1, .time_ms =  100, .colour = { 0x00, 0xff, 0x00 }},
-		{ .duty_pct =   0, .time_ms =  100, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  5, .time_ms =  300, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  0, .time_ms =  300, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  5, .time_ms =  300, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  0, .time_ms =  300, .colour = { 0x00, 0xff, 0x00 }},
+	}},
+	[notify_net_ipv6_slaac_acquired] = {{
+		{ .duty_shift =  5, .time_ms = 1000, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  0, .time_ms = 1000, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  5, .time_ms = 1000, .colour = { 0x00, 0xff, 0x00 }},
+		{ .duty_shift =  0, .time_ms = 1000, .colour = { 0x00, 0xff, 0x00 }},
 	}},
 	[notify_net_ap_mode_init] = {{
-		{ .duty_pct = 100, .time_ms =  500, .colour = { 0x00, 0x00, 0xff }},
-		{ .duty_pct =  10, .time_ms =  500, .colour = { 0x00, 0x00, 0xff }},
-		{ .duty_pct = 100, .time_ms =  100, .colour = { 0x00, 0x00, 0xff }},
-		{ .duty_pct =  10, .time_ms =  100, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_shift = 14, .time_ms =  100, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_shift = 12, .time_ms =  100, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_shift = 14, .time_ms =  100, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_shift = 12, .time_ms =  100, .colour = { 0x00, 0x00, 0xff }},
 	}},
 	[notify_net_ap_mode_idle] = {{
-		{ .duty_pct = 100, .time_ms =  500, .colour = { 0x00, 0x00, 0xff }},
-		{ .duty_pct =  10, .time_ms =  200, .colour = { 0x00, 0x00, 0xff }},
-		{ .duty_pct = 100, .time_ms =  500, .colour = { 0x00, 0x00, 0xff }},
-		{ .duty_pct =  10, .time_ms =  200, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_shift = 14, .time_ms =  500, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_shift = 12, .time_ms =  500, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_shift = 14, .time_ms =  500, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_shift = 12, .time_ms =  500, .colour = { 0x00, 0x00, 0xff }},
 	}},
 	[notify_net_ap_mode_associated] = {{
-		{ .duty_pct = 100, .time_ms = 1000, .colour = { 0x00, 0x00, 0xff }},
-		{ .duty_pct =  10, .time_ms = 1000, .colour = { 0x00, 0x00, 0xff }},
-		{ .duty_pct = 100, .time_ms = 1000, .colour = { 0x00, 0x00, 0xff }},
-		{ .duty_pct =  10, .time_ms = 1000, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_shift = 14, .time_ms = 1200, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_shift = 12, .time_ms = 1200, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_shift = 14, .time_ms = 1200, .colour = { 0x00, 0x00, 0xff }},
+		{ .duty_shift = 12, .time_ms = 1200, .colour = { 0x00, 0x00, 0xff }},
 	}},
 };
 
@@ -142,14 +142,14 @@ static void timer_handler(struct tmrTimerControl *)
 
 #if defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
 	ledpixel_set(ledpixel, 0,
-			phase_ptr->colour.r * phase_ptr->duty_pct / 100,
-			phase_ptr->colour.g * phase_ptr->duty_pct / 100,
-			phase_ptr->colour.b * phase_ptr->duty_pct / 100);
+			phase_ptr->colour.r,
+			phase_ptr->colour.g,
+			phase_ptr->colour.b);
 	ledpixel_flush(ledpixel);
 #endif
 
 #if defined(CONFIG_BSP_LED_HAVE_LED)
-	pwm_led_channel_set(led_pwm_channel, ((1U << 14) * phase_ptr->duty_pct) / 100);
+	pwm_led_channel_set(led_pwm_channel, (1UL << phase_ptr->duty_shift) - 1);
 #endif
 
 #if defined(CONFIG_BSP_LED_HAVE_LED) || defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
