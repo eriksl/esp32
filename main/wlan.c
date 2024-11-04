@@ -280,8 +280,14 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 			log("wlan: ap probe received");
 			break;
 		}
+		case(WIFI_EVENT_STA_BEACON_TIMEOUT): /* 21 */
+		{
+			log("wlan: beacon timeout");
+			break;
+		}
 		case(WIFI_EVENT_HOME_CHANNEL_CHANGE): /* 40 */
 		{
+			log("wlan: home channel change");
 			break;
 		}
 		default:
