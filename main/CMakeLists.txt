@@ -76,4 +76,5 @@ target_compile_options(${COMPONENT_TARGET} PRIVATE
 		-Wno-inline
 		-Wno-packed
 		-Wno-pointer-sign
+		-fno-strict-aliasing
 	)
