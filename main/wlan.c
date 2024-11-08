@@ -434,8 +434,6 @@ static void run_tcp(void *)
 
 			length = string_recvfrom_fd(receive_buffer, tcp_socket_fd, (unsigned int *)0, (void *)0);
 
-			log_format("$ recvfrom: %d", length);
-
 			if(length <= 0)
 			{
 				tcp_receive_errors++;
