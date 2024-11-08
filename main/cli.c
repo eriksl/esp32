@@ -967,13 +967,6 @@ static void run_send_queue(void *)
 
 		switch(cli_buffer.source)
 		{
-			case(cli_source_none):
-			case(cli_source_size):
-			{
-				log_format("cli: invalid source type: %u", cli_buffer.source);
-				break;
-			}
-
 			case(cli_source_bt):
 			{
 				bt_send(&cli_buffer);
@@ -997,6 +990,13 @@ static void run_send_queue(void *)
 				wlan_udp_send(&cli_buffer);
 				break;
 			}
+
+			default:
+			{
+				log_format("cli: invalid source type: %u", cli_buffer.source);
+				break;
+			}
+
 		}
 
 		cli_buffer.source = cli_source_none;
