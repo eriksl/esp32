@@ -38,7 +38,6 @@ target_compile_options(${COMPONENT_TARGET} PRIVATE
 		-Wformat-truncation=1
 		-Wstringop-overflow=4
 		-Wunused-const-variable=2
-		-Walloca
 		-Warray-bounds=2
 		-Wswitch-bool
 		-Wduplicated-branches
