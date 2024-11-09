@@ -40,14 +40,14 @@ Espressif S3 Box3
 35				*				SP0/1 IO6=IO_D6
 36				*				SP0/1 IO7=IO_D7
 37				*				SP0/1 DQS
-38	*							goldfinger						PWM 0
+38	*							goldfinger						MCPWM 0 150 Hz
 39	*							goldfinger						LEDpixel 1
 40	*			*				goldfinger i2c_scl 1			I2C 1 SCL
 41	*			*				goldfinger i2c_sda	1			I2C 1 SDA
 42	*			*				goldfinger						external I/O interrupt
 43	*			*				goldfinger u0txd				UART TxD
 44	*			*				goldfinger u0rxd				UART RxD
-45	#					 		board boot strapping, i2s_lrck	I2S left/right pulse
+45	#					 		board boot strapping, i2s_lrck	MCPWM 1 150 Hz
 46				*		 		board boot strapping, pa_ctrl	GPIO mute control input
 47				*				lcd_ctrl SPI3 BL				LEDPWM 2 5kHz SPI 3 LCD backlight
 48				*				lcd_rst							SPI 3 LCD reset

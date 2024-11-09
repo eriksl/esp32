@@ -6,8 +6,8 @@ LilyGO T3 S3
 1	*			*												PDM 0 150 kHz
 2	*			*				board battery detect
 3	*					#		board boot select
-5	*			*												PWM 0 120 Hz
 4	* 			*												LEDPWM 1 5kHz SPI 2 LCD backlight
+5	*			*												MCPWM 0 150 Hz
 6	*			*				label: CLK						I2C 1 SDA
 7	*			*												I2C 1 SCL
 8	*			*												external I/O interrupt
@@ -19,8 +19,8 @@ LilyGO T3 S3
 14	*			*				[FSPIWP=IO_D2]					LEDpixel 2
 15	*			* 												I2C 0 SDA
 16	*			*												I2C 0 SCL
-18	*			*
 17	*			*				board status LED				LEDPWM 0 5 kHz NOTIFY
+18	*			*												MCPWM 1 150 Hz
 19				*				USB D-
 20				*				USB D+
 21	*			*												SPI 3 LCD D/C
@@ -41,8 +41,8 @@ LilyGO T3 S3
 36	!			*				SP0/1 IO7=IO_D7					*available but unusable due to OCT-SPI SPIRAM*
 37	!			*				SP0/1 DQS						*available but unusable due to OCT-SPI SPIRAM*
 38	*			*												SPI 2 LCD D/C
-39	*			*				JTAG MTCK, label: TCK			PWM 1 120 Hz
-40	*			*				JTAG MTDO, label: TDO			PWM 2 120 Hz
+39	*			*				JTAG MTCK, label: TCK			MCPWM 2 2400 Hz
+40	*			*				JTAG MTDO, label: TDO			MCPWM 3 2400 Hz
 41	*			*				JTAG MTDI, label: TDI			LEDPWM 3 120 Hz
 42	*			*				JTAG MTMS, label: TMS			LEDPWM 2 5 kHz SPI 3 LCD backlight
 43	*			*				UART TXD, label: TXD			UART TxD

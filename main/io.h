@@ -2,8 +2,9 @@
 
 typedef enum
 {
-	io_id_esp32_ledpwm = 0,
-	io_id_first = io_id_esp32_ledpwm,
+	io_id_esp32_mcpwm = 0,
+	io_id_first = io_id_esp32_mcpwm,
+	io_id_esp32_ledpwm,
 	io_id_esp32_pdm,
 	io_id_esp32_ledpixel_0,
 	io_id_esp32_ledpixel_1,

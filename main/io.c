@@ -7,6 +7,7 @@
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
+#include "mcpwm.h"
 #include "ledpwm.h"
 #include "pdm.h"
 #include "ledpixel.h"
@@ -115,7 +116,71 @@ static inline void data_mutex_give(void)
 	assert(xSemaphoreGive(data_mutex));
 }
 
+enum
 {
+	esp32_mcpwm_pin_0 = 0,
+	esp32_mcpwm_pin_1,
+	esp32_mcpwm_pin_2,
+	esp32_mcpwm_pin_3,
+	esp32_mcpwm_pin_size
+};
+
+_Static_assert((unsigned int)esp32_mcpwm_pin_size <= (unsigned int)io_int_value_size);
+_Static_assert((unsigned int)esp32_mcpwm_pin_0 == (unsigned int)mpt_16bit_150hz_0);
+_Static_assert((unsigned int)esp32_mcpwm_pin_1 == (unsigned int)mpt_16bit_150hz_1);
+_Static_assert((unsigned int)esp32_mcpwm_pin_2 == (unsigned int)mpt_16bit_2400hz_0);
+_Static_assert((unsigned int)esp32_mcpwm_pin_3 == (unsigned int)mpt_16bit_2400hz_1);
+
+static void esp32_mcpwm_info(const io_data_t *dataptr, string_t result)
+{
+	assert(inited);
+	assert(dataptr);
+}
+
+static bool esp32_mcpwm_init(io_data_t *dataptr)
+{
+	mcpwm_t handle;
+	bool rv = false;
+
+	assert(inited);
+	assert(dataptr);
+
+	for(handle = mpt_first; handle < mpt_size; handle++)
+		if((dataptr->int_value[handle] = mcpwm_open(handle, "I/O MC-PWM")))
+			rv = true;
+
+	return(rv);
+}
+
+static bool esp32_mcpwm_write(io_data_t *dataptr, unsigned int pin, unsigned int value)
+{
+	assert(inited);
+	assert(dataptr);
+	assert(pin < dataptr->info->pins);
+	assert(pin < mpt_size);
+	assert(value <= dataptr->info->max_value);
+
+	if(!dataptr->int_value[pin])
+		return(false);
+
+	mcpwm_set((mcpwm_t)pin, value);
+
+	return(true);
+}
+
+static void esp32_mcpwm_pin_info(const io_data_t *dataptr, unsigned int pin, string_t result)
+{
+	assert(inited);
+	assert(dataptr);
+	assert(result);
+	assert(pin < dataptr->info->pins);
+	assert(pin < mpt_size);
+
+	if(dataptr->int_value[pin])
+		string_format_append(result, "MC-PWM channel %u duty: %u", pin, mcpwm_get(pin));
+	else
+		string_append_cstr(result, "pin unvailable on this board");
+}
 
 enum
 {
@@ -383,6 +448,20 @@ static void pcf8574_pin_info(const io_data_t *dataptr, unsigned int pin, string_
 
 static const io_info_t info[io_id_size] =
 {
+	[io_id_esp32_mcpwm] =
+	{
+		.id = io_id_esp32_mcpwm,
+		.name = "ESP32 MC-PWM 16 bits",
+		.caps = (1 << io_cap_output),
+		.pins = esp32_mcpwm_pin_size,
+		.max_value = 65535,
+		.bus = io_bus_apb,
+		.info_fn = esp32_mcpwm_info,
+		.init_fn = esp32_mcpwm_init,
+		.read_fn = (void *)0,
+		.write_fn = esp32_mcpwm_write,
+		.pin_info_fn = esp32_mcpwm_pin_info,
+	},
 	[io_id_esp32_ledpwm] =
 	{
 		.id = io_id_esp32_ledpwm,

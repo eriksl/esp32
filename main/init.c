@@ -19,6 +19,7 @@
 #include "notify.h"
 #include "display.h"
 #include "ledpwm.h"
+#include "mcpwm.h"
 #include "i2c.h"
 #include "sensor.h"
 #include "io.h"
@@ -40,6 +41,7 @@ void app_main(void)
 	config_init();
 	util_init();
 	pdm_init();
+	mcpwm_init();
 	fs_init();
 	ramdisk_init();
 	cli_init();

@@ -10,15 +10,15 @@ WEMOS Lolin S3 mini
 5	*															I2C 0 SDA
 6	*															I2C 0 SCL
 7	*															external I/O interrupt
-8	*															PWM 0 120 Hz
-9	*							FSPIHD=IO_D3					PWM 1 120 Hz
+8	*															MCPWM 0 150 Hz
+9	*							FSPIHD=IO_D3					MCPWM 1 150 Hz
 10	*			*				FSPICS0=CS0						SPI 2 CS
 11	*			*				FSPID=MOSI/IO_D0				SPI 2 MOSI
 12	*			*				FSPCLK=SCK						SPI 2 SCK
 13	*			*				FSPIQ=MISO/IO_D1				SPI 2 MISO
-14	*			*				FSPIWP=IO_D2					PWM 2 120 Hz
-15	*			*												PWM 3 5 kHz
 16	*			*												SPI 3 CS
+14	*			*				FSPIWP=IO_D2					I2C 1 SDA
+15	*			*												I2C 1 SCL
 17	*			*												LEDPWM 2 5 kHz SPI 3 display backlight
 18	*			*												SPI 3 MOSI
 19				*				USB D-
@@ -35,10 +35,10 @@ WEMOS Lolin S3 mini
 30				*				SP0/1 CLK=CLK
 31				*				SP0/1 Q=IO_D1
 32				*				SP0/1 D=IO_D0
-37	#			*				SP0/1 DQS						I2C 1 SDA
-38	*			*												I2C 1 SCL
 33	#			*				SP0/1 IO4=IO_D4					PDM 0 150 kHz
 34	#			*				SP0/1 IO5=IO_D5					LEDPWM 3 120 Hz
+37	#			*				SP0/1 DQS						MCPWM 3 2400 Hz
+38	*			*												MCPWM 2 2400 Hz
 39								JTAG MTCK
 40								JTAG MTDO
 41								JTAG MDTI

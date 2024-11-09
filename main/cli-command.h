@@ -109,6 +109,8 @@ void command_display_page_remove(cli_command_call_t *call);
 
 void command_ledpwm_info(cli_command_call_t *call);
 
+void command_mcpwm_info(cli_command_call_t *call);
+
 void command_pdm_info(cli_command_call_t *call);
 
 void command_ledpixel_info(cli_command_call_t *call);

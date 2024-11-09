@@ -445,6 +445,10 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
+    { "mcpwm-info", "mpi", "info about MCPWM channels and timers", command_mcpwm_info,
+        {}
+    },
+
 	{ "ota-commit", (const char*)0, "verify and select finished ota session", command_ota_commit,
 		{	1,
 			{
