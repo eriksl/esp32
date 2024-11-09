@@ -665,10 +665,7 @@ void io_init(void)
 				assert(infoptr->init_fn);
 
 				if(!infoptr->init_fn(dataptr))
-				{
-					log_format("io: init %s failed", infoptr->name);
 					continue;
-				}
 
 				if(!data_root)
 					data_root = dataptr;
