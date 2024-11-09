@@ -2,10 +2,10 @@ Espressif S3 Box3
 
 	AVAILABLE	USED	FREE	designated function/marking		used
 
-0				*				board boot strapping
+0								board boot strapping
 1				*				mute_status_l
 2				*				i2s_mclk
-3				*				board boot strapping
+3								board boot strapping
 4				*				lcd_dc							SPI 3 LCD D/C
 5				*				lcd_cs							SPI 3 CS
 6				*				lcd_sda							SPI 3 MOSI
@@ -19,7 +19,7 @@ Espressif S3 Box3
 14	*			*				goldfinger						SPI 2 LCD backlight PWM 5kHz
 15				*				i2s_codec_dsdin					I2S data select in
 16				*				i2s_adc_sdout					I2S data select out
-17				*				i2s_mclk						I2C master clock
+17				*				i2s_mclk						I2S master clock
 18				*				i2c_scl 0						I2C 0 SCL
 19				*				USB D-
 20				*				USB D+
@@ -47,7 +47,7 @@ Espressif S3 Box3
 42	*			*				goldfinger						external I/O interrupt
 43	*			*				goldfinger u0txd				UART TxD
 44	*			*				goldfinger u0rxd				UART RxD
-45				*				board boot strapping, i2s_lrck	I2S left/right pulse
-46				*				board boot strapping, pa_ctrl	GPIO mute control input
+45	#					 		board boot strapping, i2s_lrck	I2S left/right pulse
+46				*		 		board boot strapping, pa_ctrl	GPIO mute control input
 47				*				lcd_ctrl SPI3 BL				SPI 3 LCD backlight PWM 5kHz
 48				*				lcd_rst							SPI 3 LCD reset

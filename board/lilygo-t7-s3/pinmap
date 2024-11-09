@@ -2,25 +2,25 @@ LilyGO T3 S3
 
 	AVAILABLE	USED	FREE	designated function/marking		used
 
-0	*			*				board boot select
+0	*					#		board boot select
 1	*			*												PDM 0
 2	*			*				board battery detect
-3	*			*				board boot select
+3	*					#		board boot select
 4	* 			*												SPI 2 LCD backlight PWM 5kHz
-5	*															PWM 0 120 Hz
-6	*							label: CLK						I2C 1 SDA
-7	*															I2C 1 SCL
-8	*															external I/O interrupt
-9	*							FSPIHD=IO_D3					led pixel 1
+5	*			*												PWM 0 120 Hz
+6	*			*				label: CLK						I2C 1 SDA
+7	*			*												I2C 1 SCL
+8	*			*												external I/O interrupt
+9	*			*				FSPIHD=IO_D3					led pixel 1
 10	*			*				FSPICS0=CS0						SPI 2 CS
 11	*			*				FSPID=MOSI/IO_D0				SPI 2 MOSI
 12	*			*				FSPCLK=SCK						SPI 2 SCK
 13	*			*				FSPIQ=MISO/IO_D1				SPI 2 MISO
-14	*							[FSPIWP=IO_D2]					led pixel 2
-15	*			 												I2C 0 SDA
-16	*															I2C 0 SCL
+14	*			*				[FSPIWP=IO_D2]					led pixel 2
+15	*			* 												I2C 0 SDA
+16	*			*												I2C 0 SCL
 17	*			*				board status LED
-18	*					*
+18	*			*
 19				*				USB D-
 20				*				USB D+
 21	*			*												SPI 3 LCD D/C
@@ -41,12 +41,12 @@ LilyGO T3 S3
 36	!			*				SP0/1 IO7=IO_D7					*available but unusable due to OCT-SPI SPIRAM*
 37	!			*				SP0/1 DQS						*available but unusable due to OCT-SPI SPIRAM*
 38	*			*												SPI 2 LCD D/C
-39	*							JTAG MTCK, label: TCK			PWM 1 120 Hz
-40	*							JTAG MTDO, label: TDO			PWM 2 120 Hz
-41	*							JTAG MTDI, label: TDI			PWM 3 5 kHz
+39	*			*				JTAG MTCK, label: TCK			PWM 1 120 Hz
+40	*			*				JTAG MTDO, label: TDO			PWM 2 120 Hz
+41	*			*				JTAG MTDI, label: TDI			PWM 3 5 kHz
 42	*			*				JTAG MTMS, label: TMS			SPI 3 LCD backlight PWM 5 kHz
-43	*							UART TXD, label: TXD			UART TxD
-44	*							UART RXD, label: RXD			UART RxD
+43	*			*				UART TXD, label: TXD			UART TxD
+44	*			*				UART RXD, label: RXD			UART RxD
 45	*			*												SPI 3 GPIO MISO
 46	*			*												SPI 3 GPIO SCK
 47	*			*												SPI 3 GPIO MOSI
