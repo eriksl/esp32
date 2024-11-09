@@ -940,7 +940,11 @@ static void display_info(string_t output)
 	display_page_t *page_ptr;
 	string_auto(datetime, 32);
 
-	assert(inited);
+	if(!inited)
+	{
+		string_assign_cstr(output, "No displays configured");
+		return;
+	}
 
 	string_assign_cstr(output, "DISPLAY configuration:");
 
