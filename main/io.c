@@ -29,6 +29,8 @@ typedef enum
 	io_int_value_0 = 0,
 	io_int_value_first = io_int_value_0,
 	io_int_value_1,
+	io_int_value_2,
+	io_int_value_3,
 	io_int_value_size,
 	io_int_value_error = io_int_value_size,
 } io_int_value_t;
@@ -294,17 +296,18 @@ unavail:
 
 enum
 {
-	esp32_pdm_pin_pdm0 = 0,
+	esp32_pdm_pin_0 = 0,
+	esp32_pdm_pin_1,
+	esp32_pdm_pin_2,
+	esp32_pdm_pin_3,
 	esp32_pdm_pin_size
 };
 
-enum
-{
-	esp32_pdm_ptr_value_pdm0_channel = 0,
-	esp32_pdm_ptr_value_size,
-};
-
-_Static_assert((unsigned int)esp32_pdm_ptr_value_size <= (unsigned int)io_ptr_value_size);
+_Static_assert((unsigned int)esp32_pdm_pin_size <= (unsigned int)io_int_value_size);
+_Static_assert((unsigned int)esp32_pdm_pin_0 == pdm_8bit_150khz_0);
+_Static_assert((unsigned int)esp32_pdm_pin_1 == pdm_8bit_150khz_1);
+_Static_assert((unsigned int)esp32_pdm_pin_2 == pdm_8bit_150khz_2);
+_Static_assert((unsigned int)esp32_pdm_pin_3 == pdm_8bit_150khz_3);
 
 static void esp32_pdm_info(const io_data_t *dataptr, string_t result)
 {
@@ -314,17 +317,15 @@ static void esp32_pdm_info(const io_data_t *dataptr, string_t result)
 
 static bool esp32_pdm_init(io_data_t *dataptr)
 {
+	pdm_t handle;
 	bool rv = false;
 
 	assert(inited);
 	assert(dataptr);
 
-#if(CONFIG_BSP_PDM0 >= 0)
-	rv = true;
-	dataptr->ptr_value[esp32_pdm_ptr_value_pdm0_channel] = pdm_channel_new(CONFIG_BSP_PDM0, "PDM channel 0");
-#else
-	dataptr->ptr_value[esp32_pdm_ptr_value_pdm0_channel] = (void *)0;
-#endif
+	for(handle = pdm_first; handle < pdm_size; handle++)
+		if((dataptr->int_value[handle] = pdm_channel_open(handle, "I/O PDM")))
+			rv = true;
 
 	return(rv);
 }
@@ -334,55 +335,30 @@ static bool esp32_pdm_write(io_data_t *dataptr, unsigned int pin, unsigned int v
 	assert(inited);
 	assert(dataptr);
 	assert(pin < dataptr->info->pins);
+	assert(pin < pdm_size);
 	assert(value <= dataptr->info->max_value);
 
-	switch(pin)
-	{
-		case(esp32_pdm_pin_pdm0):
-		{
-			if(dataptr->ptr_value[esp32_pdm_ptr_value_pdm0_channel])
-				pdm_channel_set(dataptr->ptr_value[esp32_pdm_ptr_value_pdm0_channel], value);
-			else
-				return(false);
+	if(!dataptr->int_value[pin])
+		return(false);
 
-			break;
-
-		}
-		default:
-		{
-			return(false);
-		}
-	}
+	pdm_channel_set((pdm_t)pin, value);
 
 	return(true);
 }
 
 static void esp32_pdm_pin_info(const io_data_t *dataptr, unsigned int pin, string_t result)
 {
-	switch(pin)
-	{
-		case(esp32_pdm_pin_pdm0):
-		{
-			if(dataptr->ptr_value[esp32_pdm_ptr_value_pdm0_channel])
-				string_format_append(result, "PDM @ 80 mhz, GPIO %2d, density: %u", CONFIG_BSP_PDM0,
-						pdm_channel_get(dataptr->ptr_value[esp32_pdm_ptr_value_pdm0_channel]));
-			else
-				goto unavail;
+	assert(inited);
+	assert(dataptr);
+	assert(result);
+	assert(pin < dataptr->info->pins);
+	assert(pin < pdm_size);
 
-			break;
-		}
-
-		default:
-		{
-			goto unavail;
-			break;
-		}
-	}
-
-	return;
-
-unavail:
-	string_append_cstr(result, "pin unvailable on this board");
+	if(dataptr->int_value[pin])
+		string_format_append(result, "PDM channel %u density: %u", pin, pdm_channel_get(pin));
+	else
+		string_append_cstr(result, "pin unvailable on this board");
+}
 }
 
 enum
@@ -480,7 +456,7 @@ static const io_info_t info[io_id_size] =
 	[io_id_esp32_pdm] =
 	{
 		.id = io_id_esp32_pdm,
-		.name = "ESP32 PDM",
+		.name = "ESP32 PDM 8 bits",
 		.caps = (1 << io_cap_output),
 		.pins = esp32_pdm_pin_size,
 		.max_value = 255,

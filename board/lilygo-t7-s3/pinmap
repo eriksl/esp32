@@ -3,7 +3,7 @@ LilyGO T3 S3
 	AVAILABLE	USED	FREE	designated function/marking		used
 
 0	*					#		board boot select
-1	*			*												PDM 0
+1	*			*												PDM 0 150 kHz
 2	*			*				board battery detect
 3	*					#		board boot select
 4	* 			*												SPI 2 LCD backlight PWM 5kHz

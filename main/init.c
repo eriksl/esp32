@@ -32,12 +32,12 @@ void app_main(void)
 	notify_init();
 	notify(notify_sys_booting);
 	console_init_1();
-	pdm_init();
 	info_init();
 	string_module_init();
 	log_init();
 	config_init();
 	util_init();
+	pdm_init();
 	fs_init();
 	ramdisk_init();
 	cli_init();

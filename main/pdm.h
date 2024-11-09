@@ -1,11 +1,17 @@
 #pragma once
 
-struct pdm_opaque_t {} __attribute__((aligned(sizeof(uint64_t))));
-
-typedef struct pdm_opaque_t *pdm_t;
-typedef const struct pdm_opaque_t *const_pdm_t;
+typedef enum
+{
+	pdm_8bit_150khz_0 = 0,
+	pdm_first = pdm_8bit_150khz_0,
+	pdm_8bit_150khz_1,
+	pdm_8bit_150khz_2,
+	pdm_8bit_150khz_3,
+	pdm_size,
+	pdm_error = pdm_size,
+} pdm_t;
 
 void pdm_init(void);
-pdm_t pdm_channel_new(unsigned int gpio, const char *name);
-void pdm_channel_set(pdm_t channel, unsigned int density);
-unsigned int pdm_channel_get(const const_pdm_t channel);
+bool pdm_channel_open(pdm_t handle, const char *owner);
+void pdm_channel_set(pdm_t handle, unsigned int density);
+unsigned int pdm_channel_get(pdm_t handle);

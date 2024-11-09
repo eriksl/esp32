@@ -13,139 +13,176 @@
 
 enum
 {
-	pdm_sample_frequency = 80000000 / 1,
-	pdm_sample_width = 8,
-	pdm_channels_size = 8,
-	pdm_channel_name_size = 32,
+	pdm_sample_frequency = 80000000 / 256,
 };
 
 typedef struct
 {
-	char *name;
-	unsigned int channel;
+	const char *owner;
 	unsigned int density;
 	sdm_channel_handle_t handle;
-	gpio_config_t gpio_config;
-	sdm_config_t sdm_config;
-} _pdm_t;
+	struct
+	{
+		unsigned int available:1;
+		unsigned int open:1;
+	};
+} channel_t;
+
+typedef struct
+{
+	int gpio;
+} handle_to_gpio_t;
+
+static const handle_to_gpio_t handle_to_gpio[pdm_size] =
+{
+	[pdm_8bit_150khz_0] = { .gpio = CONFIG_BSP_PDM0 },
+	[pdm_8bit_150khz_1] = { .gpio = CONFIG_BSP_PDM1 },
+	[pdm_8bit_150khz_2] = { .gpio = CONFIG_BSP_PDM2 },
+	[pdm_8bit_150khz_3] = { .gpio = CONFIG_BSP_PDM3 },
+};
 
 static bool inited = false;
-static unsigned int channels_size;
-static _pdm_t *channels;
+static channel_t *channels;
 
 void pdm_init(void)
 {
-	unsigned int channel;
-	_pdm_t *channel_ptr;
+	gpio_config_t gpio_pin_config =
+	{
+		.pin_bit_mask = 0,
+		.mode = GPIO_MODE_OUTPUT,
+		.pull_up_en = GPIO_PULLUP_DISABLE,
+		.pull_down_en = GPIO_PULLDOWN_DISABLE,
+		.intr_type = GPIO_INTR_DISABLE,
+	};
+	sdm_config_t sdm_config =
+	{
+		.gpio_num = -1,
+		.clk_src = SDM_CLK_SRC_DEFAULT,
+		.sample_rate_hz =  pdm_sample_frequency,
+		.flags =
+		{
+			.invert_out = 0,
+			.io_loop_back = 0,
+		},
+	};
+
+	pdm_t handle;
+	channel_t *channel;
+	const handle_to_gpio_t *handle_to_gpio_ptr;
 
 	assert(!inited);
 
-	channels = (_pdm_t *)util_memory_alloc_spiram(sizeof(_pdm_t[pdm_channels_size]));
+	channels = (channel_t *)util_memory_alloc_spiram(sizeof(channel_t[pdm_size]));
+	assert(channels);
 
-	for(channel = 0; channel < pdm_channels_size; channel++)
+	for(handle = pdm_first; handle < pdm_size; handle++)
 	{
-		channel_ptr = &channels[channel];
+		handle_to_gpio_ptr = &handle_to_gpio[handle];
+		channel = &channels[handle];
 
-		channel_ptr->name = (char *)util_memory_alloc_spiram(pdm_channel_name_size);
-		channel_ptr->channel = channel;
-		channel_ptr->density = 0;
-		channel_ptr->handle = (sdm_channel_handle_t)0;
+		channel->owner = (const char *)0;
+		channel->density = 0;
+		channel->handle = (sdm_channel_handle_t)0;
+		channel->available = 0;
+		channel->open = 0;
 
-		channel_ptr->gpio_config.pin_bit_mask = 0;
-		channel_ptr->gpio_config.mode = GPIO_MODE_OUTPUT;
-		channel_ptr->gpio_config.pull_up_en = GPIO_PULLUP_DISABLE;
-		channel_ptr->gpio_config.pull_down_en = GPIO_PULLDOWN_DISABLE;
-		channel_ptr->gpio_config.intr_type = GPIO_INTR_DISABLE;
+		if(handle_to_gpio_ptr->gpio >= 0)
+		{
+			gpio_pin_config.pin_bit_mask = (1ULL << handle_to_gpio_ptr->gpio);
+			util_abort_on_esp_err("gpio_reset_pin", gpio_reset_pin(handle_to_gpio_ptr->gpio));
+			util_abort_on_esp_err("gpio_config", gpio_config(&gpio_pin_config));
 
-		channel_ptr->sdm_config.gpio_num = -1;
-		channel_ptr->sdm_config.clk_src = SDM_CLK_SRC_DEFAULT;
-		channel_ptr->sdm_config.sample_rate_hz =  pdm_sample_frequency,
-		channel_ptr->sdm_config.flags.invert_out = 0;
-		channel_ptr->sdm_config.flags.io_loop_back = 0;
+			sdm_config.gpio_num = handle_to_gpio_ptr->gpio;
+			util_abort_on_esp_err("sdm_new_channel", sdm_new_channel(&sdm_config, &channel->handle));
+			util_abort_on_esp_err("sdm_channel_enable", sdm_channel_enable(channel->handle));
+			util_abort_on_esp_err("sdm_channel_set_pulse_density", sdm_channel_set_pulse_density(channel->handle, channel->density - 128));
+
+			channel->available = 1;
+		}
 	}
-
-	channels_size = 0;
 
 	inited = true;
 }
 
-pdm_t pdm_channel_new(unsigned int gpio, const char *name)
+bool pdm_channel_open(pdm_t handle, const char *owner)
 {
-	_pdm_t *_channel;
+	channel_t *channel;
 
 	assert(inited);
-	assert(channels_size < pdm_channels_size);
+	assert(handle < pdm_size);
 
-	_channel = &channels[channels_size];
+	channel = &channels[handle];
 
-	strlcpy(_channel->name, name, pdm_channel_name_size);
-	_channel->density = 0;
-	_channel->gpio_config.pin_bit_mask = (1ULL << gpio);
-	_channel->sdm_config.gpio_num = gpio;
+	if(!channel->available)
+		return(false);
 
-	util_abort_on_esp_err("gpio_reset_pin", gpio_reset_pin(gpio));
-	util_abort_on_esp_err("gpio_config", gpio_config(&_channel->gpio_config));
-	util_abort_on_esp_err("sdm_new_channel", sdm_new_channel(&_channel->sdm_config, &_channel->handle));
-	util_abort_on_esp_err("sdm_channel_enable", sdm_channel_enable(_channel->handle));
-	util_abort_on_esp_err("sdm_channel_set_pulse_density", sdm_channel_set_pulse_density(_channel->handle, _channel->density - 128));
+	if(channel->open)
+		return(true);
 
-	channels_size++;
+	channel->open = 1;
+	channel->owner = owner;
 
-	return((pdm_t)_channel);
+	return(true);
 }
 
-void pdm_channel_set(pdm_t channel, unsigned int density)
+void pdm_channel_set(pdm_t handle, unsigned int density)
 {
-	_pdm_t *_channel;
+	channel_t *channel;
 
 	assert(inited);
-	assert(channel);
+	assert(handle < pdm_size);
 
-	_channel = (_pdm_t *)channel;
+	channel = &channels[handle];
 
-	assert(_channel->handle);
+	assert(channel->open);
 
 	if(density > 255)
 		density = 255;
 
-	_channel->density = density;
+	channel->density = density;
 
-	util_abort_on_esp_err("sdm_channel_set_pulse_density", sdm_channel_set_pulse_density(_channel->handle, _channel->density - 128));
+	util_abort_on_esp_err("sdm_channel_set_pulse_density", sdm_channel_set_pulse_density(channel->handle, (int)channel->density - 128));
 }
 
-unsigned int pdm_channel_get(const const_pdm_t channel)
+unsigned int pdm_channel_get(pdm_t handle)
 {
-	const _pdm_t *_channel;
+	const channel_t *channel;
 
 	assert(inited);
-	assert(channel);
+	assert(handle < pdm_size);
 
-	_channel = (const _pdm_t *)channel;
+	channel = &channels[handle];
 
-	return(_channel->density);
+	return(channel->density);
 }
 
 void command_pdm_info(cli_command_call_t *call)
 {
-	unsigned int channel;
-	_pdm_t *_channel;
+	pdm_t handle;
+	channel_t *channel;
 
 	assert(inited);
 	assert(call);
 	assert(call->parameter_count == 0);
 
 	string_assign_cstr(call->result, "PDM INFO:");
-	string_format_append(call->result, "\n- channels hardware available: %u, in use: %u", (unsigned int)pdm_channels_size, channels_size);
-	string_append_cstr(call->result, "\nCHANNELS:");
+	string_format_append(call->result, "\n- channels available: %u", (unsigned int)pdm_size);
+	string_append_cstr(call->result, "\nchannels:");
 
-	for(channel = 0; channel < channels_size; channel++)
+	for(handle = pdm_first; handle < pdm_size; handle++)
 	{
-		_channel = &channels[channel];
+		channel = &channels[handle];
 
-		assert(_channel->channel == channel);
+		if(channel->available)
+		{
+			assert(!channel->open || channel->owner);
 
-		string_format_append(call->result, "\n- channel [%u] %*s resolution: %u bits, frequency: %5u kHz, density: %3u",
-					channel, 0 - pdm_channel_name_size, _channel->name, (unsigned int)pdm_sample_width,
-					(unsigned int)(_channel->sdm_config.sample_rate_hz / 1000), _channel->density);
+			string_format_append(call->result, "\n- channel %u: 8 bits @ 150 kHz, gpio %2d is %s density: %3u, owned by: %s",
+					(unsigned int)handle,
+					handle_to_gpio[handle].gpio,
+					channel->open ? "open" : "not open",
+					channel->density,
+					channel->open ? channel->owner : "<none>");
+		}
 	}
 }

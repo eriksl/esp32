@@ -74,5 +74,14 @@ menu "BSP - do not change, set automically, when invoked using script idf"
 		int "GPIO used for PWM3 @ 5 kHz"
 
 	config BSP_PDM0
-		int "GPIO used for PDM0 @ 80 MHz"
+		int "GPIO used for PDM0 @ 150 kHz / 8 bit"
+
+	config BSP_PDM1
+		int "GPIO used for PDM1 @ 150 kHz / 8 bit"
+
+	config BSP_PDM2
+		int "GPIO used for PDM2 @ 150 kHz / 8 bit"
+
+	config BSP_PDM3
+		int "GPIO used for PDM3 @ 150 kHz / 8 bit"
 endmenu
