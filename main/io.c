@@ -227,7 +227,7 @@ static void esp32_ledpwm_pin_info(const io_data_t *dataptr, unsigned int pin, st
 	assert(dataptr);
 	assert(result);
 	assert(pin < dataptr->info->pins);
-	assert(pin < lpm_size);
+	assert(pin < lp_size);
 
 	if(dataptr->int_value[pin])
 		string_format_append(result, "LED-PWM channel %u duty: %u", pin, ledpwm_get(pin));
