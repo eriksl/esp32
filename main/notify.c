@@ -159,20 +159,19 @@ static void timer_handler(struct tmrTimerControl *)
 #endif
 }
 
-bool notify_init(void)
+void notify_init(void)
 {
-	if(inited)
-		return(false);
+	assert(!inited);
 
 #if defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
 	if(!(ledpixel = ledpixel_new(1, CONFIG_BSP_LED_GPIO)))
-		return(false);
+		return;
 
 	if(!ledpixel_set(ledpixel, 0, 0x00, 0x00, 0x00))
-		return(false);
+		return;
 
 	if(!ledpixel_flush(ledpixel))
-		return(false);
+		return;
 #endif
 
 #if defined(CONFIG_BSP_LED_HAVE_LED)
@@ -186,16 +185,16 @@ bool notify_init(void)
 	if(!(phase_timer = xTimerCreate("notify-phase", 1, pdFALSE, (void *)0, timer_handler)))
 		return(false);
 
-	return(true);
+	assert(phase_timer);
 }
 
-bool notify(notify_t notification)
+void notify(notify_t notification)
 {
-	if(!inited || (notification >= notify_size))
-		return(false);
+	assert(inited);
+	assert(notification < notify_size);
 
 	if(notification == notify_none)
-		return(true);
+		return;
 
 	current_notification = notification;
 	current_phase = -1;
@@ -203,5 +202,4 @@ bool notify(notify_t notification)
 #if defined(CONFIG_BSP_LED_HAVE_LED) || defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
 	xTimerChangePeriod(phase_timer, pdMS_TO_TICKS(100), pdMS_TO_TICKS(1000)); // this will start the timer as well
 #endif
-	return(true);
 }

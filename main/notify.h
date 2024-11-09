@@ -18,5 +18,5 @@ typedef enum
 	notify_size = notify_error,
 } notify_t;
 
-bool notify_init(void);
-bool notify(notify_t);
+void notify_init(void);
+void notify(notify_t);
