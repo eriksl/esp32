@@ -392,7 +392,7 @@ enum
 	pcf8574_int_value_size,
 };
 
-_Static_assert((unsigned int)pcf8574_int_value_size <= (unsigned int)io_ptr_value_size);
+_Static_assert((unsigned int)pcf8574_int_value_size <= (unsigned int)io_int_value_size);
 
 static void pcf8574_info(const io_data_t *dataptr, string_t result)
 {
