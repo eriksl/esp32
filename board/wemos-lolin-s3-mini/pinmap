@@ -3,9 +3,9 @@ WEMOS Lolin S3 mini
 	AVAILABLE	USED	FREE	designated function/marking		used
 
 0				*				board boot select
-1	*
+1	*															LEDpixel 1
 2	*			*												SPI 2 LCD D/C
-3	#			 				board boot select
+3	#			 				board boot select				LEDpixel 2
 4	*			*												LEDPWM 1 5 kHz SPI 2 display backlight
 5	*															I2C 0 SDA
 6	*															I2C 0 SCL
@@ -35,8 +35,6 @@ WEMOS Lolin S3 mini
 30				*				SP0/1 CLK=CLK
 31				*				SP0/1 Q=IO_D1
 32				*				SP0/1 D=IO_D0
-35	#			*				SP0/1 IO6=IO_D6					led pixel 1
-36	#			*				SP0/1 IO7=IO_D7					led pixel 2
 37	#			*				SP0/1 DQS						I2C 1 SDA
 38	*			*												I2C 1 SCL
 33	#			*				SP0/1 IO4=IO_D4					PDM 0 150 kHz
@@ -49,7 +47,7 @@ WEMOS Lolin S3 mini
 44	*			*												SPI 3 SCK
 45
 46
-47	*			*				board LED pixel
+47	*			*				board LED pixel					LEDpixel 0 NOTIFY
 48
 
 board		SPI 2					SPI 3			 		IDC connector 		analyser		BuyDisplay connector

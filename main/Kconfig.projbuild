@@ -16,15 +16,6 @@ menu "BSP - do not change, set automically, when invoked using script idf"
 	config BSP_SPIRAM_SIZE
 		int "SPIRAM size"
 
-	config BSP_LED_HAVE_LED
-		bool "Notification LED available?"
-
-	config BSP_LED_HAVE_LEDPIXEL
-		bool "Notification LEDpixel available?"
-
-	config BSP_LED_GPIO
-		int "GPIO LED is connected to"
-
 	config BSP_SPI2_DISPLAY_DC
 		int "GPIO used for D/C of display on SPI2"
 
@@ -90,4 +81,16 @@ menu "BSP - do not change, set automically, when invoked using script idf"
 
 	config BSP_PDM3
 		int "GPIO used for PDM3 @ 150 kHz / 8 bit"
+
+	config BSP_LEDPIXEL0
+		int "GPIO used for LEDpixel 0 (notify)"
+
+	config BSP_LEDPIXEL1
+		int "GPIO used for LEDpixel 1"
+
+	config BSP_LEDPIXEL2
+		int "GPIO used for LEDpixel 2"
+
+	config BSP_LEDPIXEL3
+		int "GPIO used for LEDpixel 3"
 endmenu

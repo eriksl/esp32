@@ -32,7 +32,7 @@ typedef struct
 	phase_t phase[phase_size];
 } notification_info_t;
 
-#if (defined(CONFIG_BSP_HAS_LEDPIXEL) || (CONFIG_BSP_LEDPWM0 >= 0))
+#if ((CONFIG_BSP_LEDPIXEL0 >= 0) || (CONFIG_BSP_LEDPWM0 >= 0))
 static const notification_info_t notification_info[notify_size] =
 {
 	[notify_none] = {{
@@ -115,9 +115,8 @@ static notify_t current_notification;
 static int current_phase;
 static TimerHandle_t phase_timer;
 
-#if defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
+#if (CONFIG_BSP_LEDPIXEL0 >= 0)
 #include "ledpixel.h"
-static ledpixel_t ledpixel;
 #endif
 #if (CONFIG_BSP_LEDPWM0 >= 0)
 #include "ledpwm.h"
@@ -133,7 +132,7 @@ static void timer_handler(struct tmrTimerControl *)
 	if((current_phase < 0) || (current_phase >= phase_size))
 		current_phase = 0;
 
-#if (defined(CONFIG_BSP_LED_HAVE_LEDPIXEL) || (CONFIG_BSP_LEDPWM0 >= 0))
+#if ((CONFIG_BSP_LEDPIXEL0 >= 0) || (CONFIG_BSP_LEDPWM0 >= 0))
 	const notification_info_t *info_ptr;
 	const phase_t *phase_ptr;
 
@@ -141,19 +140,19 @@ static void timer_handler(struct tmrTimerControl *)
 	phase_ptr = &info_ptr->phase[current_phase];
 #endif
 
-#if defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
-	ledpixel_set(ledpixel, 0,
+#if (CONFIG_BSP_LEDPIXEL0 >= 0)
+	ledpixel_set(lp_0_notify, 0,
 			phase_ptr->colour.r,
 			phase_ptr->colour.g,
 			phase_ptr->colour.b);
-	ledpixel_flush(ledpixel);
+	ledpixel_flush(lp_0_notify);
 #endif
 
 #if (CONFIG_BSP_LEDPWM0 >= 0)
 	ledpwm_set(lpt_14bit_5khz_notify, (1UL << phase_ptr->duty_shift) - 1);
 #endif
 
-#if (defined(CONFIG_BSP_LED_HAVE_LEDPIXEL) || (CONFIG_BSP_LEDPWM0 >= 0))
+#if ((CONFIG_BSP_LEDPIXEL0 >= 0) || (CONFIG_BSP_LEDPWM0 >= 0))
 	if(phase_ptr->time_ms)
 		if(!xTimerChangePeriod(phase_timer, pdMS_TO_TICKS(phase_ptr->time_ms), pdMS_TO_TICKS(1000))) // this will start the timer as well
 			stat_notify_timer_failed++;
@@ -164,15 +163,8 @@ void notify_init(void)
 {
 	assert(!inited);
 
-#if defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
-	if(!(ledpixel = ledpixel_new(1, CONFIG_BSP_LED_GPIO)))
-		return;
-
-	if(!ledpixel_set(ledpixel, 0, 0x00, 0x00, 0x00))
-		return;
-
-	if(!ledpixel_flush(ledpixel))
-		return;
+#if (CONFIG_BSP_LEDPIXEL0 >= 0)
+	assert(ledpixel_open(lp_0_notify, "notification LED"));
 #endif
 
 #if (CONFIG_BSP_LEDPWM0 >= 0)
@@ -183,8 +175,7 @@ void notify_init(void)
 	current_notification = notify_none;
 	inited = true;
 
-	if(!(phase_timer = xTimerCreate("notify-phase", 1, pdFALSE, (void *)0, timer_handler)))
-		return(false);
+	phase_timer = xTimerCreate("notify-phase", 1, pdFALSE, (void *)0, timer_handler);
 
 	assert(phase_timer);
 }
@@ -198,6 +189,7 @@ void notify(notify_t notification)
 		return;
 
 	current_notification = notification;
+
 	current_phase = -1;
 
 #if ((CONFIG_BSP_LEDPIXEL0 >= 0) || (CONFIG_BSP_LEDPWM0 >= 0))

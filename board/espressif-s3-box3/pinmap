@@ -41,7 +41,7 @@ Espressif S3 Box3
 36				*				SP0/1 IO7=IO_D7
 37				*				SP0/1 DQS
 38	*							goldfinger						PWM 0
-39	*					*		goldfinger
+39	*							goldfinger						LEDpixel 1
 40	*			*				goldfinger i2c_scl 1			I2C 1 SCL
 41	*			*				goldfinger i2c_sda	1			I2C 1 SDA
 42	*			*				goldfinger						external I/O interrupt

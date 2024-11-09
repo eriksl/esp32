@@ -23,11 +23,13 @@
 #include "sensor.h"
 #include "io.h"
 #include "pdm.h"
+#include "ledpixel.h"
 
 __attribute__((noreturn)) void app_main(void);
 
 void app_main(void)
 {
+	ledpixel_init();
 	ledpwm_init();
 	notify_init();
 	notify(notify_sys_booting);

@@ -11,12 +11,12 @@ LilyGO T3 S3
 6	*			*				label: CLK						I2C 1 SDA
 7	*			*												I2C 1 SCL
 8	*			*												external I/O interrupt
-9	*			*				FSPIHD=IO_D3					led pixel 1
+9	*			*				FSPIHD=IO_D3					LEDpixel 1
 10	*			*				FSPICS0=CS0						SPI 2 CS
 11	*			*				FSPID=MOSI/IO_D0				SPI 2 MOSI
 12	*			*				FSPCLK=SCK						SPI 2 SCK
 13	*			*				FSPIQ=MISO/IO_D1				SPI 2 MISO
-14	*			*				[FSPIWP=IO_D2]					led pixel 2
+14	*			*				[FSPIWP=IO_D2]					LEDpixel 2
 15	*			* 												I2C 0 SDA
 16	*			*												I2C 0 SCL
 18	*			*

@@ -1,11 +1,23 @@
 #pragma once
 
-#if defined(CONFIG_BSP_LED_HAVE_LEDPIXEL)
+enum
+{
+	ledpixel_leds_size = 4
+};
 
-typedef struct ledpixel_opaque_t {} *ledpixel_t;
+typedef enum
+{
+	lp_0_notify = 0,
+	lp_first = lp_0_notify,
+	lp_1,
+	lp_2,
+	lp_3,
+	lp_size,
+	lp_error = lp_size,
+} lp_t;
 
-ledpixel_t ledpixel_new(unsigned int max_leds, unsigned int gpio);
-bool ledpixel_set(ledpixel_t ledpixel, unsigned int index, unsigned int r, unsigned int g, unsigned int b);
-bool ledpixel_flush(ledpixel_t ledpixel);
-
-#endif
+void ledpixel_init(void);
+bool ledpixel_open(lp_t handle, const char *owner);
+void ledpixel_set(lp_t handle, unsigned int index, unsigned int red, unsigned int green, unsigned int blue);
+void ledpixel_get(lp_t handle, unsigned int index, unsigned int *red, unsigned int *green, unsigned int *blue);
+void ledpixel_flush(lp_t handle);
