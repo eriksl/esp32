@@ -93,4 +93,14 @@ menu "BSP - do not change, set automically, when invoked using script idf"
 
 	config BSP_LEDPIXEL3
 		int "GPIO used for LEDpixel 3"
+
+	config BSP_UART_RXD
+		int "GPIO used for UART RxD"
+
+	config BSP_UART_TXD
+		int "GPIO used for UART TxD"
+
+	config BSP_PCINT
+		int "GPIO used for pin change interrupt"
+
 endmenu
