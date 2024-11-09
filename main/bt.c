@@ -131,7 +131,7 @@ static int gatt_key_event(uint16_t connection_handle, uint16_t attribute_handle,
 	{
 		case(BLE_GATT_ACCESS_OP_WRITE_CHR):
 		{
-			static string_auto(input_string, 16);
+			string_auto(input_string, 16);
 			string_auto(output_string, 16);
 			unsigned int length;
 
