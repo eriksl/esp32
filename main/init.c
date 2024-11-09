@@ -30,11 +30,11 @@ __attribute__((noreturn)) void app_main(void);
 
 void app_main(void)
 {
+	console_init_1();
 	ledpixel_init();
 	ledpwm_init();
 	notify_init();
 	notify(notify_sys_booting);
-	console_init_1();
 	info_init();
 	string_module_init();
 	log_init();
