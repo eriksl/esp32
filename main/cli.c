@@ -528,7 +528,7 @@ static void help(cli_command_call_t *call)
 	const char *delimiter[2];
 	string_t command_name;
 
-	string_format(call->result, "help");
+	string_format(call->result, "HELP");
 
 	if(call->parameter_count == 0)
 		command_name = (string_t)0;
@@ -546,26 +546,30 @@ static void help(cli_command_call_t *call)
 				command->alias ? command->alias : "",
 				command->help ? command->help : "");
 
-		for(parameter_index = 0; parameter_index < command->parameters_description.count; parameter_index++)
+
+		if(command_name)
 		{
-			parameter = &command->parameters_description.entries[parameter_index];
-
-			if(parameter->value_required)
+			for(parameter_index = 0; parameter_index < command->parameters_description.count; parameter_index++)
 			{
-				delimiter[0] = "[";
-				delimiter[1] = "]";
-			}
-			else
-			{
-				delimiter[0] = "(";
-				delimiter[1] = ")";
-			}
+				parameter = &command->parameters_description.entries[parameter_index];
 
-			string_format_append(call->result, " %s%s %s%s",
-					delimiter[0],
-					parameter_type_to_string(parameter->type),
-					parameter->description ? parameter->description : "",
-					delimiter[1]);
+				if(parameter->value_required)
+				{
+					delimiter[0] = "[";
+					delimiter[1] = "]";
+				}
+				else
+				{
+					delimiter[0] = "(";
+					delimiter[1] = ")";
+				}
+
+				string_format_append(call->result, " %s%s %s%s",
+						delimiter[0],
+						parameter_type_to_string(parameter->type),
+						parameter->description ? parameter->description : "",
+						delimiter[1]);
+			}
 		}
 	}
 }
