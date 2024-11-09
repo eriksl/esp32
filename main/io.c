@@ -996,7 +996,7 @@ void command_io_dump(cli_command_call_t *call)
 
 		for(pin = 0; pin < dataptr->info->pins; pin++)
 		{
-			string_format_append(call->result, "\n- pin %2u: ", pin);
+			string_format_append(call->result, "\n- pin %u: ", pin);
 			io_pin_info_x(call->result, dataptr, pin);
 		}
 	}
