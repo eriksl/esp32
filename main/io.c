@@ -37,17 +37,6 @@ typedef enum
 	io_int_value_error = io_int_value_size,
 } io_int_value_t;
 
-typedef enum
-{
-	io_ptr_value_0 = 0,
-	io_ptr_value_first = io_ptr_value_0,
-	io_ptr_value_1,
-	io_ptr_value_2,
-	io_ptr_value_3,
-	io_ptr_value_size,
-	io_ptr_value_error = io_ptr_value_size,
-} io_ptr_value_t;
-
 struct io_data_T;
 
 typedef struct
@@ -85,10 +74,8 @@ typedef struct io_data_T
 		{
 			i2c_slave_t slave;
 		} i2c;
-		void *void_ptr;
 	};
 	int int_value[io_int_value_size];
-	void *ptr_value[io_ptr_value_size];
 	const io_info_t *info;
 	struct io_data_T *next;
 } io_data_t;
@@ -475,7 +462,7 @@ static const io_info_t info[io_id_size] =
 		.read_fn = (void *)0,
 		.write_fn = esp32_ledpwm_write,
 		.pin_info_fn = esp32_ledpwm_pin_info,
- 	},
+	},
 	[io_id_esp32_pdm] =
 	{
 		.id = io_id_esp32_pdm,
