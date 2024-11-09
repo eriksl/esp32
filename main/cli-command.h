@@ -107,7 +107,7 @@ void command_display_page_add_text(cli_command_call_t *call);
 void command_display_page_add_image(cli_command_call_t *call);
 void command_display_page_remove(cli_command_call_t *call);
 
-void command_pwm_led_info(cli_command_call_t *call);
+void command_ledpwm_info(cli_command_call_t *call);
 
 void command_pdm_info(cli_command_call_t *call);
 

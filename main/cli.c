@@ -421,6 +421,10 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
+    { "ledpwm-info", "lpi", "info about LED PWM channels and timers", command_ledpwm_info,
+        {}
+    },
+
 	{ "log", "l", "show log", log_command_log,
 		{	1,
 			{
@@ -471,10 +475,6 @@ static const cli_command_t cli_commands[] =
 	},
 
     { "pdm-info", "pin", "info about pdm channels", command_pdm_info,
-        {}
-    },
-
-    { "pwm-led-info", "pli", "info about pwm led channels and timers", command_pwm_led_info,
         {}
     },
 

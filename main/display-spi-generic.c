@@ -9,7 +9,7 @@
 #include "log.h"
 #include "util.h"
 #include "display-spi-generic.h"
-#include "pwm-led.h"
+#include "ledpwm.h"
 #include "sdkconfig.h"
 
 enum
@@ -44,7 +44,7 @@ typedef struct
 	unsigned int mosi;
 	unsigned int miso;
 	unsigned int dc;
-	unsigned int bl;
+	ledpwm_t bl;
 	unsigned int esp_host;
 } spi_signal_t;
 
@@ -70,7 +70,7 @@ static const spi_host_signal_t spi_host_signal =
 		.mosi =		11,									/* IOMUX, fixed */
 		.miso =		13,									/* IOMUX, fixed */
 		.dc =		CONFIG_BSP_SPI2_DISPLAY_DC,
-		.bl =		CONFIG_BSP_SPI2_DISPLAY_BACKLIGHT,
+		.bl =		lpt_14bit_5khz_lcd_spi_2,
 	},
 	.spi3 =
 	{
@@ -80,7 +80,7 @@ static const spi_host_signal_t spi_host_signal =
 		.mosi =		CONFIG_BSP_SPI3_MOSI,
 		.miso =		CONFIG_BSP_SPI3_MISO,
 		.dc =		CONFIG_BSP_SPI3_DISPLAY_DC,
-		.bl =		CONFIG_BSP_SPI3_DISPLAY_BACKLIGHT,
+		.bl =		lpt_14bit_5khz_lcd_spi_3,
 	},
 };
 
@@ -91,7 +91,7 @@ static callback_data_t callback_data_gpio_on;
 static callback_data_t callback_data_gpio_off;
 static SemaphoreHandle_t spi_mutex;
 static unsigned int spi_pending;
-static pwm_led_t pwm_led_channel;
+static ledpwm_t ledpwm_channel;
 static unsigned int x_size, y_size;
 static unsigned int flip;
 static unsigned int rotate;
@@ -506,6 +506,7 @@ static void pre_callback(spi_transaction_t *transaction)
 bool display_spi_generic_init(const display_init_parameters_t *parameters)
 {
 	size_t max_transaction_length;
+	bool rv;
 
 	switch(parameters->interface_index)
 	{
@@ -610,7 +611,9 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 	pixel_buffer_rgb_size = pixel_buffer_size / sizeof(display_rgb_t);
 	pixel_buffer_rgb_length = 0;
 
-	pwm_led_channel = pwm_led_channel_new(spi_signal->bl, plt_14bit_5khz, "backlight generic SPI LCD");
+	ledpwm_channel = spi_signal->bl;
+	rv = ledpwm_open(ledpwm_channel, "backlight generic SPI LCD");
+	assert(rv);
 
 	inited = true;
 
@@ -641,5 +644,5 @@ void display_spi_generic_bright(unsigned int percentage)
 {
 	assert(percentage <= 100);
 
-	pwm_led_channel_set(pwm_led_channel, ((1UL << 14) * percentage) / 100);
+	ledpwm_set(ledpwm_channel, ((1UL << 14) * percentage) / 100);
 }

@@ -9,161 +9,213 @@
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
-#include "pwm-led.h"
+#include "ledpwm.h"
 
 enum
 {
-	led_pwm_timers_size = 4,
-	led_pwm_channels_size = 8,
-	led_pwm_channel_name_size = 32,
+	ledpwm_resolution = 14,
+	ledpwm_max_duty = (1U << ledpwm_resolution) - 1,
 };
 
-_Static_assert((int)led_pwm_timers_size == (int)LEDC_TIMER_MAX);
-_Static_assert((int)led_pwm_channels_size == (int)LEDC_CHANNEL_MAX);
-_Static_assert((int)plt_size < (int)LEDC_TIMER_MAX);
+enum
+{
+	timer_5khz = 0,
+	timer_120hz,
+	timer_size,
+};
+
+_Static_assert((unsigned int)lpt_size < LEDC_CHANNEL_MAX);
+_Static_assert((unsigned int)timer_size < LEDC_TIMER_MAX);
 
 typedef struct
 {
-	char *name;
-	ledc_channel_config_t config;
-} _pwm_led_t;
+	int gpio;
+	unsigned int timer;
+	unsigned int handle;
+	unsigned int frequency;
+	const char *owner;
+	struct
+	{
+		unsigned int available;
+		unsigned int open;
+	};
+} channel_t;
+
+typedef struct
+{
+	int gpio;
+	unsigned int timer;
+	unsigned int frequency;
+} handle_to_gpio_t;
+
+static const handle_to_gpio_t handle_to_gpio[lpt_size] =
+{
+	[lpt_14bit_5khz_notify]	=		{ .gpio = CONFIG_BSP_LEDPWM0, .timer = timer_5khz,	.frequency = 5000 },
+	[lpt_14bit_5khz_lcd_spi_2] 	=	{ .gpio = CONFIG_BSP_LEDPWM1, .timer = timer_5khz,	.frequency = 5000 },
+	[lpt_14bit_5khz_lcd_spi_3] =	{ .gpio = CONFIG_BSP_LEDPWM2, .timer = timer_5khz,	.frequency = 5000 },
+	[lpt_14bit_120hz] =				{ .gpio = CONFIG_BSP_LEDPWM3, .timer = timer_120hz,	.frequency =  120 },
+};
 
 static bool inited = false;
-static unsigned int channels_size;
-static ledc_timer_config_t *timer_configs;
-static _pwm_led_t *channels;
+static channel_t *channels;
 
-void pwm_led_init(void)
+void ledpwm_init(void)
 {
-	unsigned int channel;
+	ledc_timer_config_t timer_config =
+	{
+		.speed_mode = LEDC_LOW_SPEED_MODE,
+		.duty_resolution = 14,
+		.timer_num = -1,
+		.freq_hz = -1,
+		.clk_cfg = LEDC_USE_APB_CLK,
+		.deconfigure = false,
+	};
+	ledc_channel_config_t channel_config =
+	{
+		.gpio_num = -1,
+		.speed_mode = LEDC_LOW_SPEED_MODE,
+		.channel = -1,
+		.intr_type = LEDC_INTR_DISABLE,
+		.timer_sel = -1,
+		.duty = 0,
+		.hpoint = 0,
+		.flags =
+		{
+			.output_invert = 0,
+		},
+	};
+	ledpwm_t handle;
+	const handle_to_gpio_t *handle_to_gpio_ptr;
+	channel_t *channel;
 
 	assert(!inited);
 
-	timer_configs = (ledc_timer_config_t *)util_memory_alloc_spiram(sizeof(ledc_timer_config_t[led_pwm_timers_size]));
-	assert(timer_configs);
+	timer_config.freq_hz = 4882; // APB_CLK_FREQ / (1UL << 14), max
+	timer_config.timer_num = timer_5khz;
+	util_abort_on_esp_err("ledc_timer_config", ledc_timer_config(&timer_config));
 
-	timer_configs[plt_14bit_5khz].speed_mode = LEDC_LOW_SPEED_MODE;
-	timer_configs[plt_14bit_5khz].duty_resolution = 14;
-	timer_configs[plt_14bit_5khz].timer_num = plt_14bit_5khz;
-	timer_configs[plt_14bit_5khz].freq_hz = 4882; // APB_CLK_FREQ / (1UL << 14), max
-	timer_configs[plt_14bit_5khz].clk_cfg = LEDC_USE_APB_CLK;
-	timer_configs[plt_14bit_5khz].deconfigure = false;
+	timer_config.freq_hz = 120;
+	timer_config.timer_num = timer_120hz;
+	util_abort_on_esp_err("ledc_timer_config", ledc_timer_config(&timer_config));
 
-	timer_configs[plt_14bit_120hz].speed_mode = LEDC_LOW_SPEED_MODE;
-	timer_configs[plt_14bit_120hz].duty_resolution = 14;
-	timer_configs[plt_14bit_120hz].timer_num = plt_14bit_120hz;
-	timer_configs[plt_14bit_120hz].freq_hz = 120;
-	timer_configs[plt_14bit_120hz].clk_cfg = LEDC_USE_APB_CLK;
-	timer_configs[plt_14bit_120hz].deconfigure = false;
+	channels = (channel_t *)util_memory_alloc_spiram(sizeof(channel_t[lpt_size]));
+	assert(channels);
 
-	util_abort_on_esp_err("ledc_timer_config", ledc_timer_config(&timer_configs[plt_14bit_5khz]));
-	util_abort_on_esp_err("ledc_timer_config", ledc_timer_config(&timer_configs[plt_14bit_120hz]));
-
-	channels = (_pwm_led_t *)util_memory_alloc_spiram(sizeof(_pwm_led_t[led_pwm_channels_size]));
-
-	for(channel = 0; channel < led_pwm_channels_size; channel++)
+	for(handle = lpt_first; handle < lpt_size; handle++)
 	{
-		channels[channel].name = (char *)util_memory_alloc_spiram(led_pwm_channel_name_size);
-		channels[channel].config.gpio_num = -1;
-		channels[channel].config.speed_mode = LEDC_LOW_SPEED_MODE;
-		channels[channel].config.channel = channel;
-		channels[channel].config.intr_type = LEDC_INTR_DISABLE;
-		channels[channel].config.timer_sel = plt_error;
-		channels[channel].config.duty = 0;
-		channels[channel].config.hpoint = 0;
-		channels[channel].config.flags.output_invert = 0;
-	}
+		handle_to_gpio_ptr = &handle_to_gpio[handle];
+		channel = &channels[handle];
 
-	channels_size = 0;
+		channel->timer = handle_to_gpio_ptr->timer;
+		channel->handle = handle;
+		channel->frequency = handle_to_gpio_ptr->frequency;
+		channel->gpio = handle_to_gpio_ptr->gpio;
+		channel->owner = (const char *)0;
+		channel->available = 0;
+		channel->open = 0;
+
+		if(handle_to_gpio_ptr->gpio >= 0)
+		{
+			channel_config.channel = handle;
+			channel_config.gpio_num = handle_to_gpio_ptr->gpio;
+			channel_config.timer_sel = handle_to_gpio_ptr->timer;
+
+			util_abort_on_esp_err("ledc_channel_config", ledc_channel_config(&channel_config));
+			channel->available = 1;
+		}
+	}
 
 	util_abort_on_esp_err("ledc_fade_func_install", ledc_fade_func_install(0));
 
 	inited = true;
 }
 
-pwm_led_t pwm_led_channel_new(unsigned int gpio, pwm_led_type_t type, const char *name)
+bool ledpwm_open(ledpwm_t handle, const char *owner)
 {
-	_pwm_led_t *channel;
+	channel_t *channel;
 
 	assert(inited);
-	assert(channels_size < led_pwm_channels_size);
-	assert(type < plt_size);
+	assert(handle < lpt_size);
 
-	channel = &channels[channels_size];
+	channel = &channels[handle];
 
-	strlcpy(channel->name, name, led_pwm_channel_name_size);
-	channel->config.gpio_num = gpio;
-	channel->config.channel = channels_size;
-	channel->config.timer_sel = (unsigned int)type;
+	if(!channel->available)
+		return(false);
 
-	util_abort_on_esp_err("ledc_channel_config", ledc_channel_config(&channel->config));
+	if(channel->open)
+		return(true);
 
-	channels_size++;
+	channel->open = 1;
+	channel->owner = owner;
 
-	return((pwm_led_t)channel);
+	util_abort_on_esp_err("ledc_set_duty_and_update", ledc_set_duty_and_update(LEDC_LOW_SPEED_MODE, handle, 0, 0));
+
+	return(true);
 }
 
-void pwm_led_channel_set(pwm_led_t channel, unsigned int duty)
+void ledpwm_set(ledpwm_t handle, unsigned int duty)
 {
-	ledc_timer_config_t *timer_ptr;
-	_pwm_led_t *_channel;
+	channel_t *channel;
 
 	assert(inited);
-	assert(channel);
+	assert(handle < lpt_size);
 
-	_channel = (_pwm_led_t *)channel;
+	channel = &channels[handle];
 
-	assert(_channel->config.timer_sel < (unsigned int)plt_size);
+	assert(channel->open);
 
-	timer_ptr = &timer_configs[_channel->config.timer_sel];
+	if(duty >= ledpwm_max_duty)
+		duty = ledpwm_max_duty - 1;
 
-	if(duty >= (1UL << timer_ptr->duty_resolution))
-		duty = (1UL << timer_ptr->duty_resolution) - 1;
-
-	util_abort_on_esp_err("ledc_set_duty_and_update", ledc_set_duty_and_update(_channel->config.speed_mode, _channel->config.channel, duty, 0));
+	util_abort_on_esp_err("ledc_set_duty_and_update", ledc_set_duty_and_update(LEDC_LOW_SPEED_MODE, handle, duty, 0));
 }
 
-unsigned int pwm_led_channel_get(const const_pwm_led_t channel)
+unsigned int ledpwm_get(ledpwm_t handle)
 {
-	const _pwm_led_t *_channel;
+	const channel_t *channel;
 
 	assert(inited);
-	assert(channel);
+	assert(handle < lpt_size);
 
-	_channel = (const _pwm_led_t *)channel;
+	channel = &channels[handle];
 
-	assert(_channel->config.timer_sel < (unsigned int)plt_size);
+	assert(channel->open);
 
-	return(ledc_get_duty(_channel->config.speed_mode, _channel->config.channel));
+	return(ledc_get_duty(LEDC_LOW_SPEED_MODE, handle));
 }
 
-void command_pwm_led_info(cli_command_call_t *call)
+void command_ledpwm_info(cli_command_call_t *call)
 {
-	unsigned int channel;
-	_pwm_led_t *_channel;
+	ledpwm_t handle;
+	channel_t *channel;
 
 	assert(inited);
 	assert(call);
 	assert(call->parameter_count == 0);
 
-	string_assign_cstr(call->result, "PWM LED INFO:");
-	string_format_append(call->result, "\n- timers hardware available: %u, in use: %u", (unsigned int)led_pwm_timers_size, (unsigned int)plt_size);
-	string_format_append(call->result, "\n- channels hardware available: %u, in use: %u", (unsigned int)led_pwm_channels_size, (unsigned int)channels_size);
-	string_append_cstr(call->result, "\nCHANNELS:");
+	string_assign_cstr(call->result, "LED-PWM INFO:");
+	string_format_append(call->result, "\n- channels available: %u", (unsigned int)lpt_size);
+	string_append_cstr(call->result, "\nchannels:");
 
-	for(channel = 0; channel < channels_size; channel++)
+	for(handle = lpt_first; handle < lpt_size; handle++)
 	{
-		_channel = &channels[channel];
+		channel = &channels[handle];
 
-		assert(_channel->config.channel == channel);
+		if(channel->available)
+		{
+			assert(!channel->open || channel->owner);
 
-		string_format_append(call->result, "\n- channel [%u] %*s timer: %u, resolution: %2u bits, frequency: %4u Hz, duty: %5u, hpoint: %u",
-					channel,
-					0 - led_pwm_channel_name_size, _channel->name,
-					(unsigned int)_channel->config.timer_sel,
-					(unsigned int)timer_configs[_channel->config.timer_sel].duty_resolution,
-					(unsigned int)timer_configs[_channel->config.timer_sel].freq_hz,
-					(unsigned int)ledc_get_duty(_channel->config.speed_mode, channel),
-					(unsigned int)ledc_get_hpoint(_channel->config.speed_mode, channel));
+			string_format_append(call->result, "\n- channel %u: 14 bits @ %4u Hz, timer %u, gpio %2d is %s duty: %5u, owned by: %s",
+					(unsigned int)handle,
+					channel->frequency,
+					(unsigned int)channel->timer,
+					channel->gpio,
+					channel->open ? "open" : "not open",
+					(unsigned int)ledc_get_duty(LEDC_LOW_SPEED_MODE, handle),
+					channel->open ? channel->owner : "<none>");
+		}
+		else
+			string_format_append(call->result, "\n- channel %u is unavailable", handle);
+
 	}
 }

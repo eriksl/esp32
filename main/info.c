@@ -85,8 +85,8 @@ void info_command_info(cli_command_call_t *call)
 #else
 	string_append_cstr(call->result, "\n- no LEDpixel");
 #endif
-#if defined(CONFIG_BSP_LED_HAVE_LED)
-	string_format_append(call->result, "\n- status LED at GPIO %d", CONFIG_BSP_LED_GPIO);
+#if (CONFIG_BSP_LEDPWM0 >= 0)
+	string_format_append(call->result, "\n- status LED at GPIO %d", CONFIG_BSP_LEDPWM0);
 #else
 	string_append_cstr(call->result, "\n- no status LED");
 #endif

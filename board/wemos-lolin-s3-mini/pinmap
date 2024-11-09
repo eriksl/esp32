@@ -3,10 +3,10 @@ WEMOS Lolin S3 mini
 	AVAILABLE	USED	FREE	designated function/marking		used
 
 0				*				board boot select
+1	*
 2	*			*												SPI 2 LCD D/C
 3	#			 				board boot select
-4	*			*												SPI 2 LCD backlight PWM 5 kHz
-1	*
+4	*			*												LEDPWM 1 5 kHz SPI 2 display backlight
 5	*															I2C 0 SDA
 6	*															I2C 0 SCL
 7	*															external I/O interrupt
@@ -19,7 +19,7 @@ WEMOS Lolin S3 mini
 14	*			*				FSPIWP=IO_D2					PWM 2 120 Hz
 15	*			*												PWM 3 5 kHz
 16	*			*												SPI 3 CS
-17	*			*												SPI 3 LCD backlight PWM 5 kHz
+17	*			*												LEDPWM 2 5 kHz SPI 3 display backlight
 18	*			*												SPI 3 MOSI
 19				*				USB D-
 20				*				USB D+
@@ -35,12 +35,12 @@ WEMOS Lolin S3 mini
 30				*				SP0/1 CLK=CLK
 31				*				SP0/1 Q=IO_D1
 32				*				SP0/1 D=IO_D0
-34	#			*				SP0/1 IO5=IO_D5
 35	#			*				SP0/1 IO6=IO_D6					led pixel 1
 36	#			*				SP0/1 IO7=IO_D7					led pixel 2
 37	#			*				SP0/1 DQS						I2C 1 SDA
 38	*			*												I2C 1 SCL
 33	#			*				SP0/1 IO4=IO_D4					PDM 0 150 kHz
+34	#			*				SP0/1 IO5=IO_D5					LEDPWM 3 120 Hz
 39								JTAG MTCK
 40								JTAG MTDO
 41								JTAG MDTI
@@ -61,6 +61,6 @@ MOSI		11*	MOSI	L-1-6		18	MOSI	R-2-5		4	yellow			D3	orange		27	LCD_SDI
 CS			10*	CS0		L-1-7		16	CS		R-2-6		5	green			D0	black		23	LCD_/CS
 Vss			 G	GND		R-1-7		 G	GND		R-2-7		6	blue			GND	white		 1	Vss
 D/C			 2	D/C		R-1-3		21	D/C		R-1-5		7	purple			D2	red			25	/WR(D/C)
-BL			 4	PWM		L-1-3		17	PWM		R-1-6		8	grey			D5	green		29	BL_ON/OFF
+BL			 4	LEDPWM	L-1-3		17	LEDPWM	R-1-6		8	grey			D5	green		29	BL_ON/OFF
 
 *) IOMUX fixed assigned

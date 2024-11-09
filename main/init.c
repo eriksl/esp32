@@ -18,7 +18,7 @@
 #include "ramdisk.h"
 #include "notify.h"
 #include "display.h"
-#include "pwm-led.h"
+#include "ledpwm.h"
 #include "i2c.h"
 #include "sensor.h"
 #include "io.h"
@@ -28,7 +28,7 @@ __attribute__((noreturn)) void app_main(void);
 
 void app_main(void)
 {
-	pwm_led_init();
+	ledpwm_init();
 	notify_init();
 	notify(notify_sys_booting);
 	console_init_1();

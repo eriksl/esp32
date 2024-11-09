@@ -28,14 +28,8 @@ menu "BSP - do not change, set automically, when invoked using script idf"
 	config BSP_SPI2_DISPLAY_DC
 		int "GPIO used for D/C of display on SPI2"
 
-	config BSP_SPI2_DISPLAY_BACKLIGHT
-		int "GPIO used for backlight control of display on SPI2"
-
 	config BSP_SPI3_DISPLAY_DC
 		int "GPIO used for D/C of display on SPI3"
-
-	config BSP_SPI3_DISPLAY_BACKLIGHT
-		int "GPIO used for backlight control of display on SPI3"
 
 	config BSP_SPI3_DISPLAY_CS
 		int "GPIO used for SPI3 CS of display on SPI3"
@@ -72,6 +66,18 @@ menu "BSP - do not change, set automically, when invoked using script idf"
 
 	config BSP_PWM3
 		int "GPIO used for PWM3 @ 5 kHz"
+
+	config BSP_LEDPWM0
+		int "GPIO used for LEDPWM0 @ 5 kHz/14 bit (notify)"
+
+	config BSP_LEDPWM1
+		int "GPIO used for LEDPWM1 @ 5 kHz/14 bit (LCD SPI 2)"
+
+	config BSP_LEDPWM2
+		int "GPIO used for LEDPWM2 @ 5 kHz/14 bit (LCD SPI 3)"
+
+	config BSP_LEDPWM3
+		int "GPIO used for LEDPWM3 @ 120 Hz/14 bit"
 
 	config BSP_PDM0
 		int "GPIO used for PDM0 @ 150 kHz / 8 bit"
