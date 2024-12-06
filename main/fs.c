@@ -153,27 +153,30 @@ void fs_command_read(cli_command_call_t *call)
 	string_format(call->result, "OK chunk read: %d", length);
 }
 
-void fs_command_append(cli_command_call_t *call)
+void fs_command_write(cli_command_call_t *call)
 {
 	int fd, length;
 	struct stat statb;
+	int open_mode;
 
 	assert(inited);
-	assert(call->parameter_count == 2);
+	assert(call->parameter_count == 3);
 
-	if(call->parameters[0].unsigned_int != string_length(call->oob))
+	open_mode = O_WRONLY | O_CREAT | (call->parameters[0].unsigned_int ? O_APPEND : O_TRUNC);
+
+	if(call->parameters[1].unsigned_int != string_length(call->oob))
 	{
-		string_format(call->result, "ERROR: length [%u] != oob data length [%u]", call->parameters[0].unsigned_int, string_length(call->oob));
+		string_format(call->result, "ERROR: length [%u] != oob data length [%u]", call->parameters[1].unsigned_int, string_length(call->oob));
 		return;
 	}
 
-	if((fd = open(string_cstr(call->parameters[1].string), O_WRONLY | O_APPEND | O_CREAT, 0)) < 0)
+	if((fd = open(string_cstr(call->parameters[2].string), open_mode, 0)) < 0)
 	{
-		string_format(call->result, "ERROR: cannot open file %s: %s", string_cstr(call->parameters[1].string), strerror(errno));
+		string_format(call->result, "ERROR: cannot open file %s: %s", string_cstr(call->parameters[2].string), strerror(errno));
 		return;
 	}
 
-	if((length = write(fd, string_data(call->oob), string_length(call->oob))) != call->parameters[0].unsigned_int)
+	if((length = write(fd, string_data(call->oob), string_length(call->oob))) != call->parameters[1].unsigned_int)
 	{
 		string_assign_cstr(call->result, "ERROR: write failed");
 		close(fd);
@@ -182,14 +185,14 @@ void fs_command_append(cli_command_call_t *call)
 
 	close(fd);
 
-	if(stat(string_cstr(call->parameters[1].string), &statb))
+	if(stat(string_cstr(call->parameters[2].string), &statb))
 		length = -1;
 	else
 		length = statb.st_size;
 
 	string_format(call->result, "OK file length: %d", length);
 }
- 
+
 void fs_command_erase(cli_command_call_t *call)
 {
 	assert(inited);

@@ -292,15 +292,6 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "fs-append", (const char*)0, "append chunk to file on the littlefs filesystem", fs_command_append,
-		{	2,
-			{
-				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length", .unsigned_int = { 0, 4096 }},
-				{ cli_parameter_string, 0, 1, 1, 1, "file", .string = { 1, 64 }},
-			}
-		}
-	},
-
 	{ "fs-checksum", (const char*)0, "checksum file on the littlefs filesystem", fs_command_checksum,
 		{	1,
 			{
@@ -309,7 +300,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "fs-erase", (const char*)0, "erase file on the littlefs filesystem", fs_command_erase,
+	{ "fs-erase", (const char*)0, "erase file on the filesystem", fs_command_erase,
 		{	1,
 			{
 				{ cli_parameter_string, 0, 1, 1, 1, "file", .string = { 1, 64 }},
@@ -334,6 +325,16 @@ static const cli_command_t cli_commands[] =
 			{
 				{ cli_parameter_string, 0, 1, 0, 0, "directory to list", {} },
 			},
+		}
+	},
+
+	{ "fs-write", (const char*)0, "write to a file on the filesystem", fs_command_write,
+		{	3,
+			{
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "mode, 0 = truncate, 1 = append", .unsigned_int = { 0, 1 }},
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length", .unsigned_int = { 0, 4096 }},
+				{ cli_parameter_string, 0, 1, 1, 1, "file", .string = { 1, 64 }},
+			}
 		}
 	},
 
