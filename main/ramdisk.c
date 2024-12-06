@@ -174,29 +174,8 @@ static file_metadata_t *metadata_from_fd(vfs_ramdisk_context_t *context, int fd)
 
 static void file_truncate(file_metadata_t *meta, unsigned int length)
 {
-	unsigned int datablock;
-
-	assert(inited);
-	assert(block_ptr_size == (sizeof(meta->datablocks) / sizeof(*meta->datablocks)));
-
 	if(length < meta->length)
-	{
-		if(length == 0)
-			datablock = 0;
-		else
-			datablock = ((length - 1) / block_size) + 1;
-
-		for(; datablock < block_ptr_size; datablock++)
-		{
-			if(meta->datablocks[datablock])
-			{
-				free(meta->datablocks[datablock]);
-				meta->datablocks[datablock] = (data_block_t *)0;
-			}
-		}
-
-		meta->length = length;
-	}
+		length = meta->length;
 }
 
 static void file_stat(const vfs_ramdisk_context_t *context, const file_metadata_t *meta, int ix, struct stat *st)
