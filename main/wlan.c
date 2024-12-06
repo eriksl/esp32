@@ -961,6 +961,14 @@ void wlan_command_info(cli_command_call_t *call)
 		string_format_append(call->result, "\n- address %u: %s (%s)", ix, string_cstr(ipv6_str), util_ipv6_address_type_string(&esp_ip6_addr[ix]));
 	}
 
+	rv = esp_netif_get_all_preferred_ip6(netif, esp_ip6_addr);
+
+	for(ix = 0; ix < rv; ix++)
+	{
+		util_esp_ipv6_addr_to_string(ipv6_str, &esp_ip6_addr[ix]);
+		string_format_append(call->result, "\n- preferred address %u: %s (%s)", ix, string_cstr(ipv6_str), util_ipv6_address_type_string(&esp_ip6_addr[ix]));
+	}
+
 	string_append_cstr(call->result, "\nhostname: ");
 
 	if((rv = esp_netif_get_hostname(netif, &hostname)))

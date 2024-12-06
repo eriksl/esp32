@@ -25,7 +25,7 @@ static bool inited;
 static const char *ipv6_address_type_strings[ipv6_address_size] =
 {
 	[ipv6_address_link_local] =		"link local",
-	[ipv6_address_global_slaac] =	"autoconfig",
+	[ipv6_address_global_slaac] =	"slaac",
 	[ipv6_address_global_static] =	"static",
 	[ipv6_address_other] =			"other",
 };
