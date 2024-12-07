@@ -26,6 +26,22 @@ export IDF_DEFAULTS="SDKCONFIG_DEFAULTS=${PWD}/sdkconfig.defaults;${PWD}/board/$
 
 source $IDF_PATH/export.sh > /dev/null
 
-set -x
+case "$1" in
+	build)
+		cd "$IDF_BUILD"
+		exec ninja
+		;;
 
-exec idf.py -B "${IDF_BUILD}" -D "${IDF_DEFAULTS}" -p /dev/ttyACM0 -b 1000000 "$@"
+	monitor)
+		cd "$IDF_BUILD"
+		exec ninja "$@"
+		;;
+
+	run)
+		exec idf.py -B "${IDF_BUILD}" -D "${IDF_DEFAULTS}" -p /dev/ttyACM0 app-flash monitor
+		;;
+
+	*)
+		exec idf.py -B "${IDF_BUILD}" -D "${IDF_DEFAULTS}" -p /dev/ttyACM0 "$@"
+		;;
+esac
