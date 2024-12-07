@@ -19,7 +19,7 @@ enum
 	fd_table_size = 8,
 	file_name_size = 64,
 	block_size = 4096,
-	block_ptr_size = 1004,
+	block_ptr_size = 1003,
 	meta_magic_word_1 = 0x12345678UL,
 	meta_magic_word_2 = 0xfedcba98UL,
 };
@@ -35,6 +35,7 @@ typedef struct file_metadata_T
 {
 	unsigned int magic_word_1;
 	struct file_metadata_T *next;
+	unsigned int inode;
 	unsigned int length;
 	char filename[file_name_size];
 	data_block_t *datablocks[block_ptr_size];
@@ -65,6 +66,7 @@ typedef struct
 typedef struct
 {
 	char mountpoint[16];
+	unsigned int instance;
 	file_descriptor_t *fd_table;
 	file_metadata_t *root;
 	SemaphoreHandle_t data_mutex;
@@ -117,7 +119,7 @@ static bool file_in_use(vfs_ramdisk_context_t *context, const char *filename, un
 	return(false);
 }
 
-static file_metadata_t *metadata_from_filename(vfs_ramdisk_context_t *context, const char *filename, int *index)
+static file_metadata_t *metadata_from_filename(vfs_ramdisk_context_t *context, const char *filename)
 {
 	unsigned int ix;
 	file_metadata_t *meta;
@@ -135,15 +137,9 @@ static file_metadata_t *metadata_from_filename(vfs_ramdisk_context_t *context, c
 
 	if(!meta)
 	{
-		if(index)
-			*index = -1;
-
 		errno = ENOENT;
 		return((file_metadata_t *)0);
 	}
-
-	if(index)
-		*index = ix;
 
 	return(meta);
 }
@@ -178,20 +174,24 @@ static void file_truncate(file_metadata_t *meta, unsigned int length)
 		meta->length = length;
 }
 
-static void file_stat(const vfs_ramdisk_context_t *context, const file_metadata_t *meta, int ix, struct stat *st)
+static void file_stat(const vfs_ramdisk_context_t *context, const file_metadata_t *meta, struct stat *st)
 {
+	static const unsigned int blocks = sizeof(meta->datablocks) / sizeof(*meta->datablocks);
+	unsigned int block;
+
 	assert(inited);
+	assert(blocks == block_ptr_size);
 
 	memset(st, 0, sizeof(st));
 
-	st->st_ino = ix;
+	st->st_dev = context->instance;
+	st->st_ino = meta->inode;
 	st->st_size = meta->length;
 	st->st_blksize = block_size;
 
-	if(meta->length > 0)
-		st->st_blocks = ((meta->length - 1) / block_size) + 1;
-	else
-		st->st_blocks = 0;
+	for(block = 0, st->st_blocks = 0; block < blocks; block++)
+		if(meta->datablocks[block])
+			st->st_blocks += block_size / 512;
 }
 
 static int ramdisk_open(void *ctx, const char *path, int fcntl_flags, int file_access_mode)
@@ -219,7 +219,7 @@ static int ramdisk_open(void *ctx, const char *path, int fcntl_flags, int file_a
 		return(-1);
 	}
 
-	if(!(meta = metadata_from_filename(context, relpath, (int *)0)))
+	if(!(meta = metadata_from_filename(context, relpath)))
 	{
 		if(fcntl_flags & O_CREAT)
 		{
@@ -245,9 +245,13 @@ static int ramdisk_open(void *ctx, const char *path, int fcntl_flags, int file_a
 			{
 				assert(!parent->next);
 				parent->next = meta;
+				meta->inode = parent->inode + 1;
 			}
 			else
+			{
+				meta->inode = 1;
 				context->root = meta;
+			}
 		}
 		else
 		{
@@ -501,7 +505,7 @@ static int ramdisk_unlink(void *ctx, const char *filename)
 		return(-1);
 	}
 
-	if(!(meta = metadata_from_filename(context, relpath, (int *)0)))
+	if(!(meta = metadata_from_filename(context, relpath)))
 	{
 		data_mutex_give(context);
 		log_format("ramdisk: debug: unlink: file %s does not exist", relpath);
@@ -696,7 +700,7 @@ static int ramdisk_truncate(void *ctx, const char *path, off_t length)
 
 	data_mutex_take(context);
 
-	if(!(meta = metadata_from_filename(context, relpath, (int *)0)))
+	if(!(meta = metadata_from_filename(context, relpath)))
 	{
 		data_mutex_give(context);
 		return(-1);
@@ -741,7 +745,6 @@ static int ramdisk_ftruncate(void *ctx, int fd, off_t length)
 static int ramdisk_stat(void *ctx, const char *path, struct stat *st)
 {
 	vfs_ramdisk_context_t *context = (vfs_ramdisk_context_t *)ctx;
-	int ix;
 	file_metadata_t *meta;
 	const char *relpath;
 
@@ -754,13 +757,13 @@ static int ramdisk_stat(void *ctx, const char *path, struct stat *st)
 
 	data_mutex_take(context);
 
-	if(!(meta = metadata_from_filename(context, relpath, &ix)))
+	if(!(meta = metadata_from_filename(context, relpath)))
 	{
 		data_mutex_give(context);
 		return(-1);
 	}
 
-	file_stat(context, meta, ix, st);
+	file_stat(context, meta, st);
 
 	data_mutex_give(context);
 
@@ -782,7 +785,7 @@ static int ramdisk_fstat(void *ctx, int fd, struct stat *st)
 		return(-1);
 	}
 
-	file_stat(context, meta, fd, st);
+	file_stat(context, meta, st);
 
 	data_mutex_give(context);
 
@@ -800,10 +803,10 @@ void ramdisk_init(void)
 
 	context = (vfs_ramdisk_context_t *)util_memory_alloc_spiram(sizeof(*context));
 	assert(context);
+	context->instance = 0;
 	context->data_mutex = xSemaphoreCreateMutex();
 	assert(context->data_mutex);
 	data_mutex_take(context);
-
 	strlcpy(context->mountpoint, "/ramdisk", sizeof(context->mountpoint));
 	context->root = (file_metadata_t *)0;
 

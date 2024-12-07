@@ -70,7 +70,6 @@ void fs_command_list(cli_command_call_t *call)
 	DIR *dir;
 	struct dirent *dirent;
 	struct stat statb;
-	int length;
 	string_auto(filename, 64);
 
 	assert(inited);
@@ -91,11 +90,9 @@ void fs_command_list(cli_command_call_t *call)
 		string_format(filename, "%s/%s", string_cstr(call->parameters[0].string), dirent->d_name);
 
 		if(stat(string_cstr(filename), &statb))
-			length = -1;
+			string_format_append(call->result, "\n*** no information*** %s", dirent->d_name);
 		else
-			length = statb.st_size / 1024;
-
-		string_format_append(call->result, "\n%3d %s", length, dirent->d_name);
+			string_format_append(call->result, "\n%2u %3ldk %6ld %s", statb.st_ino, statb.st_blocks * 512 / 1024, statb.st_size, dirent->d_name);
 	}
 
 	closedir(dir);
