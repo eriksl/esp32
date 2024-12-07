@@ -322,9 +322,10 @@ static const cli_command_t cli_commands[] =
 	},
 
 	{ "fs-list", "ls", "show all files on the littlefs filesystem", fs_command_list,
-		{	1,
+		{	2,
 			{
 				{ cli_parameter_string, 0, 1, 0, 0, "directory to list", {} },
+				{ cli_parameter_string, 0, 0, 0, 0, "option [-l]", {} },
 			},
 		}
 	},

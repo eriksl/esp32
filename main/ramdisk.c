@@ -13,13 +13,14 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <time.h>
 
 enum
 {
 	fd_table_size = 8,
 	file_name_size = 64,
 	block_size = 4096,
-	block_ptr_size = 1003,
+	block_ptr_size = 995,
 	meta_magic_word_1 = 0x12345678UL,
 	meta_magic_word_2 = 0xfedcba98UL,
 };
@@ -38,6 +39,8 @@ typedef struct file_metadata_T
 	unsigned int inode;
 	unsigned int length;
 	char filename[file_name_size];
+	struct timespec c_time;
+	struct timespec m_time;
 	data_block_t *datablocks[block_ptr_size];
 	unsigned int magic_word_2;
 } file_metadata_t;
@@ -168,8 +171,24 @@ static file_metadata_t *metadata_from_fd(vfs_ramdisk_context_t *context, int fd)
 	return(meta);
 }
 
+static void meta_update(file_metadata_t *meta)
+{
+	struct timespec now;
+
+	if(clock_gettime(CLOCK_REALTIME, &now))
+	{
+		log("ramdisk: clock_gettime failed");
+		now.tv_sec = 0;
+		now.tv_nsec = 0;
+	}
+
+	meta->m_time = now;
+}
+
 static void file_truncate(file_metadata_t *meta, unsigned int length)
 {
+	meta_update(meta);
+
 	if(meta->length > length)
 		meta->length = length;
 }
@@ -188,6 +207,10 @@ static void file_stat(const vfs_ramdisk_context_t *context, const file_metadata_
 	st->st_ino = meta->inode;
 	st->st_size = meta->length;
 	st->st_blksize = block_size;
+	st->st_atim.tv_sec = 0;
+	st->st_atim.tv_nsec = 0;
+	st->st_mtim = meta->m_time;
+	st->st_ctim = meta->c_time;
 
 	for(block = 0, st->st_blocks = 0; block < blocks; block++)
 		if(meta->datablocks[block])
@@ -229,6 +252,8 @@ static int ramdisk_open(void *ctx, const char *path, int fcntl_flags, int file_a
 
 			meta->next = (file_metadata_t *)0;
 			meta->length = 0;
+			meta_update(meta);
+			meta->c_time = meta->m_time;
 			meta->magic_word_1 = meta_magic_word_1;
 			meta->magic_word_2 = meta_magic_word_2;
 			strlcpy(meta->filename, relpath, sizeof(meta->filename));
@@ -435,6 +460,8 @@ static ssize_t ramdisk_write(void *ctx, int fd, const void *data_in, size_t size
 		log_format("ramdisk: write: offset [%u] > file length [%u]", fdp->offset, metadata->length);
 		fdp->offset = metadata->length;
 	}
+
+	meta_update(metadata);
 
 	while(size > 0)
 	{

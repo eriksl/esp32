@@ -71,9 +71,13 @@ void fs_command_list(cli_command_call_t *call)
 	struct dirent *dirent;
 	struct stat statb;
 	string_auto(filename, 64);
+	bool option_long;
+	time_t ticks;
+	string_auto(ctime, 32);
+	string_auto(mtime, 32);
 
 	assert(inited);
-	assert(call->parameter_count == 1);
+	assert((call->parameter_count > 0) && (call->parameter_count < 3));
 
 	if(!(dir = opendir(string_cstr(call->parameters[0].string))))
 	{
@@ -81,18 +85,46 @@ void fs_command_list(cli_command_call_t *call)
 		return;
 	}
 
+	if(call->parameter_count == 2)
+	{
+		if(string_equal_cstr(call->parameters[1].string, "-l"))
+			option_long = true;
+		else
+		{
+			string_format_append(call->result, "fs-list: unknown option: %s\n", string_cstr(call->parameters[1].string));
+			return;
+		}
+	}
+	else
+		option_long = false;
+
 	string_format(call->result, "DIRECTORY %s", string_cstr(call->parameters[0].string));
 
 	while((dirent = readdir(dir)))
 	{
-		errno = 0;
-
 		string_format(filename, "%s/%s", string_cstr(call->parameters[0].string), dirent->d_name);
 
 		if(stat(string_cstr(filename), &statb))
-			string_format_append(call->result, "\n*** no information*** %s", dirent->d_name);
+		{
+			if(option_long)
+				string_format_append(call->result, "\n%2u %3ldk %6ld %19s %19s %s", 0U, -1L, -1L, "1970/01/01 00:00:00", "1970/01/01", dirent->d_name);
+			else
+				string_format_append(call->result, "\n%3ldk %s", 0L, dirent->d_name);
+		}
 		else
-			string_format_append(call->result, "\n%2u %3ldk %6ld %s", statb.st_ino, statb.st_blocks * 512 / 1024, statb.st_size, dirent->d_name);
+		{
+			if(option_long)
+			{
+				ticks = statb.st_ctim.tv_sec;
+				util_time_to_string(ctime, &ticks);
+				ticks = statb.st_mtim.tv_sec;
+				util_time_to_string(mtime, &ticks);
+
+				string_format_append(call->result, "\n%2u %3ldk %6ld %19s %19s %s", statb.st_ino, statb.st_blocks * 512 / 1024, statb.st_size, string_cstr(ctime), string_cstr(mtime), dirent->d_name);
+			}
+			else
+				string_format_append(call->result, "\n%3ldk %s", statb.st_size / 1024, dirent->d_name);
+		}
 	}
 
 	closedir(dir);
