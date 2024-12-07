@@ -174,8 +174,8 @@ static file_metadata_t *metadata_from_fd(vfs_ramdisk_context_t *context, int fd)
 
 static void file_truncate(file_metadata_t *meta, unsigned int length)
 {
-	if(length < meta->length)
-		length = meta->length;
+	if(meta->length > length)
+		meta->length = length;
 }
 
 static void file_stat(const vfs_ramdisk_context_t *context, const file_metadata_t *meta, int ix, struct stat *st)
