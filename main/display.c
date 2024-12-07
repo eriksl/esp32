@@ -70,6 +70,7 @@ typedef struct display_page_T
 	} text;
 	struct
 	{
+		unsigned int length;
 		string_t filename;
 	} image;
 } display_page_t;
@@ -146,6 +147,7 @@ static bool log_mode = true;
 static SemaphoreHandle_t page_data_mutex;
 static unsigned int display_log_y;
 static unsigned int stat_display_show = 0;
+static unsigned int stat_skipped_incomplete_images = 0;
 
 static inline void page_data_mutex_take(void)
 {
@@ -387,7 +389,7 @@ static bool page_add_text(const const_string_t name, unsigned int lifetime, cons
 	return(true);
 }
 
-static bool page_add_image(const const_string_t name, unsigned int lifetime, const const_string_t filename)
+static bool page_add_image(const const_string_t name, unsigned int lifetime, const const_string_t filename, unsigned int length)
 {
 	int page;
 	display_page_t *page_ptr;
@@ -404,12 +406,11 @@ static bool page_add_image(const const_string_t name, unsigned int lifetime, con
 	}
 
 	page_ptr = &display_pages[page];
-
-	page_erase(page_ptr);
 	string_assign_string(page_ptr->name, name);
 	page_ptr->type = dpt_image;
 	page_ptr->expiry = (lifetime > 0) ? time((time_t *)0) + lifetime : 0;
 	string_assign_string(page_ptr->image.filename, filename);
+	page_ptr->image.length = length;
 
 	return(true);
 }
@@ -639,6 +640,7 @@ static void __attribute__((noreturn)) run_display_info(void *)
 	static user_png_io_ptr_t user_io_ptr;
 	static uint64_t time_start, time_spent;
 	static bool fastskip = false;
+	static struct stat statb;
 
 	current_colour = dc_black;
 
@@ -790,6 +792,20 @@ static void __attribute__((noreturn)) run_display_info(void *)
 				case(dpt_image):
 				{
 					row_pointer = (png_bytep)0;
+
+					if(stat(string_cstr(display_pages_ptr->image.filename), &statb))
+					{
+						log_format("display: cannot stat image file: %s", string_cstr(display_pages_ptr->image.filename));
+						fastskip = true;
+						goto skip;
+					}
+
+					if(statb.st_size != display_pages_ptr->image.length)
+					{
+						stat_skipped_incomplete_images++;
+						fastskip = true;
+						goto skip;
+					}
 
 					if((fd = open(string_cstr(display_pages_ptr->image.filename), O_RDONLY, 0)) < 0)
 					{
@@ -1010,7 +1026,7 @@ static void display_info(string_t output)
 
 			case(dpt_image):
 			{
-				string_format_append(output, "\nimage: %s, file: %s [%s]", string_cstr(page_ptr->name), string_cstr(page_ptr->image.filename), string_cstr(datetime));
+				string_format_append(output, "\nimage: %s, file: %s/%u [%s]", string_cstr(page_ptr->name), string_cstr(page_ptr->image.filename), page_ptr->image.length, string_cstr(datetime));
 				break;
 			}
 
@@ -1025,6 +1041,7 @@ done:
 
 	string_append_cstr(output, "\nSTATS:");
 	string_format_append(output, "\n- display draw time: %u ms", stat_display_show);
+	string_format_append(output, "\n- incomplete images skipped: %u", stat_skipped_incomplete_images);
 }
 
 static bool brightness(unsigned int percentage)
@@ -1234,10 +1251,10 @@ void command_display_page_add_image(cli_command_call_t *call)
 {
 	bool rv;
 
-	assert(call->parameter_count == 3);
+	assert(call->parameter_count == 4);
 
 	page_data_mutex_take();
-	rv = page_add_image(call->parameters[0].string, call->parameters[1].unsigned_int, call->parameters[2].string);
+	rv = page_add_image(call->parameters[0].string, call->parameters[1].unsigned_int, call->parameters[2].string, call->parameters[3].unsigned_int);
 	page_data_mutex_give();
 
 	string_format(call->result, "display-page-add-image%sadded \"%s\"", rv ? " " : " not ", string_cstr(call->parameters[0].string));

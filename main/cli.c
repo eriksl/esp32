@@ -264,11 +264,12 @@ static const cli_command_t cli_commands[] =
 	},
 
 	{ "display-page-add-image", "dpai", "add image page to display", command_display_page_add_image,
-		{	3,
+		{	4,
 			{
 				{ cli_parameter_string, 0, 1, 0, 0, "page name", {}},
 				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "timeout", {} },
 				{ cli_parameter_string, 0, 1, 0, 0, "filename", {} },
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "file length", {} },
 			},
 		},
 	},
