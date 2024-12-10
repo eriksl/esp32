@@ -106,7 +106,7 @@ void info_command_info_board(cli_command_call_t *call)
 	assert(call->parameter_count == 0);
 
 	string_format(call->result, "firmware date: %s %s, ", __DATE__, __TIME__);
-	string_format_append(call->result, "transport chunk size: %u, ", call->mtu);
+	string_format_append(call->result, "transport mtu: %u, ", call->mtu);
     string_format_append(call->result, "display area: %ux%u\n", display_image_x_size(), display_image_y_size());
 }
 
