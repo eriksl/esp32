@@ -29,17 +29,18 @@ bool packet_complete(const const_string_t data)
     return(string_length(data) >= (unsigned int)(packet_header->header_length + packet_header->payload_length + packet_header->oob_length));
 }
 
-void packet_encapsulate(cli_buffer_t *dst, const const_string_t data, const const_string_t oob_data)
+void packet_encapsulate(cli_buffer_t *dst, const const_string_t data, const const_string_t oob_data_in)
 {
+	const_string_t oob_data;
+
 	assert(dst);
 	assert(!dst->data);
 	assert(data);
-	unsigned int oob_data_length;
 
-	if(oob_data)
-		oob_data_length = string_length(oob_data);
+	if(oob_data_in)
+		oob_data = oob_data_in;
 	else
-		oob_data_length = 0;
+		oob_data = string_empty_string();
 
 	if(dst->packetised)
 	{
@@ -55,7 +56,7 @@ void packet_encapsulate(cli_buffer_t *dst, const const_string_t data, const cons
 		packet_header.id = packet_header_id;
 		packet_header.header_length = sizeof(packet_header);
 		packet_header.payload_length = string_length(data);
-		packet_header.oob_length = oob_data_length;
+		packet_header.oob_length = string_length(oob_data);
 
 		crc32 = util_crc32cksum_byte(0, (void *)0, 0);
 		crc32 = util_crc32cksum_byte(crc32, &packet_header, offsetof(packet_header_t, header_checksum));
@@ -65,32 +66,32 @@ void packet_encapsulate(cli_buffer_t *dst, const const_string_t data, const cons
 		crc32 = util_crc32cksum_byte(0, (void *)0, 0);
 		crc32 = util_crc32cksum_byte(crc32, &packet_header, offsetof(packet_header_t, packet_checksum));
 		checksummed += offsetof(packet_header_t, packet_checksum);
+
 		crc32 = util_crc32cksum_byte(crc32, string_data(data), string_length(data));
 		checksummed += string_length(data);
-		crc32 = util_crc32cksum_byte(crc32, string_data(data) /* this is correct, don't use NULL here */, oob_data_length);
-		checksummed += oob_data_length;
+		crc32 = util_crc32cksum_byte(crc32, string_data(oob_data), string_length(oob_data));
+		checksummed += string_length(oob_data);
+
 		crc32_padding = (4 - (checksummed & 0x03)) & 0x03;
 		crc32 = util_crc32cksum_byte(crc32, crc32_padding_string, crc32_padding);
 
 		packet_header.packet_checksum = crc32;
 
-		dst->data = string_new(sizeof(packet_header) + string_length(data) + oob_data_length);
+		dst->data = string_new(sizeof(packet_header) + string_length(data) + string_length(oob_data));
 		string_assign_data(dst->data, sizeof(packet_header), (const uint8_t *)&packet_header);
 		string_append_string(dst->data, data);
-
-		if(oob_data)
-			string_append_string(dst->data, oob_data);
+		string_append_string(dst->data, oob_data);
 	}
 	else
 	{
-		dst->data = string_new(string_length(data) + 1 /* \n */ + 1 /* '\0' */ + oob_data_length);
+		dst->data = string_new(string_length(data) + 1 /* \n */ + 1 /* '\0' */ + string_length(oob_data));
 
 		string_assign_string(dst->data, data);
 
 		if(string_at_back(dst->data) != '\n')
 			string_append(dst->data, '\n');
 
-		if(oob_data && oob_data_length)
+		if(string_length(oob_data))
 		{
 			string_append(dst->data, '\0');
 			string_append_string(dst->data, oob_data);
