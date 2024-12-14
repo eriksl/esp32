@@ -1,16 +1,8 @@
+#include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
 
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-
-#include <nimble/nimble_port_freertos.h>
-#include <nimble/nimble_port.h>
-#include <store/config/ble_store_config.h>
-#include <host/ble_hs.h>
-#include <host/util/util.h>
-#include <services/gap/ble_svc_gap.h>
-#include <services/gatt/ble_svc_gatt.h>
+#include <esp_log.h>
 
 #include "string.h"
 #include "cli.h"
@@ -23,6 +15,18 @@
 #include "cli-command.h"
 #include "packet_header.h"
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+#include <nimble/nimble_port_freertos.h>
+#include <nimble/nimble_port.h>
+#include <store/config/ble_store_config.h>
+#include <host/ble_hs.h>
+#include <host/util/util.h>
+#include <services/gap/ble_svc_gap.h>
+#include <services/gatt/ble_svc_gatt.h>
+#include <esp_timer.h>
+
 void ble_store_config_init(void);
 
 enum
@@ -30,7 +34,14 @@ enum
 	SERVICE_HANDLE = 0xabf0,
 	CHARACTERISTICS_HANDLE = 0xabf1,
 	KEY_HANDLE = 0xabf2,
+	bt_mtu = 512,
+	bt_max_chunk = bt_mtu + sizeof(packet_header_t) + 8 /* HCI metadata */,
+	max_packet_size = 4096 + sizeof(packet_header_t) + 128,
 };
+
+static TimerHandle_t bt_defragmentation_timer;
+static string_t bt_receive_buffer;
+static bool bt_defragmentation_incomplete;
 
 static int gap_event(struct ble_gap_event *event, void *arg);
 static int gatt_value_event(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *context, void *arg);
@@ -58,7 +69,7 @@ static unsigned int bt_stats_received_bytes;
 static unsigned int bt_stats_received_packets;
 static unsigned int bt_stats_received_raw_packets;
 static unsigned int bt_stats_received_packetised_packets;
-static unsigned int bt_stats_received_incomplete_packets;
+static unsigned int bt_stats_received_defragmentation_timeouts;
 
 static const struct ble_gatt_svc_def gatt_definitions[] =
 {
@@ -336,6 +347,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 		case(BLE_GAP_EVENT_PHY_UPDATE_COMPLETE):
 		case(BLE_GAP_EVENT_PARING_COMPLETE):
 		case(BLE_GAP_EVENT_DATA_LEN_CHG):
+		case(BLE_GAP_EVENT_LINK_ESTAB):
 		{
 			break;
 		}
@@ -375,68 +387,91 @@ static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *context, void *a
 	}
 }
 
+static void bt_defragmentation_callback(TimerHandle_t handle)
+{
+	bt_stats_received_defragmentation_timeouts++;
+	log("bt: defragmentation timed out");
+
+	if(!bt_defragmentation_incomplete)
+		log("bt: defragmentation while not active");
+
+	bt_defragmentation_incomplete = false;
+	string_clear(bt_receive_buffer);
+}
+
 static void bt_received(unsigned int connection_handle, unsigned int attribute_handle, const struct os_mbuf *mbuf)
 {
 	cli_buffer_t cli_buffer;
-	string_t input_buffer;
+	unsigned int length;
 
 	assert(inited);
 	assert(mbuf);
 
-	input_buffer = string_new_from_mbuf(mbuf);
+	length = string_append_mbuf(bt_receive_buffer, mbuf);
 
-	bt_stats_received_bytes += string_length(input_buffer);
+	bt_stats_received_bytes += length;
 
-	if(!packet_valid(input_buffer))
+	if(packet_valid(bt_receive_buffer))
 	{
-		cli_buffer.packetised = 0;
+		bt_stats_received_packetised_packets++;
+
+		if(packet_complete(bt_receive_buffer))
+		{
+			bt_defragmentation_incomplete = false;
+			xTimerStop(bt_defragmentation_timer, portMAX_DELAY);
+			cli_buffer.packetised = 1;
+		}
+		else
+		{
+			if(!bt_defragmentation_incomplete)
+			{
+				bt_defragmentation_incomplete = true;
+				xTimerStart(bt_defragmentation_timer, portMAX_DELAY);
+			}
+		}
+	}
+	else
+	{
 		bt_stats_received_raw_packets++;
-		goto raw;
+		bt_defragmentation_incomplete = false;
+		cli_buffer.packetised = 0;
 	}
 
-	if(!packet_complete(input_buffer))
+	if(!bt_defragmentation_incomplete)
 	{
-		bt_stats_received_incomplete_packets++;
-		string_free(&input_buffer);
-		return;
+		bt_stats_received_packets++;
+
+		cli_buffer.source = cli_source_bt;
+		cli_buffer.mtu = bt_mtu;
+		cli_buffer.data = string_new(string_length(bt_receive_buffer));
+		string_assign_string(cli_buffer.data, bt_receive_buffer);
+		cli_buffer.bt.connection_handle = connection_handle;
+		cli_buffer.bt.attribute_handle = attribute_handle;
+		string_clear(bt_receive_buffer);
+		bt_defragmentation_incomplete = false;
+
+		cli_receive_queue_push(&cli_buffer);
 	}
-
-	bt_stats_received_packetised_packets++;
-
-	cli_buffer.packetised = 1;
-
-raw:
-	cli_buffer.source = cli_source_bt;
-	cli_buffer.mtu = 512;
-	cli_buffer.data = input_buffer;
-	cli_buffer.bt.connection_handle = connection_handle;
-	cli_buffer.bt.attribute_handle = attribute_handle;
-
-	cli_receive_queue_push(&cli_buffer);
-
-	bt_stats_received_packets++;
 }
 
 void bt_send(const cli_buffer_t *cli_buffer)
 {
-	static const unsigned int max_chunk = /* netto data */ 512 + /* sizeof(packet_header_t) */ 32 + /* HCI headers */ 8;
 	struct os_mbuf *txom;
-	int offset, chunk, rv, attempt;
+	int offset, chunk_length, rv, attempt;
 
 	assert(inited);
-	assert(max_chunk == 552); /* sync this value with espif */
 
 	for(offset = 0; offset < string_length(cli_buffer->data);)
 	{
-		if((chunk = string_length(cli_buffer->data) - offset) < 0)
+		if((chunk_length = string_length(cli_buffer->data) - offset) < 0)
 			break;
 
-		if(chunk > max_chunk)
-			chunk = max_chunk;
+		if(chunk_length > bt_max_chunk)
+			chunk_length = bt_max_chunk;
 
 		for(attempt = 16; attempt > 0; attempt--)
 		{
-			txom = ble_hs_mbuf_from_flat(string_data(cli_buffer->data) + offset, chunk);
+			txom = ble_hs_mbuf_from_flat(string_data(cli_buffer->data) + offset, chunk_length);
 			assert(txom);
 
 			rv = ble_gatts_indicate_custom(cli_buffer->bt.connection_handle, cli_buffer->bt.attribute_handle, txom);
@@ -447,7 +482,8 @@ void bt_send(const cli_buffer_t *cli_buffer)
 			if(rv != BLE_HS_ENOMEM)
 			{
 				bt_stats_indication_error++;
-				return;
+				log_format("bt: send error: %d", rv);
+				goto done;
 			}
 
 			util_sleep(100);
@@ -459,10 +495,12 @@ void bt_send(const cli_buffer_t *cli_buffer)
 			break;
 		}
 
-		offset += chunk;
-		bt_stats_sent_bytes += chunk;
+		offset += chunk_length;
+		bt_stats_sent_bytes += chunk_length;
 		bt_stats_sent_packets++;
 	}
+
+done:
 }
 
 void bt_init(void)
@@ -478,6 +516,13 @@ void bt_init(void)
 	util_abort_on_esp_err("nimble_port_init", nimble_port_init());
 
 	inited = true;
+
+	bt_defragmentation_incomplete = false;
+	bt_receive_buffer = string_new(max_packet_size);
+
+	bt_defragmentation_timer = xTimerCreate("bt-defrag", pdMS_TO_TICKS(10000), pdFALSE, (void *)0, bt_defragmentation_callback);
+	assert(bt_defragmentation_timer);
+	bt_defragmentation_incomplete = false;
 
 	ble_hs_cfg.reset_cb = callback_reset;
 	ble_hs_cfg.sync_cb = callback_sync;
@@ -518,7 +563,7 @@ void bluetooth_command_info(cli_command_call_t *call)
 	string_format_append(call->result, "\n  data received:");
 	string_format_append(call->result, "\n  - packets: %u", bt_stats_received_packets);
 	string_format_append(call->result, "\n  - bytes: %u", bt_stats_received_bytes);
-	string_format_append(call->result, "\n  - incomplete packets: %u", bt_stats_received_incomplete_packets);
+	string_format_append(call->result, "\n  - defragmentation timeouts: %u", bt_stats_received_defragmentation_timeouts);
 	string_format_append(call->result, "\n  - packetised packets: %u", bt_stats_received_packetised_packets);
 	string_format_append(call->result, "\n  - raw packets: %u", bt_stats_received_raw_packets);
 
