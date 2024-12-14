@@ -36,9 +36,12 @@ typedef enum
 	ws_size,
 } wlan_state_t;
 
-static const char *key_ipv6_address = "ipv6-address";
+static const char *key_ipv6_static_address = "ipv6-address";
+static const char *key_ipv6_slaac_force_enabled = "ipv6-slaac";
 
 static bool inited = false;
+static bool slaac_active;
+static bool force_slaac;
 static esp_netif_t *netif_sta;
 static esp_netif_t *netif_ap;
 static wlan_state_t state = ws_invalid;
@@ -189,6 +192,12 @@ static void state_callback(TimerHandle_t handle)
 
 	state_time++;
 
+	if(force_slaac && !slaac_active && (state_time > 10))
+	{
+		log_format("wlan: SLAAC timeout after %u seconds, reassociating", state_time);
+		set_state(ws_associating);
+	}
+
 	if(((state == ws_associating) || (state == ws_associated)) && (state_time > 30))
 	{
 		util_warn_on_esp_err("esp_wifi_get_mac", esp_wifi_get_mac(WIFI_IF_AP, mac_address));
@@ -333,7 +342,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 
 					set_state(ws_ipv6_link_local_address_acquired);
 
-					if(config_get_string_cstr(key_ipv6_address, ipv6_address_string) && !esp_netif_str_to_ip6(string_cstr(ipv6_address_string), &ipv6_address))
+					if(config_get_string_cstr(key_ipv6_static_address, ipv6_address_string) && !esp_netif_str_to_ip6(string_cstr(ipv6_address_string), &ipv6_address))
 						util_warn_on_esp_err("esp_netif_add_ip6_address", esp_netif_add_ip6_address(netif_sta, ipv6_address, true));
 
 					break;
@@ -341,6 +350,8 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 				case(ipv6_address_global_slaac):
 				{
 					address_type = "SLAAC";
+
+					slaac_active = true;
 
 					set_state(ws_ipv6_slaac_address_acquired);
 
@@ -715,7 +726,23 @@ void wlan_command_client_config(cli_command_call_t *call)
 	}
 }
 
-void wlan_command_ipv6_config(cli_command_call_t *call)
+void wlan_command_ipv6_slaac(cli_command_call_t *call)
+{
+	uint32_t enabled;
+
+	assert(inited);
+	assert(call->parameter_count < 2);
+
+	if(call->parameter_count > 0)
+		config_set_uint_cstr(key_ipv6_slaac_force_enabled, call->parameters[0].unsigned_int);
+
+	if(!config_get_uint_cstr(key_ipv6_slaac_force_enabled, &enabled))
+		enabled = 0;
+
+	string_format(call->result, "ipv6 force slaac address retrieval enabled: %lu", enabled);
+}
+
+void wlan_command_ipv6_static(cli_command_call_t *call)
 {
 	string_auto(ipv6_address_string, 64);
 	esp_ip6_addr_t ipv6_address;
@@ -733,12 +760,12 @@ void wlan_command_ipv6_config(cli_command_call_t *call)
 
 		string_assign_cstr(ipv6_address_string, ip6addr_ntoa((const ip6_addr_t *)&ipv6_address));
 		string_tolower(ipv6_address_string);
-		config_set_string_cstr(key_ipv6_address, ipv6_address_string);
+		config_set_string_cstr(key_ipv6_static_address, ipv6_address_string);
 	}
 
 	string_assign_cstr(call->result, "ipv6 static address: ");
 
-	if(config_get_string_cstr(key_ipv6_address, ipv6_address_string))
+	if(config_get_string_cstr(key_ipv6_static_address, ipv6_address_string))
 		string_append_string(call->result, ipv6_address_string);
 	else
 		string_append_cstr(call->result, "<unset>");
@@ -750,6 +777,7 @@ void wlan_init(void)
 	string_auto(hostname, 16);
 	wifi_init_config_t init_config = WIFI_INIT_CONFIG_DEFAULT();
 	static esp_sntp_config_t sntp_config = ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(0, {});
+	uint32_t enabled;
 
 	assert(!inited);
 
@@ -768,6 +796,13 @@ void wlan_init(void)
 	state_timer = xTimerCreate("wlan-state", pdMS_TO_TICKS(1000), pdTRUE, (void *)0, state_callback);
 	assert(state_timer);
 	set_state(ws_init);
+
+	slaac_active = false;
+
+	if(!config_get_uint_cstr(key_ipv6_slaac_force_enabled, &enabled))
+		enabled = 0;
+
+	force_slaac = !!enabled;
 
 	inited = true;
 

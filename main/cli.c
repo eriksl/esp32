@@ -416,7 +416,15 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "ipv6-config", "ip6c", "set ipv6 static address and netmask", wlan_command_ipv6_config,
+	{ "ipv6-slaac", "ip6sl", "enable force slaac address retrieval", wlan_command_ipv6_slaac,
+		{	1,
+			{
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "address", .unsigned_int = { 0, 1 }},
+			},
+		}
+	},
+
+	{ "ipv6-static", "ip6st", "set ipv6 static address", wlan_command_ipv6_static,
 		{	1,
 			{
 				{ cli_parameter_string, 0, 0, 1, 1, "address", .string = { 0, 64 }},
