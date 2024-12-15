@@ -679,7 +679,7 @@ static void run_receive_queue(void *)
 			string_format(error, "ERROR: empty line");
 			packet_encapsulate(&cli_buffer, error, (string_t)0);
 			send_queue_push(&cli_buffer);
-			goto error;
+			goto error1;
 		}
 
 		for(ix = 0;; ix++)
@@ -961,7 +961,7 @@ static void run_receive_queue(void *)
 
 error:
 		string_free(&command);
-
+error1:
 		for(ix = 0; ix < call.parameter_count; ix++)
 		{
 			parameter = &call.parameters[ix];
