@@ -514,6 +514,8 @@ static int ramdisk_unlink(void *ctx, const char *filename)
 	file_metadata_t *meta, *parent;
 	const char *relpath;
 	struct stat statb;
+	unsigned int datablock_index;
+	data_block_t **datablock;
 
 	assert(inited);
 
@@ -539,7 +541,16 @@ static int ramdisk_unlink(void *ctx, const char *filename)
 		return(-1);
 	}
 
-	file_truncate(meta, 0);
+	for(datablock_index = 0; datablock_index < block_ptr_size; datablock_index++)
+	{
+		datablock = &meta->datablocks[datablock_index];
+
+		if(*datablock)
+		{
+			free(*datablock);
+			*datablock = (data_block_t *)0;
+		}
+	}
 
 	if(meta == context->root)
 		context->root = meta->next;
@@ -559,6 +570,7 @@ static int ramdisk_unlink(void *ctx, const char *filename)
 		parent->next = meta->next;
 	}
 
+	meta->length = 0;
 	meta->magic_word_1 = meta_magic_word_1 ^ 0xffffffff;
 	meta->magic_word_2 = meta_magic_word_2 ^ 0xffffffff;
 
