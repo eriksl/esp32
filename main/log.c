@@ -190,6 +190,8 @@ void log_format(const char *fmt, ...)
 void log_format_errno(const char *fmt, ...)
 {
 	va_list ap;
+
+	va_start(ap, fmt);
 	_log_format(true, fmt, ap);
 	va_end(ap);
 }
