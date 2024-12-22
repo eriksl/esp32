@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdbool.h>
+#include <time.h>
 
 #include "string.h"
 #include "info.h"
@@ -17,12 +18,18 @@ enum
 	data_float_value_size = 2,
 };
 
+typedef struct
+{
+	float value;
+	time_t stamp;
+} sensor_value_t;
+
 typedef struct data_T
 {
 	i2c_slave_t slave;
 	int int_value[data_int_value_size];
 	float float_value[data_float_value_size];
-	float value[sensor_type_size];
+	sensor_value_t values[sensor_type_size];
 	const struct info_T *info;
 	struct data_T *next;
 } data_t;
@@ -196,7 +203,8 @@ static bool bh1750_init(data_t *data)
 	data->int_value[bh1750_int_raw_value] = 0;
 	data->int_value[bh1750_int_scaling] = 0;
 	data->int_value[bh1750_int_state] = bh1750_start_measurement;
-	data->value[sensor_type_visible_light] = 0;
+	data->values[sensor_type_visible_light].value = 0;
+	data->values[sensor_type_visible_light].stamp = (time_t)0;
 
 	return(true);
 }
@@ -249,7 +257,8 @@ static bool bh1750_poll(data_t *data)
 			if(raw_value < 0xffff)
 			{
 				data->int_value[bh1750_int_raw_value] = raw_value;
-				data->value[sensor_type_visible_light] = ((float)raw_value * factor) + offset;
+				data->values[sensor_type_visible_light].value = ((float)raw_value * factor) + offset;
+				data->values[sensor_type_visible_light].stamp = time((time_t *)0);
 			}
 			else
 				log_format("bh1750: warning: measurement out of range: %d", raw_value);
@@ -378,7 +387,8 @@ static bool tmp75_poll(data_t *data)
 	data->int_value[tmp75_int_raw_value_0] = buffer[0];
 	data->int_value[tmp75_int_raw_value_1] = buffer[1];
 	raw_temperature = (buffer[0] << 8) | buffer[1];
-	data->value[sensor_type_temperature] = raw_temperature / 256.0F;
+	data->values[sensor_type_temperature].value = raw_temperature / 256.0F;
+	data->values[sensor_type_temperature].stamp = time((time_t *)0);
 
 	return(true);
 }
@@ -477,7 +487,8 @@ static bool lm75_poll(data_t *data)
 	data->int_value[lm75_int_raw_value_0] = buffer[0];
 	data->int_value[lm75_int_raw_value_1] = buffer[1];
 	raw_temperature = (buffer[0] << 8) | buffer[1];
-	data->value[sensor_type_temperature] = raw_temperature / 256.0F;
+	data->values[sensor_type_temperature].value = raw_temperature / 256.0F;
+	data->values[sensor_type_temperature].stamp = time((time_t *)0);
 
 	return(true);
 }
@@ -610,7 +621,8 @@ static bool opt3001_poll(data_t *data)
 
 	data->int_value[opt3001_int_raw_value_0] = exponent;
 	data->int_value[opt3001_int_raw_value_1] = mantissa;
-	data->value[sensor_type_visible_light] = 0.01F * (float)(1 << exponent) * (float)mantissa;
+	data->values[sensor_type_visible_light].value = 0.01F * (float)(1 << exponent) * (float)mantissa;
+	data->values[sensor_type_visible_light].stamp = time((time_t *)0);
 
 	return(true);
 }
@@ -739,7 +751,10 @@ static bool max44009_poll(data_t *data)
 	if(exponent == 0b1111)
 		log("sensors: max44009: overflow");
 	else
-		data->value[sensor_type_visible_light] = (1 << exponent) * mantissa * 0.045;
+	{
+		data->values[sensor_type_visible_light].value = (1 << exponent) * mantissa * 0.045;
+		data->values[sensor_type_visible_light].stamp = time((time_t *)0);
+	}
 
 	return(true);
 }
@@ -849,7 +864,10 @@ static void run_sensors(void *parameters)
 			assert(new_data);
 
 			for(type = sensor_type_first; type < sensor_type_size; type++)
-				new_data->value[type] = 0;
+			{
+				new_data->values[type].value = 0;
+				new_data->values[type].stamp = (time_t)0;
+			}
 
 			for(ix = 0; ix < data_int_value_size; ix++)
 				new_data->int_value[ix] = 0;
