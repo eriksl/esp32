@@ -748,7 +748,7 @@ static const info_t info[sensor_size] =
 {
 	[sensor_bh1750] =
 	{
-		.name = "BH1750",
+		.name = "bh1750",
 		.id = sensor_bh1750,
 		.address = 0x23,
 		.type = (1 << sensor_type_visible_light),
@@ -759,7 +759,7 @@ static const info_t info[sensor_size] =
 	},
 	[sensor_tmp75] =
 	{
-		.name = "TMP75",
+		.name = "tmp75",
 		.id = sensor_tmp75,
 		.address = 0x48,
 		.type = (1 << sensor_type_temperature),
@@ -770,7 +770,7 @@ static const info_t info[sensor_size] =
 	},
 	[sensor_lm75] =
 	{
-		.name = "LM75",
+		.name = "lm75",
 		.id = sensor_lm75,
 		.address = 0x48,
 		.type = (1 << sensor_type_temperature),
@@ -781,7 +781,7 @@ static const info_t info[sensor_size] =
 	},
 	[sensor_opt3001] =
 	{
-		.name = "OPT3001",
+		.name = "opt3001",
 		.id = sensor_opt3001,
 		.address = 0x45,
 		.type = (1 << sensor_type_visible_light),
@@ -792,7 +792,7 @@ static const info_t info[sensor_size] =
 	},
 	[sensor_max44009] =
 	{
-		.name = "MAX44009",
+		.name = "max44009",
 		.id = sensor_max44009,
 		.address = 0x4a,
 		.type = (1 << sensor_type_visible_light),
