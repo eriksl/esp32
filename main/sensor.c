@@ -1065,6 +1065,7 @@ void command_sensor_dump(cli_command_call_t *call)
 				string_append_cstr(call->result,       "\n  [");
 				string_append_cstr(call->result,       "\n    {");
 				string_format_append(call->result,     "\n      \"name\": \"%s\",", name);
+				string_format_append(call->result,     "\n      \"id\": %u,", dataptr->info->id);
 				string_format_append(call->result,     "\n      \"module\": %u,", (unsigned int)module);
 				string_format_append(call->result,     "\n      \"bus\": %u,", (unsigned int)bus);
 				string_format_append(call->result,     "\n      \"address\": %u,", address);
@@ -1089,7 +1090,7 @@ void command_sensor_dump(cli_command_call_t *call)
 					{
 						string_format_append(call->result, "%s\n          \"type\": \"%s\",", first_value ? "" : ",", sensor_type_info[type].type);
 						string_format_append(call->result,   "\n          \"value\": %f,", (double)dataptr->values[type].value);
-						string_format_append(call->result,   "\n          \"stamp\": %lld", dataptr->values[type].stamp);
+						string_format_append(call->result,   "\n          \"time\": %lld", dataptr->values[type].stamp);
 						first_value = false;
 					}
 					else
