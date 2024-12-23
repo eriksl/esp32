@@ -67,7 +67,7 @@ static const sensor_type_info_t sensor_type_info[sensor_type_size] =
 	[sensor_type_temperature] =
 	{
 		.type = "temperature",
-		.unity = "C",
+		.unity = "°C",
 	},
 };
 
