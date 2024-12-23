@@ -120,6 +120,7 @@ void command_i2c_info(cli_command_call_t *call);
 
 void command_sensor_dump(cli_command_call_t *call);
 void command_sensor_info(cli_command_call_t *call);
+void command_sensor_json(cli_command_call_t *call);
 void command_sensor_stats(cli_command_call_t *call);
 
 void command_io_dump(cli_command_call_t *call);

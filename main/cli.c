@@ -509,6 +509,10 @@ static const cli_command_t cli_commands[] =
 		{},
 	},
 
+	{ "sensor-json", "sj", "sensors values in json layout", command_sensor_json,
+		{},
+	},
+
 	{ "sensor-stats", "ss", "sensors statistics", command_sensor_stats,
 		{},
 	},

@@ -1011,6 +1011,71 @@ void command_sensor_info(cli_command_call_t *call)
 	data_mutex_give();
 }
 
+void command_sensor_json(cli_command_call_t *call)
+{
+	data_t *dataptr;
+	i2c_slave_t slave;
+	const char *name;
+	i2c_module_t module;
+	i2c_bus_t bus;
+	unsigned int address;
+	sensor_type_t type;
+	string_auto(time_string, 64);
+	bool first_sensor;
+	bool first_value;
+
+	assert(call->parameter_count == 0);
+
+	string_assign_cstr(call->result, "{");
+
+	data_mutex_take();
+
+	for(dataptr = data_root, first_sensor = true; dataptr; dataptr = dataptr->next)
+	{
+		slave = dataptr->slave;
+
+		if(slave && i2c_get_slave_info(slave, &module, &bus, &address, &name))
+		{
+			string_append_cstr(call->result, first_sensor ? "" : ",");
+			string_format_append(call->result,	"\n  \"%u-%u-%x-%s\":", (unsigned int)module, (unsigned int)bus, address, name);
+			string_append_cstr(call->result,	"\n  [");
+			string_append_cstr(call->result,	"\n    {");
+			string_format_append(call->result,	"\n      \"name\": \"%s\",", name);
+			string_format_append(call->result,	"\n      \"id\": %u,", dataptr->info->id);
+			string_format_append(call->result,	"\n      \"module\": %u,", (unsigned int)module);
+			string_format_append(call->result,	"\n      \"bus\": %u,", (unsigned int)bus);
+			string_format_append(call->result,	"\n      \"address\": %u,", address);
+			string_append_cstr(call->result,	"\n      \"values\":");
+			string_append_cstr(call->result,	"\n      [");
+
+			for(type = sensor_type_first, first_value = true; type < sensor_type_size; type++)
+			{
+				if(dataptr->info->type & (1 << type))
+				{
+					string_append_cstr(call->result, first_value ? "" : ",");
+					string_append_cstr(call->result,	"\n        {");
+					string_format_append(call->result,	"\n          \"type\": \"%s\",", sensor_type_info[type].type);
+					string_format_append(call->result,	"\n          \"value\": %f,", (double)dataptr->values[type].value);
+					string_format_append(call->result,	"\n          \"time\": %lld", dataptr->values[type].stamp);
+					string_append_cstr(call->result,	"\n        }");
+
+					first_value = false;
+				}
+			}
+
+			string_append_cstr(call->result, "\n      ]");
+			string_append_cstr(call->result, "\n    }");
+			string_append_cstr(call->result, "\n  ]");
+
+			first_sensor = false;
+		}
+	}
+
+	string_append_cstr(call->result, "\n}");
+
+	data_mutex_give();
+}
+
 void command_sensor_dump(cli_command_call_t *call)
 {
 	data_t *dataptr;
