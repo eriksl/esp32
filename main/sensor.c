@@ -1021,107 +1021,51 @@ void command_sensor_dump(cli_command_call_t *call)
 	unsigned int address;
 	sensor_type_t type;
 	unsigned int ix;
-	bool json;
-	bool first_sensor;
-	bool first_value;
 	string_auto(time_string, 64);
 
-	assert(call->parameter_count < 2);
+	assert(call->parameter_count == 0);
 
-	if(call->parameter_count == 1)
-	{
-		if(string_equal_cstr(call->parameters[0].string, "-j"))
-			json = true;
-		else
-		{
-			string_assign_cstr(call->result, "sensor dump: invalid parameter");
-			return;
-		}
-	}
-	else
-		json = false;
-
-	string_assign_cstr(call->result, json ? "{" : "SENSOR dump");
+	string_assign_cstr(call->result, "SENSOR dump");
 
 	data_mutex_take();
 
-	for(dataptr = data_root, first_sensor = true; dataptr; dataptr = dataptr->next)
+	for(dataptr = data_root; dataptr; dataptr = dataptr->next)
 	{
 		slave = dataptr->slave;
 
 		if(!slave)
 		{
-			string_append_cstr(call->result, json ? "" : "\nslave = NULL");
+			string_append_cstr(call->result, "\nslave = NULL");
 			continue;
 		}
 
 		if(!i2c_get_slave_info(slave, &module, &bus, &address, &name))
-			string_append_cstr(call->result, json ? "" : "\n- unknown slave");
+			string_append_cstr(call->result, "\n- unknown slave");
 		else
 		{
-			if(json)
-			{
-				string_format_append(call->result,   "%s\n  \"%u-%u-%x-%s\":", first_sensor ? "" : ",", (unsigned int)module, (unsigned int)bus, address, name);
-				string_append_cstr(call->result,       "\n  [");
-				string_append_cstr(call->result,       "\n    {");
-				string_format_append(call->result,     "\n      \"name\": \"%s\",", name);
-				string_format_append(call->result,     "\n      \"id\": %u,", dataptr->info->id);
-				string_format_append(call->result,     "\n      \"module\": %u,", (unsigned int)module);
-				string_format_append(call->result,     "\n      \"bus\": %u,", (unsigned int)bus);
-				string_format_append(call->result,     "\n      \"address\": %u,", address);
-				string_append_cstr(call->result,       "\n      \"values\":");
-				string_append_cstr(call->result,       "\n      [");
-				string_append_cstr(call->result,       "\n        {");
-				first_sensor = false;
-			}
-			else
-			{
-				string_format_append(call->result, "\n- sensor %s at module %u, bus %u, address 0x%x", name, (unsigned int)module, (unsigned int)bus, address);
-				string_append_cstr(call->result, "\n  values:");
-			}
+			string_format_append(call->result, "\n- sensor %s at module %u, bus %u, address 0x%x", name, (unsigned int)module, (unsigned int)bus, address);
+			string_append_cstr(call->result, "\n  values:");
 
-			for(type = sensor_type_first, first_value = true; type < sensor_type_size; type++)
+			for(type = sensor_type_first; type < sensor_type_size; type++)
 			{
 				if(dataptr->info->type & (1 << type))
 				{
 					util_time_to_string(time_string, &dataptr->values[type].stamp);
-
-					if(json)
-					{
-						string_format_append(call->result, "%s\n          \"type\": \"%s\",", first_value ? "" : ",", sensor_type_info[type].type);
-						string_format_append(call->result,   "\n          \"value\": %f,", (double)dataptr->values[type].value);
-						string_format_append(call->result,   "\n          \"time\": %lld", dataptr->values[type].stamp);
-						first_value = false;
-					}
-					else
-						string_format_append(call->result, " %s=%.*f [%s]", sensor_type_info[type].type,
-								(int)dataptr->info->precision, (double)dataptr->values[type].value, string_cstr(time_string));
+					string_format_append(call->result, " %s=%.*f [%s]", sensor_type_info[type].type, (int)dataptr->info->precision, (double)dataptr->values[type].value,
+						string_cstr(time_string));
 				}
 			}
 
-			if(json)
-			{
-				string_append_cstr(call->result,   "\n        }");
-				string_append_cstr(call->result,   "\n      ]");
-				string_append_cstr(call->result,   "\n    }");
-				string_append_cstr(call->result,   "\n  ]");
-			}
-			else
-			{
-				string_append_cstr(call->result, "\n  raw integer values:");
+			string_append_cstr(call->result, "\n  raw integer values:");
+			for(ix = 0; ix < data_int_value_size; ix++)
+				string_format_append(call->result, " %u=%d", ix, dataptr->int_value[ix]);
 
-				for(ix = 0; ix < data_int_value_size; ix++)
-					string_format_append(call->result, " %u=%d", ix, dataptr->int_value[ix]);
+			string_append_cstr(call->result, "\n  raw float values:");
 
-				string_append_cstr(call->result, "\n  raw float values:");
-
-				for(ix = 0; ix < data_float_value_size; ix++)
-					string_format_append(call->result, " %u=%.2f", ix, (double)dataptr->float_value[ix]);
-			}
+			for(ix = 0; ix < data_float_value_size; ix++)
+				string_format_append(call->result, " %u=%.2f", ix, (double)dataptr->float_value[ix]);
 		}
 	}
-
-	string_append_cstr(call->result, json ? "\n}" : "");
 
 	data_mutex_give();
 }
