@@ -420,7 +420,7 @@ static void tcp_defragmentation_callback(TimerHandle_t handle)
 
 static void run_tcp(void *)
 {
-	int accept_fd, rv, option;
+	int accept_fd, rv;
 	struct sockaddr_in6 si6_addr;
 	socklen_t si6_addr_length;
 	int length;
@@ -456,7 +456,7 @@ static void run_tcp(void *)
 			continue;
 		}
 
-		option = 1;
+		int option = 1;
 		rv = setsockopt(tcp_socket_fd, IPPROTO_TCP, TCP_NODELAY, &option, sizeof(option));
 		assert(rv == 0);
 
@@ -889,11 +889,11 @@ void wlan_init(void)
 	state_timer = xTimerCreate("wlan-state", pdMS_TO_TICKS(1000), pdTRUE, (void *)0, state_callback);
 	assert(state_timer);
 
-	udp_defragmentation_timer = xTimerCreate("udp-defrag", pdMS_TO_TICKS(200), pdFALSE, (void *)0, udp_defragmentation_callback);
+	udp_defragmentation_timer = xTimerCreate("udp-defrag", pdMS_TO_TICKS(500), pdFALSE, (void *)0, udp_defragmentation_callback);
 	assert(udp_defragmentation_timer);
 	udp_defragmentation_incomplete = false;
 
-	tcp_defragmentation_timer = xTimerCreate("tcp-defrag", pdMS_TO_TICKS(200), pdFALSE, (void *)0, tcp_defragmentation_callback);
+	tcp_defragmentation_timer = xTimerCreate("tcp-defrag", pdMS_TO_TICKS(500), pdFALSE, (void *)0, tcp_defragmentation_callback);
 	assert(tcp_defragmentation_timer);
 	tcp_defragmentation_incomplete = false;
 
