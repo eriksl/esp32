@@ -1037,14 +1037,12 @@ void command_sensor_json(cli_command_call_t *call)
 		if(slave && i2c_get_slave_info(slave, &module, &bus, &address, &name))
 		{
 			string_append_cstr(call->result, first_sensor ? "" : ",");
-			string_format_append(call->result,	"\n  \"%u-%u-%x-%s\":", (unsigned int)module, (unsigned int)bus, address, name);
+			string_format_append(call->result,	"\n  \"%u-%u-%x\":", (unsigned int)module, (unsigned int)bus, address);
 			string_append_cstr(call->result,	"\n  [");
 			string_append_cstr(call->result,	"\n    {");
-			string_format_append(call->result,	"\n      \"name\": \"%s\",", name);
-			string_format_append(call->result,	"\n      \"id\": %u,", dataptr->info->id);
 			string_format_append(call->result,	"\n      \"module\": %u,", (unsigned int)module);
 			string_format_append(call->result,	"\n      \"bus\": %u,", (unsigned int)bus);
-			string_format_append(call->result,	"\n      \"address\": %u,", address);
+			string_format_append(call->result,	"\n      \"name\": \"%s\",", name);
 			string_append_cstr(call->result,	"\n      \"values\":");
 			string_append_cstr(call->result,	"\n      [");
 
@@ -1055,6 +1053,9 @@ void command_sensor_json(cli_command_call_t *call)
 					string_append_cstr(call->result, first_value ? "" : ",");
 					string_append_cstr(call->result,	"\n        {");
 					string_format_append(call->result,	"\n          \"type\": \"%s\",", sensor_type_info[type].type);
+					string_format_append(call->result,	"\n          \"id\": %u,", dataptr->info->id);
+					string_format_append(call->result,	"\n          \"address\": %u,", address);
+					string_format_append(call->result,	"\n          \"unity\": \"%s\",", sensor_type_info[type].unity);
 					string_format_append(call->result,	"\n          \"value\": %f,", (double)dataptr->values[type].value);
 					string_format_append(call->result,	"\n          \"time\": %lld", dataptr->values[type].stamp);
 					string_append_cstr(call->result,	"\n        }");
