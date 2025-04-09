@@ -139,7 +139,7 @@ enum
 	bh1750_autoranging_data_size = 4
 };
 
-_Static_assert((unsigned int)bh1750_int_size < (unsigned int)data_int_value_size);
+_Static_assert((unsigned int)bh1750_int_size <= (unsigned int)data_int_value_size);
 
 static const device_autoranging_data_t bh1750_autoranging_data[bh1750_autoranging_data_size] =
 {
@@ -283,7 +283,7 @@ enum
 	tmp75_int_size,
 };
 
-_Static_assert((unsigned int)tmp75_int_size < (unsigned int)data_int_value_size);
+_Static_assert((unsigned int)tmp75_int_size <= (unsigned int)data_int_value_size);
 
 enum
 {
@@ -400,7 +400,7 @@ enum
 	lm75_int_size,
 };
 
-_Static_assert((unsigned int)lm75_int_size < (unsigned int)data_int_value_size);
+_Static_assert((unsigned int)lm75_int_size <= (unsigned int)data_int_value_size);
 
 enum
 {
@@ -500,7 +500,7 @@ enum
 	opt3001_int_size,
 };
 
-_Static_assert((unsigned int)opt3001_int_size < (unsigned int)data_int_value_size);
+_Static_assert((unsigned int)opt3001_int_size <= (unsigned int)data_int_value_size);
 
 enum
 {
@@ -634,7 +634,7 @@ enum
 	max44009_int_size,
 };
 
-_Static_assert((unsigned int)max44009_int_size < (unsigned int)data_int_value_size);
+_Static_assert((unsigned int)max44009_int_size <= (unsigned int)data_int_value_size);
 
 enum
 {
