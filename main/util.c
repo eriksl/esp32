@@ -34,7 +34,7 @@ void util_init(void)
 {
 	assert(!inited);
 
-	setenv("TZ", "CEST-1CET,M3.2.0/2:00:00,M11.1.0/2:00:00", 1);
+	setenv("TZ", "CEST-1CET,M3.5.0/2:00:00,M10.5.0/2:00:00", 1);
 	tzset();
 
 	inited = true;
