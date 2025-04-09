@@ -14,7 +14,7 @@
 
 enum
 {
-	data_int_value_size = 4,
+	data_int_value_size = 5,
 	data_float_value_size = 2,
 };
 
@@ -68,6 +68,11 @@ static const sensor_type_info_t sensor_type_info[sensor_type_size] =
 	{
 		.type = "temperature",
 		.unity = "°C",
+	},
+	[sensor_type_humidity] =
+	{
+		.type = "humidity",
+		.unity = "%",
 	},
 };
 
@@ -759,6 +764,192 @@ static bool max44009_poll(data_t *data)
 	return(true);
 }
 
+enum
+{
+	asair_int_raw_value_temp = 0,
+	asair_int_raw_value_hum,
+	asair_int_state,
+	asair_int_valid,
+	asair_int_type,
+	asair_int_size,
+};
+
+_Static_assert((unsigned int)asair_int_size <= (unsigned int)data_int_value_size);
+
+enum
+{
+	asair_cmd_aht10_init_1 =	0xe1,
+	asair_cmd_aht10_init_2 =	0x08,
+	asair_cmd_aht10_init_3 =	0x00,
+	asair_cmd_aht20_init_1 =	0xbe,
+	asair_cmd_aht20_init_2 =	0x08,
+	asair_cmd_aht20_init_3 =	0x00,
+	asair_cmd_measure_0 =		0xac,
+	asair_cmd_measure_1 =		0x33,
+	asair_cmd_measure_2 =		0x00,
+	asair_cmd_get_status =		0x71,
+	asair_cmd_reset =			0xba,
+} asair_cmd;
+
+enum
+{
+	asair_status_busy =		1 << 7,
+	asair_status_ready =	1 << 3,
+} asair_status;
+
+typedef enum
+{
+	asair_state_init,
+	asair_state_start_measure,
+	asair_state_measuring,
+	asair_state_measure_complete,
+} asair_state_t;
+
+static bool asair_detect(data_t *data)
+{
+	uint8_t buffer[1];
+
+	if(!i2c_send_1_receive(data->slave, asair_cmd_get_status, sizeof(buffer), buffer))
+		return(false);
+
+	if(!i2c_send_1(data->slave, asair_cmd_reset))
+		return(false);
+
+	util_sleep(25);
+
+	if(i2c_send_3(data->slave, asair_cmd_aht10_init_1, asair_cmd_aht10_init_2, asair_cmd_aht10_init_3))
+	{
+		data->int_value[asair_int_type] = 10;
+		return(true);
+	}
+
+	if(i2c_send_3(data->slave, asair_cmd_aht20_init_1, asair_cmd_aht20_init_2, asair_cmd_aht20_init_3))
+	{
+		data->int_value[asair_int_type] = 20;
+		return(true);
+	}
+
+	return(false);
+}
+
+static bool asair_init(data_t *data)
+{
+	uint8_t buffer[1];
+
+	data->int_value[asair_int_raw_value_temp] = 0;
+	data->int_value[asair_int_raw_value_hum] = 0;
+	data->int_value[asair_int_state] = asair_state_init;
+	data->int_value[asair_int_valid] = 0;
+
+	if(!i2c_send_1_receive(data->slave, asair_cmd_get_status, sizeof(buffer), buffer))
+	{
+		log("sensors: asair: init error 1");
+		return(false);
+	}
+
+	if(!(buffer[0] & asair_status_ready))
+	{
+		log("sensors: asair: init error 2");
+		return(false);
+	}
+
+	return(true);
+}
+
+static bool asair_poll(data_t *data)
+{
+	uint8_t	buffer[8];
+
+	switch(data->int_value[asair_int_state])
+	{
+		case(asair_state_init):
+		{
+			if(!i2c_send_1_receive(data->slave, asair_cmd_get_status, 1, buffer))
+			{
+				log("sensors: asair: poll error 1");
+				return(false);
+			}
+
+			if((buffer[0] & asair_status_busy) || !(buffer[0] & asair_status_ready))
+			{
+				log("sensors: asair: poll error 2");
+				return(false);
+			}
+
+            data->int_value[asair_int_valid] = 0;
+			data->int_value[asair_int_state] = asair_state_start_measure;
+
+			break;
+		}
+
+		case(asair_state_start_measure):
+		{
+			if(!i2c_send_1_receive(data->slave, asair_cmd_get_status, 1, buffer))
+			{
+				log("sensors: asair: poll error 3");
+				return(false);
+			}
+
+			if(buffer[0] & asair_status_busy)
+			{
+				log("sensors: asair: poll error 4");
+				return(false);
+			}
+
+			if(!i2c_send_3(data->slave, asair_cmd_measure_0, asair_cmd_measure_1, asair_cmd_measure_2))
+			{
+				log("sensors: asair: poll error 5");
+				data->int_value[asair_int_valid] = 0;
+				return(false);
+			}
+
+			data->int_value[asair_int_state] = asair_state_measuring;
+
+			break;
+		}
+
+		case(asair_state_measuring):
+		{
+			data->int_value[asair_int_state] = asair_state_measure_complete;
+
+			break;
+		}
+
+		case(asair_state_measure_complete):
+		{
+			if(!i2c_send_1_receive(data->slave, asair_cmd_get_status, sizeof(buffer), buffer))
+			{
+				log("sensors: asair: poll error 6");
+				data->int_value[asair_int_valid] = 0;
+				return(false);
+			}
+
+			if(buffer[0] & asair_status_busy)
+			{
+				log("sensors: asair: poll error 7");
+				data->int_value[asair_int_valid] = 0;
+				return(false);
+			}
+
+            data->int_value[asair_int_raw_value_temp] =	((buffer[3] & 0x0f) << 16) | (buffer[4] << 8) | buffer[5];
+			data->int_value[asair_int_raw_value_hum] =	((buffer[1] << 16) | (buffer[2] << 8) | (buffer[3] & 0xf0)) >> 4;
+
+			data->values[sensor_type_temperature].value = ((200.f * data->int_value[asair_int_raw_value_temp]) / 1048576.f) - 50;
+			data->values[sensor_type_temperature].stamp = time((time_t *)0);
+
+			data->values[sensor_type_humidity].value = data->int_value[asair_int_raw_value_hum] * 100.f / 1048576.f;
+			data->values[sensor_type_humidity].stamp = time((time_t *)0);
+
+            data->int_value[asair_int_valid] = 1;
+			data->int_value[asair_int_state] = asair_state_start_measure;
+
+			break;
+		}
+	}
+
+	return(true);
+}
+
 static const info_t info[sensor_size] =
 {
 	[sensor_bh1750] =
@@ -815,6 +1006,17 @@ static const info_t info[sensor_size] =
 		.detect_fn = max44009_detect,
 		.init_fn = max44009_init,
 		.poll_fn = max44009_poll,
+	},
+	[sensor_asair] =
+	{
+		.name = "asair",
+		.id = sensor_asair,
+		.address = 0x38,
+		.type = (1 << sensor_type_temperature) | (1 << sensor_type_humidity),
+		.precision = 1,
+		.detect_fn = asair_detect,
+		.init_fn = asair_init,
+		.poll_fn = asair_poll,
 	},
 };
 

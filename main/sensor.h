@@ -8,6 +8,7 @@ typedef enum
 	sensor_lm75,
 	sensor_opt3001,
 	sensor_max44009,
+	sensor_asair,
 	sensor_size,
 	sensor_error = sensor_size,
 	sensor_none = sensor_size,
@@ -18,6 +19,7 @@ typedef enum
 	sensor_type_visible_light,
 	sensor_type_first = sensor_type_visible_light,
 	sensor_type_temperature,
+	sensor_type_humidity,
 	sensor_type_size,
 	sensor_type_error = sensor_type_size,
 } sensor_type_t;
