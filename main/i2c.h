@@ -46,6 +46,7 @@ i2c_slave_t i2c_find_slave(i2c_module_t module, i2c_bus_t bus, unsigned int addr
 bool i2c_send(i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t *send_buffer);
 bool i2c_send_1(i2c_slave_t slave, unsigned int byte);
 bool i2c_send_2(i2c_slave_t slave, unsigned int byte_1, unsigned int byte_2);
+bool i2c_send_3(i2c_slave_t slave, unsigned int byte_1, unsigned int byte_2, unsigned int byte_3);
 bool i2c_receive(i2c_slave_t slave, unsigned int read_buffer_size, uint8_t *read_buffer);
 bool i2c_send_receive(i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t *send_buffer, unsigned int receive_buffer_size, uint8_t *receive_buffer);
 bool i2c_send_1_receive(i2c_slave_t slave, unsigned int byte, unsigned int receive_buffer_size, uint8_t *receive_buffer);

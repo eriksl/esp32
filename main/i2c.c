@@ -542,6 +542,13 @@ bool i2c_send_2(i2c_slave_t slave, unsigned int byte_1, unsigned int byte_2)
 	return(i2c_send(slave, 2, buffer));
 }
 
+bool i2c_send_3(i2c_slave_t slave, unsigned int byte_1, unsigned int byte_2, unsigned int byte_3)
+{
+	uint8_t buffer[3] = { byte_1, byte_2, byte_3 };
+
+	return(i2c_send(slave, 3, buffer));
+}
+
 bool i2c_receive(i2c_slave_t slave, unsigned int receive_buffer_size, uint8_t *receive_buffer)
 {
 	slave_t *_slave = (slave_t *)slave;
