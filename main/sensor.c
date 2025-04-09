@@ -894,7 +894,7 @@ static void run_sensors(void *parameters)
 
 			if(!infoptr->init_fn(new_data))
 			{
-				log_format("sensor: warning: failed to init sensor %s", infoptr->name);
+				log_format("sensor: warning: failed to init sensor %s on bus %u", infoptr->name, bus);
 				i2c_unregister_slave(&slave);
 				free(new_data);
 				continue;
