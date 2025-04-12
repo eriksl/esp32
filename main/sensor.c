@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <time.h>
+#include <math.h>
 
 #include "string.h"
 #include "info.h"
@@ -950,6 +951,299 @@ static bool asair_poll(data_t *data)
 	return(true);
 }
 
+enum
+{
+	tsl2561_int_raw_value_ch0 = 0,
+	tsl2561_int_raw_value_ch1,
+	tsl2561_int_scaling,
+	tsl2561_int_scaling_up,
+	tsl2561_int_scaling_down,
+	tsl2561_int_size,
+};
+
+_Static_assert((unsigned int)tsl2561_int_size <= (unsigned int)data_int_value_size);
+
+typedef enum
+{
+	tsl2561_reg_control =		0x00,
+	tsl2561_reg_timeint =		0x01,
+	tsl2561_reg_threshlow =		0x02,
+	tsl2561_reg_threshhigh =	0x04,
+	tsl2561_reg_interrupt =		0x06,
+	tsl2561_reg_crc =			0x08,
+	tsl2561_reg_id =			0x0a,
+	tsl2561_reg_data0 =			0x0c,
+	tsl2561_reg_data1 =			0x0e,
+} tsl2561_reg_t;
+
+typedef enum
+{
+	tsl2561_cmd_address =	(1 << 0) | (1 << 1) | (1 << 2) | (1 << 3),
+	tsl2561_cmd_block =		1 << 4,
+	tsl2561_cmd_word =		1 << 5,
+	tsl2561_cmd_clear =		1 << 6,
+	tsl2561_cmd_cmd =		1 << 7,
+} tsl2561_cmd_t;
+
+typedef enum
+{
+	tsl2561_tim_integ_13ms	=	(0 << 1) | (0 << 0),
+	tsl2561_tim_integ_101ms	=	(0 << 1) | (1 << 0),
+	tsl2561_tim_integ_402ms	=	(1 << 1) | (0 << 0),
+	tsl2561_tim_manual		=	1 << 3,
+	tsl2561_tim_low_gain	=	0 << 4,
+	tsl2561_tim_high_gain	=	1 << 4,
+} tsl2561_timeint_t;
+
+enum
+{
+	tsl2561_ctrl_power_off =	0x00,
+	tsl2561_ctrl_power_on =		0x03,
+
+	tsl2561_id_tsl2561 =		0x50,
+	tsl2561_probe_threshold =	0x00,
+};
+
+enum
+{
+	tsl2561_autoranging_data_size = 4,
+};
+
+static const device_autoranging_data_t tsl2561_autoranging_data[tsl2561_autoranging_data_size] =
+{
+	{{	tsl2561_tim_integ_402ms,	tsl2561_tim_high_gain	},	{	0,		50000	},	65535,	{	480000,		0	}},
+	{{	tsl2561_tim_integ_402ms,	tsl2561_tim_low_gain	},	{	256,	50000	},	65535,	{	7400000,	0	}},
+	{{	tsl2561_tim_integ_101ms,	tsl2561_tim_low_gain	},	{	256,	50000	},	31711,	{	28000000,	0	}},
+	{{	tsl2561_tim_integ_13ms,		tsl2561_tim_low_gain	},	{	256,	50000	},	5047,	{	200000000,	0	}},
+};
+
+static bool tsl2561_write(data_t *data, tsl2561_reg_t reg, unsigned int value)
+{
+	if(!i2c_send_2(data->slave, tsl2561_cmd_cmd | tsl2561_cmd_clear | (reg & tsl2561_cmd_address), value))
+	{
+		log("sensor: tsl2561: error 1");
+		return(false);
+	}
+
+	return(true);
+}
+
+static bool tsl2561_read_byte(data_t *data, tsl2561_reg_t reg, uint8_t *byte)
+{
+	if(!i2c_send_1_receive(data->slave, tsl2561_cmd_cmd | (reg & tsl2561_cmd_address), sizeof(*byte), byte))
+	{
+		log("sensor: tsl2561: error 2");
+		return(false);
+	}
+
+	return(true);
+}
+
+static bool tsl2561_read_word(data_t *data, tsl2561_reg_t reg, uint16_t *word)
+{
+	uint8_t i2c_buffer[2];
+
+	if(!i2c_send_1_receive(data->slave, tsl2561_cmd_cmd | (reg & tsl2561_cmd_address), sizeof(i2c_buffer), i2c_buffer))
+	{
+		log("sensor: tsl2561: error 3");
+		return(false);
+	}
+
+	*word = (i2c_buffer[0] << 8) | i2c_buffer[1];
+
+	return(true);
+}
+
+static bool tsl2561_write_check(data_t *data, tsl2561_reg_t reg, unsigned int value)
+{
+	uint8_t rv;
+
+	if(!tsl2561_write(data, reg, value))
+		return(false);
+
+	if(!tsl2561_read_byte(data, reg, &rv))
+		return(false);
+
+	if(value != rv)
+		return(false);
+
+	return(true);
+}
+
+static bool tsl2561_start_measurement(data_t *data)
+{
+	unsigned int timeint, gain;
+
+	timeint =	tsl2561_autoranging_data[data->int_value[tsl2561_int_scaling]].data[0];
+	gain =		tsl2561_autoranging_data[data->int_value[tsl2561_int_scaling]].data[1];
+
+	return(tsl2561_write_check(data, tsl2561_reg_timeint, timeint | gain));
+}
+
+static bool tsl2561_detect(data_t *data)
+{
+	uint8_t regval;
+	uint16_t word;
+
+	if(!tsl2561_read_byte(data, tsl2561_reg_id, &regval))
+		return(false);
+
+	if(regval != tsl2561_id_tsl2561)
+		return(false);
+
+	if(!tsl2561_read_word(data, tsl2561_reg_threshlow, &word))
+		return(false);
+
+	if(word != tsl2561_probe_threshold)
+		return(false);
+
+	if(!tsl2561_read_word(data, tsl2561_reg_threshhigh, &word))
+		return(false);
+
+	if(word != tsl2561_probe_threshold)
+		return(false);
+
+	if(!tsl2561_write_check(data, tsl2561_reg_control, tsl2561_ctrl_power_off))
+		return(false);
+
+	if(tsl2561_write_check(data, tsl2561_reg_id, 0x00)) // id register should not be writable
+		return(false);
+
+	return(true);
+}
+
+static bool tsl2561_init(data_t *data)
+{
+	uint8_t regval;
+
+	if(!tsl2561_write_check(data, tsl2561_reg_interrupt, 0x00))				// disable interrupts
+		return(false);
+
+	if(!tsl2561_write(data, tsl2561_reg_control, tsl2561_ctrl_power_on))	// power up
+		return(false);
+
+	if(!tsl2561_read_byte(data, tsl2561_reg_control, &regval))
+		return(false);
+
+	if((regval & 0x0f) != tsl2561_ctrl_power_on)
+		return(false);
+
+	data->int_value[tsl2561_int_raw_value_ch0] = 0;
+	data->int_value[tsl2561_int_raw_value_ch1] = 0;
+	data->int_value[tsl2561_int_scaling] = 0;
+
+	if(!tsl2561_start_measurement(data))
+		return(false);
+
+	return(true);
+}
+
+static bool tsl2561_poll(data_t *data)
+{
+	uint8_t i2c_buffer[4];
+	unsigned int ch0, ch1;
+	unsigned int overflow, scale_down_threshold, scale_up_threshold;
+
+	scale_down_threshold =	tsl2561_autoranging_data[data->int_value[tsl2561_int_scaling]].threshold.down;
+	scale_up_threshold =	tsl2561_autoranging_data[data->int_value[tsl2561_int_scaling]].threshold.up;
+	overflow =				tsl2561_autoranging_data[data->int_value[tsl2561_int_scaling]].overflow;
+
+	if(!i2c_send_1_receive(data->slave, tsl2561_cmd_cmd | tsl2561_reg_data0, sizeof(i2c_buffer), i2c_buffer))
+	{
+		log("sensor: tsl2561 poll error 1");
+		return(false);
+	}
+
+	ch0 = (i2c_buffer[1] << 8) | i2c_buffer[0];
+	ch1 = (i2c_buffer[3] << 8) | i2c_buffer[1];
+
+	if((ch0 == 0) && (ch1 == 0))
+	{
+		log("sensor: tsl2561: malfunction");
+
+		data->int_value[tsl2561_int_scaling] = tsl2561_autoranging_data_size - 1;
+		data->int_value[tsl2561_int_scaling_up]++;
+
+		if(!tsl2561_start_measurement(data))
+		{
+			log("sensor: tsl2561 poll error 2");
+			return(false);
+		}
+
+		return(true);
+	}
+
+	if(((ch0 < scale_down_threshold) || (ch1 < scale_down_threshold)) && (data->int_value[tsl2561_int_scaling] > 0))
+	{
+		data->int_value[tsl2561_int_scaling]--;
+		data->int_value[tsl2561_int_scaling_down]++;
+
+		if(!tsl2561_start_measurement(data))
+		{
+			log("sensor: tsl2561 poll error 3");
+			return(false);
+		}
+
+		return(true);
+	}
+
+	if((((ch0 >= scale_up_threshold) || (ch1 >= scale_up_threshold)) || (ch0 >= overflow) || (ch1 >= overflow)) &&
+			((data->int_value[tsl2561_int_scaling] + 1) < tsl2561_autoranging_data_size))
+	{
+		data->int_value[tsl2561_int_scaling]++;
+		data->int_value[tsl2561_int_scaling_up]++;
+
+		if(!tsl2561_start_measurement(data))
+		{
+			log("sensor: tsl2561 poll error 4");
+			return(false);
+		}
+
+		return(true);
+	}
+
+	float value, ratio;
+	unsigned int factor_1000000;
+	int offset_1000000;
+
+	data->int_value[tsl2561_int_raw_value_ch0] = ch0;
+	data->int_value[tsl2561_int_raw_value_ch1] = ch1;
+
+	factor_1000000 = tsl2561_autoranging_data[data->int_value[tsl2561_int_scaling]].correction.factor;
+	offset_1000000 = tsl2561_autoranging_data[data->int_value[tsl2561_int_scaling]].correction.offset;
+
+	if(ch0 == 0)
+		ratio = 0;
+	else
+		ratio = ch1 / ch0;
+
+	if(ratio > 1.30f)
+		value = -1;
+	else
+	{
+		if(ratio >= 0.80f)
+			value = (0.00146f * ch0) - (0.00112f * ch1);
+		else
+			if(ratio >= 0.61f)
+				value = (0.0128f * ch0) - (0.0153f * ch1);
+			else
+				if(ratio >= 0.50f)
+					value = (0.0224f * ch0) - (0.031f * ch1);
+				else
+					value = (0.0304f * ch0) - (0.062f * ch1 * (float)pow(ratio, 1.4f));
+
+		value = ((value * factor_1000000) + offset_1000000) / 1000000.0f;
+
+		if(value < 0)
+			value = 0;
+	}
+
+	data->values[sensor_type_visible_light].value = value;
+	data->values[sensor_type_visible_light].stamp = time((time_t *)0);
+
+	return(true);
+}
+
 static const info_t info[sensor_size] =
 {
 	[sensor_bh1750] =
@@ -1017,6 +1311,17 @@ static const info_t info[sensor_size] =
 		.detect_fn = asair_detect,
 		.init_fn = asair_init,
 		.poll_fn = asair_poll,
+	},
+	[sensor_tsl2561] =
+	{
+		.name = "tsl2561",
+		.id = sensor_tsl2561,
+		.address = 0x39,
+		.type = (1 << sensor_type_visible_light),
+		.precision = 2,
+		.detect_fn = tsl2561_detect,
+		.init_fn = tsl2561_init,
+		.poll_fn = tsl2561_poll,
 	},
 };
 

@@ -9,6 +9,7 @@ typedef enum
 	sensor_opt3001,
 	sensor_max44009,
 	sensor_asair,
+	sensor_tsl2561,
 	sensor_size,
 	sensor_error = sensor_size,
 	sensor_none = sensor_size,
