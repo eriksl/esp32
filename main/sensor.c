@@ -1462,7 +1462,7 @@ static bool sht3x_register_access(data_t *data, sht3x_cmd_t cmd, unsigned int *r
 
 	if(result1)
 	{
-		util_sleep(100);
+		util_sleep(10);
 
 		if(!i2c_receive(data->slave, result2 ? 6 : 3, &buffer[2]))
 		{
