@@ -115,6 +115,11 @@ typedef struct
 	} correction;
 } device_autoranging_data_t;
 
+static unsigned int unsigned_16(unsigned int msb, unsigned int lsb)
+{
+	return(((msb & 0xff) << 8) | (lsb & 0xff));
+}
+
 typedef enum
 {
 	bh1750_opcode_powerdown =		0b00000000, // 0x00
@@ -1244,6 +1249,120 @@ static bool tsl2561_poll(data_t *data)
 	return(true);
 }
 
+enum
+{
+	hdc1080_int_raw_temperature = 0,
+	hdc1080_int_raw_humidity,
+	hdc1080_int_valid,
+	hdc1080_int_size,
+};
+
+_Static_assert((unsigned int)hdc1080_int_size <= (unsigned int)data_int_value_size);
+
+enum
+{
+	hdc1080_reg_data_temp =	0x00,
+	hdc1080_reg_data_hum =	0x01,
+	hdc1080_reg_conf =		0x02,
+	hdc1080_reg_serial1 =	0xfb,
+	hdc1080_reg_serial2 =	0xfc,
+	hdc1080_reg_serial3 =	0xfd,
+	hdc1080_reg_man_id =	0xfe,
+	hdc1080_reg_dev_id =	0xff,
+
+	hdc1080_man_id =		0x5449,
+	hdc1080_dev_id =		0x1050,
+
+	hdc1080_conf_rst =		0b1000000000000000,
+	hdc1080_conf_reservd0 =	0b0100000000000000,
+	hdc1080_conf_heat =		0b0010000000000000,
+	hdc1080_conf_mode_two =	0b0001000000000000,
+	hdc1080_conf_mode_one =	0b0000000000000000,
+	hdc1080_conf_btst =		0b0000100000000000,
+	hdc1080_conf_tres_11 =	0b0000010000000000,
+	hdc1080_conf_tres_14 =	0b0000000000000000,
+	hdc1080_conf_hres_8 =	0b0000001000000000,
+	hdc1080_conf_hres_11 =	0b0000000100000000,
+	hdc1080_conf_hres_14 =	0b0000000000000000,
+	hdc1080_conf_reservd1 =	0b0000000011111111,
+};
+
+static bool hdc1080_detect(data_t *data)
+{
+	uint8_t buffer[4];
+
+	if(!i2c_send_1_receive(data->slave, hdc1080_reg_man_id, 2, buffer))
+		return(false);
+
+	if(unsigned_16(buffer[0], buffer[1]) != hdc1080_man_id)
+		return(false);
+
+	if(!i2c_send_1_receive(data->slave, hdc1080_reg_dev_id, sizeof(buffer), buffer))
+		return(false);
+
+	if(unsigned_16(buffer[0], buffer[1]) != hdc1080_dev_id)
+		return(false);
+
+	if(!i2c_send_2(data->slave, hdc1080_reg_conf, hdc1080_conf_rst))
+		return(false);
+
+	return(true);
+}
+
+static bool hdc1080_init(data_t *data)
+{
+	unsigned int conf;
+
+	conf = hdc1080_conf_tres_14 | hdc1080_conf_hres_14 | hdc1080_conf_mode_two;
+
+	if(!i2c_send_3(data->slave, hdc1080_reg_conf, (conf & 0xff00) >> 8, (conf & 0x00ff) >> 0))
+	{
+		log("sensors: hdc1080 error 1");
+		return(false);
+	}
+
+	if(!i2c_send_1(data->slave, hdc1080_reg_data_temp))
+	{
+		log("sensors: hdc1080 error 2");
+		return(false);
+	}
+
+	data->int_value[hdc1080_int_raw_temperature] = 0;
+	data->int_value[hdc1080_int_raw_humidity] = 0;
+	data->int_value[hdc1080_int_valid] = 0;
+
+	return(true);
+}
+
+static bool hdc1080_poll(data_t *data)
+{
+	uint8_t buffer[4];
+
+	if(!i2c_receive(data->slave, sizeof(buffer), buffer))
+	{
+		log("hdc1080 poll error 1");
+		return(false);
+	}
+
+	if(!i2c_send_1(data->slave, hdc1080_reg_data_temp))
+	{
+		log("hdc1080 poll error 2");
+		return(false);
+	}
+
+	data->int_value[hdc1080_int_raw_temperature] = unsigned_16(buffer[0], buffer[1]);
+	data->int_value[hdc1080_int_raw_humidity] = unsigned_16(buffer[2], buffer[3]);
+	data->int_value[hdc1080_int_valid] = 1;
+
+	data->values[sensor_type_temperature].value = ((data->int_value[hdc1080_int_raw_temperature] * 165.0f) / (float)(1 << 16)) - 40.f;
+	data->values[sensor_type_temperature].stamp = time((time_t *)0);
+
+	data->values[sensor_type_humidity].value = (data->int_value[hdc1080_int_raw_humidity] * 100.0f) / 65536.0f;
+	data->values[sensor_type_humidity].stamp = time((time_t *)0);
+
+	return(true);
+}
+
 static const info_t info[sensor_size] =
 {
 	[sensor_bh1750] =
@@ -1322,6 +1441,17 @@ static const info_t info[sensor_size] =
 		.detect_fn = tsl2561_detect,
 		.init_fn = tsl2561_init,
 		.poll_fn = tsl2561_poll,
+	},
+	[sensor_hdc1080] =
+	{
+		.name = "hdc1080",
+		.id = sensor_hdc1080,
+		.address = 0x40,
+		.type = (1 << sensor_type_temperature) | (1 << sensor_type_humidity),
+		.precision = 1,
+		.detect_fn = hdc1080_detect,
+		.init_fn = hdc1080_init,
+		.poll_fn = hdc1080_poll,
 	},
 };
 
