@@ -1452,7 +1452,7 @@ static bool sht3x_register_access(data_t *data, sht3x_cmd_t cmd, unsigned int *r
 	uint8_t buffer[8];	// 2 + 3 + 3
 	uint8_t crc_local, crc_remote;
 
-	util_sleep(10);
+	util_sleep(100);
 
 	if(!i2c_send_2(data->slave, (cmd & 0xff00) >> 8, (cmd & 0x00ff) >> 0))
 	{
@@ -1462,7 +1462,7 @@ static bool sht3x_register_access(data_t *data, sht3x_cmd_t cmd, unsigned int *r
 
 	if(result1)
 	{
-		util_sleep(10);
+		util_sleep(100);
 
 		if(!i2c_receive(data->slave, result2 ? 6 : 3, &buffer[2]))
 		{
