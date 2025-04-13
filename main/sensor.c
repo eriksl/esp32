@@ -15,7 +15,7 @@
 
 enum
 {
-	data_int_value_size = 5,
+	data_int_value_size = 20,
 	data_float_value_size = 2,
 };
 
@@ -75,6 +75,11 @@ static const sensor_type_info_t sensor_type_info[sensor_type_size] =
 		.type = "humidity",
 		.unity = "%",
 	},
+	[sensor_type_airpressure] =
+	{
+		.type = "air pressure",
+		.unity = "hPa",
+	},
 };
 
 static bool inited = false;
@@ -115,9 +120,24 @@ typedef struct
 	} correction;
 } device_autoranging_data_t;
 
+static unsigned int unsigned_8(unsigned int lsb)
+{
+	return(lsb & 0xff);
+}
+
 static unsigned int unsigned_16(unsigned int msb, unsigned int lsb)
 {
 	return(((msb & 0xff) << 8) | (lsb & 0xff));
+}
+
+static int signed_16(unsigned int msb, unsigned int lsb)
+{
+	int rv = ((msb & 0xff) << 8) | (lsb & 0xff);
+
+	if(rv > (1 << 15))
+		rv = 0 - ((1 << 16) - rv);
+
+	return(rv);
 }
 
 typedef enum
@@ -1567,6 +1587,403 @@ static bool sht3x_poll(data_t *data)
 	return(true);
 }
 
+enum
+{
+	bmx280_reg_id =						0xd0,
+	bmx280_reg_reset =					0xe0,
+	bmx280_reg_ctrl_hum =				0xf2,
+	bmx280_reg_status =					0xf3,
+	bmx280_reg_ctrl_meas =				0xf4,
+	bmx280_reg_config =					0xf5,
+	bmx280_reg_adc =					0xf7,
+	bmx280_reg_adc_pressure_msb =		0xf7,
+	bmx280_reg_adc_pressure_lsb =		0xf8,
+	bmx280_reg_adc_pressure_xlsb =		0xf9,
+	bmx280_reg_adc_temperature_msb =	0xfa,
+	bmx280_reg_adc_temperature_lsb =	0xfb,
+	bmx280_reg_adc_temperature_xlsb =	0xfc,
+	bmx280_reg_adc_humidity_msb =		0xfd,
+	bmx280_reg_adc_humidity_lsb =		0xfe,
+
+	bmx280_reg_id_bmp280 =				0x58,
+	bmx280_reg_id_bme280 =				0x60,
+
+	bmx280_reg_reset_value =			0xb6,
+
+	bmx280_reg_ctrl_hum_osrs_h_skip =	0b00000000,
+	bmx280_reg_ctrl_hum_osrs_h_1 =		0b00000001,
+	bmx280_reg_ctrl_hum_osrs_h_2 =		0b00000010,
+	bmx280_reg_ctrl_hum_osrs_h_4 =		0b00000011,
+	bmx280_reg_ctrl_hum_osrs_h_8 =		0b00000100,
+	bmx280_reg_ctrl_hum_osrs_h_16 =		0b00000101,
+
+	bmx280_reg_status_measuring =		0b00001000,
+	bmx280_reg_status_im_update =		0b00000001,
+
+	bmx280_reg_ctrl_meas_osrs_t_skip =	0b00000000,
+	bmx280_reg_ctrl_meas_osrs_t_1 =		0b00100000,
+	bmx280_reg_ctrl_meas_osrs_t_2 =		0b01000000,
+	bmx280_reg_ctrl_meas_osrs_t_4 =		0b01100000,
+	bmx280_reg_ctrl_meas_osrs_t_8 =		0b10000000,
+	bmx280_reg_ctrl_meas_osrs_t_16 =	0b10100000,
+	bmx280_reg_ctrl_meas_osrs_p_skip =	0b00000000,
+	bmx280_reg_ctrl_meas_osrs_p_1 =		0b00000100,
+	bmx280_reg_ctrl_meas_osrs_p_2 =		0b00001000,
+	bmx280_reg_ctrl_meas_osrs_p_4 =		0b00001100,
+	bmx280_reg_ctrl_meas_osrs_p_8 =		0b00010000,
+	bmx280_reg_ctrl_meas_osrs_p_16 =	0b00010100,
+	bmx280_reg_ctrl_meas_mode_mask =	0b00000011,
+	bmx280_reg_ctrl_meas_mode_sleep =	0b00000000,
+	bmx280_reg_ctrl_meas_mode_forced =	0b00000010,
+	bmx280_reg_ctrl_meas_mode_normal =	0b00000011,
+
+	bmx280_reg_config_t_sb_05 =			0b00000000,
+	bmx280_reg_config_t_sb_62 =			0b00100000,
+	bmx280_reg_config_t_sb_125 =		0b01000000,
+	bmx280_reg_config_t_sb_250 =		0b01100000,
+	bmx280_reg_config_t_sb_500 =		0b10000000,
+	bmx280_reg_config_t_sb_1000 =		0b10100000,
+	bmx280_reg_config_t_sb_10000 =		0b11000000,
+	bmx280_reg_config_t_sb_20000 =		0b11100000,
+	bmx280_reg_config_filter_off =		0b00000000,
+	bmx280_reg_config_filter_2 =		0b00000100,
+	bmx280_reg_config_filter_4 =		0b00001000,
+	bmx280_reg_config_filter_8 =		0b00001100,
+	bmx280_reg_config_filter_16 =		0b00010000,
+	bmx280_reg_config_spi3w_en =		0b00000001,
+};
+
+typedef enum
+{
+	bmx280_state_init,
+	bmx280_state_measuring,
+	bmx280_state_finished,
+} bmx280_state_t;
+
+enum
+{
+	bmx280_int_value_type,
+	bmx280_int_value_state,
+	bmx280_int_value_dig_T1,	//	uint16	89	/	89
+	bmx280_int_value_dig_T2,	//	int16	8a	/	8b
+	bmx280_int_value_dig_T3,	//	int16	8c	/	8d
+	bmx280_int_value_dig_P1,	//	uint16	8e	/	8f
+	bmx280_int_value_dig_P2,	//	int16	90	/	91
+	bmx280_int_value_dig_P3,	//	int16	92	/	93
+	bmx280_int_value_dig_P4,	//	int16	94	/	95
+	bmx280_int_value_dig_P5,	//	int16	96	/	97
+	bmx280_int_value_dig_P6,	//	int16	98	/	99
+	bmx280_int_value_dig_P7,	//	int16	9a	/	9b
+	bmx280_int_value_dig_P8,	//	int16	9c	/	9d
+	bmx280_int_value_dig_P9,	//	int16	9e	/	9f
+	bmx280_int_value_dig_H1,	//	uint8	a1
+	bmx280_int_value_dig_H2,	//	int16	e1	/	e2
+	bmx280_int_value_dig_H3,	//	uint8	e3
+	bmx280_int_value_dig_H4,	//	int16	e4	/	e5[3:0]
+	bmx280_int_value_dig_H5,	//	int16	e5[7:4] /	e6
+	bmx280_int_value_dig_H6,	//	uint8	e7
+	bmx280_int_size,
+};
+
+_Static_assert((unsigned int)bmx280_int_size <= (unsigned int)data_int_value_size);
+
+static bool bmx280_detect(data_t *data)
+{
+	uint8_t	buffer[1];
+
+	if(!i2c_send_1_receive(data->slave, bmx280_reg_id, sizeof(buffer), buffer))
+		return(false);
+
+	if((buffer[0] != bmx280_reg_id_bmp280) && (buffer[0] != bmx280_reg_id_bme280))
+		return(false);
+
+	data->int_value[bmx280_int_value_type] = buffer[0];
+
+	if(!i2c_send_2(data->slave, bmx280_reg_reset, bmx280_reg_reset_value))
+		return(false);
+
+	return(true);
+}
+
+static bool bmx280_init(data_t *data)
+{
+	uint8_t buffer[4];
+	unsigned int e4, e5, e6;
+
+	if(!i2c_send_1_receive(data->slave, bmx280_reg_reset, 1, buffer))
+		return(false);
+
+	if(buffer[0] != 0x00)
+		return(false);
+
+	/* read calibration data */
+
+	if(!i2c_send_1_receive(data->slave, 0x88, 2, buffer))
+	{
+		log("bmx280: init error 1");
+		return(false);
+	}
+	data->int_value[bmx280_int_value_dig_T1] = unsigned_16(buffer[1], buffer[0]);
+
+	if(!i2c_send_1_receive(data->slave, 0x8a, 2, buffer))
+	{
+		log("bmx280: init error 2");
+		return(false);
+	}
+	data->int_value[bmx280_int_value_dig_T2] = signed_16(buffer[1], buffer[0]);
+
+	if(!i2c_send_1_receive(data->slave, 0x8c, 2, buffer))
+	{
+		log("bmx280: init error 3");
+		return(false);
+	}
+	data->int_value[bmx280_int_value_dig_T3] = signed_16(buffer[1], buffer[0]);
+
+	if(!i2c_send_1_receive(data->slave, 0x8e, 2, buffer))
+	{
+		log("bmx280: init error 4");
+		return(false);
+	}
+	data->int_value[bmx280_int_value_dig_P1] = unsigned_16(buffer[1], buffer[0]);
+
+	if(!i2c_send_1_receive(data->slave, 0x90, 2, buffer))
+	{
+		log("bmx280: init error 5");
+		return(false);
+	}
+	data->int_value[bmx280_int_value_dig_P2] = signed_16(buffer[1], buffer[0]);
+
+	if(!i2c_send_1_receive(data->slave, 0x92, 2, buffer))
+	{
+		log("bmx280: init error 6");
+		return(false);
+	}
+	data->int_value[bmx280_int_value_dig_P3] = signed_16(buffer[1], buffer[0]);
+
+	if(!i2c_send_1_receive(data->slave, 0x94, 2, buffer))
+	{
+		log("bmx280: init error 7");
+		return(false);
+	}
+	data->int_value[bmx280_int_value_dig_P4] = signed_16(buffer[1], buffer[0]);
+
+	if(!i2c_send_1_receive(data->slave, 0x96, 2, buffer))
+	{
+		log("bmx280: init error 8");
+		return(false);
+	}
+	data->int_value[bmx280_int_value_dig_P5] = signed_16(buffer[1], buffer[0]);
+
+	if(!i2c_send_1_receive(data->slave, 0x98, 2, buffer))
+	{
+		log("bmx280: init error 9");
+		return(false);
+	}
+	data->int_value[bmx280_int_value_dig_P6] = signed_16(buffer[1], buffer[0]);
+
+	if(!i2c_send_1_receive(data->slave, 0x9a, 2, buffer))
+	{
+		log("bmx280: init error 10");
+		return(false);
+	}
+	data->int_value[bmx280_int_value_dig_P7] = signed_16(buffer[1], buffer[0]);
+
+	if(!i2c_send_1_receive(data->slave, 0x9c, 2, buffer))
+	{
+		log("bmx280: init error 11");
+		return(false);
+	}
+	data->int_value[bmx280_int_value_dig_P8] = signed_16(buffer[1], buffer[0]);
+
+	if(!i2c_send_1_receive(data->slave, 0x9e, 2, buffer))
+	{
+		log("bmx280: init error 12");
+		return(false);
+	}
+	data->int_value[bmx280_int_value_dig_P8] = signed_16(buffer[1], buffer[0]);
+
+	if(data->int_value[bmx280_int_value_type] == bmx280_reg_id_bme280)
+	{
+		if(!i2c_send_1_receive(data->slave, 0xa1, 1, buffer))
+		{
+			log("bmx280: init error 13");
+			return(false);
+		}
+		data->int_value[bmx280_int_value_dig_H1] = unsigned_8(buffer[0]);
+
+		if(!i2c_send_1_receive(data->slave, 0xe1, 2, buffer))
+		{
+			log("bmx280: init error 14");
+			return(false);
+		}
+		data->int_value[bmx280_int_value_dig_H2] = signed_16(buffer[1], buffer[0]);
+
+		if(!i2c_send_1_receive(data->slave, 0xe3, 1, buffer))
+		{
+			log("bmx280: init error 15");
+			return(false);
+		}
+		data->int_value[bmx280_int_value_dig_H3] = unsigned_8(buffer[0]);
+
+		if(!i2c_send_1_receive(data->slave, 0xe4, 1, buffer))
+		{
+			log("bmx280: init error 16");
+			return(false);
+		}
+		e4 = unsigned_8(buffer[0]);
+
+		if(!i2c_send_1_receive(data->slave, 0xe5, 1, buffer))
+		{
+			log("bmx280: init error 17");
+			return(false);
+		}
+		e5 = unsigned_8(buffer[0]);
+
+		if(!i2c_send_1_receive(data->slave, 0xe6, 1, buffer))
+		{
+			log("bmx280: init error 18");
+			return(false);
+		}
+		e6 = unsigned_8(buffer[0]);
+
+		data->int_value[bmx280_int_value_dig_H4] = ((e4 & 0xff) << 4) | ((e5 & 0x0f) >> 0);
+		data->int_value[bmx280_int_value_dig_H5] = ((e6 & 0xff) << 4) | ((e5 & 0xf0) >> 4);
+
+		if(!i2c_send_1_receive(data->slave, 0xe7, 1, buffer))
+		{
+			log("bmx280: init error 19");
+			return(false);
+		}
+		data->int_value[bmx280_int_value_dig_H6] = unsigned_8(buffer[0]);
+	}
+
+	data->int_value[bmx280_int_value_state] = bmx280_state_init;
+
+	return(true);
+}
+
+static bool bmx280_poll(data_t *data)
+{
+	uint8_t buffer[8];
+	int adc_T, adc_P, adc_H, t_fine;
+	float var1, var2, pressure, t_fine_2, humidity;
+
+	switch(data->int_value[bmx280_int_value_state])
+	{
+		case(bmx280_state_init):
+		case(bmx280_state_finished):
+		{
+			if(!i2c_send_1_receive(data->slave, bmx280_reg_ctrl_meas, 1, buffer))
+			{
+				log("bmx280: poll error 1");
+				return(false);
+			}
+
+			if((buffer[0] & bmx280_reg_ctrl_meas_mode_mask) != bmx280_reg_ctrl_meas_mode_sleep)
+			{
+				log("bmx280: poll error 2");
+				return(false);
+			}
+
+			if(!i2c_send_2(data->slave, bmx280_reg_ctrl_hum, bmx280_reg_ctrl_hum_osrs_h_16))
+			{
+				log("bmx280: poll error 3");
+				return(false);
+			}
+
+			if(!i2c_send_2(data->slave, bmx280_reg_config, bmx280_reg_config_filter_2))
+			{
+				log("bmx280: poll error 4");
+				return(false);
+			}
+
+			if(!i2c_send_2(data->slave, bmx280_reg_ctrl_meas, bmx280_reg_ctrl_meas_osrs_t_16 | bmx280_reg_ctrl_meas_osrs_p_16 | bmx280_reg_ctrl_meas_mode_forced))
+			{
+				log("bmx280: poll error 5");
+				return(false);
+			}
+
+			data->int_value[bmx280_int_value_state] = bmx280_state_measuring;
+
+			break;
+		}
+
+		case(bmx280_state_measuring):
+		{
+			if(!i2c_send_1_receive(data->slave, bmx280_reg_adc, sizeof(buffer), buffer))
+			{
+				log("bmx280: poll error 6");
+				return(false);
+			}
+
+			adc_P = ((buffer[0] << 16) | (buffer[1] << 8) | (buffer[2] << 0)) >> 4;
+			adc_T = ((buffer[3] << 16) | (buffer[4] << 8) | (buffer[5] << 0)) >> 4;
+			adc_H = (					 (buffer[6] << 8) | (buffer[7] << 0)) >> 0;
+
+			var1 = ((adc_T / 16384.0f)  - (data->int_value[bmx280_int_value_dig_T1] / 1024.0f)) * data->int_value[bmx280_int_value_dig_T2];
+			var2 = ((adc_T / 131072.0f) - (data->int_value[bmx280_int_value_dig_T1] / 8192.0f)) * ((adc_T / 131072.0f) - (data->int_value[bmx280_int_value_dig_T1] / 8192.0f)) * data->int_value[bmx280_int_value_dig_T3];
+
+			data->values[sensor_type_temperature].value = (var1 + var2) / 5120.0f;
+			data->values[sensor_type_temperature].stamp = time((time_t *)0);
+
+			var1 = (adc_T / 16384.0f - data->int_value[bmx280_int_value_dig_T1] / 1024.0f) * data->int_value[bmx280_int_value_dig_T2];
+			var2 = (adc_T / 131072.0f - data->int_value[bmx280_int_value_dig_T1] / 8192.0f) * (adc_T / 131072.0f - data->int_value[bmx280_int_value_dig_T1] / 8192.0f) * data->int_value[bmx280_int_value_dig_T3];
+			t_fine = var1 + var2;
+
+			var1 = (t_fine / 2.0f) - 64000.0f;
+			var2 = var1 * var1 * data->int_value[bmx280_int_value_dig_P6] / 32768.0f;
+			var2 = var2 + var1 * data->int_value[bmx280_int_value_dig_P5] * 2.0f;
+			var2 = (var2 / 4.0f) + (data->int_value[bmx280_int_value_dig_P4] * 65536.0f);
+			var1 = (data->int_value[bmx280_int_value_dig_P3] * var1 * var1 / 524288.0f + data->int_value[bmx280_int_value_dig_P2] * var1) / 524288.0f;
+			var1 = (1.0f + var1 / 32768.0f) * data->int_value[bmx280_int_value_dig_P1];
+
+			if((int)var1 == 0)
+				pressure = 0;
+			else
+			{
+				pressure = 1048576.0f - adc_P;
+				pressure = (pressure - (var2 / 4096.0f)) * 6250.0f / var1;
+				var1 = data->int_value[bmx280_int_value_dig_P9] * pressure * pressure / 2147483648.0f;
+				var2 = pressure * data->int_value[bmx280_int_value_dig_P8] / 32768.0f;
+				pressure = pressure + (var1 + var2 + data->int_value[bmx280_int_value_dig_P7]) / 16.0f;
+			}
+
+			data->values[sensor_type_airpressure].value = pressure / 100.0f;
+			data->values[sensor_type_airpressure].stamp = time((time_t *)0);
+
+			if(data->int_value[bmx280_int_value_type] == bmx280_reg_id_bme280)
+			{
+				var1 = (adc_T / 16384.0f  - (data->int_value[bmx280_int_value_dig_T1] / 1024.0f)) * data->int_value[bmx280_int_value_dig_T2];
+				var2 = (adc_T / 131072.0f - (data->int_value[bmx280_int_value_dig_T1] / 8192.0f)) * ((adc_T / 131072.0f) - (data->int_value[bmx280_int_value_dig_T1] / 8192.0f)) * data->int_value[bmx280_int_value_dig_T3];
+				t_fine_2 = var1 + var2 - 76800;
+
+				humidity = (adc_H - ((data->int_value[bmx280_int_value_dig_H4] * 64.0f) + (data->int_value[bmx280_int_value_dig_H5] / 16384.0f) * t_fine_2)) * (data->int_value[bmx280_int_value_dig_H2] / 65536.0f * (1.0f + data->int_value[bmx280_int_value_dig_H6] / 67108864.0f * t_fine_2 * (1.0f + data->int_value[bmx280_int_value_dig_H3] / 67108864.0f * t_fine_2)));
+				humidity = humidity * (1.0f - data->int_value[bmx280_int_value_dig_H1] * humidity / 524288.0f);
+
+				if(humidity > 100.0f)
+					humidity = 100.0f;
+
+				if(humidity < 0.0f)
+					humidity = 0.0f;
+
+				data->values[sensor_type_humidity].value = humidity;
+				data->values[sensor_type_humidity].stamp = time((time_t *)0);
+			}
+			else
+			{
+				data->values[sensor_type_humidity].value = 0;
+				data->values[sensor_type_humidity].stamp = 0;
+			}
+
+			data->int_value[bmx280_int_value_state] = bmx280_state_finished;
+
+			break;
+		}
+	}
+
+	return(true);
+}
+
 static const info_t info[sensor_size] =
 {
 	[sensor_bh1750] =
@@ -1667,6 +2084,17 @@ static const info_t info[sensor_size] =
 		.detect_fn = sht3x_detect,
 		.init_fn = sht3x_init,
 		.poll_fn = sht3x_poll,
+	},
+	[sensor_bmx280] =
+	{
+		.name = "bmx280",
+		.id = sensor_bmx280,
+		.address = 0x76,
+		.type = (1 << sensor_type_temperature) | (1 << sensor_type_humidity) | (1 << sensor_type_airpressure),
+		.precision = 1,
+		.detect_fn = bmx280_detect,
+		.init_fn = bmx280_init,
+		.poll_fn = bmx280_poll,
 	},
 };
 
