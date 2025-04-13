@@ -1046,15 +1046,15 @@ static bool tsl2561_read_byte(data_t *data, tsl2561_reg_t reg, uint8_t *byte)
 
 static bool tsl2561_read_word(data_t *data, tsl2561_reg_t reg, uint16_t *word)
 {
-	uint8_t i2c_buffer[2];
+	uint8_t buffer[2];
 
-	if(!i2c_send_1_receive(data->slave, tsl2561_cmd_cmd | (reg & tsl2561_cmd_address), sizeof(i2c_buffer), i2c_buffer))
+	if(!i2c_send_1_receive(data->slave, tsl2561_cmd_cmd | (reg & tsl2561_cmd_address), sizeof(buffer), buffer))
 	{
 		log("sensor: tsl2561: error 3");
 		return(false);
 	}
 
-	*word = (i2c_buffer[0] << 8) | i2c_buffer[1];
+	*word = (buffer[0] << 8) | buffer[1];
 
 	return(true);
 }
@@ -1145,7 +1145,7 @@ static bool tsl2561_init(data_t *data)
 
 static bool tsl2561_poll(data_t *data)
 {
-	uint8_t i2c_buffer[4];
+	uint8_t buffer[4];
 	unsigned int ch0, ch1;
 	unsigned int overflow, scale_down_threshold, scale_up_threshold;
 
@@ -1153,14 +1153,14 @@ static bool tsl2561_poll(data_t *data)
 	scale_up_threshold =	tsl2561_autoranging_data[data->int_value[tsl2561_int_scaling]].threshold.up;
 	overflow =				tsl2561_autoranging_data[data->int_value[tsl2561_int_scaling]].overflow;
 
-	if(!i2c_send_1_receive(data->slave, tsl2561_cmd_cmd | tsl2561_reg_data0, sizeof(i2c_buffer), i2c_buffer))
+	if(!i2c_send_1_receive(data->slave, tsl2561_cmd_cmd | tsl2561_reg_data0, sizeof(buffer), buffer))
 	{
 		log("sensor: tsl2561 poll error 1");
 		return(false);
 	}
 
-	ch0 = (i2c_buffer[1] << 8) | i2c_buffer[0];
-	ch1 = (i2c_buffer[3] << 8) | i2c_buffer[1];
+	ch0 = (buffer[1] << 8) | buffer[0];
+	ch1 = (buffer[3] << 8) | buffer[1];
 
 	if((ch0 == 0) && (ch1 == 0))
 	{
