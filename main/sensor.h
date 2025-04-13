@@ -11,6 +11,7 @@ typedef enum
 	sensor_asair,
 	sensor_tsl2561,
 	sensor_hdc1080,
+	sensor_sht3x,
 	sensor_size,
 	sensor_error = sensor_size,
 	sensor_none = sensor_size,

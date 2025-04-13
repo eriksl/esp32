@@ -1363,6 +1363,212 @@ static bool hdc1080_poll(data_t *data)
 	return(true);
 }
 
+enum
+{
+	sht3x_int_raw_temperature_value = 0,
+	sht3x_int_raw_humidity_value,
+	sht3x_int_valid,
+	sht3x_int_size,
+};
+
+_Static_assert((unsigned int)sht3x_int_size <= (unsigned int)data_int_value_size);
+
+typedef enum
+{
+	sht3x_cmd_single_meas_clock_high =		0x2c06,
+	sht3x_cmd_single_meas_clock_medium =	0x2c0d,
+	sht3x_cmd_single_meas_clock_low =		0x2c10,
+
+	sht3x_cmd_single_meas_noclock_high =	0x2400,
+	sht3x_cmd_single_meas_noclock_medium =	0x240b,
+	sht3x_cmd_single_meas_noclock_low =		0x2416,
+
+	sht3x_cmd_auto_meas_high_05 =			0x2032,
+	sht3x_cmd_auto_meas_medium_05 =			0x2024,
+	sht3x_cmd_auto_meas_low_05 =			0x202f,
+
+	sht3x_cmd_auto_meas_high_1 =			0x2130,
+	sht3x_cmd_auto_meas_medium_1 =			0x2126,
+	sht3x_cmd_auto_meas_low_1 =				0x212d,
+
+	sht3x_cmd_auto_meas_high_2 =			0x2236,
+	sht3x_cmd_auto_meas_medium_2 =			0x2220,
+	sht3x_cmd_auto_meas_low_2 =				0x222b,
+
+	sht3x_cmd_auto_meas_high_4 =			0x2334,
+	sht3x_cmd_auto_meas_medium_4 =			0x2322,
+	sht3x_cmd_auto_meas_low_4 =				0x2329,
+
+	sht3x_cmd_auto_meas_high_10 =			0x2737,
+	sht3x_cmd_auto_meas_medium_10 =			0x2721,
+	sht3x_cmd_auto_meas_low_10 =			0x272a,
+
+	sht3x_cmd_fetch_data =					0xe000,
+	sht3x_cmd_art =							0x2b32,
+	sht3x_cmd_break =						0x3093,
+	sht3x_cmd_reset =						0x30a2,
+	sht3x_cmd_heater_en =					0x306d,
+	sht3x_cmd_heater_dis =					0x3066,
+	sht3x_cmd_read_status =					0xf32d,
+	sht3x_cmd_clear_status =				0x3041,
+} sht3x_cmd_t;
+
+enum
+{
+	sht3x_status_none =				0x00,
+	sht3x_status_write_checksum =	(1 << 0),
+	sht3x_status_command_status =	(1 << 1),
+	sht3x_status_reset_detected =	(1 << 4),
+	sht3x_status_temp_track_alert =	(1 << 10),
+	sht3x_status_hum_track_alert =	(1 << 11),
+	sht3x_status_heater =			(1 << 13),
+	sht3x_status_alert =			(1 << 15),
+};
+
+static uint8_t sht3x_crc8(int length, const uint8_t *data)
+{
+	uint8_t outer, inner, testbit, crc;
+
+	crc = 0xff;
+
+	for(outer = 0; (int)outer < length; outer++)
+	{
+		crc ^= data[outer];
+
+		for(inner = 0; inner < 8; inner++)
+		{
+			testbit = !!(crc & 0x80);
+			crc <<= 1;
+			if(testbit)
+				crc ^= 0x31;
+		}
+	}
+
+	return(crc);
+}
+
+static bool sht3x_register_access(data_t *data, sht3x_cmd_t cmd, unsigned int *result1, unsigned int *result2)
+{
+	uint8_t buffer[8];	// 2 + 3 + 3
+	uint8_t crc_local, crc_remote;
+
+	util_sleep(10);
+
+	if(!i2c_send_2(data->slave, (cmd & 0xff00) >> 8, (cmd & 0x00ff) >> 0))
+	{
+		log("sht3x: register access: error 1");
+		return(false);
+	}
+
+	if(result1)
+	{
+		util_sleep(10);
+
+		if(!i2c_receive(data->slave, result2 ? 6 : 3, &buffer[2]))
+		{
+			log("sht3x: register access: error 2");
+			return(false);
+		}
+
+		crc_local = buffer[4];
+		crc_remote = sht3x_crc8(2, &buffer[2]);
+
+		if(crc_local != crc_remote)
+		{
+			log("sht3x: invalid crc");
+			return(false);
+		}
+
+		*result1 = unsigned_16(buffer[2], buffer[3]);
+
+		if(result2)
+		{
+			crc_local = buffer[7];
+			crc_remote = sht3x_crc8(2, &buffer[5]);
+
+			if(crc_local != crc_remote)
+			{
+				log("sht3x: invalid crc");
+				return(false);
+			}
+
+			*result2 = unsigned_16(buffer[5], buffer[6]);
+		}
+	}
+
+	return(true);
+}
+
+static bool sht3x_detect(data_t *data)
+{
+	if(!sht3x_register_access(data, sht3x_cmd_break, 0, 0))
+		return(false);
+
+	if(!sht3x_register_access(data, sht3x_cmd_reset, 0, 0))
+		return(false);
+
+	return(true);
+}
+
+static bool sht3x_init(data_t *data)
+{
+	unsigned int result;
+
+	if(!sht3x_register_access(data, sht3x_cmd_read_status, &result, 0))
+		return(false);
+
+	if((result & (sht3x_status_write_checksum | sht3x_status_command_status)) != 0x00)
+		return(false);
+
+	if(!sht3x_register_access(data, sht3x_cmd_clear_status, 0, 0))
+		return(false);
+
+	if(!sht3x_register_access(data, sht3x_cmd_read_status, &result, 0))
+		return(false);
+
+	if((result & (sht3x_status_write_checksum | sht3x_status_command_status | sht3x_status_reset_detected)) != 0x00)
+		return(false);
+
+	if(!sht3x_register_access(data, sht3x_cmd_single_meas_noclock_high, 0, 0))
+		return(false);
+
+	data->int_value[sht3x_int_raw_temperature_value] = 0;
+	data->int_value[sht3x_int_raw_humidity_value] = 0;
+	data->int_value[sht3x_int_valid] = 0;
+
+	return(true);
+}
+
+static bool sht3x_poll(data_t *data)
+{
+	unsigned int result[2];
+
+	if(!sht3x_register_access(data, sht3x_cmd_fetch_data, &result[0], &result[1]))
+	{
+		log("sht3x: poll error 1");
+		return(false);
+	}
+
+	data->int_value[sht3x_int_raw_temperature_value] = result[0];
+	data->int_value[sht3x_int_raw_humidity_value] = result[1];
+
+	data->values[sensor_type_temperature].value = (((float)data->int_value[sht3x_int_raw_temperature_value] * 175.f) / ((1 << 16) - 1.0f)) - 45.0f;
+	data->values[sensor_type_temperature].stamp = time((time_t *)0);
+
+	data->values[sensor_type_humidity].value = ((float)data->int_value[sht3x_int_raw_humidity_value] * 100.0f) / ((1 << 16) - 1.0f);
+	data->values[sensor_type_humidity].stamp = time((time_t *)0);
+
+	data->int_value[sht3x_int_valid] = 1;
+
+	if(!sht3x_register_access(data, sht3x_cmd_single_meas_noclock_high, 0, 0))
+	{
+		log("sht3x: poll error 2");
+		return(false);
+	}
+
+	return(true);
+}
+
 static const info_t info[sensor_size] =
 {
 	[sensor_bh1750] =
@@ -1452,6 +1658,17 @@ static const info_t info[sensor_size] =
 		.detect_fn = hdc1080_detect,
 		.init_fn = hdc1080_init,
 		.poll_fn = hdc1080_poll,
+	},
+	[sensor_sht3x] =
+	{
+		.name = "sht3x",
+		.id = sensor_sht3x,
+		.address = 0x44,
+		.type = (1 << sensor_type_temperature) | (1 << sensor_type_humidity),
+		.precision = 1,
+		.detect_fn = sht3x_detect,
+		.init_fn = sht3x_init,
+		.poll_fn = sht3x_poll,
 	},
 };
 
