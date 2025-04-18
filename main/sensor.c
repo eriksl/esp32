@@ -370,6 +370,8 @@ static bool tmp75_detect(data_t *data)
 	if((buffer[0] != tmp75_probe_th_h) || (buffer[1] != tmp75_probe_th_l))
 		return(false);
 
+	log("tmp75: ignore 5 lines of i2c bus errors following this");
+
 	if(i2c_send_1(data->slave, tmp75_probe_04))
 		return(false);
 
@@ -384,6 +386,8 @@ static bool tmp75_detect(data_t *data)
 
 	if(i2c_send_1(data->slave, tmp75_probe_ac))
 		return(false);
+
+	log("tmp75: end of spurious i2c bus errors");
 
 	return(true);
 }
