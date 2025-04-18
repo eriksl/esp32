@@ -120,22 +120,17 @@ typedef struct
 	} correction;
 } device_autoranging_data_t;
 
-static unsigned int unsigned_8(unsigned int lsb)
+static unsigned int unsigned_16_be(const uint8_t *ptr)
 {
-	return(lsb & 0xff);
+	return(((ptr[0] & 0xff) << 8) | (ptr[1] & 0xff));
 }
 
-static unsigned int unsigned_16(unsigned int msb, unsigned int lsb)
-{
-	return(((msb & 0xff) << 8) | (lsb & 0xff));
-}
-
-static unsigned int unsigned_16_ptr_le(const uint8_t *ptr)
+static unsigned int unsigned_16_le(const uint8_t *ptr)
 {
 	return(((ptr[1] & 0xff) << 8) | (ptr[0] & 0xff));
 }
 
-static int signed_16_ptr_le(const uint8_t *ptr)
+static int signed_16_le(const uint8_t *ptr)
 {
 	int rv = ((ptr[1] & 0xff) << 8) | (ptr[0] & 0xff);
 
@@ -1358,13 +1353,13 @@ static bool hdc1080_detect(data_t *data)
 	if(!i2c_send_1_receive(data->slave, hdc1080_reg_man_id, 2, buffer))
 		return(false);
 
-	if(unsigned_16(buffer[0], buffer[1]) != hdc1080_man_id)
+	if(unsigned_16_be(buffer) != hdc1080_man_id)
 		return(false);
 
 	if(!i2c_send_1_receive(data->slave, hdc1080_reg_dev_id, sizeof(buffer), buffer))
 		return(false);
 
-	if(unsigned_16(buffer[0], buffer[1]) != hdc1080_dev_id)
+	if(unsigned_16_be(buffer) != hdc1080_dev_id)
 		return(false);
 
 	if(!i2c_send_2(data->slave, hdc1080_reg_conf, hdc1080_conf_rst))
@@ -1414,8 +1409,8 @@ static bool hdc1080_poll(data_t *data)
 		return(false);
 	}
 
-	data->int_value[hdc1080_int_raw_temperature] = unsigned_16(buffer[0], buffer[1]);
-	data->int_value[hdc1080_int_raw_humidity] = unsigned_16(buffer[2], buffer[3]);
+	data->int_value[hdc1080_int_raw_temperature] = unsigned_16_be(&buffer[0]);
+	data->int_value[hdc1080_int_raw_humidity] = unsigned_16_be(&buffer[2]);
 	data->int_value[hdc1080_int_valid] = 1;
 
 	data->values[sensor_type_temperature].value = ((data->int_value[hdc1080_int_raw_temperature] * 165.0f) / (float)(1 << 16)) - 40.f;
@@ -1551,7 +1546,7 @@ static bool sht3x_receive_command(data_t *data, sht3x_cmd_t cmd, unsigned int *r
 		return(false);
 	}
 
-	*result = unsigned_16(buffer[0], buffer[1]);
+	*result = unsigned_16_be(buffer);
 
 	return(true);
 }
@@ -1590,8 +1585,8 @@ static bool sht3x_fetch_data(data_t *data, unsigned int *result1, unsigned int *
 		return(false);
 	}
 
-	*result1 = unsigned_16(buffer[0], buffer[1]);
-	*result2 = unsigned_16(buffer[3], buffer[4]);
+	*result1 = unsigned_16_be(&buffer[0]);
+	*result2 = unsigned_16_be(&buffer[3]);
 
 	return(true);
 }
@@ -1802,23 +1797,23 @@ static bool bmx280_read_otp(data_t *data)
 		return(false);
 	}
 
-	data->int_value[bmx280_int_value_dig_T1] = unsigned_16_ptr_le(&cal_data[bmx280_cal_0x88_0x89_dig_t1]);
-	data->int_value[bmx280_int_value_dig_T2] = signed_16_ptr_le(&cal_data[bmx280_cal_0x8a_0x8b_dig_t2]);
-	data->int_value[bmx280_int_value_dig_T3] = signed_16_ptr_le(&cal_data[bmx280_cal_0x8c_0x8d_dig_t3]);
-	data->int_value[bmx280_int_value_dig_P1] = unsigned_16_ptr_le(&cal_data[bmx280_cal_0x8e_0x8f_dig_p1]);
-	data->int_value[bmx280_int_value_dig_P2] = signed_16_ptr_le(&cal_data[bmx280_cal_0x90_0x91_dig_p2]);
-	data->int_value[bmx280_int_value_dig_P3] = signed_16_ptr_le(&cal_data[bmx280_cal_0x92_0x93_dig_p3]);
-	data->int_value[bmx280_int_value_dig_P4] = signed_16_ptr_le(&cal_data[bmx280_cal_0x94_0x95_dig_p4]);
-	data->int_value[bmx280_int_value_dig_P5] = signed_16_ptr_le(&cal_data[bmx280_cal_0x96_0x97_dig_p5]);
-	data->int_value[bmx280_int_value_dig_P6] = signed_16_ptr_le(&cal_data[bmx280_cal_0x98_0x99_dig_p6]);
-	data->int_value[bmx280_int_value_dig_P7] = signed_16_ptr_le(&cal_data[bmx280_cal_0x9a_0x9b_dig_p7]);
-	data->int_value[bmx280_int_value_dig_P8] = signed_16_ptr_le(&cal_data[bmx280_cal_0x9c_0x9d_dig_p8]);
-	data->int_value[bmx280_int_value_dig_P8] = signed_16_ptr_le(&cal_data[bmx280_cal_0x9e_0x9f_dig_p9]);
+	data->int_value[bmx280_int_value_dig_T1] = unsigned_16_le(&cal_data[bmx280_cal_0x88_0x89_dig_t1]);
+	data->int_value[bmx280_int_value_dig_T2] = signed_16_le(&cal_data[bmx280_cal_0x8a_0x8b_dig_t2]);
+	data->int_value[bmx280_int_value_dig_T3] = signed_16_le(&cal_data[bmx280_cal_0x8c_0x8d_dig_t3]);
+	data->int_value[bmx280_int_value_dig_P1] = unsigned_16_le(&cal_data[bmx280_cal_0x8e_0x8f_dig_p1]);
+	data->int_value[bmx280_int_value_dig_P2] = signed_16_le(&cal_data[bmx280_cal_0x90_0x91_dig_p2]);
+	data->int_value[bmx280_int_value_dig_P3] = signed_16_le(&cal_data[bmx280_cal_0x92_0x93_dig_p3]);
+	data->int_value[bmx280_int_value_dig_P4] = signed_16_le(&cal_data[bmx280_cal_0x94_0x95_dig_p4]);
+	data->int_value[bmx280_int_value_dig_P5] = signed_16_le(&cal_data[bmx280_cal_0x96_0x97_dig_p5]);
+	data->int_value[bmx280_int_value_dig_P6] = signed_16_le(&cal_data[bmx280_cal_0x98_0x99_dig_p6]);
+	data->int_value[bmx280_int_value_dig_P7] = signed_16_le(&cal_data[bmx280_cal_0x9a_0x9b_dig_p7]);
+	data->int_value[bmx280_int_value_dig_P8] = signed_16_le(&cal_data[bmx280_cal_0x9c_0x9d_dig_p8]);
+	data->int_value[bmx280_int_value_dig_P8] = signed_16_le(&cal_data[bmx280_cal_0x9e_0x9f_dig_p9]);
 
 	if(data->int_value[bmx280_int_value_type] == bmx280_reg_id_bme280)
 	{
 		data->int_value[bmx280_int_value_dig_H1] = cal_data[bmx280_cal_0xa1_dig_h1];
-		data->int_value[bmx280_int_value_dig_H2] = signed_16_ptr_le(&cal_data[bmx280_cal_0xe1_0xe2_dig_h2]);
+		data->int_value[bmx280_int_value_dig_H2] = signed_16_le(&cal_data[bmx280_cal_0xe1_0xe2_dig_h2]);
 		data->int_value[bmx280_int_value_dig_H3] = cal_data[bmx280_cal_0xe3_dig_h3];
 		e4 = cal_data[bmx280_cal_0xe4_0xe5_0xe6_dig_h4_h5 + 0];
 		e5 = cal_data[bmx280_cal_0xe4_0xe5_0xe6_dig_h4_h5 + 1];
@@ -2122,7 +2117,7 @@ static bool htu21_get_data(data_t *data, unsigned int *result)
 		return(false);
 	}
 
-	*result = (unsigned_16(buffer[0], buffer[1])) & ~htu21_status_mask;
+	*result = unsigned_16_be(buffer) & ~htu21_status_mask;
 
 	return(true);
 }
