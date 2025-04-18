@@ -127,9 +127,7 @@ static void set_mux(i2c_module_t module, i2c_bus_t bus)
 	else
 		reg[0] = (1 << (bus - i2c_bus_0));
 
-	module_mutex_take(module);
 	util_warn_on_esp_err("i2c_master_transmit mux", i2c_master_transmit(module_ptr->mux_dev_handle, reg, 1, i2c_timeout_ms));
-	module_mutex_give(module);
 }
 
 static bool slave_check(slave_t *slave)
@@ -491,9 +489,8 @@ bool i2c_probe_slave(i2c_module_t module, i2c_bus_t bus, unsigned int address)
 	assert(bus < i2c_bus_size);
 	assert(address < 128);
 
-	set_mux(module, bus);
-
 	module_mutex_take(module);
+	set_mux(module, bus);
 	rv = i2c_master_probe(module_data[module].handle, address, i2c_timeout_ms);
 	module_mutex_give(module);
 
@@ -519,9 +516,8 @@ bool i2c_send(i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t 
 	if(!slave_check(_slave))
 		return(false);
 
-	set_mux(_slave->module, _slave->bus);
-
 	module_mutex_take(_slave->module);
+	set_mux(_slave->module, _slave->bus);
 	util_warn_on_esp_err("i2c_master_transmit", rv = i2c_master_transmit(_slave->handle, send_buffer, send_buffer_length, i2c_timeout_ms));
 	module_mutex_give(_slave->module);
 
@@ -565,9 +561,8 @@ bool i2c_receive(i2c_slave_t slave, unsigned int receive_buffer_size, uint8_t *r
 	if(!slave_check(_slave))
 		return(false);
 
-	set_mux(_slave->module, _slave->bus);
-
 	module_mutex_take(_slave->module);
+	set_mux(_slave->module, _slave->bus);
 	util_warn_on_esp_err("i2c_master_receive", rv = i2c_master_receive(_slave->handle, receive_buffer, receive_buffer_size, i2c_timeout_ms));
 	module_mutex_give(_slave->module);
 
@@ -591,9 +586,8 @@ bool i2c_send_receive(i2c_slave_t slave, unsigned int send_buffer_length, const 
 	if(!slave_check(_slave))
 		return(false);
 
-	set_mux(_slave->module, _slave->bus);
-
 	module_mutex_take(_slave->module);
+	set_mux(_slave->module, _slave->bus);
 	util_warn_on_esp_err("i2c_master_transmit_receive", rv =
 			i2c_master_transmit_receive(_slave->handle, send_buffer, send_buffer_length, receive_buffer, receive_buffer_size, i2c_timeout_ms));
 	module_mutex_give(_slave->module);
