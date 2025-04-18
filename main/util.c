@@ -42,7 +42,13 @@ void util_init(void)
 
 void util_sleep(unsigned int msec)
 {
-	vTaskDelay(msec / portTICK_PERIOD_MS);
+	unsigned int ticks;
+
+	ticks = msec / portTICK_PERIOD_MS;
+
+	assert(ticks > 0);
+
+	vTaskDelay(ticks);
 }
 
 uint32_t util_md5_32(unsigned int length, const uint8_t *data)
