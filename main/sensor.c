@@ -1637,17 +1637,8 @@ static bool sht3x_poll(data_t *data)
 
 	if(!sht3x_fetch_data(data, &result[0], &result[1]))
 	{
-		util_sleep(10);
-
 		log("sht3x: poll error 1");
-
-		if(!sht3x_send_command(data, sht3x_cmd_break))
-			log("sht3x: poll error 2");
-
-		if(!sht3x_send_command(data, sht3x_cmd_single_meas_noclock_high))
-			log("sht3x: poll error 3");
-
-		return(false);
+		goto error;
 	}
 
 	data->int_value[sht3x_int_raw_temperature_value] = result[0];
@@ -1661,9 +1652,10 @@ static bool sht3x_poll(data_t *data)
 
 	data->int_value[sht3x_int_valid] = 1;
 
+error:
 	if(!sht3x_send_command(data, sht3x_cmd_single_meas_noclock_high))
 	{
-		log("sht3x: poll error 4");
+		log("sht3x: poll error 2");
 		return(false);
 	}
 
