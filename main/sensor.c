@@ -1467,62 +1467,97 @@ static uint8_t sht3x_crc8(int length, const uint8_t *data)
 	return(crc);
 }
 
-static bool sht3x_register_access(data_t *data, sht3x_cmd_t cmd, unsigned int *result1, unsigned int *result2)
+static bool sht3x_send_command(data_t *data, unsigned int cmd)
 {
-	uint8_t buffer[8];	// 2 + 3 + 3
-	uint8_t crc_local, crc_remote;
+	uint8_t cmd_bytes[2];
 
-	util_sleep(100);
+	cmd_bytes[0] = (cmd & 0xff00) >> 8;
+	cmd_bytes[1] = (cmd & 0x00ff) >> 0;
 
-	if(!i2c_send_2(data->slave, (cmd & 0xff00) >> 8, (cmd & 0x00ff) >> 0))
+	if(!i2c_send(data->slave, sizeof(cmd_bytes), cmd_bytes))
 	{
-		log("sht3x: register access: error 1");
+		log("sht3x: sh3x_send_command: error");
 		return(false);
 	}
 
-	if(result1)
+	return(true);
+}
+
+static bool sht3x_receive_command(data_t *data, sht3x_cmd_t cmd, unsigned int *result)
+{
+	uint8_t buffer[3];
+	uint8_t crc_local, crc_remote;
+	uint8_t cmd_bytes[2];
+
+	cmd_bytes[0] = (cmd & 0xff00) >> 8;
+	cmd_bytes[1] = (cmd & 0x00ff) >> 0;
+
+	if(!i2c_send_receive(data->slave, sizeof(cmd_bytes), cmd_bytes, sizeof(buffer), buffer))
 	{
-		if(!i2c_receive(data->slave, result2 ? 6 : 3, &buffer[2]))
-		{
-			log("sht3x: register access: error 2");
-			return(false);
-		}
-
-		crc_local = buffer[4];
-		crc_remote = sht3x_crc8(2, &buffer[2]);
-
-		if(crc_local != crc_remote)
-		{
-			log("sht3x: invalid crc");
-			return(false);
-		}
-
-		*result1 = unsigned_16(buffer[2], buffer[3]);
-
-		if(result2)
-		{
-			crc_local = buffer[7];
-			crc_remote = sht3x_crc8(2, &buffer[5]);
-
-			if(crc_local != crc_remote)
-			{
-				log("sht3x: invalid crc");
-				return(false);
-			}
-
-			*result2 = unsigned_16(buffer[5], buffer[6]);
-		}
+		log("sht3x: sht3x_receive_command: error");
+		return(false);
 	}
+
+	crc_local = buffer[2];
+	crc_remote = sht3x_crc8(2, &buffer[0]);
+
+	if(crc_local != crc_remote)
+	{
+		log("sht3x: sht3x_receive_command: invalid crc");
+		return(false);
+	}
+
+	*result = unsigned_16(buffer[0], buffer[1]);
+
+	return(true);
+}
+
+
+static bool sht3x_fetch_data(data_t *data, unsigned int *result1, unsigned int *result2)
+{
+	uint8_t buffer[6];
+	uint8_t crc_local, crc_remote;
+	uint8_t cmd_bytes[2];
+
+	cmd_bytes[0] = (sht3x_cmd_fetch_data & 0xff00) >> 8;
+	cmd_bytes[1] = (sht3x_cmd_fetch_data & 0x00ff) >> 0;
+
+	if(!i2c_send_receive(data->slave, sizeof(cmd_bytes), cmd_bytes, sizeof(buffer), buffer))
+	{
+		log("sht3x: sh3x_fetch_data: error");
+		return(false);
+	}
+
+	crc_local = buffer[2];
+	crc_remote = sht3x_crc8(2, &buffer[0]);
+
+	if(crc_local != crc_remote)
+	{
+		log("sht3x: sh3x_fetch_data: invalid crc [0]");
+		return(false);
+	}
+
+	crc_local = buffer[5];
+	crc_remote = sht3x_crc8(2, &buffer[3]);
+
+	if(crc_local != crc_remote)
+	{
+		log("sht3x: sh3x_fetch_data: invalid crc [1]");
+		return(false);
+	}
+
+	*result1 = unsigned_16(buffer[0], buffer[1]);
+	*result2 = unsigned_16(buffer[3], buffer[4]);
 
 	return(true);
 }
 
 static bool sht3x_detect(data_t *data)
 {
-	if(!sht3x_register_access(data, sht3x_cmd_break, 0, 0))
+	if(!sht3x_send_command(data, sht3x_cmd_break))
 		return(false);
 
-	if(!sht3x_register_access(data, sht3x_cmd_reset, 0, 0))
+	if(!sht3x_send_command(data, sht3x_cmd_reset))
 		return(false);
 
 	return(true);
@@ -1532,22 +1567,22 @@ static bool sht3x_init(data_t *data)
 {
 	unsigned int result;
 
-	if(!sht3x_register_access(data, sht3x_cmd_read_status, &result, 0))
+	if(!sht3x_receive_command(data, sht3x_cmd_read_status, &result))
 		return(false);
 
 	if((result & (sht3x_status_write_checksum | sht3x_status_command_status)) != 0x00)
 		return(false);
 
-	if(!sht3x_register_access(data, sht3x_cmd_clear_status, 0, 0))
+	if(!sht3x_send_command(data, sht3x_cmd_clear_status))
 		return(false);
 
-	if(!sht3x_register_access(data, sht3x_cmd_read_status, &result, 0))
+	if(!sht3x_receive_command(data, sht3x_cmd_read_status, &result))
 		return(false);
 
 	if((result & (sht3x_status_write_checksum | sht3x_status_command_status | sht3x_status_reset_detected)) != 0x00)
 		return(false);
 
-	if(!sht3x_register_access(data, sht3x_cmd_single_meas_noclock_high, 0, 0))
+	if(!sht3x_send_command(data, sht3x_cmd_single_meas_noclock_high))
 		return(false);
 
 	data->int_value[sht3x_int_raw_temperature_value] = 0;
@@ -1561,9 +1596,18 @@ static bool sht3x_poll(data_t *data)
 {
 	unsigned int result[2];
 
-	if(!sht3x_register_access(data, sht3x_cmd_fetch_data, &result[0], &result[1]))
+	if(!sht3x_fetch_data(data, &result[0], &result[1]))
 	{
+		util_sleep(10);
+
 		log("sht3x: poll error 1");
+
+		if(!sht3x_send_command(data, sht3x_cmd_break))
+			log("sht3x: poll error 2");
+
+		if(!sht3x_send_command(data, sht3x_cmd_single_meas_noclock_high))
+			log("sht3x: poll error 3");
+
 		return(false);
 	}
 
@@ -1578,9 +1622,9 @@ static bool sht3x_poll(data_t *data)
 
 	data->int_value[sht3x_int_valid] = 1;
 
-	if(!sht3x_register_access(data, sht3x_cmd_single_meas_noclock_high, 0, 0))
+	if(!sht3x_send_command(data, sht3x_cmd_single_meas_noclock_high))
 	{
-		log("sht3x: poll error 2");
+		log("sht3x: poll error 4");
 		return(false);
 	}
 
