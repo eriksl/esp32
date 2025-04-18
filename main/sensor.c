@@ -2471,6 +2471,12 @@ void command_sensor_info(cli_command_call_t *call)
 
 	string_assign_cstr(call->result, "SENSOR info");
 
+	if(!inited)
+	{
+		string_append_cstr(call->result, "\n--");
+		return;
+	}
+
 	data_mutex_take();
 
 	for(dataptr = data_root; dataptr; dataptr = dataptr->next)
@@ -2513,6 +2519,9 @@ void command_sensor_json(cli_command_call_t *call)
 	bool first_value;
 
 	assert(call->parameter_count == 0);
+
+	if(!inited)
+		return;
 
 	string_assign_cstr(call->result, "{");
 
@@ -2580,6 +2589,12 @@ void command_sensor_dump(cli_command_call_t *call)
 	assert(call->parameter_count == 0);
 
 	string_assign_cstr(call->result, "SENSOR dump");
+
+	if(!inited)
+	{
+		string_append_cstr(call->result, "\n--");
+		return;
+	}
 
 	data_mutex_take();
 
