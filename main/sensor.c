@@ -830,23 +830,28 @@ enum
 typedef enum
 {
 	asair_state_init,
+	asair_state_ready,
 	asair_state_start_measure,
 	asair_state_measuring,
 	asair_state_measure_complete,
 } asair_state_t;
 
-static bool asair_detect(data_t *data)
+
+static bool asair_ready(data_t *data)
 {
 	uint8_t buffer[1];
 
 	if(!i2c_send_1_receive(data->slave, asair_cmd_get_status, sizeof(buffer), buffer))
 		return(false);
 
-	if(!i2c_send_1(data->slave, asair_cmd_reset))
+	if(!(buffer[0] & asair_status_ready))
 		return(false);
 
-	util_sleep(25);
+	return(true);
+}
 
+static bool asair_init_chip(data_t *data)
+{
 	if(i2c_send_3(data->slave, asair_cmd_aht10_init_1, asair_cmd_aht10_init_2, asair_cmd_aht10_init_3))
 	{
 		data->int_value[asair_int_type] = 10;
@@ -859,28 +864,41 @@ static bool asair_detect(data_t *data)
 		return(true);
 	}
 
+	log("asair_init: unknown device type");
+
 	return(false);
+}
+
+static bool asair_detect(data_t *data)
+{
+	uint8_t buffer[1];
+
+	if(!i2c_send_1_receive(data->slave, asair_cmd_get_status, sizeof(buffer), buffer))
+		return(false);
+
+	if(!i2c_send_1(data->slave, asair_cmd_reset))
+		return(false);
+
+	data->int_value[asair_int_state] = asair_state_init;
+
+	return(true);
 }
 
 static bool asair_init(data_t *data)
 {
-	uint8_t buffer[1];
-
 	data->int_value[asair_int_raw_value_temp] = 0;
 	data->int_value[asair_int_raw_value_hum] = 0;
-	data->int_value[asair_int_state] = asair_state_init;
 	data->int_value[asair_int_valid] = 0;
 
-	if(!i2c_send_1_receive(data->slave, asair_cmd_get_status, sizeof(buffer), buffer))
+	if(asair_ready(data))
 	{
-		log("sensors: asair: init error 1");
-		return(false);
-	}
+		if(!asair_init_chip(data))
+		{
+			log("asair_init: unknown device type");
+			return(false);
+		}
 
-	if(!(buffer[0] & asair_status_ready))
-	{
-		log("sensors: asair: init error 2");
-		return(false);
+		data->int_value[asair_int_state] = asair_state_ready;
 	}
 
 	return(true);
@@ -893,6 +911,23 @@ static bool asair_poll(data_t *data)
 	switch(data->int_value[asair_int_state])
 	{
 		case(asair_state_init):
+		{
+			if(asair_ready(data))
+			{
+				if(!asair_init_chip(data))
+				{
+					log("asair_init: unknown device type");
+					return(false);
+				}
+
+				data->int_value[asair_int_state] = asair_state_ready;
+				break;
+			}
+
+			break;
+		}
+
+		case(asair_state_ready):
 		{
 			if(!i2c_send_1_receive(data->slave, asair_cmd_get_status, 1, buffer))
 			{
