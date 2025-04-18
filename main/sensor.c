@@ -2114,13 +2114,6 @@ enum
 	htu21_delay_reset =						2,
 };
 
-typedef enum
-{
-	htu21_state_init,
-	htu21_state_temperature,
-	htu21_state_humidity,
-} htu21_state_t;
-
 enum
 {
 	htu21_int_state,
@@ -2128,6 +2121,15 @@ enum
 	htu21_int_value_raw_humidity,
 	htu21_int_size,
 };
+
+typedef enum
+{
+	htu21_state_init,
+	htu21_state_ready,
+	htu21_state_temperature,
+	htu21_state_humidity,
+} htu21_state_t;
+
 
 _Static_assert((unsigned int)htu21_int_size <= (unsigned int)data_int_value_size);
 
@@ -2153,45 +2155,22 @@ static uint8_t htu21_crc8(int length, const uint8_t *data)
 	return(crc);
 }
 
-static bool htu21_detect(data_t *data)
+static bool htu21_init_chip(data_t *data)
 {
+	uint8_t cmd[2];
 	uint8_t buffer[1];
 
-	util_sleep(10);
-
-	if(!i2c_send_1(data->slave, htu21_cmd_read_user))
+	if((!i2c_send_1_receive(data->slave, htu21_cmd_read_user, 1, &cmd[1])))
 		return(false);
 
-	if(!i2c_receive(data->slave, sizeof(buffer), buffer))
+	cmd[0] = htu21_cmd_write_user;
+	cmd[1] &= (htu21_user_reg_reserved | htu21_user_reg_bat_stat);
+	cmd[1] |= htu21_user_reg_rh11_temp11 | htu21_user_reg_otp_reload_disable;
+
+	if(!i2c_send(data->slave, sizeof(cmd), cmd))
 		return(false);
 
-	i2c_send_1(data->slave, htu21_cmd_reset);
-
-	return(true);
-}
-
-static bool htu21_init(data_t *data)
-{
-	uint8_t buffer[1];
-
-	util_sleep(10); // wait for reset to complete
-
-	if((!i2c_send_1(data->slave, htu21_cmd_read_user)))
-		return(false);
-
-	if(!i2c_receive(data->slave, sizeof(buffer), buffer))
-		return(false);
-
-	buffer[0] &= htu21_user_reg_reserved | htu21_user_reg_bat_stat;
-	buffer[0] |= htu21_user_reg_rh11_temp11 | htu21_user_reg_otp_reload_disable;
-
-	if(!i2c_send_2(data->slave, htu21_cmd_write_user, buffer[0]))
-		return(false);
-
-	if(!i2c_send_1(data->slave, htu21_cmd_read_user))
-		return(false);
-
-	if(!i2c_receive(data->slave, sizeof(buffer), buffer))
+	if(!i2c_send_1_receive(data->slave, htu21_cmd_read_user, sizeof(buffer), buffer))
 		return(false);
 
 	buffer[0] &= ~(htu21_user_reg_reserved | htu21_user_reg_bat_stat);
@@ -2199,10 +2178,53 @@ static bool htu21_init(data_t *data)
 	if(buffer[0] != (htu21_user_reg_rh11_temp11 | htu21_user_reg_otp_reload_disable))
 		return(false);
 
-	if(!i2c_send_1(data->slave, htu21_cmd_meas_temp_no_hold_master))
+	return(true);
+}
+
+static bool htu21_get_data(data_t *data, unsigned int *result)
+{
+	uint8_t	buffer[4];
+	uint8_t crc1, crc2;
+
+	if(!i2c_receive(data->slave, sizeof(buffer), buffer))
+	{
+		log("htu21_get_data: error\n");
+		return(false);
+	}
+
+	crc1 = buffer[2];
+	crc2 = htu21_crc8(2, &buffer[0]);
+
+	if(crc1 != crc2)
+	{
+		log("htu21_get_data: crc invalid\n");
+		return(false);
+	}
+
+	*result = (unsigned_16(buffer[0], buffer[1])) & ~htu21_status_mask;
+
+	return(true);
+}
+
+static bool htu21_detect(data_t *data)
+{
+	uint8_t buffer[1];
+
+	if(!i2c_send_1_receive(data->slave, htu21_cmd_read_user, sizeof(buffer), buffer))
 		return(false);
 
+	i2c_send_1(data->slave, htu21_cmd_reset);
+
 	data->int_value[htu21_int_state] = htu21_state_init;
+
+	return(true);
+}
+
+static bool htu21_init(data_t *data)
+{
+	if(htu21_init_chip(data))
+		data->int_value[htu21_int_state] = htu21_state_ready;
+
 	data->int_value[htu21_int_value_raw_temperature] = 0;
 	data->int_value[htu21_int_value_raw_humidity] = 0;
 
@@ -2211,49 +2233,39 @@ static bool htu21_init(data_t *data)
 
 static bool htu21_poll(data_t *data)
 {
-	uint8_t	buffer[4];
-	uint8_t crc1, crc2;
 	unsigned int result;
 	float temperature, humidity;
-
-	if(data->int_value[htu21_int_state] != htu21_state_init)
-	{
-		if(!i2c_receive(data->slave, sizeof(buffer), buffer))
-		{
-			log("htu21 periodic: error 1");
-			goto error;
-		}
-
-		crc1 = buffer[2];
-		crc2 = htu21_crc8(2, &buffer[0]);
-
-		if(crc1 != crc2)
-		{
-			log("htu21 periodic: crc invalid\n");
-			goto error;
-		}
-
-		result = unsigned_16(buffer[0], buffer[1]);
-		result &= ~htu21_status_mask;
-	}
-	else
-		result = 0;
 
 	switch(data->int_value[htu21_int_state])
 	{
 		case(htu21_state_init):
 		{
+			if(htu21_init_chip(data))
+				data->int_value[htu21_int_state] = htu21_state_ready;
+			return(true);
+		}
+
+		case(htu21_state_ready):
+		{
 			data->int_value[htu21_int_state] = htu21_state_temperature;
 			break;
 		}
+
 		case(htu21_state_temperature):
 		{
+			if(!htu21_get_data(data, &result))
+				break;
+
 			data->int_value[htu21_int_value_raw_temperature] = result;
 			data->int_value[htu21_int_state] = htu21_state_humidity;
 			break;
 		}
+
 		case(htu21_state_humidity):
 		{
+			if(!htu21_get_data(data, &result))
+				break;
+
 			data->int_value[htu21_int_value_raw_humidity] = result;
 			data->int_value[htu21_int_state] = htu21_state_temperature;
 
@@ -2275,10 +2287,9 @@ static bool htu21_poll(data_t *data)
 		}
 	}
 
-error:
 	if(!i2c_send_1(data->slave, (data->int_value[htu21_int_state] == htu21_state_temperature) ? htu21_cmd_meas_temp_no_hold_master : htu21_cmd_meas_hum_no_hold_master))
 	{
-		log("htu21 periodic: error 2");
+		log("htu21 periodic: error");
 		return(false);
 	}
 
