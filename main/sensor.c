@@ -130,9 +130,14 @@ static unsigned int unsigned_16(unsigned int msb, unsigned int lsb)
 	return(((msb & 0xff) << 8) | (lsb & 0xff));
 }
 
-static int signed_16(unsigned int msb, unsigned int lsb)
+static unsigned int unsigned_16_ptr_le(const uint8_t *ptr)
 {
-	int rv = ((msb & 0xff) << 8) | (lsb & 0xff);
+	return(((ptr[1] & 0xff) << 8) | (ptr[0] & 0xff));
+}
+
+static int signed_16_ptr_le(const uint8_t *ptr)
+{
+	int rv = ((ptr[1] & 0xff) << 8) | (ptr[0] & 0xff);
 
 	if(rv > (1 << 15))
 		rv = 0 - ((1 << 16) - rv);
@@ -1728,6 +1733,29 @@ enum
 	bmx280_reg_config_spi3w_en =		0b00000001,
 };
 
+enum
+{
+	bmx280_cal_base =						0x88,
+	bmx280_cal_0x88_0x89_dig_t1 =			0x88 - bmx280_cal_base,
+	bmx280_cal_0x8a_0x8b_dig_t2 =			0x8a - bmx280_cal_base,
+	bmx280_cal_0x8c_0x8d_dig_t3 =			0x8c - bmx280_cal_base,
+	bmx280_cal_0x8e_0x8f_dig_p1 =			0x8e - bmx280_cal_base,
+	bmx280_cal_0x90_0x91_dig_p2 =			0x90 - bmx280_cal_base,
+	bmx280_cal_0x92_0x93_dig_p3 =			0x92 - bmx280_cal_base,
+	bmx280_cal_0x94_0x95_dig_p4 =			0x94 - bmx280_cal_base,
+	bmx280_cal_0x96_0x97_dig_p5 =			0x96 - bmx280_cal_base,
+	bmx280_cal_0x98_0x99_dig_p6 =			0x98 - bmx280_cal_base,
+	bmx280_cal_0x9a_0x9b_dig_p7 =			0x9a - bmx280_cal_base,
+	bmx280_cal_0x9c_0x9d_dig_p8 =			0x9c - bmx280_cal_base,
+	bmx280_cal_0x9e_0x9f_dig_p9 =			0x9e - bmx280_cal_base,
+	bmx280_cal_0xa1_dig_h1 =				0xa1 - bmx280_cal_base,
+	bmx280_cal_0xe1_0xe2_dig_h2 =			0xe1 - bmx280_cal_base,
+	bmx280_cal_0xe3_dig_h3 =				0xe3 - bmx280_cal_base,
+	bmx280_cal_0xe4_0xe5_0xe6_dig_h4_h5 =	0xe4 - bmx280_cal_base,
+	bmx280_cal_0xe7_dig_h6 =				0xe7 - bmx280_cal_base,
+	bmx280_cal_size =						0xe8 - bmx280_cal_base,
+};
+
 typedef enum
 {
 	bmx280_state_init,
@@ -1765,146 +1793,39 @@ _Static_assert((unsigned int)bmx280_int_size <= (unsigned int)data_int_value_siz
 
 static bool bmx280_read_otp(data_t *data)
 {
-	uint8_t buffer[2];
+	uint8_t cal_data[bmx280_cal_size];
 	unsigned int e4, e5, e6;
 
-	if(!i2c_send_1_receive(data->slave, 0x88, sizeof(buffer), buffer))
+	if(!i2c_send_1_receive(data->slave, bmx280_cal_base, sizeof(cal_data), cal_data))
 	{
-		log("bmx280: error read otp 0x88");
+		log("bmx280: error read otp");
 		return(false);
 	}
-	data->int_value[bmx280_int_value_dig_T1] = unsigned_16(buffer[1], buffer[0]);
 
-	if(!i2c_send_1_receive(data->slave, 0x8a, sizeof(buffer), buffer))
-	{
-		log("bmx280: error read otp 0x8a");
-		return(false);
-	}
-	data->int_value[bmx280_int_value_dig_T2] = signed_16(buffer[1], buffer[0]);
-
-	if(!i2c_send_1_receive(data->slave, 0x8c, sizeof(buffer), buffer))
-	{
-		log("bmx280: error read otp 0x8c");
-		return(false);
-	}
-	data->int_value[bmx280_int_value_dig_T3] = signed_16(buffer[1], buffer[0]);
-
-	if(!i2c_send_1_receive(data->slave, 0x8e, sizeof(buffer), buffer))
-	{
-		log("bmx280: error read otp 0x8e");
-		return(false);
-	}
-	data->int_value[bmx280_int_value_dig_P1] = unsigned_16(buffer[1], buffer[0]);
-
-	if(!i2c_send_1_receive(data->slave, 0x90, sizeof(buffer), buffer))
-	{
-		log("bmx280: error read otp 0x90");
-		return(false);
-	}
-	data->int_value[bmx280_int_value_dig_P2] = signed_16(buffer[1], buffer[0]);
-
-	if(!i2c_send_1_receive(data->slave, 0x92, sizeof(buffer), buffer))
-	{
-		log("bmx280: error read otp 0x92");
-		return(false);
-	}
-	data->int_value[bmx280_int_value_dig_P3] = signed_16(buffer[1], buffer[0]);
-
-	if(!i2c_send_1_receive(data->slave, 0x94, sizeof(buffer), buffer))
-	{
-		log("bmx280: error read otp 0x94");
-		return(false);
-	}
-	data->int_value[bmx280_int_value_dig_P4] = signed_16(buffer[1], buffer[0]);
-
-	if(!i2c_send_1_receive(data->slave, 0x96, sizeof(buffer), buffer))
-	{
-		log("bmx280: error read otp 0x96");
-		return(false);
-	}
-	data->int_value[bmx280_int_value_dig_P5] = signed_16(buffer[1], buffer[0]);
-
-	if(!i2c_send_1_receive(data->slave, 0x98, sizeof(buffer), buffer))
-	{
-		log("bmx280: error read otp 0x98");
-		return(false);
-	}
-	data->int_value[bmx280_int_value_dig_P6] = signed_16(buffer[1], buffer[0]);
-
-	if(!i2c_send_1_receive(data->slave, 0x9a, sizeof(buffer), buffer))
-	{
-		log("bmx280: error read otp 0x9a");
-		return(false);
-	}
-	data->int_value[bmx280_int_value_dig_P7] = signed_16(buffer[1], buffer[0]);
-
-	if(!i2c_send_1_receive(data->slave, 0x9c, sizeof(buffer), buffer))
-	{
-		log("bmx280: error read otp 0x9c");
-		return(false);
-	}
-	data->int_value[bmx280_int_value_dig_P8] = signed_16(buffer[1], buffer[0]);
-
-	if(!i2c_send_1_receive(data->slave, 0x9e, sizeof(buffer), buffer))
-	{
-		log("bmx280: error read otp 0x9e");
-		return(false);
-	}
-	data->int_value[bmx280_int_value_dig_P8] = signed_16(buffer[1], buffer[0]);
+	data->int_value[bmx280_int_value_dig_T1] = unsigned_16_ptr_le(&cal_data[bmx280_cal_0x88_0x89_dig_t1]);
+	data->int_value[bmx280_int_value_dig_T2] = signed_16_ptr_le(&cal_data[bmx280_cal_0x8a_0x8b_dig_t2]);
+	data->int_value[bmx280_int_value_dig_T3] = signed_16_ptr_le(&cal_data[bmx280_cal_0x8c_0x8d_dig_t3]);
+	data->int_value[bmx280_int_value_dig_P1] = unsigned_16_ptr_le(&cal_data[bmx280_cal_0x8e_0x8f_dig_p1]);
+	data->int_value[bmx280_int_value_dig_P2] = signed_16_ptr_le(&cal_data[bmx280_cal_0x90_0x91_dig_p2]);
+	data->int_value[bmx280_int_value_dig_P3] = signed_16_ptr_le(&cal_data[bmx280_cal_0x92_0x93_dig_p3]);
+	data->int_value[bmx280_int_value_dig_P4] = signed_16_ptr_le(&cal_data[bmx280_cal_0x94_0x95_dig_p4]);
+	data->int_value[bmx280_int_value_dig_P5] = signed_16_ptr_le(&cal_data[bmx280_cal_0x96_0x97_dig_p5]);
+	data->int_value[bmx280_int_value_dig_P6] = signed_16_ptr_le(&cal_data[bmx280_cal_0x98_0x99_dig_p6]);
+	data->int_value[bmx280_int_value_dig_P7] = signed_16_ptr_le(&cal_data[bmx280_cal_0x9a_0x9b_dig_p7]);
+	data->int_value[bmx280_int_value_dig_P8] = signed_16_ptr_le(&cal_data[bmx280_cal_0x9c_0x9d_dig_p8]);
+	data->int_value[bmx280_int_value_dig_P8] = signed_16_ptr_le(&cal_data[bmx280_cal_0x9e_0x9f_dig_p9]);
 
 	if(data->int_value[bmx280_int_value_type] == bmx280_reg_id_bme280)
 	{
-		if(!i2c_send_1_receive(data->slave, 0xa1, 1, buffer))
-		{
-			log("bmx280: error read otp 0xa1");
-			return(false);
-		}
-		data->int_value[bmx280_int_value_dig_H1] = unsigned_8(buffer[0]);
-
-		if(!i2c_send_1_receive(data->slave, 0xe1, sizeof(buffer), buffer))
-		{
-			log("bmx280: error read otp 0xe1");
-			return(false);
-		}
-		data->int_value[bmx280_int_value_dig_H2] = signed_16(buffer[1], buffer[0]);
-
-		if(!i2c_send_1_receive(data->slave, 0xe3, 1, buffer))
-		{
-			log("bmx280: error read otp 0xe3");
-			return(false);
-		}
-		data->int_value[bmx280_int_value_dig_H3] = unsigned_8(buffer[0]);
-
-		if(!i2c_send_1_receive(data->slave, 0xe4, 1, buffer))
-		{
-			log("bmx280: error read otp 0xe4");
-			return(false);
-		}
-		e4 = unsigned_8(buffer[0]);
-
-		if(!i2c_send_1_receive(data->slave, 0xe5, 1, buffer))
-		{
-			log("bmx280: error read otp 0xe5");
-			return(false);
-		}
-		e5 = unsigned_8(buffer[0]);
-
-		if(!i2c_send_1_receive(data->slave, 0xe6, 1, buffer))
-		{
-			log("bmx280: error read otp 0xe6");
-			return(false);
-		}
-		e6 = unsigned_8(buffer[0]);
-
+		data->int_value[bmx280_int_value_dig_H1] = cal_data[bmx280_cal_0xa1_dig_h1];
+		data->int_value[bmx280_int_value_dig_H2] = signed_16_ptr_le(&cal_data[bmx280_cal_0xe1_0xe2_dig_h2]);
+		data->int_value[bmx280_int_value_dig_H3] = cal_data[bmx280_cal_0xe3_dig_h3];
+		e4 = cal_data[bmx280_cal_0xe4_0xe5_0xe6_dig_h4_h5 + 0];
+		e5 = cal_data[bmx280_cal_0xe4_0xe5_0xe6_dig_h4_h5 + 1];
+		e6 = cal_data[bmx280_cal_0xe4_0xe5_0xe6_dig_h4_h5 + 2];
 		data->int_value[bmx280_int_value_dig_H4] = ((e4 & 0xff) << 4) | ((e5 & 0x0f) >> 0);
 		data->int_value[bmx280_int_value_dig_H5] = ((e6 & 0xff) << 4) | ((e5 & 0xf0) >> 4);
-
-		if(!i2c_send_1_receive(data->slave, 0xe7, 1, buffer))
-		{
-			log("bmx280: error read otp 0xe7");
-			return(false);
-		}
-		data->int_value[bmx280_int_value_dig_H6] = unsigned_8(buffer[0]);
+		data->int_value[bmx280_int_value_dig_H6] = cal_data[bmx280_cal_0xe7_dig_h6];
 	}
 
 	return(true);
