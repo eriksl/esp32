@@ -14,6 +14,7 @@ typedef enum
 	sensor_sht3x,
 	sensor_bmx280,
 	sensor_htu21,
+	sensor_veml7700,
 	sensor_size,
 	sensor_error = sensor_size,
 	sensor_none = sensor_size,

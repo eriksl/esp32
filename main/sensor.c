@@ -2267,6 +2267,192 @@ static bool htu21_poll(data_t *data)
 	return(true);
 }
 
+enum
+{
+	veml7700_reg_conf =		0x00,
+	veml7700_reg_als_wh =	0x01,
+	veml7700_reg_als_wl =	0x02,
+	veml7700_reg_powsave =	0x03,
+	veml7700_reg_als =		0x04,
+	veml7700_reg_white =	0x05,
+	veml7700_reg_als_int =	0x06,
+	veml7700_reg_id =		0x07,
+};
+
+enum
+{
+	veml7700_reg_id_id_1 =	0x81,
+	veml7700_reg_id_id_2 =	0xc4,
+};
+
+enum
+{
+	veml7700_conf_reserved1 =		0b000 << 13,
+	veml7700_conf_als_gain_1 =		0b00 << 11,
+	veml7700_conf_als_gain_2 =		0b01 << 11,
+	veml7700_conf_als_gain_1_8 =	0b10 << 11,
+	veml7700_conf_als_gain_1_4 =	0b11 << 11,
+	veml7700_conf_reserved2 =		0b1 << 10,
+	veml7700_conf_als_it_25 =		0b1100 << 6,
+	veml7700_conf_als_it_50 =		0b1000 << 6,
+	veml7700_conf_als_it_100 =		0b0000 << 6,
+	veml7700_conf_als_it_200 =		0b0001 << 6,
+	veml7700_conf_als_it_400 =		0b0010 << 6,
+	veml7700_conf_als_it_800 =		0b0011 << 6,
+	veml7700_conf_als_pers_1 =		0b00 << 4,
+	veml7700_conf_als_pers_2 =		0b01 << 4,
+	veml7700_conf_als_pers_4 =		0b10 << 4,
+	veml7700_conf_als_pers_8 =		0b11 << 4,
+	veml7700_conf_reserved3 =		0b00 << 2,
+	veml7700_conf_als_int_en =		0b1 << 1,
+	veml7700_conf_als_sd =			0b1 << 0,
+};
+
+enum { veml7700_autoranging_data_size = 6 };
+
+static const device_autoranging_data_t veml7700_autoranging_data[veml7700_autoranging_data_size] =
+{
+	{{	veml7700_conf_als_it_800,	veml7700_conf_als_gain_2 },		{ 0,	32768	}, 0, { 3600,	0 }},
+	{{	veml7700_conf_als_it_800,	veml7700_conf_als_gain_1_8 },	{ 100,	32768	}, 0, { 57600,	0 }},
+	{{	veml7700_conf_als_it_200,	veml7700_conf_als_gain_2 },		{ 100,	32768	}, 0, { 14400,	0 }},
+	{{	veml7700_conf_als_it_200,	veml7700_conf_als_gain_1_8 },	{ 100,	32768	}, 0, { 230400,	0 }},
+	{{	veml7700_conf_als_it_25,	veml7700_conf_als_gain_2 },		{ 100,	32768	}, 0, { 115200,	0 }},
+	{{	veml7700_conf_als_it_25,	veml7700_conf_als_gain_1_8 },	{ 100,	65536	}, 0, { 1843200,0 }},
+};
+
+enum
+{
+	veml7700_int_scaling,
+	veml7700_int_skip_next,
+	veml7700_int_value_raw_als,
+	veml7700_int_value_raw_white,
+	veml7700_int_size,
+};
+
+_Static_assert((unsigned int)veml7700_int_size <= (unsigned int)data_int_value_size);
+
+static bool veml7700_start_measuring(data_t *data)
+{
+	uint8_t buffer[3];
+	unsigned int opcode;
+
+	opcode =	veml7700_autoranging_data[data->int_value[veml7700_int_scaling]].data[0];
+	opcode |=	veml7700_autoranging_data[data->int_value[veml7700_int_scaling]].data[1];
+
+	buffer[0] = veml7700_reg_conf;
+	buffer[1] = (opcode & 0x00ff) >> 0;
+	buffer[2] = (opcode & 0xff00) >> 8;
+
+	if(!i2c_send(data->slave, sizeof(buffer), buffer))
+		return(false);
+
+	return(true);
+}
+
+static bool veml7700_detect(data_t *data)
+{
+	uint8_t buffer[2];
+
+	if(!i2c_send_1_receive(data->slave, veml7700_reg_id, sizeof(buffer), buffer))
+		return(false);
+
+	if((buffer[0] != veml7700_reg_id_id_1) || (buffer[1] != veml7700_reg_id_id_2))
+		return(false);
+
+	return(true);
+}
+
+static bool veml7700_init(data_t *data)
+{
+	data->int_value[veml7700_int_scaling] = veml7700_autoranging_data_size - 1;
+	data->int_value[veml7700_int_skip_next] = 0;
+
+	if(!veml7700_start_measuring(data))
+	{
+		log("veml7700 init: error");
+		return(false);
+	}
+
+	return(true);
+}
+
+static bool veml7700_poll(data_t *data)
+{
+	uint8_t buffer[2];
+	unsigned int scale_down_threshold, scale_up_threshold;
+	uint64_t als, factor_1000000, offset_1000000;
+	float raw_lux;
+
+	scale_down_threshold =	veml7700_autoranging_data[data->int_value[veml7700_int_scaling]].threshold.down;
+	scale_up_threshold =	veml7700_autoranging_data[data->int_value[veml7700_int_scaling]].threshold.up;
+	factor_1000000 =		veml7700_autoranging_data[data->int_value[veml7700_int_scaling]].correction.factor;
+	offset_1000000 =		veml7700_autoranging_data[data->int_value[veml7700_int_scaling]].correction.offset;
+
+	if(!i2c_send_1_receive(data->slave, veml7700_reg_white, sizeof(buffer), buffer))
+	{
+		log("veml7700: poll error 1");
+		return(false);
+	}
+
+	data->int_value[veml7700_int_value_raw_white] = unsigned_16_le(buffer);
+
+	if(!i2c_send_1_receive(data->slave, veml7700_reg_als, sizeof(buffer), buffer))
+	{
+		log("veml7700: poll error 2");
+		return(false);
+	}
+
+	data->int_value[veml7700_int_value_raw_als] = unsigned_16_le(buffer);
+
+	if(data->int_value[veml7700_int_skip_next])
+	{
+		data->int_value[veml7700_int_skip_next] = 0;
+		return(true);
+	}
+
+	als = data->int_value[veml7700_int_value_raw_als];
+
+	if((als < scale_down_threshold) && (data->int_value[veml7700_int_scaling] > 0))
+	{
+		data->int_value[veml7700_int_scaling]--;
+		data->int_value[veml7700_int_skip_next] = 1;
+
+		if(!veml7700_start_measuring(data))
+		{
+			log("veml7700: poll error 3");
+			return(false);
+		}
+
+		return(true);
+	}
+
+	if((als >= scale_up_threshold) && ((data->int_value[veml7700_int_scaling] + 1) < veml7700_autoranging_data_size))
+	{
+		data->int_value[veml7700_int_scaling]++;
+		data->int_value[veml7700_int_skip_next] = 1;
+
+		if(!veml7700_start_measuring(data))
+		{
+			log("veml7700: poll error 4");
+			return(false);
+		}
+
+		return(true);
+	}
+
+	raw_lux = ((als * factor_1000000) + offset_1000000) / 1000000.0f;
+
+	data->values[sensor_type_visible_light].value =
+			(raw_lux * raw_lux * raw_lux * raw_lux * 6.0135e-13f)
+			- (raw_lux * raw_lux * raw_lux * 9.3924e-09f)
+			+ (raw_lux * raw_lux * 8.1488e-05f)
+			+ (raw_lux * 1.0023e+00f);
+
+	data->values[sensor_type_visible_light].stamp = time((time_t *)0);
+
+	return(true);
+}
+
 static const info_t info[sensor_size] =
 {
 	[sensor_bh1750] =
@@ -2389,6 +2575,17 @@ static const info_t info[sensor_size] =
 		.detect_fn = htu21_detect,
 		.init_fn = htu21_init,
 		.poll_fn = htu21_poll,
+	},
+	[sensor_veml7700] =
+	{
+		.name = "veml7700",
+		.id = sensor_veml7700,
+		.address = 0x10,
+		.type = (1 << sensor_type_visible_light),
+		.precision = 2,
+		.detect_fn = veml7700_detect,
+		.init_fn = veml7700_init,
+		.poll_fn = veml7700_poll,
 	},
 };
 
