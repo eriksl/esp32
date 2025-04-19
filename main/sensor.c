@@ -1221,10 +1221,8 @@ static bool tsl2561_poll(data_t *data)
 	ch0 = (buffer[1] << 8) | buffer[0];
 	ch1 = (buffer[3] << 8) | buffer[1];
 
-	if((ch0 == 0) && (ch1 == 0))
+	if((ch0 == 0) && (ch1 == 0)) // initial overflow, scale up, not down
 	{
-		log("sensor: tsl2561: malfunction");
-
 		data->int_value[tsl2561_int_scaling] = tsl2561_autoranging_data_size - 1;
 		data->int_value[tsl2561_int_scaling_up]++;
 
