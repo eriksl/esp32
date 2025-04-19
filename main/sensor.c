@@ -999,7 +999,7 @@ static bool asair_poll(data_t *data)
 				return(false);
 			}
 
-            data->int_value[asair_int_valid] = 0;
+			data->int_value[asair_int_valid] = 0;
 			data->int_value[asair_int_state] = asair_state_start_measure;
 
 			break;
@@ -1054,7 +1054,7 @@ static bool asair_poll(data_t *data)
 				return(false);
 			}
 
-            data->int_value[asair_int_raw_value_temp] =	((buffer[3] & 0x0f) << 16) | (buffer[4] << 8) | buffer[5];
+			data->int_value[asair_int_raw_value_temp] =	((buffer[3] & 0x0f) << 16) | (buffer[4] << 8) | buffer[5];
 			data->int_value[asair_int_raw_value_hum] =	((buffer[1] << 16) | (buffer[2] << 8) | (buffer[3] & 0xf0)) >> 4;
 
 			data->values[sensor_type_temperature].value = ((200.f * data->int_value[asair_int_raw_value_temp]) / 1048576.f) - 50;
@@ -1063,7 +1063,7 @@ static bool asair_poll(data_t *data)
 			data->values[sensor_type_humidity].value = data->int_value[asair_int_raw_value_hum] * 100.f / 1048576.f;
 			data->values[sensor_type_humidity].stamp = time((time_t *)0);
 
-            data->int_value[asair_int_valid] = 1;
+			data->int_value[asair_int_valid] = 1;
 			data->int_value[asair_int_state] = asair_state_start_measure;
 
 			break;
@@ -1996,8 +1996,8 @@ static bool bmx280_poll(data_t *data)
 			adc_T = ((buffer[3] << 16) | (buffer[4] << 8) | (buffer[5] << 0)) >> 4;
 			adc_H = (					 (buffer[6] << 8) | (buffer[7] << 0)) >> 0;
 
-			var1 = ((adc_T / 16384.0f)  - (data->int_value[bmx280_int_value_dig_T1] / 1024.0f)) * data->int_value[bmx280_int_value_dig_T2];
-			var2 = ((adc_T / 131072.0f) - (data->int_value[bmx280_int_value_dig_T1] / 8192.0f)) * ((adc_T / 131072.0f) - (data->int_value[bmx280_int_value_dig_T1] / 8192.0f)) * data->int_value[bmx280_int_value_dig_T3];
+			var1 = ((adc_T / 16384.0f)	- (data->int_value[bmx280_int_value_dig_T1] / 1024.0f)) * data->int_value[bmx280_int_value_dig_T2];
+			var2 = ((adc_T / 131072.0f)	- (data->int_value[bmx280_int_value_dig_T1] / 8192.0f)) * ((adc_T / 131072.0f) - (data->int_value[bmx280_int_value_dig_T1] / 8192.0f)) * data->int_value[bmx280_int_value_dig_T3];
 
 			data->values[sensor_type_temperature].value = (var1 + var2) / 5120.0f;
 			data->values[sensor_type_temperature].stamp = time((time_t *)0);
@@ -2029,8 +2029,8 @@ static bool bmx280_poll(data_t *data)
 
 			if(data->int_value[bmx280_int_value_type] == bmx280_reg_id_bme280)
 			{
-				var1 = (adc_T / 16384.0f  - (data->int_value[bmx280_int_value_dig_T1] / 1024.0f)) * data->int_value[bmx280_int_value_dig_T2];
-				var2 = (adc_T / 131072.0f - (data->int_value[bmx280_int_value_dig_T1] / 8192.0f)) * ((adc_T / 131072.0f) - (data->int_value[bmx280_int_value_dig_T1] / 8192.0f)) * data->int_value[bmx280_int_value_dig_T3];
+				var1 = (adc_T / 16384.0f	- (data->int_value[bmx280_int_value_dig_T1] / 1024.0f)) * data->int_value[bmx280_int_value_dig_T2];
+				var2 = (adc_T / 131072.0f	- (data->int_value[bmx280_int_value_dig_T1] / 8192.0f)) * ((adc_T / 131072.0f) - (data->int_value[bmx280_int_value_dig_T1] / 8192.0f)) * data->int_value[bmx280_int_value_dig_T3];
 				t_fine_2 = var1 + var2 - 76800;
 
 				humidity = (adc_H - ((data->int_value[bmx280_int_value_dig_H4] * 64.0f) + (data->int_value[bmx280_int_value_dig_H5] / 16384.0f) * t_fine_2)) * (data->int_value[bmx280_int_value_dig_H2] / 65536.0f * (1.0f + data->int_value[bmx280_int_value_dig_H6] / 67108864.0f * t_fine_2 * (1.0f + data->int_value[bmx280_int_value_dig_H3] / 67108864.0f * t_fine_2)));
