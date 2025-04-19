@@ -2407,8 +2407,6 @@ static void run_sensors(void *parameters)
 				continue;
 			}
 
-			stat_sensors_confirmed[module]++;
-
 			assert(infoptr->init_fn);
 
 			if(!infoptr->init_fn(new_data))
@@ -2418,6 +2416,8 @@ static void run_sensors(void *parameters)
 				free(new_data);
 				continue;
 			}
+
+			stat_sensors_confirmed[module]++;
 
 			data_mutex_take();
 
@@ -2437,6 +2437,9 @@ static void run_sensors(void *parameters)
 		}
 	}
 
+	if(stat_sensors_confirmed[module] == 0)
+		vTaskDelete(0);
+
 	for(;;)
 	{
 		stat_poll_run[module]++;
@@ -2455,7 +2458,7 @@ static void run_sensors(void *parameters)
 		util_sleep(1000);
 	}
 
-	util_abort("sensor: vTaskSuspend returned");
+	util_abort("sensor: poll task returned");
 }
 
 void sensor_init(void)
