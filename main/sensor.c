@@ -2094,6 +2094,8 @@ enum
 	htu21_int_size,
 };
 
+_Static_assert((unsigned int)htu21_int_size <= (unsigned int)data_int_value_size);
+
 typedef enum
 {
 	htu21_state_init,
@@ -2101,9 +2103,6 @@ typedef enum
 	htu21_state_temperature,
 	htu21_state_humidity,
 } htu21_state_t;
-
-
-_Static_assert((unsigned int)htu21_int_size <= (unsigned int)data_int_value_size);
 
 static uint8_t htu21_crc8(int length, const uint8_t *data)
 {
