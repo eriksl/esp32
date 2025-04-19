@@ -530,7 +530,15 @@ static bool lm75_poll(data_t *data)
 
 enum
 {
-	opt3001_int_raw_value_0 = 0,
+	opt3001_state_init,
+	opt3001_state_measuring,
+	opt3001_state_finished,
+};
+
+enum
+{
+	opt3001_int_state = 0,
+	opt3001_int_raw_value_0,
 	opt3001_int_raw_value_1,
 	opt3001_int_size,
 };
@@ -573,27 +581,44 @@ enum
 	opt3001_conf_conv_mode_shut =	0b0000000000000000,
 	opt3001_conf_conv_mode_single =	0b0000001000000000,
 	opt3001_conf_conv_mode_cont =	0b0000011000000000,
-} opt3001_conf;
+};
+
+enum
+{
+	opt3001_config = opt3001_conf_range_auto | opt3001_conf_conv_time_800 | opt3001_conf_conv_mode_single,
+};
+
+static bool opt3001_start_measurement(data_t *data)
+{
+	uint8_t buffer[3];
+
+	buffer[0] = opt3001_reg_conf;
+	buffer[1] = (opt3001_config & 0xff00) >> 8;
+	buffer[2] = (opt3001_config & 0x00ff) >> 0;
+
+	if(!i2c_send(data->slave, sizeof(buffer), buffer))
+		return(false);
+
+	if(!i2c_send_1_receive(data->slave, opt3001_reg_conf, 2, buffer))
+		return(false);
+
+	return(true);
+}
 
 static bool opt3001_detect(data_t *data)
 {
-	uint8_t buffer[4];
-	unsigned int id;
+	uint8_t buffer[2];
 
-	if(!i2c_send_1_receive(data->slave, opt3001_reg_id_manuf, 2, buffer))
+	if(!i2c_send_1_receive(data->slave, opt3001_reg_id_manuf, sizeof(buffer), buffer))
 		return(false);
 
-	id = (buffer[0] << 8) | (buffer[1] << 0);
-
-	if(id != opt3001_id_manuf_ti)
+	if(unsigned_16_be(buffer) != opt3001_id_manuf_ti)
 		return(false);
 
-	if(!i2c_send_1_receive(data->slave, opt3001_reg_id_dev, 2, buffer))
+	if(!i2c_send_1_receive(data->slave, opt3001_reg_id_dev, sizeof(buffer), buffer))
 		return(false);
 
-	id = (buffer[0] << 8) | (buffer[1] << 0);
-
-	if(id != opt3001_id_dev_opt3001)
+	if(unsigned_16_be(buffer) != opt3001_id_dev_opt3001)
 		return(false);
 
 	return(true);
@@ -601,24 +626,27 @@ static bool opt3001_detect(data_t *data)
 
 static bool opt3001_init(data_t *data)
 {
-	uint8_t buffer[4];
-	static const unsigned int config = opt3001_conf_range_auto | opt3001_conf_conv_time_800 | opt3001_conf_conv_mode_cont;
+	uint8_t buffer[2];
 	unsigned int read_config;
 
-	buffer[0] = opt3001_reg_conf;
-	buffer[1] = (config & 0xff00) >> 8;
-	buffer[2] = (config & 0x00ff) >> 0;
+	data->int_value[opt3001_int_state] = opt3001_state_init;
 
-	if(!i2c_send(data->slave, 3, buffer))
+	if(!opt3001_start_measurement(data))
+	{
+		log("opt3001: init error 1");
+		return(false);
+	}
+
+	if(!i2c_send_1_receive(data->slave, opt3001_reg_conf, sizeof(buffer), buffer))
 		return(false);
 
-	if(!i2c_send_1_receive(data->slave, opt3001_reg_conf, 2, buffer))
-		return(false);
+	read_config = unsigned_16_be(buffer) & (opt3001_conf_mask_exp | opt3001_conf_conv_mode | opt3001_conf_conv_time | opt3001_conf_range);
 
-	read_config = ((buffer[0] << 8) | (buffer[1] << 0)) & (opt3001_conf_mask_exp | opt3001_conf_conv_mode | opt3001_conf_conv_time | opt3001_conf_range);
-
-	if(read_config != config)
+	if(read_config != opt3001_config)
+	{
+		log("opt3001: init error 2");
 		return(false);
+	}
 
 	return(true);
 }
@@ -628,36 +656,66 @@ static bool opt3001_poll(data_t *data)
 	uint8_t buffer[2];
 	unsigned int config, exponent, mantissa;
 
-	if(!i2c_send_1_receive(data->slave, opt3001_reg_conf, 2, buffer))
+	switch(data->int_value[opt3001_int_state])
 	{
-		log("opt3001 poll: error 1");
-		return(false);
+		case(opt3001_state_init):
+		{
+			data->int_value[opt3001_int_state] = opt3001_state_finished;
+
+			break;
+		}
+
+		case(opt3001_state_measuring):
+		{
+			if(!i2c_send_1_receive(data->slave, opt3001_reg_conf, sizeof(buffer), buffer))
+			{
+				log("opt3001 poll: error 1");
+				return(false);
+			}
+
+			config = unsigned_16_be(buffer);
+
+			if(!(config & opt3001_conf_flag_ready))
+				return(true);
+
+			data->int_value[opt3001_int_state] = opt3001_state_finished;
+
+			if(config & opt3001_conf_flag_ovf)
+			{
+				log("opt3001 poll: overflow");
+				return(true);
+			}
+
+			if(!i2c_send_1_receive(data->slave, opt3001_reg_result, sizeof(buffer), buffer))
+			{
+				log("opt3001 poll: error 2");
+				return(false);
+			}
+
+			exponent = (buffer[0] & 0xf0) >> 4;
+			mantissa = ((buffer[0] & 0x0f) << 8) | buffer[1];
+
+			data->int_value[opt3001_int_raw_value_0] = exponent;
+			data->int_value[opt3001_int_raw_value_1] = mantissa;
+			data->values[sensor_type_visible_light].value = 0.01f * (float)(1 << exponent) * (float)mantissa;
+			data->values[sensor_type_visible_light].stamp = time((time_t *)0);
+
+			break;
+		}
+
+		case(opt3001_state_finished):
+		{
+			if(!opt3001_start_measurement(data))
+			{
+				log("opt3001: poll error 3");
+				return(false);
+			}
+
+			data->int_value[opt3001_int_state] = opt3001_state_measuring;
+
+			break;
+		}
 	}
-
-	config = (buffer[0] << 8) | (buffer[1] << 0);
-
-	if(!(config & opt3001_conf_flag_ready))
-		return(true);
-
-	if(config & opt3001_conf_flag_ovf)
-	{
-		log("opt3001 poll: overflow");
-		return(true);
-	}
-
-	if(!i2c_send_1_receive(data->slave, opt3001_reg_result, 2, buffer))
-	{
-		log("opt3001 poll: error 2");
-		return(false);
-	}
-
-	exponent = (buffer[0] & 0xf0) >> 4;
-	mantissa = ((buffer[0] & 0x0f) << 8) | buffer[1];
-
-	data->int_value[opt3001_int_raw_value_0] = exponent;
-	data->int_value[opt3001_int_raw_value_1] = mantissa;
-	data->values[sensor_type_visible_light].value = 0.01F * (float)(1 << exponent) * (float)mantissa;
-	data->values[sensor_type_visible_light].stamp = time((time_t *)0);
 
 	return(true);
 }
