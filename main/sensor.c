@@ -42,7 +42,7 @@ typedef struct info_T
 	unsigned int address;
 	sensor_type_t type; // bitmask!
 	unsigned int precision;
-	bool (*const detect_fn)(data_t *);
+	bool (*const detect_fn)(i2c_slave_t);
 	bool (*const init_fn)(data_t *);
 	bool (*const poll_fn)(data_t *);
 } info_t;
@@ -209,11 +209,11 @@ static bool bh1750_start_measuring(data_t *data)
 	return(true);
 }
 
-static bool bh1750_detect(data_t *data)
+static bool bh1750_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[8];
 
-	if(!i2c_receive(data->slave, sizeof(buffer), buffer))
+	if(!i2c_receive(slave, sizeof(buffer), buffer))
 		return(false);
 
 	if((buffer[2] != 0xff) || (buffer[3] != 0xff) || (buffer[4] != 0xff) ||
@@ -348,23 +348,23 @@ enum
 	tmp75_probe_conf_mask =	0b10000000,
 };
 
-static bool tmp75_detect(data_t *data)
+static bool tmp75_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[2];
 
-	if(!i2c_send_1_receive(data->slave, tmp75_reg_conf, 2, buffer))
+	if(!i2c_send_1_receive(slave, tmp75_reg_conf, 2, buffer))
 		return(false);
 
 	if((buffer[0] & tmp75_probe_conf_mask) != tmp75_probe_conf)
 		return(false);
 
-	if(!i2c_send_1_receive(data->slave, tmp75_reg_tlow, 2, buffer))
+	if(!i2c_send_1_receive(slave, tmp75_reg_tlow, 2, buffer))
 		return(false);
 
 	if((buffer[0] != tmp75_probe_tl_h) || (buffer[1] != tmp75_probe_tl_l))
 		return(false);
 
-	if(!i2c_send_1_receive(data->slave, tmp75_reg_thigh, 2, buffer))
+	if(!i2c_send_1_receive(slave, tmp75_reg_thigh, 2, buffer))
 		return(false);
 
 	if((buffer[0] != tmp75_probe_th_h) || (buffer[1] != tmp75_probe_th_l))
@@ -372,19 +372,19 @@ static bool tmp75_detect(data_t *data)
 
 	log("tmp75: ignore 5 lines of i2c bus errors following this");
 
-	if(i2c_send_1(data->slave, tmp75_probe_04))
+	if(i2c_send_1(slave, tmp75_probe_04))
 		return(false);
 
-	if(i2c_send_1(data->slave, tmp75_probe_a1))
+	if(i2c_send_1(slave, tmp75_probe_a1))
 		return(false);
 
-	if(i2c_send_1(data->slave, tmp75_probe_a2))
+	if(i2c_send_1(slave, tmp75_probe_a2))
 		return(false);
 
-	if(i2c_send_1(data->slave, tmp75_probe_aa))
+	if(i2c_send_1(slave, tmp75_probe_aa))
 		return(false);
 
-	if(i2c_send_1(data->slave, tmp75_probe_ac))
+	if(i2c_send_1(slave, tmp75_probe_ac))
 		return(false);
 
 	log("tmp75: end of spurious i2c bus errors");
@@ -461,7 +461,7 @@ enum
 	lm75_probe_conf_mask =		0b10011111,
 };
 
-static bool lm75_detect(data_t *data)
+static bool lm75_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[2];
 	i2c_module_t module;
@@ -469,21 +469,21 @@ static bool lm75_detect(data_t *data)
 	unsigned int address;
 	const char *name;
 
-	i2c_get_slave_info(data->slave, &module, &bus, &address, &name);
+	i2c_get_slave_info(slave, &module, &bus, &address, &name);
 
-	if(!i2c_send_1_receive(data->slave, lm75_reg_conf, 2, buffer))
+	if(!i2c_send_1_receive(slave, lm75_reg_conf, 2, buffer))
 		return(false);
 
 	if(((buffer[0] & lm75_probe_conf_mask) != lm75_probe_conf))
 		return(false);
 
-	if(!i2c_send_1_receive(data->slave, lm75_reg_thyst, 2, buffer))
+	if(!i2c_send_1_receive(slave, lm75_reg_thyst, 2, buffer))
 		return(false);
 
 	if((buffer[0] != lm75_probe_thyst_h) || (buffer[1] != lm75_probe_thyst_l))
 		return(false);
 
-	if(!i2c_send_1_receive(data->slave, lm75_reg_tos, 2, buffer))
+	if(!i2c_send_1_receive(slave, lm75_reg_tos, 2, buffer))
 		return(false);
 
 	if(((buffer[0] != lm75_probe_tos_1_h) || (buffer[1] != lm75_probe_tos_1_l)) && ((buffer[0] != lm75_probe_tos_2_h) || (buffer[1] != lm75_probe_tos_2_l)))
@@ -605,17 +605,17 @@ static bool opt3001_start_measurement(data_t *data)
 	return(true);
 }
 
-static bool opt3001_detect(data_t *data)
+static bool opt3001_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[2];
 
-	if(!i2c_send_1_receive(data->slave, opt3001_reg_id_manuf, sizeof(buffer), buffer))
+	if(!i2c_send_1_receive(slave, opt3001_reg_id_manuf, sizeof(buffer), buffer))
 		return(false);
 
 	if(unsigned_16_be(buffer) != opt3001_id_manuf_ti)
 		return(false);
 
-	if(!i2c_send_1_receive(data->slave, opt3001_reg_id_dev, sizeof(buffer), buffer))
+	if(!i2c_send_1_receive(slave, opt3001_reg_id_dev, sizeof(buffer), buffer))
 		return(false);
 
 	if(unsigned_16_be(buffer) != opt3001_id_dev_opt3001)
@@ -761,35 +761,35 @@ enum
 	max44009_probe_thresh_timer =	0xff,
 };
 
-static bool max44009_detect(data_t *data)
+static bool max44009_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[2];
 
-	if(!i2c_send_1_receive(data->slave, max44009_reg_ints, 2, buffer))
+	if(!i2c_send_1_receive(slave, max44009_reg_ints, 2, buffer))
 		return(false);
 
 	if((buffer[0] != max44009_probe_ints) || (buffer[1] != max44009_probe_ints))
 		return(false);
 
-	if(!i2c_send_1_receive(data->slave, max44009_reg_inte, 2, buffer))
+	if(!i2c_send_1_receive(slave, max44009_reg_inte, 2, buffer))
 		return(false);
 
 	if((buffer[0] != max44009_probe_inte) || (buffer[1] != max44009_probe_inte))
 		return(false);
 
-	if(!i2c_send_1_receive(data->slave, max44009_reg_thresh_msb, 2, buffer))
+	if(!i2c_send_1_receive(slave, max44009_reg_thresh_msb, 2, buffer))
 		return(false);
 
 	if((buffer[0] != max44009_probe_thresh_msb) || (buffer[1] != max44009_probe_thresh_msb))
 		return(false);
 
-	if(!i2c_send_1_receive(data->slave, max44009_reg_thresh_lsb, 2, buffer))
+	if(!i2c_send_1_receive(slave, max44009_reg_thresh_lsb, 2, buffer))
 		return(false);
 
 	if((buffer[0] != max44009_probe_thresh_lsb) || (buffer[1] != max44009_probe_thresh_lsb))
 		return(false);
 
-	if(!i2c_send_1_receive(data->slave, max44009_reg_thresh_timer, sizeof(buffer), buffer))
+	if(!i2c_send_1_receive(slave, max44009_reg_thresh_timer, sizeof(buffer), buffer))
 		return(false);
 
 	if((buffer[0] != max44009_probe_thresh_timer) || (buffer[1] != max44009_probe_thresh_timer))
@@ -927,17 +927,15 @@ static bool asair_init_chip(data_t *data)
 	return(false);
 }
 
-static bool asair_detect(data_t *data)
+static bool asair_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[1];
 
-	if(!i2c_send_1_receive(data->slave, asair_cmd_get_status, sizeof(buffer), buffer))
+	if(!i2c_send_1_receive(slave, asair_cmd_get_status, sizeof(buffer), buffer))
 		return(false);
 
-	if(!i2c_send_1(data->slave, asair_cmd_reset))
+	if(!i2c_send_1(slave, asair_cmd_reset))
 		return(false);
-
-	data->int_value[asair_int_state] = asair_state_init;
 
 	return(true);
 }
@@ -947,6 +945,8 @@ static bool asair_init(data_t *data)
 	data->int_value[asair_int_raw_value_temp] = 0;
 	data->int_value[asair_int_raw_value_hum] = 0;
 	data->int_value[asair_int_valid] = 0;
+
+	data->int_value[asair_int_state] = asair_state_init;
 
 	if(asair_ready(data))
 	{
@@ -1139,9 +1139,9 @@ static const device_autoranging_data_t tsl2561_autoranging_data[tsl2561_autorang
 	{{	tsl2561_tim_integ_13ms,		tsl2561_tim_low_gain	},	{	256,	50000	},	5047,	{	200000000,	0	}},
 };
 
-static bool tsl2561_write(data_t *data, tsl2561_reg_t reg, unsigned int value)
+static bool tsl2561_write(i2c_slave_t slave, tsl2561_reg_t reg, unsigned int value)
 {
-	if(!i2c_send_2(data->slave, tsl2561_cmd_cmd | tsl2561_cmd_clear | (reg & tsl2561_cmd_address), value))
+	if(!i2c_send_2(slave, tsl2561_cmd_cmd | tsl2561_cmd_clear | (reg & tsl2561_cmd_address), value))
 	{
 		log("sensor: tsl2561: error 1");
 		return(false);
@@ -1150,9 +1150,9 @@ static bool tsl2561_write(data_t *data, tsl2561_reg_t reg, unsigned int value)
 	return(true);
 }
 
-static bool tsl2561_read_byte(data_t *data, tsl2561_reg_t reg, uint8_t *byte)
+static bool tsl2561_read_byte(i2c_slave_t slave, tsl2561_reg_t reg, uint8_t *byte)
 {
-	if(!i2c_send_1_receive(data->slave, tsl2561_cmd_cmd | (reg & tsl2561_cmd_address), sizeof(*byte), byte))
+	if(!i2c_send_1_receive(slave, tsl2561_cmd_cmd | (reg & tsl2561_cmd_address), sizeof(*byte), byte))
 	{
 		log("sensor: tsl2561: error 2");
 		return(false);
@@ -1161,11 +1161,11 @@ static bool tsl2561_read_byte(data_t *data, tsl2561_reg_t reg, uint8_t *byte)
 	return(true);
 }
 
-static bool tsl2561_read_word(data_t *data, tsl2561_reg_t reg, uint16_t *word)
+static bool tsl2561_read_word(i2c_slave_t slave, tsl2561_reg_t reg, uint16_t *word)
 {
 	uint8_t buffer[2];
 
-	if(!i2c_send_1_receive(data->slave, tsl2561_cmd_cmd | (reg & tsl2561_cmd_address), sizeof(buffer), buffer))
+	if(!i2c_send_1_receive(slave, tsl2561_cmd_cmd | (reg & tsl2561_cmd_address), sizeof(buffer), buffer))
 	{
 		log("sensor: tsl2561: error 3");
 		return(false);
@@ -1176,14 +1176,14 @@ static bool tsl2561_read_word(data_t *data, tsl2561_reg_t reg, uint16_t *word)
 	return(true);
 }
 
-static bool tsl2561_write_check(data_t *data, tsl2561_reg_t reg, unsigned int value)
+static bool tsl2561_write_check(i2c_slave_t slave, tsl2561_reg_t reg, unsigned int value)
 {
 	uint8_t rv;
 
-	if(!tsl2561_write(data, reg, value))
+	if(!tsl2561_write(slave, reg, value))
 		return(false);
 
-	if(!tsl2561_read_byte(data, reg, &rv))
+	if(!tsl2561_read_byte(slave, reg, &rv))
 		return(false);
 
 	if(value != rv)
@@ -1199,36 +1199,36 @@ static bool tsl2561_start_measurement(data_t *data)
 	timeint =	tsl2561_autoranging_data[data->int_value[tsl2561_int_scaling]].data[0];
 	gain =		tsl2561_autoranging_data[data->int_value[tsl2561_int_scaling]].data[1];
 
-	return(tsl2561_write_check(data, tsl2561_reg_timeint, timeint | gain));
+	return(tsl2561_write_check(data->slave, tsl2561_reg_timeint, timeint | gain));
 }
 
-static bool tsl2561_detect(data_t *data)
+static bool tsl2561_detect(i2c_slave_t slave)
 {
 	uint8_t regval;
 	uint16_t word;
 
-	if(!tsl2561_read_byte(data, tsl2561_reg_id, &regval))
+	if(!tsl2561_read_byte(slave, tsl2561_reg_id, &regval))
 		return(false);
 
 	if(regval != tsl2561_id_tsl2561)
 		return(false);
 
-	if(!tsl2561_read_word(data, tsl2561_reg_threshlow, &word))
+	if(!tsl2561_read_word(slave, tsl2561_reg_threshlow, &word))
 		return(false);
 
 	if(word != tsl2561_probe_threshold)
 		return(false);
 
-	if(!tsl2561_read_word(data, tsl2561_reg_threshhigh, &word))
+	if(!tsl2561_read_word(slave, tsl2561_reg_threshhigh, &word))
 		return(false);
 
 	if(word != tsl2561_probe_threshold)
 		return(false);
 
-	if(!tsl2561_write_check(data, tsl2561_reg_control, tsl2561_ctrl_power_off))
+	if(!tsl2561_write_check(slave, tsl2561_reg_control, tsl2561_ctrl_power_off))
 		return(false);
 
-	if(tsl2561_write_check(data, tsl2561_reg_id, 0x00)) // id register should not be writable
+	if(tsl2561_write_check(slave, tsl2561_reg_id, 0x00)) // id register should not be writable
 		return(false);
 
 	return(true);
@@ -1238,13 +1238,13 @@ static bool tsl2561_init(data_t *data)
 {
 	uint8_t regval;
 
-	if(!tsl2561_write_check(data, tsl2561_reg_interrupt, 0x00))				// disable interrupts
+	if(!tsl2561_write_check(data->slave, tsl2561_reg_interrupt, 0x00))		// disable interrupts
 		return(false);
 
-	if(!tsl2561_write(data, tsl2561_reg_control, tsl2561_ctrl_power_on))	// power up
+	if(!tsl2561_write(data->slave, tsl2561_reg_control, tsl2561_ctrl_power_on))	// power up
 		return(false);
 
-	if(!tsl2561_read_byte(data, tsl2561_reg_control, &regval))
+	if(!tsl2561_read_byte(data->slave, tsl2561_reg_control, &regval))
 		return(false);
 
 	if((regval & 0x0f) != tsl2561_ctrl_power_on)
@@ -1402,23 +1402,23 @@ enum
 	hdc1080_conf_reservd1 =	0b0000000011111111,
 };
 
-static bool hdc1080_detect(data_t *data)
+static bool hdc1080_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[4];
 
-	if(!i2c_send_1_receive(data->slave, hdc1080_reg_man_id, 2, buffer))
+	if(!i2c_send_1_receive(slave, hdc1080_reg_man_id, 2, buffer))
 		return(false);
 
 	if(unsigned_16_be(buffer) != hdc1080_man_id)
 		return(false);
 
-	if(!i2c_send_1_receive(data->slave, hdc1080_reg_dev_id, sizeof(buffer), buffer))
+	if(!i2c_send_1_receive(slave, hdc1080_reg_dev_id, sizeof(buffer), buffer))
 		return(false);
 
 	if(unsigned_16_be(buffer) != hdc1080_dev_id)
 		return(false);
 
-	if(!i2c_send_2(data->slave, hdc1080_reg_conf, hdc1080_conf_rst))
+	if(!i2c_send_2(slave, hdc1080_reg_conf, hdc1080_conf_rst))
 		return(false);
 
 	return(true);
@@ -1562,14 +1562,14 @@ static uint8_t sht3x_crc8(int length, const uint8_t *data)
 	return(crc);
 }
 
-static bool sht3x_send_command(data_t *data, unsigned int cmd)
+static bool sht3x_send_command(i2c_slave_t slave, unsigned int cmd)
 {
 	uint8_t cmd_bytes[2];
 
 	cmd_bytes[0] = (cmd & 0xff00) >> 8;
 	cmd_bytes[1] = (cmd & 0x00ff) >> 0;
 
-	if(!i2c_send(data->slave, sizeof(cmd_bytes), cmd_bytes))
+	if(!i2c_send(slave, sizeof(cmd_bytes), cmd_bytes))
 	{
 		log("sht3x: sh3x_send_command: error");
 		return(false);
@@ -1578,7 +1578,7 @@ static bool sht3x_send_command(data_t *data, unsigned int cmd)
 	return(true);
 }
 
-static bool sht3x_receive_command(data_t *data, sht3x_cmd_t cmd, unsigned int *result)
+static bool sht3x_receive_command(i2c_slave_t slave, sht3x_cmd_t cmd, unsigned int *result)
 {
 	uint8_t buffer[3];
 	uint8_t crc_local, crc_remote;
@@ -1587,7 +1587,7 @@ static bool sht3x_receive_command(data_t *data, sht3x_cmd_t cmd, unsigned int *r
 	cmd_bytes[0] = (cmd & 0xff00) >> 8;
 	cmd_bytes[1] = (cmd & 0x00ff) >> 0;
 
-	if(!i2c_send_receive(data->slave, sizeof(cmd_bytes), cmd_bytes, sizeof(buffer), buffer))
+	if(!i2c_send_receive(slave, sizeof(cmd_bytes), cmd_bytes, sizeof(buffer), buffer))
 	{
 		log("sht3x: sht3x_receive_command: error");
 		return(false);
@@ -1607,8 +1607,7 @@ static bool sht3x_receive_command(data_t *data, sht3x_cmd_t cmd, unsigned int *r
 	return(true);
 }
 
-
-static bool sht3x_fetch_data(data_t *data, unsigned int *result1, unsigned int *result2)
+static bool sht3x_fetch_data(i2c_slave_t slave, unsigned int *result1, unsigned int *result2)
 {
 	uint8_t buffer[6];
 	uint8_t crc_local, crc_remote;
@@ -1617,7 +1616,7 @@ static bool sht3x_fetch_data(data_t *data, unsigned int *result1, unsigned int *
 	cmd_bytes[0] = (sht3x_cmd_fetch_data & 0xff00) >> 8;
 	cmd_bytes[1] = (sht3x_cmd_fetch_data & 0x00ff) >> 0;
 
-	if(!i2c_send_receive(data->slave, sizeof(cmd_bytes), cmd_bytes, sizeof(buffer), buffer))
+	if(!i2c_send_receive(slave, sizeof(cmd_bytes), cmd_bytes, sizeof(buffer), buffer))
 	{
 		log("sht3x: sh3x_fetch_data: error");
 		return(false);
@@ -1647,12 +1646,12 @@ static bool sht3x_fetch_data(data_t *data, unsigned int *result1, unsigned int *
 	return(true);
 }
 
-static bool sht3x_detect(data_t *data)
+static bool sht3x_detect(i2c_slave_t slave)
 {
-	if(!sht3x_send_command(data, sht3x_cmd_break))
+	if(!sht3x_send_command(slave, sht3x_cmd_break))
 		return(false);
 
-	if(!sht3x_send_command(data, sht3x_cmd_reset))
+	if(!sht3x_send_command(slave, sht3x_cmd_reset)) // FIXME move reset to init function
 		return(false);
 
 	return(true);
@@ -1662,22 +1661,22 @@ static bool sht3x_init(data_t *data)
 {
 	unsigned int result;
 
-	if(!sht3x_receive_command(data, sht3x_cmd_read_status, &result))
+	if(!sht3x_receive_command(data->slave, sht3x_cmd_read_status, &result))
 		return(false);
 
 	if((result & (sht3x_status_write_checksum | sht3x_status_command_status)) != 0x00)
 		return(false);
 
-	if(!sht3x_send_command(data, sht3x_cmd_clear_status))
+	if(!sht3x_send_command(data->slave, sht3x_cmd_clear_status))
 		return(false);
 
-	if(!sht3x_receive_command(data, sht3x_cmd_read_status, &result))
+	if(!sht3x_receive_command(data->slave, sht3x_cmd_read_status, &result))
 		return(false);
 
 	if((result & (sht3x_status_write_checksum | sht3x_status_command_status | sht3x_status_reset_detected)) != 0x00)
 		return(false);
 
-	if(!sht3x_send_command(data, sht3x_cmd_single_meas_noclock_high))
+	if(!sht3x_send_command(data->slave, sht3x_cmd_single_meas_noclock_high))
 		return(false);
 
 	data->int_value[sht3x_int_raw_temperature_value] = 0;
@@ -1691,7 +1690,7 @@ static bool sht3x_poll(data_t *data)
 {
 	unsigned int result[2];
 
-	if(!sht3x_fetch_data(data, &result[0], &result[1]))
+	if(!sht3x_fetch_data(data->slave, &result[0], &result[1]))
 	{
 		log("sht3x: poll error 1");
 		goto error;
@@ -1709,7 +1708,7 @@ static bool sht3x_poll(data_t *data)
 	data->int_value[sht3x_int_valid] = 1;
 
 error:
-	if(!sht3x_send_command(data, sht3x_cmd_single_meas_noclock_high))
+	if(!sht3x_send_command(data->slave, sht3x_cmd_single_meas_noclock_high))
 	{
 		log("sht3x: poll error 2");
 		return(false);
@@ -1882,35 +1881,38 @@ static bool bmx280_read_otp(data_t *data)
 	return(true);
 }
 
-static bool bmx280_detect(data_t *data)
+static bool bmx280_detect(i2c_slave_t slave) // FIXME: move reset to init function
 {
 	uint8_t	buffer[1];
 
-	if(!i2c_send_1_receive(data->slave, bmx280_reg_id, sizeof(buffer), buffer))
+	if(!i2c_send_1_receive(slave, bmx280_reg_id, sizeof(buffer), buffer))
 		return(false);
 
 	if((buffer[0] != bmx280_reg_id_bmp280) && (buffer[0] != bmx280_reg_id_bme280))
 		return(false);
 
-	data->int_value[bmx280_int_value_type] = buffer[0];
-
-	if(!i2c_send_2(data->slave, bmx280_reg_reset, bmx280_reg_reset_value))
+	if(!i2c_send_2(slave, bmx280_reg_reset, bmx280_reg_reset_value))
 		return(false);
 
-	if(!i2c_send_1_receive(data->slave, bmx280_reg_reset, sizeof(buffer), buffer))
+	if(!i2c_send_1_receive(slave, bmx280_reg_reset, sizeof(buffer), buffer))
 		return(false);
 
 	if(buffer[0] != 0x00)
 		return(false);
-
-	data->int_value[bmx280_int_value_state] = bmx280_state_init;
 
 	return(true);
 }
 
 static bool bmx280_init(data_t *data)
 {
-	assert(data->int_value[bmx280_int_value_state] == bmx280_state_init);
+	uint8_t	buffer[1];
+
+	data->int_value[bmx280_int_value_state] = bmx280_state_init;
+
+	if(!i2c_send_1_receive(data->slave, bmx280_reg_id, sizeof(buffer), buffer))
+		return(false);
+
+	data->int_value[bmx280_int_value_type] = buffer[0];
 
 	if(!bmx280_read_otp(data))
 	{
@@ -2177,22 +2179,22 @@ static bool htu21_get_data(data_t *data, unsigned int *result)
 	return(true);
 }
 
-static bool htu21_detect(data_t *data)
+static bool htu21_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[1];
 
-	if(!i2c_send_1_receive(data->slave, htu21_cmd_read_user, sizeof(buffer), buffer))
+	if(!i2c_send_1_receive(slave, htu21_cmd_read_user, sizeof(buffer), buffer))
 		return(false);
 
-	i2c_send_1(data->slave, htu21_cmd_reset);
-
-	data->int_value[htu21_int_state] = htu21_state_init;
+	i2c_send_1(slave, htu21_cmd_reset);
 
 	return(true);
 }
 
 static bool htu21_init(data_t *data)
 {
+	data->int_value[htu21_int_state] = htu21_state_init;
+
 	if(htu21_init_chip(data))
 		data->int_value[htu21_int_state] = htu21_state_ready;
 
@@ -2349,11 +2351,11 @@ static bool veml7700_start_measuring(data_t *data)
 	return(true);
 }
 
-static bool veml7700_detect(data_t *data)
+static bool veml7700_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[2];
 
-	if(!i2c_send_1_receive(data->slave, veml7700_reg_id, sizeof(buffer), buffer))
+	if(!i2c_send_1_receive(slave, veml7700_reg_id, sizeof(buffer), buffer))
 		return(false);
 
 	if((buffer[0] != veml7700_reg_id_id_1) || (buffer[1] != veml7700_reg_id_id_2))
@@ -2631,6 +2633,14 @@ static void run_sensors(void *parameters)
 				continue;
 			}
 
+			assert(infoptr->detect_fn);
+
+			if(!infoptr->detect_fn(slave))
+			{
+				i2c_unregister_slave(&slave);
+				continue;
+			}
+
 			new_data = (data_t *)util_memory_alloc_spiram(sizeof(*new_data));
 			assert(new_data);
 
@@ -2649,15 +2659,6 @@ static void run_sensors(void *parameters)
 			new_data->slave = slave;
 			new_data->info = infoptr;
 			new_data->next = (data_t *)0;
-
-			assert(infoptr->detect_fn);
-
-			if(!infoptr->detect_fn(new_data))
-			{
-				i2c_unregister_slave(&slave);
-				free(new_data);
-				continue;
-			}
 
 			assert(infoptr->init_fn);
 
