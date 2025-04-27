@@ -502,7 +502,11 @@ static const cli_command_t cli_commands[] =
 	},
 
 	{ "sensor-dump", "sd", "dump registered sensors", command_sensor_dump,
-		{},
+		{	1,
+			{
+				{ cli_parameter_unsigned_int, 0, 0, 1, 0, "sensor index to dump", .unsigned_int = { 0, 0 } },
+			},
+		},
 	},
 
 	{ "sensor-info", "si", "info about registered sensors", command_sensor_info,

@@ -2871,9 +2871,10 @@ void command_sensor_dump(cli_command_call_t *call)
 	unsigned int address;
 	sensor_type_t type;
 	unsigned int ix;
+	unsigned int index;
 	string_auto(time_string, 64);
 
-	assert(call->parameter_count == 0);
+	assert(call->parameter_count < 2);
 
 	string_assign_cstr(call->result, "SENSOR dump");
 
@@ -2885,8 +2886,11 @@ void command_sensor_dump(cli_command_call_t *call)
 
 	data_mutex_take();
 
-	for(dataptr = data_root; dataptr; dataptr = dataptr->next)
+	for(dataptr = data_root, index = 0; dataptr; dataptr = dataptr->next, index++)
 	{
+		if((call->parameter_count > 0) && (call->parameters[0].unsigned_int != index))
+			continue;
+
 		slave = dataptr->slave;
 
 		if(!slave)
