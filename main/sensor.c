@@ -2878,6 +2878,382 @@ static void veml7700_dump(const data_t *data, string_t output)
 	string_format_append(output, "raw als: %u, ", pdata->raw_white);
 }
 
+enum
+{
+	bme680_reg_meas_status_0 =	0x1d,
+
+	bme680_reg_press =			0x1f,
+	bme680_reg_temp =			0x22,
+	bme680_reg_hum =			0x25,
+
+	bme680_reg_ctrl_gas_0 =		0x70,
+	bme680_reg_ctrl_hum =		0x72,
+	bme680_reg_status =			0x73,
+	bme680_reg_ctrl_meas =		0x74,
+	bme680_reg_config =			0x75,
+	bme680_reg_calibration_1 =	0x89,
+	bme680_reg_id =				0xd0,
+	bme680_reg_reset =			0xe0,
+	bme680_reg_calibration_2 =	0xe1,
+
+	bme680_reg_meas_status_0_new_data =		0b10000000,
+	bme680_reg_meas_status_0_measuring =	0b00100000,
+
+	bme680_reg_ctrl_gas_0_heat_on =		0b00000000,
+	bme680_reg_ctrl_gas_0_heat_off =	0b00001000,
+
+	bme680_reg_ctrl_gas_1_run_gas =		0b00010000,
+
+	bme680_reg_ctrl_hum_osrh_h_skip =	0b00000000,
+	bme680_reg_ctrl_hum_osrh_h_1 =		0b00000001,
+	bme680_reg_ctrl_hum_osrh_h_2 =		0b00000010,
+	bme680_reg_ctrl_hum_osrh_h_4 =		0b00000011,
+	bme680_reg_ctrl_hum_osrh_h_8 =		0b00000100,
+	bme680_reg_ctrl_hum_osrh_h_16 =		0b00000101,
+
+	bme680_reg_ctrl_meas_osrs_t_skip =	0b00000000,
+	bme680_reg_ctrl_meas_osrs_t_1 =		0b00100000,
+	bme680_reg_ctrl_meas_osrs_t_2 =		0b01000000,
+	bme680_reg_ctrl_meas_osrs_t_4 =		0b01100000,
+	bme680_reg_ctrl_meas_osrs_t_8 =		0b10000000,
+	bme680_reg_ctrl_meas_osrs_t_16 =	0b10100000,
+
+	bme680_reg_ctrl_meas_osrs_mask =	0b00011100,
+	bme680_reg_ctrl_meas_osrs_p_skip =	0b00000000,
+	bme680_reg_ctrl_meas_osrs_p_1 =		0b00000100,
+	bme680_reg_ctrl_meas_osrs_p_2 =		0b00001000,
+	bme680_reg_ctrl_meas_osrs_p_4 =		0b00001100,
+	bme680_reg_ctrl_meas_osrs_p_8 =		0b00010000,
+
+	bme680_reg_ctrl_meas_sleep =		0b00000000,
+	bme680_reg_ctrl_meas_forced =		0b00000001,
+
+	bme680_reg_config_filter_mask =		0b00011100,
+	bme680_reg_config_filter_0 =		0b00000000,
+	bme680_reg_config_filter_1 =		0b00000100,
+	bme680_reg_config_filter_3 =		0b00001000,
+	bme680_reg_config_filter_7 =		0b00001100,
+	bme680_reg_config_filter_15 =		0b00010000,
+	bme680_reg_config_filter_31 =		0b00010100,
+	bme680_reg_config_filter_63 =		0b00011000,
+	bme680_reg_config_filter_127 =		0b00011100,
+
+	bme680_reg_id_bme680 =				0x61,
+
+	bme680_reg_reset_value =			0xb6,
+
+	bme680_calibration_1_size =			25,
+	bme680_calibration_2_size =			16,
+
+	bme680_calibration_offset_t2 =		1,
+	bme680_calibration_offset_t3 =		3,
+
+	bme680_calibration_offset_p1 =		5,
+	bme680_calibration_offset_p2 =		7,
+	bme680_calibration_offset_p3 =		9,
+	bme680_calibration_offset_p4 =		11,
+	bme680_calibration_offset_p5 =		13,
+	bme680_calibration_offset_p7 =		15,
+	bme680_calibration_offset_p6 =		16,
+	bme680_calibration_offset_p8 =		19,
+	bme680_calibration_offset_p9 =		21,
+	bme680_calibration_offset_p10 =		23,
+
+	bme680_calibration_offset_h1 =		26,
+	bme680_calibration_offset_h2 =		25,
+	bme680_calibration_offset_h3 =		28,
+	bme680_calibration_offset_h4 =		29,
+	bme680_calibration_offset_h5 =		30,
+	bme680_calibration_offset_h6 =		31,
+	bme680_calibration_offset_h7 =		32,
+
+	bme680_calibration_offset_t1 =		33,
+};
+
+typedef enum
+{
+	bme680_state_init,
+	bme680_state_otp_ready,
+	bme680_state_measuring,
+	bme680_state_finished,
+} bme680_state_t;
+
+typedef struct
+{
+	bme680_state_t	state;
+	float			t_fine;
+	unsigned int	adc_temperature;
+	unsigned int	adc_airpressure;
+	unsigned int	adc_humidity;
+	uint16_t		t1;
+	int16_t			t2;
+	int8_t			t3;
+	uint16_t		p1;
+	int16_t			p2;
+	int8_t			p3;
+	int16_t			p4;
+	int16_t			p5;
+	int8_t			p6;
+	int8_t			p7;
+	int16_t			p8;
+	int16_t			p9;
+	uint8_t			p10;
+	uint16_t		h1;
+	uint16_t		h2;
+	int8_t			h3;
+	int8_t			h4;
+	int8_t			h5;
+	uint8_t			h6;
+	int8_t			h7;
+} bme680_private_data_t;
+
+static bool bme680_read_otp(data_t *data)
+{
+	bme680_private_data_t *pdata = data->private_data;
+	uint8_t calibration[bme680_calibration_1_size + bme680_calibration_2_size];
+
+	assert(pdata);
+
+	if(!i2c_send_1_receive(data->slave, bme680_reg_calibration_1, bme680_calibration_1_size, &calibration[0]))
+		return(false);
+
+	if(!i2c_send_1_receive(data->slave, bme680_reg_calibration_2, bme680_calibration_2_size, &calibration[bme680_calibration_1_size]))
+		return(false);
+
+	pdata->t1 =		unsigned_16_le(&calibration[bme680_calibration_offset_t1]);
+	pdata->t2 =		signed_16_le(&calibration[bme680_calibration_offset_t2]);
+	pdata->t3 =		signed_8(&calibration[bme680_calibration_offset_t3]);
+
+	pdata->p1 =		unsigned_16_le(&calibration[bme680_calibration_offset_p1]);
+	pdata->p2 =		signed_16_le(&calibration[bme680_calibration_offset_p2]);
+	pdata->p3 =		signed_8(&calibration[bme680_calibration_offset_p3]);
+	pdata->p4 =		signed_16_le(&calibration[bme680_calibration_offset_p4]);
+	pdata->p5 =		signed_16_le(&calibration[bme680_calibration_offset_p5]);
+	pdata->p6 =		signed_8(&calibration[bme680_calibration_offset_p6]);
+	pdata->p7 =		signed_8(&calibration[bme680_calibration_offset_p7]);
+	pdata->p8 =		signed_16_le(&calibration[bme680_calibration_offset_p8]);
+	pdata->p9 =		signed_16_le(&calibration[bme680_calibration_offset_p9]);
+	pdata->p10 =	unsigned_8(&calibration[bme680_calibration_offset_p10]);
+
+	pdata->h1 =		unsigned_12_bottom_le(&calibration[bme680_calibration_offset_h1]);
+	pdata->h2 =		unsigned_12_top_be(&calibration[bme680_calibration_offset_h2]);
+	pdata->h3 =		signed_8(&calibration[bme680_calibration_offset_h3]);
+	pdata->h4 =		signed_8(&calibration[bme680_calibration_offset_h4]);
+	pdata->h5 =		signed_8(&calibration[bme680_calibration_offset_h5]);
+	pdata->h6 =		unsigned_8(&calibration[bme680_calibration_offset_h6]);
+	pdata->h7 =		signed_8(&calibration[bme680_calibration_offset_h7]);
+
+	return(true);
+}
+
+static bool bme680_detect(i2c_slave_t slave)
+{
+	uint8_t buffer[1];
+
+	if(!i2c_send_1_receive(slave, bme680_reg_id, sizeof(buffer), buffer))
+		return(false);
+
+	if(buffer[0] != bme680_reg_id_bme680)
+		return(false);
+
+	return(true);
+}
+
+static bool bme680_init(data_t *data)
+{
+	bme680_private_data_t *pdata = data->private_data;
+
+	assert(pdata);
+
+	if(!i2c_send_2(data->slave, bme680_reg_reset, bme680_reg_reset_value))
+		return(false);
+
+	pdata->state = bme680_state_init;
+
+	return(true);
+}
+
+static bool bme680_poll(data_t *data)
+{
+	uint8_t buffer[3];
+	float temperature, humidity, airpressure, airpressure_256;
+	float var1, var2, var3, var4;
+	float t1_scaled;
+	bme680_private_data_t *pdata = data->private_data;
+
+	assert(pdata);
+
+	switch(pdata->state)
+	{
+		case(bme680_state_init):
+		{
+			if(!i2c_send_2(data->slave, bme680_reg_config, bme680_reg_config_filter_127))
+				return(false);
+
+			if(!i2c_send_2(data->slave, bme680_reg_ctrl_gas_0, bme680_reg_ctrl_gas_0_heat_off))
+				return(false);
+
+			if(!bme680_read_otp(data))
+				return(false);
+
+			if((pdata->t1 == 0) && (pdata->t2 == 0))
+				return(false);
+
+			pdata->state = bme680_state_otp_ready;
+
+			break;
+		}
+
+		case(bme680_state_measuring):
+		{
+			if(!i2c_send_1_receive(data->slave, bme680_reg_meas_status_0, 1, buffer))
+			{
+				log("sensors: bme680: poll error 1");
+				return(false);
+			}
+
+			if(buffer[0] & bme680_reg_meas_status_0_measuring)
+			{
+				log("sensors: bme680: sensor not ready");
+				return(true);
+			}
+
+			if(!i2c_send_1_receive(data->slave, bme680_reg_temp, sizeof(buffer), buffer))
+			{
+				log("sensors: bme680: poll error 2");
+				return(false);
+			}
+
+			pdata->adc_temperature = unsigned_20_top_be(buffer);
+
+			if(!i2c_send_1_receive(data->slave, bme680_reg_press, sizeof(buffer), buffer))
+			{
+				log("sensors: bme680: poll error 3");
+				return(false);
+			}
+
+			pdata->adc_airpressure = unsigned_20_top_be(buffer);
+
+			if(!i2c_send_1_receive(data->slave, bme680_reg_hum, sizeof(buffer), buffer))
+			{
+				log("sensors: bme680: poll error 4");
+				return(false);
+			}
+
+			pdata->adc_humidity = unsigned_16_be(buffer);
+
+			t1_scaled =		(pdata->adc_temperature / 131072.0f) - (pdata->t1 / 8192.0f);
+			pdata->t_fine =	((pdata->adc_temperature / 16384.0f) - (pdata->t1 / 1024.0f)) * pdata->t2 + (t1_scaled * t1_scaled * pdata->t3 * 16.0f);
+
+			temperature	= pdata->t_fine / 5120.0f;
+
+			var1 = (pdata->t_fine / 2.0f) - 64000.0f;
+			var2 = var1 * var1 * pdata->p6 / 131072.0f;
+			var2 = var2 + (var1 * pdata->p5 * 2.0f);
+			var2 = (var2 / 4) + (pdata->p4 * 65536.f);
+			var1 = (((pdata->p3 * var1 * var1) / 16384.0f) + (pdata->p2 * var1)) / 524288.0f;
+			var1 = (1 + (var1 / 32768.0f)) * pdata->p1;
+			airpressure = 1048576.0f - pdata->adc_airpressure;
+
+			if((int)var1 != 0)
+			{
+				airpressure = ((airpressure - (var2 / 4096.0f)) * 6250.0f) / var1;
+				airpressure_256 = airpressure / 256.0f;
+				var1 = (pdata->p9 * airpressure * airpressure) / 2147483648.0f;
+				var2 = airpressure * (pdata->p8 / 32768.0f);
+				var3 = airpressure_256 * airpressure_256 * airpressure_256 * (pdata->p10 / 131072.0f);
+				airpressure = (airpressure + (var1 + var2 + var3 + (pdata->p7 * 128.0f)) / 16.0f) / 100.0f;
+			}
+			else
+				airpressure = 0;
+
+			var1 = pdata->adc_humidity - ((pdata->h1 * 16.0f) + ((pdata->h3 / 2.0f) * temperature));
+			var2 = var1 * ((pdata->h2 / 262144.0f) * (1.0f + ((pdata->h4 / 16384.0f) * temperature) + ((pdata->h5 / 1048576.0f) * temperature * temperature)));
+			var3 = pdata->h6 / 16384.0f;
+			var4 = pdata->h7 / 2097152.0f;
+
+			humidity = var2 + ((var3 + (var4 * temperature)) * var2 * var2);
+
+			if(humidity > 100.0f)
+				humidity = 100.0f;
+
+			if(humidity < 0.0f)
+				humidity = 0.0f;
+
+			data->values[sensor_type_temperature].value = temperature;
+			data->values[sensor_type_temperature].stamp = time((time_t *)0);
+
+			if(airpressure > 0)
+			{
+				data->values[sensor_type_airpressure].value = airpressure;
+				data->values[sensor_type_airpressure].stamp = time((time_t *)0);
+			}
+
+			data->values[sensor_type_humidity].value = humidity;
+			data->values[sensor_type_humidity].stamp = time((time_t *)0);
+
+			pdata->state = bme680_state_finished;
+
+			break;
+		}
+
+		case(bme680_state_finished):
+		case(bme680_state_otp_ready):
+		{
+			if(!i2c_send_2(data->slave, bme680_reg_ctrl_hum, bme680_reg_ctrl_hum_osrh_h_16))
+			{
+				log("sensors: bme680: poll error 5");
+				return(false);
+			}
+
+			if(!i2c_send_2(data->slave, bme680_reg_ctrl_meas, bme680_reg_ctrl_meas_osrs_t_16 | bme680_reg_ctrl_meas_osrs_p_8 | bme680_reg_ctrl_meas_forced))
+			{
+				log("sensors: bme680: poll error 6");
+				return(false);
+			}
+
+			pdata->state = bme680_state_measuring;
+
+			break;
+		}
+	}
+
+	return(true);
+}
+
+static void bme680_dump(const data_t *data, string_t output)
+{
+	bme680_private_data_t *pdata = data->private_data;
+
+	assert(pdata);
+
+	string_format_append(output, "state: %u, ", pdata->state);
+	string_format_append(output, "t_fine: %f, ", (double)pdata->t_fine);
+	string_format_append(output, "adc temp: %u, ", pdata->adc_temperature);
+	string_format_append(output, "adc pressure: %u, ", pdata->adc_airpressure);
+	string_format_append(output, "adc humidity: %u, ", pdata->adc_humidity);
+	string_format_append(output, "t1: %u, ", pdata->t1);
+	string_format_append(output, "t2: %d, ", pdata->t2);
+	string_format_append(output, "t3: %d, ", pdata->t3);
+	string_format_append(output, "p1: %u, ", pdata->p1);
+	string_format_append(output, "p2: %d, ", pdata->p2);
+	string_format_append(output, "p3: %d, ", pdata->p3);
+	string_format_append(output, "p4: %d, ", pdata->p4);
+	string_format_append(output, "p5: %d, ", pdata->p5);
+	string_format_append(output, "p6: %d, ", pdata->p6);
+	string_format_append(output, "p7: %d, ", pdata->p7);
+	string_format_append(output, "p8: %d, ", pdata->p8);
+	string_format_append(output, "p9: %d, ", pdata->p9);
+	string_format_append(output, "p10: %u, ", pdata->p10);
+	string_format_append(output, "h1: %u, ", pdata->h1);
+	string_format_append(output, "h2: %u, ", pdata->h2);
+	string_format_append(output, "h3: %d, ", pdata->h3);
+	string_format_append(output, "h4: %d, ", pdata->h4);
+	string_format_append(output, "h5: %d, ", pdata->h5);
+	string_format_append(output, "h6: %u, ", pdata->h6);
+	string_format_append(output, "h7: %d", pdata->h7);
+};
+
 static const info_t info[sensor_size] =
 {
 	[sensor_bh1750] =
@@ -3035,6 +3411,19 @@ static const info_t info[sensor_size] =
 		.init_fn = veml7700_init,
 		.poll_fn = veml7700_poll,
 		.dump_fn = veml7700_dump,
+	},
+	[sensor_bme680] =
+	{
+		.name = "bme680",
+		.id = sensor_bme680,
+		.address = 0x76,
+		.type = (1 << sensor_type_temperature) | (1 << sensor_type_humidity) | (1 << sensor_type_airpressure),
+		.precision = 1,
+		.private_data_size = sizeof(bme680_private_data_t),
+		.detect_fn = bme680_detect,
+		.init_fn = bme680_init,
+		.poll_fn = bme680_poll,
+		.dump_fn = bme680_dump,
 	},
 };
 
