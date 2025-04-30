@@ -4,8 +4,7 @@ typedef enum
 {
 	sensor_bh1750 = 0,
 	sensor_first = sensor_bh1750,
-	sensor_tmp75, // do not change order between tmp75 and lm75
-	sensor_lm75,
+	sensor_tmp75,
 	sensor_opt3001,
 	sensor_max44009,
 	sensor_asair,

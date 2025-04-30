@@ -354,32 +354,8 @@ enum
 {
 	tmp75_reg_temp =	0x00,
 	tmp75_reg_conf =	0x01,
-	tmp75_reg_tlow =	0x02,
-	tmp75_reg_thigh =	0x03,
 
-	tmp75_reg_conf_os =			0b10000000,
-	tmp75_reg_conf_res_9 =		0b00000000,
-	tmp75_reg_conf_res_10 =		0b00100000,
-	tmp75_reg_conf_res_11 =		0b01000000,
 	tmp75_reg_conf_res_12 =		0b01100000,
-	tmp75_reg_conf_f_queue =	0b00011000,
-	tmp75_reg_conf_pol =		0b00000100,
-	tmp75_reg_conf_tm =			0b00000010,
-	tmp75_reg_conf_shutdown =	0b00000001,
-	tmp75_reg_conf_no_shut =	0b00000000,
-
-	tmp75_probe_04 =		0x04,
-	tmp75_probe_a1 =		0xa1,
-	tmp75_probe_a2 =		0xa2,
-	tmp75_probe_aa =		0xaa,
-	tmp75_probe_ac =		0xac,
-
-	tmp75_probe_tl_h =		0x4b,
-	tmp75_probe_tl_l =		0x00,
-	tmp75_probe_th_h =		0x50,
-	tmp75_probe_th_l =		0x00,
-	tmp75_probe_conf =		0b00000000,
-	tmp75_probe_conf_mask =	0b10000000,
 };
 
 typedef struct
@@ -390,49 +366,11 @@ typedef struct
 static bool tmp75_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[2];
-	bool result = false;
 
-	if(!i2c_send_1_receive(slave, tmp75_reg_conf, 2, buffer))
+	if(!i2c_send_1_receive(slave, tmp75_reg_conf, sizeof(buffer), buffer))
 		return(false);
 
-	if((buffer[0] & tmp75_probe_conf_mask) != tmp75_probe_conf)
-		return(false);
-
-	if(!i2c_send_1_receive(slave, tmp75_reg_tlow, 2, buffer))
-		return(false);
-
-	if((buffer[0] != tmp75_probe_tl_h) || (buffer[1] != tmp75_probe_tl_l))
-		return(false);
-
-	if(!i2c_send_1_receive(slave, tmp75_reg_thigh, 2, buffer))
-		return(false);
-
-	if((buffer[0] != tmp75_probe_th_h) || (buffer[1] != tmp75_probe_th_l))
-		return(false);
-
-	log("*** tmp75: ignore 5 lines of i2c bus errors following this");
-
-	if(i2c_send_1(slave, tmp75_probe_04))
-		goto error;
-
-	if(i2c_send_1(slave, tmp75_probe_a1))
-		goto error;
-
-	if(i2c_send_1(slave, tmp75_probe_a2))
-		goto error;
-
-	if(i2c_send_1(slave, tmp75_probe_aa))
-		goto error;
-
-	if(i2c_send_1(slave, tmp75_probe_ac))
-		goto error;
-
-	result = true;
-
-error:
-	log("*** tmp75: end of spurious i2c bus errors");
-
-	return(result);
+	return(true);
 }
 
 static bool tmp75_init(data_t *data)
@@ -445,14 +383,17 @@ static bool tmp75_init(data_t *data)
 	pdata->raw_value[0] = 0;
 	pdata->raw_value[1] = 0;
 
-	if(!i2c_send_2(data->slave, tmp75_reg_conf, tmp75_reg_conf_res_12 | tmp75_reg_conf_no_shut))
+	if(!i2c_send_2(data->slave, tmp75_reg_conf, tmp75_reg_conf_res_12))
 		return(false);
 
 	if(!i2c_send_1_receive(data->slave, tmp75_reg_conf, sizeof(buffer), buffer))
 		return(false);
 
-	if(buffer[0] != (tmp75_reg_conf_res_12 | tmp75_reg_conf_no_shut))
+	if(buffer[0] != tmp75_reg_conf_res_12)
+	{
+		log_format("tmp75: init: config: %x", buffer[0]);
 		return(false);
+	}
 
 	return(true);
 }
@@ -483,115 +424,6 @@ static bool tmp75_poll(data_t *data)
 static void tmp75_dump(const data_t *data, string_t output)
 {
 	tmp75_private_data_t *pdata = data->private_data;
-
-	assert(pdata);
-
-	string_format_append(output, "raw value 0: %u, ", pdata->raw_value[0]);
-	string_format_append(output, "raw value 1: %u", pdata->raw_value[1]);
-};
-
-enum
-{
-	lm75_reg_temp =				0x00,
-	lm75_reg_conf =				0x01,
-	lm75_reg_thyst =			0x02,
-	lm75_reg_tos =				0x03,
-
-	lm75_reg_conf_reserved =	0b11100000,
-	lm75_reg_conf_f_queue =		0b00011000,
-	lm75_reg_conf_pol =			0b00000100,
-	lm75_reg_conf_comp_int =	0b00000010,
-	lm75_reg_conf_shutdown =	0b00000001,
-	lm75_reg_conf_no_shutdown =	0b00000000,
-
-	lm75_probe_thyst_h =		0x4b,
-	lm75_probe_thyst_l =		0x00,
-	lm75_probe_tos_1_h =		0x50,
-	lm75_probe_tos_1_l =		0x00,
-	lm75_probe_tos_2_h =		0x00,
-	lm75_probe_tos_2_l =		0x00,
-	lm75_probe_conf =			0b00000000,
-	lm75_probe_conf_mask =		0b10011111,
-};
-
-typedef struct
-{
-	unsigned int raw_value[2];
-} lm75_private_data_t;
-
-static bool lm75_detect(i2c_slave_t slave)
-{
-	uint8_t buffer[2];
-
-	if(!i2c_send_1_receive(slave, lm75_reg_conf, sizeof(buffer), buffer))
-		return(false);
-
-	if(((buffer[0] & lm75_probe_conf_mask) != lm75_probe_conf))
-		return(false);
-
-	if(!i2c_send_1_receive(slave, lm75_reg_thyst, sizeof(buffer), buffer))
-		return(false);
-
-	if((buffer[0] != lm75_probe_thyst_h) || (buffer[1] != lm75_probe_thyst_l))
-		return(false);
-
-	if(!i2c_send_1_receive(slave, lm75_reg_tos, sizeof(buffer), buffer))
-		return(false);
-
-	if(((buffer[0] != lm75_probe_tos_1_h) || (buffer[1] != lm75_probe_tos_1_l)) && ((buffer[0] != lm75_probe_tos_2_h) || (buffer[1] != lm75_probe_tos_2_l)))
-		return(false);
-
-	return(true);
-}
-
-static bool lm75_init(data_t *data)
-{
-	lm75_private_data_t *pdata = data->private_data;
-	uint8_t buffer[2];
-
-	assert(pdata);
-
-	pdata->raw_value[0] = 0;
-	pdata->raw_value[1] = 0;
-
-	if(!i2c_send_2(data->slave, lm75_reg_conf, lm75_reg_conf_no_shutdown))
-		return(false);
-
-	if(!i2c_send_1_receive(data->slave, lm75_reg_conf, sizeof(buffer), buffer))
-		return(false);
-
-	if((buffer[0] & ~lm75_reg_conf_reserved) != lm75_reg_conf_no_shutdown)
-		return(false);
-
-	return(true);
-}
-
-static bool lm75_poll(data_t *data)
-{
-	lm75_private_data_t *pdata = data->private_data;
-	uint8_t buffer[2];
-	unsigned int raw_temperature;
-
-	assert(pdata);
-
-	if(!i2c_send_1_receive(data->slave, lm75_reg_temp, 2, buffer))
-	{
-		log("lm75: poll error");
-		return(false);
-	}
-
-	pdata->raw_value[0] = buffer[0];
-	pdata->raw_value[1] = buffer[1];
-	raw_temperature = unsigned_16_be(buffer);
-	data->values[sensor_type_temperature].value = raw_temperature / 256.0f;
-	data->values[sensor_type_temperature].stamp = time((time_t *)0);
-
-	return(true);
-}
-
-static void lm75_dump(const data_t *data, string_t output)
-{
-	lm75_private_data_t *pdata = data->private_data;
 
 	assert(pdata);
 
@@ -3281,19 +3113,6 @@ static const info_t info[sensor_size] =
 		.init_fn = tmp75_init,
 		.poll_fn = tmp75_poll,
 		.dump_fn = tmp75_dump,
-	},
-	[sensor_lm75] =
-	{
-		.name = "lm75",
-		.id = sensor_lm75,
-		.address = 0x48,
-		.type = (1 << sensor_type_temperature),
-		.precision = 1,
-		.private_data_size = sizeof(lm75_private_data_t),
-		.detect_fn = lm75_detect,
-		.init_fn = lm75_init,
-		.poll_fn = lm75_poll,
-		.dump_fn = lm75_dump,
 	},
 	[sensor_opt3001] =
 	{
