@@ -31,6 +31,6 @@ typedef enum
 	sensor_type_error = sensor_type_size,
 } sensor_type_t;
 
-_Static_assert(sensor_type_size < 32); // used as bitmask
+static_assert(sensor_type_size < 32); // used as bitmask
 
 void sensor_init(void);

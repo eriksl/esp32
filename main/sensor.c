@@ -79,7 +79,7 @@ static const sensor_type_info_t sensor_type_info[sensor_type_size] =
 
 static bool inited = false;
 static SemaphoreHandle_t data_mutex;
-static data_t *data_root = (data_t *)0;
+static data_t *data_root = nullptr;
 
 static unsigned int stat_sensors_skipped[i2c_module_size] = { 0 };
 static unsigned int stat_sensors_probed[i2c_module_size] = { 0 };
@@ -115,27 +115,27 @@ typedef struct
 	} correction;
 } device_autoranging_data_t;
 
-static unsigned int unsigned_20_top_be(const uint8_t ptr[3])
+[[nodiscard]] static unsigned int unsigned_20_top_be(const uint8_t ptr[const static 3])
 {
 	return((((ptr[0] & 0xff) >> 0) << 12) | (((ptr[1] & 0xff) >> 0) << 4) | (((ptr[2] & 0xf0) >> 4) << 0));
 }
 
-static unsigned int unsigned_20_bottom_be(const uint8_t ptr[3])
+[[nodiscard]] static unsigned int unsigned_20_bottom_be(const uint8_t ptr[const static 3])
 {
 	return((((ptr[0] & 0x0f) >> 0) << 16) | (((ptr[1] & 0xff) >> 0) << 8) | (((ptr[2] & 0xff) >> 0) << 0));
 }
 
-static unsigned int unsigned_16_be(const uint8_t ptr[2])
+[[nodiscard]] static unsigned int unsigned_16_be(const uint8_t ptr[const static 2])
 {
 	return(((ptr[0] & 0xff) << 8) | (ptr[1] & 0xff));
 }
 
-static unsigned int unsigned_16_le(const uint8_t ptr[2])
+[[nodiscard]] static unsigned int unsigned_16_le(const uint8_t ptr[const static 2])
 {
 	return(((ptr[1] & 0xff) << 8) | (ptr[0] & 0xff));
 }
 
-static int signed_16_le(const uint8_t ptr[2])
+[[nodiscard]] static int signed_16_le(const uint8_t ptr[const static 2])
 {
 	int rv = ((ptr[1] & 0xff) << 8) | (ptr[0] & 0xff);
 
@@ -145,22 +145,22 @@ static int signed_16_le(const uint8_t ptr[2])
 	return(rv);
 }
 
-static unsigned int unsigned_12_top_be(const uint8_t ptr[2])
+[[nodiscard]] static unsigned int unsigned_12_top_be(const uint8_t ptr[const static 2])
 {
 	return((((ptr[0] & 0xff) >> 0) << 4) | (((ptr[1] & 0xf0) >> 4) << 0));
 }
 
-static unsigned int unsigned_12_bottom_le(const uint8_t ptr[2])
+[[nodiscard]] static unsigned int unsigned_12_bottom_le(const uint8_t ptr[const static 2])
 {
 	return((((ptr[0] & 0x0f) >> 0) << 0) | (((ptr[1] & 0xff) >> 0) << 4));
 }
 
-static unsigned int unsigned_8(const uint8_t ptr[1])
+[[nodiscard]] static unsigned int unsigned_8(const uint8_t ptr[const static 1])
 {
 	return((unsigned int)(*ptr & 0xff));
 }
 
-static int signed_8(const uint8_t ptr[1])
+[[nodiscard]] static int signed_8(const uint8_t ptr[const static 1])
 {
 	int rv = (unsigned int)(*ptr & 0xff);
 
@@ -170,32 +170,29 @@ static int signed_8(const uint8_t ptr[1])
 	return(rv);
 }
 
-enum
+enum : unsigned int
 {
-	bh1750_opcode_powerdown =		0b00000000, // 0x00
-	bh1750_opcode_poweron =			0b00000001, // 0x01
-	bh1750_opcode_reset =			0b00000111, // 0x07
-	bh1750_opcode_cont_hmode =		0b00010000, // 0x10
-	bh1750_opcode_cont_hmode2 =		0b00010001, // 0x11
-	bh1750_opcode_cont_lmode =		0b00010011, // 0x13
-	bh1750_opcode_one_hmode =		0b00100000, // 0x20
-	bh1750_opcode_one_hmode2 =		0b00100001, // 0x21
-	bh1750_opcode_one_lmode =		0b00100011, // 0x23
-	bh1750_opcode_change_meas_hi =	0b01000000, // 0x40
-	bh1750_opcode_change_meas_lo =	0b01100000, // 0x60
+	bh1750_opcode_powerdown =		0b0000'0000, // 0x00
+	bh1750_opcode_poweron =			0b0000'0001, // 0x01
+	bh1750_opcode_reset =			0b0000'0111, // 0x07
+	bh1750_opcode_cont_hmode =		0b0001'0000, // 0x10
+	bh1750_opcode_cont_hmode2 =		0b0001'0001, // 0x11
+	bh1750_opcode_cont_lmode =		0b0001'0011, // 0x13
+	bh1750_opcode_one_hmode =		0b0010'0000, // 0x20
+	bh1750_opcode_one_hmode2 =		0b0010'0001, // 0x21
+	bh1750_opcode_one_lmode =		0b0010'0011, // 0x23
+	bh1750_opcode_change_meas_hi =	0b0100'0000, // 0x40
+	bh1750_opcode_change_meas_lo =	0b0110'0000, // 0x60
 };
 
-typedef enum
+typedef enum : unsigned int
 {
 	bh1750_state_init,
 	bh1750_state_measuring,
 	bh1750_state_finished,
 }  bh1750_state_t;
 
-enum
-{
-	bh1750_autoranging_data_size = 4,
-};
+static constexpr unsigned int bh1750_autoranging_data_size = 4;
 
 typedef struct
 {
@@ -265,13 +262,13 @@ static bool bh1750_poll(data_t *data)
 		case(bh1750_state_finished):
 		case(bh1750_state_init):
 		{
-			if(!i2c_send_1(data->slave, bh1750_opcode_change_meas_hi | ((bh1750_autoranging_data[pdata->scaling].data[1] >> 5) & 0b00000111)))
+			if(!i2c_send_1(data->slave, bh1750_opcode_change_meas_hi | ((bh1750_autoranging_data[pdata->scaling].data[1] >> 5) & 0b0000'0111)))
 			{
 				log("bh1750: warning: error sending change meas hi");
 				return(false);
 			}
 
-			if(!i2c_send_1(data->slave, bh1750_opcode_change_meas_lo | ((bh1750_autoranging_data[pdata->scaling].data[1] >> 0) & 0b00011111)))
+			if(!i2c_send_1(data->slave, bh1750_opcode_change_meas_lo | ((bh1750_autoranging_data[pdata->scaling].data[1] >> 0) & 0b0001'1111)))
 			{
 				log("bh1750: warning: error sending change meas lo");
 				return(false);
@@ -327,7 +324,7 @@ static bool bh1750_poll(data_t *data)
 			}
 
 			data->values[sensor_type_visible_light].value = ((float)pdata->raw_value * factor) + offset;
-			data->values[sensor_type_visible_light].stamp = time((time_t *)0);
+			data->values[sensor_type_visible_light].stamp = time(nullptr);
 
 			break;
 		}
@@ -350,12 +347,12 @@ static void bh1750_dump(const data_t *data, string_t output)
 	string_format_append(output, "raw: %u", pdata->raw_value);
 };
 
-enum
+enum : unsigned int
 {
-	tmp75_reg_temp =	0x00,
-	tmp75_reg_conf =	0x01,
+	tmp75_reg_temp = 0x00,
+	tmp75_reg_conf = 0x01,
 
-	tmp75_reg_conf_res_12 =		0b01100000,
+	tmp75_reg_conf_res_12 = 0b0110'0000,
 };
 
 typedef struct
@@ -416,7 +413,7 @@ static bool tmp75_poll(data_t *data)
 	pdata->raw_value[1] = buffer[1];
 	raw_temperature = unsigned_16_be(buffer);
 	data->values[sensor_type_temperature].value = raw_temperature / 256.0f;
-	data->values[sensor_type_temperature].stamp = time((time_t *)0);
+	data->values[sensor_type_temperature].stamp = time(nullptr);
 
 	return(true);
 }
@@ -431,7 +428,7 @@ static void tmp75_dump(const data_t *data, string_t output)
 	string_format_append(output, "raw value 1: %u", pdata->raw_value[1]);
 };
 
-enum
+enum : unsigned int
 {
 	opt3001_reg_result =		0x00,
 	opt3001_reg_conf =			0x01,
@@ -441,40 +438,37 @@ enum
 	opt3001_reg_id_dev =		0x7f,
 } opt3001_register;
 
-enum
+enum : unsigned int
 {
 	opt3001_id_manuf_ti =		0x5449,
 	opt3001_id_dev_opt3001 =	0x3001,
 } opt3001_id;
 
-enum
+enum : unsigned int
 {
-	opt3001_conf_fault_count =		0b0000000000000011,
-	opt3001_conf_mask_exp =			0b0000000000000100,
-	opt3001_conf_pol =				0b0000000000001000,
-	opt3001_conf_latch =			0b0000000000010000,
-	opt3001_conf_flag_low =			0b0000000000100000,
-	opt3001_conf_flag_high =		0b0000000001000000,
-	opt3001_conf_flag_ready =		0b0000000010000000,
-	opt3001_conf_flag_ovf =			0b0000000100000000,
-	opt3001_conf_conv_mode =		0b0000011000000000,
-	opt3001_conf_conv_time =		0b0000100000000000,
-	opt3001_conf_range =			0b1111000000000000,
+	opt3001_conf_fault_count =		0b0000'0000'0000'0011,
+	opt3001_conf_mask_exp =			0b0000'0000'0000'0100,
+	opt3001_conf_pol =				0b0000'0000'0000'1000,
+	opt3001_conf_latch =			0b0000'0000'0001'0000,
+	opt3001_conf_flag_low =			0b0000'0000'0010'0000,
+	opt3001_conf_flag_high =		0b0000'0000'0100'0000,
+	opt3001_conf_flag_ready =		0b0000'0000'1000'0000,
+	opt3001_conf_flag_ovf =			0b0000'0001'0000'0000,
+	opt3001_conf_conv_mode =		0b0000'0110'0000'0000,
+	opt3001_conf_conv_time =		0b0000'1000'0000'0000,
+	opt3001_conf_range =			0b1111'0000'0000'0000,
 
-	opt3001_conf_range_auto =		0b1100000000000000,
-	opt3001_conf_conv_time_100 =	0b0000000000000000,
-	opt3001_conf_conv_time_800 =	0b0000100000000000,
-	opt3001_conf_conv_mode_shut =	0b0000000000000000,
-	opt3001_conf_conv_mode_single =	0b0000001000000000,
-	opt3001_conf_conv_mode_cont =	0b0000011000000000,
+	opt3001_conf_range_auto =		0b1100'0000'0000'0000,
+	opt3001_conf_conv_time_100 =	0b0000'0000'0000'0000,
+	opt3001_conf_conv_time_800 =	0b0000'1000'0000'0000,
+	opt3001_conf_conv_mode_shut =	0b0000'0000'0000'0000,
+	opt3001_conf_conv_mode_single =	0b0000'0010'0000'0000,
+	opt3001_conf_conv_mode_cont =	0b0000'0110'0000'0000,
 };
 
-enum
-{
-	opt3001_config = opt3001_conf_range_auto | opt3001_conf_conv_time_800 | opt3001_conf_conv_mode_single,
-};
+static constexpr unsigned int opt3001_config = opt3001_conf_range_auto | opt3001_conf_conv_time_800 | opt3001_conf_conv_mode_single;
 
-typedef enum
+typedef enum : unsigned int
 {
 	opt3001_state_init,
 	opt3001_state_measuring,
@@ -613,7 +607,7 @@ static bool opt3001_poll(data_t *data)
 			pdata->mantissa = ((buffer[0] & 0x0f) << 8) | buffer[1];
 
 			data->values[sensor_type_visible_light].value = 0.01f * (float)(1 << pdata->exponent) * (float)pdata->mantissa;
-			data->values[sensor_type_visible_light].stamp = time((time_t *)0);
+			data->values[sensor_type_visible_light].stamp = time(nullptr);
 
 			break;
 		}
@@ -633,7 +627,7 @@ static void opt3001_dump(const data_t *data, string_t output)
 	string_format_append(output, "exponent: %u", pdata->exponent);
 }
 
-enum
+enum : unsigned int
 {
 	max44009_reg_ints =			0x00,
 	max44009_reg_inte =			0x01,
@@ -761,7 +755,7 @@ static bool max44009_poll(data_t *data)
 	if(pdata->exponent != 0b1111)
 	{
 		data->values[sensor_type_visible_light].value = (1 << pdata->exponent) * (float)pdata->mantissa * 0.045f;
-		data->values[sensor_type_visible_light].stamp = time((time_t *)0);
+		data->values[sensor_type_visible_light].stamp = time(nullptr);
 	}
 	else
 		pdata->overflows++;
@@ -780,7 +774,7 @@ static void max44009_dump(const data_t *data, string_t output)
 	string_format_append(output, "exponent: %u", pdata->exponent);
 };
 
-enum
+enum : unsigned int
 {
 	asair_cmd_aht10_init_1 =	0xe1,
 	asair_cmd_aht10_init_2 =	0x08,
@@ -795,13 +789,13 @@ enum
 	asair_cmd_reset =			0xba,
 } asair_cmd;
 
-enum
+enum : unsigned int
 {
 	asair_status_busy =		1 << 7,
 	asair_status_ready =	1 << 3,
 } asair_status;
 
-typedef enum
+typedef enum : unsigned int
 {
 	asair_state_init,
 	asair_state_ready,
@@ -992,10 +986,10 @@ static bool asair_poll(data_t *data)
 			pdata->raw_humidity = unsigned_20_top_be(&buffer[1]);
 
 			data->values[sensor_type_temperature].value = ((200.f * pdata->raw_temperature) / 1048576.f) - 50.0f;
-			data->values[sensor_type_temperature].stamp = time((time_t *)0);
+			data->values[sensor_type_temperature].stamp = time(nullptr);
 
 			data->values[sensor_type_humidity].value = pdata->raw_humidity * 100.f / 1048576.f;
-			data->values[sensor_type_humidity].stamp = time((time_t *)0);
+			data->values[sensor_type_humidity].stamp = time(nullptr);
 
 			pdata->valid = true;
 			pdata->state = asair_state_start_measure;
@@ -1020,7 +1014,7 @@ static void asair_dump(const data_t *data, string_t output)
 	string_format_append(output, "raw humidity: %u", pdata->raw_temperature);
 };
 
-typedef enum
+typedef enum : unsigned int
 {
 	tsl2561_reg_control =		0x00,
 	tsl2561_reg_timeint =		0x01,
@@ -1033,16 +1027,16 @@ typedef enum
 	tsl2561_reg_data1 =			0x0e,
 } tsl2561_reg_t;
 
-typedef enum
+enum : unsigned int
 {
 	tsl2561_cmd_address =	(1 << 0) | (1 << 1) | (1 << 2) | (1 << 3),
 	tsl2561_cmd_block =		1 << 4,
 	tsl2561_cmd_word =		1 << 5,
 	tsl2561_cmd_clear =		1 << 6,
 	tsl2561_cmd_cmd =		1 << 7,
-} tsl2561_cmd_t;
+};
 
-typedef enum
+enum : unsigned int
 {
 	tsl2561_tim_integ_13ms	=	(0 << 1) | (0 << 0),
 	tsl2561_tim_integ_101ms	=	(0 << 1) | (1 << 0),
@@ -1050,9 +1044,9 @@ typedef enum
 	tsl2561_tim_manual		=	1 << 3,
 	tsl2561_tim_low_gain	=	0 << 4,
 	tsl2561_tim_high_gain	=	1 << 4,
-} tsl2561_timeint_t;
+};
 
-enum
+enum : unsigned int
 {
 	tsl2561_ctrl_power_off =	0x00,
 	tsl2561_ctrl_power_on =		0x03,
@@ -1061,12 +1055,9 @@ enum
 	tsl2561_probe_threshold =	0x00,
 };
 
-enum
-{
-	tsl2561_autoranging_data_size = 4,
-};
+static constexpr unsigned int tsl2561_autoranging_data_size = 4;
 
-typedef enum
+typedef enum : unsigned int
 {
 	tsl2561_state_init,
 	tsl2561_state_measuring,
@@ -1303,7 +1294,7 @@ static bool tsl2561_poll(data_t *data)
 			}
 
 			data->values[sensor_type_visible_light].value = value;
-			data->values[sensor_type_visible_light].stamp = time((time_t *)0);
+			data->values[sensor_type_visible_light].stamp = time(nullptr);
 
 			break;
 		}
@@ -1327,7 +1318,7 @@ static void tsl2561_dump(const data_t *data, string_t output)
 	string_format_append(output, "channel 1: %u", pdata->channel[1]);
 }
 
-enum
+enum : unsigned int
 {
 	hdc1080_reg_data_temp =	0x00,
 	hdc1080_reg_data_hum =	0x01,
@@ -1341,21 +1332,21 @@ enum
 	hdc1080_man_id =		0x5449,
 	hdc1080_dev_id =		0x1050,
 
-	hdc1080_conf_rst =		0b1000000000000000,
-	hdc1080_conf_reservd0 =	0b0100000000000000,
-	hdc1080_conf_heat =		0b0010000000000000,
-	hdc1080_conf_mode_two =	0b0001000000000000,
-	hdc1080_conf_mode_one =	0b0000000000000000,
-	hdc1080_conf_btst =		0b0000100000000000,
-	hdc1080_conf_tres_11 =	0b0000010000000000,
-	hdc1080_conf_tres_14 =	0b0000000000000000,
-	hdc1080_conf_hres_8 =	0b0000001000000000,
-	hdc1080_conf_hres_11 =	0b0000000100000000,
-	hdc1080_conf_hres_14 =	0b0000000000000000,
-	hdc1080_conf_reservd1 =	0b0000000011111111,
+	hdc1080_conf_rst =		0b1000'0000'0000'0000,
+	hdc1080_conf_reservd0 =	0b0100'0000'0000'0000,
+	hdc1080_conf_heat =		0b0010'0000'0000'0000,
+	hdc1080_conf_mode_two =	0b0001'0000'0000'0000,
+	hdc1080_conf_mode_one =	0b0000'0000'0000'0000,
+	hdc1080_conf_btst =		0b0000'1000'0000'0000,
+	hdc1080_conf_tres_11 =	0b0000'0100'0000'0000,
+	hdc1080_conf_tres_14 =	0b0000'0000'0000'0000,
+	hdc1080_conf_hres_8 =	0b0000'0010'0000'0000,
+	hdc1080_conf_hres_11 =	0b0000'0001'0000'0000,
+	hdc1080_conf_hres_14 =	0b0000'0000'0000'0000,
+	hdc1080_conf_reservd1 =	0b0000'0000'1111'1111,
 };
 
-typedef enum
+typedef enum : unsigned int
 {
 	hdc1080_state_init,
 	hdc1080_state_reset,
@@ -1428,7 +1419,7 @@ static bool hdc1080_init(data_t *data)
 static bool hdc1080_poll(data_t *data)
 {
 	hdc1080_private_data_t *pdata = data->private_data;
-	static const unsigned int conf =hdc1080_conf_tres_14 | hdc1080_conf_hres_14 | hdc1080_conf_mode_two;
+	static constexpr unsigned int conf = hdc1080_conf_tres_14 | hdc1080_conf_hres_14 | hdc1080_conf_mode_two;
 	uint8_t buffer[4];
 
 	assert(pdata);
@@ -1500,9 +1491,9 @@ static bool hdc1080_poll(data_t *data)
 			pdata->valid = true;
 
 			data->values[sensor_type_temperature].value = ((pdata->raw_temperature * 165.0f) / (float)(1 << 16)) - 40.f;
-			data->values[sensor_type_temperature].stamp = time((time_t *)0);
+			data->values[sensor_type_temperature].stamp = time(nullptr);
 			data->values[sensor_type_humidity].value = (pdata->raw_humidity * 100.0f) / 65536.0f;
-			data->values[sensor_type_humidity].stamp = time((time_t *)0);
+			data->values[sensor_type_humidity].stamp = time(nullptr);
 
 			break;
 		}
@@ -1523,7 +1514,7 @@ static void hdc1080_dump(const data_t *data, string_t output)
 	string_format_append(output, "raw humidity: %u", pdata->raw_humidity);
 }
 
-typedef enum
+typedef enum : unsigned int
 {
 	sht3x_cmd_single_meas_clock_high =		0x2c06,
 	sht3x_cmd_single_meas_clock_medium =	0x2c0d,
@@ -1563,7 +1554,7 @@ typedef enum
 	sht3x_cmd_clear_status =				0x3041,
 } sht3x_cmd_t;
 
-enum
+enum : unsigned int
 {
 	sht3x_status_none =				0x00,
 	sht3x_status_write_checksum =	(1 << 0),
@@ -1575,7 +1566,7 @@ enum
 	sht3x_status_alert =			(1 << 15),
 };
 
-typedef enum
+typedef enum : unsigned int
 {
 	sht3x_state_init,
 	sht3x_state_reset,
@@ -1818,9 +1809,9 @@ static bool sht3x_poll(data_t *data)
 			pdata->raw_humidity = results[1];
 
 			data->values[sensor_type_temperature].value = (((float)pdata->raw_temperature * 175.f) / ((1 << 16) - 1.0f)) - 45.0f;
-			data->values[sensor_type_temperature].stamp = time((time_t *)0);
+			data->values[sensor_type_temperature].stamp = time(nullptr);
 			data->values[sensor_type_humidity].value = ((float)pdata->raw_humidity * 100.0f) / ((1 << 16) - 1.0f);
-			data->values[sensor_type_humidity].stamp = time((time_t *)0);
+			data->values[sensor_type_humidity].stamp = time(nullptr);
 
 			pdata->valid = true;
 
@@ -1843,7 +1834,7 @@ static void sht3x_dump(const data_t *data, string_t output)
 	string_format_append(output, "raw humidity: %u", pdata->raw_humidity);
 }
 
-enum
+enum : unsigned int
 {
 	bmx280_reg_id =						0xd0,
 	bmx280_reg_reset =					0xe0,
@@ -1866,50 +1857,50 @@ enum
 
 	bmx280_reg_reset_value =			0xb6,
 
-	bmx280_reg_ctrl_hum_osrs_h_skip =	0b00000000,
-	bmx280_reg_ctrl_hum_osrs_h_1 =		0b00000001,
-	bmx280_reg_ctrl_hum_osrs_h_2 =		0b00000010,
-	bmx280_reg_ctrl_hum_osrs_h_4 =		0b00000011,
-	bmx280_reg_ctrl_hum_osrs_h_8 =		0b00000100,
-	bmx280_reg_ctrl_hum_osrs_h_16 =		0b00000101,
+	bmx280_reg_ctrl_hum_osrs_h_skip =	0b0000'0000,
+	bmx280_reg_ctrl_hum_osrs_h_1 =		0b0000'0001,
+	bmx280_reg_ctrl_hum_osrs_h_2 =		0b0000'0010,
+	bmx280_reg_ctrl_hum_osrs_h_4 =		0b0000'0011,
+	bmx280_reg_ctrl_hum_osrs_h_8 =		0b0000'0100,
+	bmx280_reg_ctrl_hum_osrs_h_16 =		0b0000'0101,
 
-	bmx280_reg_status_measuring =		0b00001000,
-	bmx280_reg_status_im_update =		0b00000001,
+	bmx280_reg_status_measuring =		0b00001'000,
+	bmx280_reg_status_im_update =		0b0000'0001,
 
-	bmx280_reg_ctrl_meas_osrs_t_skip =	0b00000000,
-	bmx280_reg_ctrl_meas_osrs_t_1 =		0b00100000,
-	bmx280_reg_ctrl_meas_osrs_t_2 =		0b01000000,
-	bmx280_reg_ctrl_meas_osrs_t_4 =		0b01100000,
-	bmx280_reg_ctrl_meas_osrs_t_8 =		0b10000000,
-	bmx280_reg_ctrl_meas_osrs_t_16 =	0b10100000,
-	bmx280_reg_ctrl_meas_osrs_p_skip =	0b00000000,
-	bmx280_reg_ctrl_meas_osrs_p_1 =		0b00000100,
-	bmx280_reg_ctrl_meas_osrs_p_2 =		0b00001000,
-	bmx280_reg_ctrl_meas_osrs_p_4 =		0b00001100,
-	bmx280_reg_ctrl_meas_osrs_p_8 =		0b00010000,
-	bmx280_reg_ctrl_meas_osrs_p_16 =	0b00010100,
-	bmx280_reg_ctrl_meas_mode_mask =	0b00000011,
-	bmx280_reg_ctrl_meas_mode_sleep =	0b00000000,
-	bmx280_reg_ctrl_meas_mode_forced =	0b00000010,
-	bmx280_reg_ctrl_meas_mode_normal =	0b00000011,
+	bmx280_reg_ctrl_meas_osrs_t_skip =	0b0000'0000,
+	bmx280_reg_ctrl_meas_osrs_t_1 =		0b0010'0000,
+	bmx280_reg_ctrl_meas_osrs_t_2 =		0b0100'0000,
+	bmx280_reg_ctrl_meas_osrs_t_4 =		0b0110'0000,
+	bmx280_reg_ctrl_meas_osrs_t_8 =		0b1000'0000,
+	bmx280_reg_ctrl_meas_osrs_t_16 =	0b1010'0000,
+	bmx280_reg_ctrl_meas_osrs_p_skip =	0b0000'0000,
+	bmx280_reg_ctrl_meas_osrs_p_1 =		0b0000'0100,
+	bmx280_reg_ctrl_meas_osrs_p_2 =		0b0000'1000,
+	bmx280_reg_ctrl_meas_osrs_p_4 =		0b0000'1100,
+	bmx280_reg_ctrl_meas_osrs_p_8 =		0b0001'0000,
+	bmx280_reg_ctrl_meas_osrs_p_16 =	0b0001'0100,
+	bmx280_reg_ctrl_meas_mode_mask =	0b0000'0011,
+	bmx280_reg_ctrl_meas_mode_sleep =	0b0000'0000,
+	bmx280_reg_ctrl_meas_mode_forced =	0b0000'0010,
+	bmx280_reg_ctrl_meas_mode_normal =	0b0000'0011,
 
-	bmx280_reg_config_t_sb_05 =			0b00000000,
-	bmx280_reg_config_t_sb_62 =			0b00100000,
-	bmx280_reg_config_t_sb_125 =		0b01000000,
-	bmx280_reg_config_t_sb_250 =		0b01100000,
-	bmx280_reg_config_t_sb_500 =		0b10000000,
-	bmx280_reg_config_t_sb_1000 =		0b10100000,
-	bmx280_reg_config_t_sb_10000 =		0b11000000,
-	bmx280_reg_config_t_sb_20000 =		0b11100000,
-	bmx280_reg_config_filter_off =		0b00000000,
-	bmx280_reg_config_filter_2 =		0b00000100,
-	bmx280_reg_config_filter_4 =		0b00001000,
-	bmx280_reg_config_filter_8 =		0b00001100,
-	bmx280_reg_config_filter_16 =		0b00010000,
-	bmx280_reg_config_spi3w_en =		0b00000001,
+	bmx280_reg_config_t_sb_05 =			0b0000'0000,
+	bmx280_reg_config_t_sb_62 =			0b0010'0000,
+	bmx280_reg_config_t_sb_125 =		0b0100'0000,
+	bmx280_reg_config_t_sb_250 =		0b0110'0000,
+	bmx280_reg_config_t_sb_500 =		0b1000'0000,
+	bmx280_reg_config_t_sb_1000 =		0b1010'0000,
+	bmx280_reg_config_t_sb_10000 =		0b1100'0000,
+	bmx280_reg_config_t_sb_20000 =		0b1110'0000,
+	bmx280_reg_config_filter_off =		0b0000'0000,
+	bmx280_reg_config_filter_2 =		0b0000'0100,
+	bmx280_reg_config_filter_4 =		0b0000'1000,
+	bmx280_reg_config_filter_8 =		0b0000'1100,
+	bmx280_reg_config_filter_16 =		0b0001'0000,
+	bmx280_reg_config_spi3w_en =		0b0000'0001,
 };
 
-enum
+enum : unsigned int
 {
 	bmx280_cal_base =						0x88,
 	bmx280_cal_0x88_0x89_dig_t1 =			0x88 - bmx280_cal_base,
@@ -1932,7 +1923,7 @@ enum
 	bmx280_cal_size =						0xe8 - bmx280_cal_base,
 };
 
-typedef enum
+typedef enum : unsigned int
 {
 	bmx280_state_init,
 	bmx280_state_reset,
@@ -2159,7 +2150,7 @@ static bool bmx280_poll(data_t *data)
 			var2 = ((pdata->adc_temperature / 131072.0f) - (pdata->t1 / 8192.0f)) * ((pdata->adc_temperature / 131072.0f) - (pdata->t1 / 8192.0f)) * pdata->t3;
 
 			data->values[sensor_type_temperature].value = (var1 + var2) / 5120.0f;
-			data->values[sensor_type_temperature].stamp = time((time_t *)0);
+			data->values[sensor_type_temperature].stamp = time(nullptr);
 
 			var1 = (pdata->adc_temperature / 16384.0f - pdata->t1 / 1024.0f) * pdata->t2;
 			var2 = (pdata->adc_temperature / 131072.0f - pdata->t1 / 8192.0f) * (pdata->adc_temperature / 131072.0f - pdata->t1 / 8192.0f) * pdata->t3;
@@ -2184,7 +2175,7 @@ static bool bmx280_poll(data_t *data)
 			}
 
 			data->values[sensor_type_airpressure].value = airpressure / 100.0f;
-			data->values[sensor_type_airpressure].stamp = time((time_t *)0);
+			data->values[sensor_type_airpressure].stamp = time(nullptr);
 
 			if(pdata->type == bmx280_reg_id_bme280)
 			{
@@ -2202,7 +2193,7 @@ static bool bmx280_poll(data_t *data)
 					humidity = 0.0f;
 
 				data->values[sensor_type_humidity].value = humidity;
-				data->values[sensor_type_humidity].stamp = time((time_t *)0);
+				data->values[sensor_type_humidity].stamp = time(nullptr);
 			}
 			else
 			{
@@ -2252,7 +2243,7 @@ static void bmx280_dump(const data_t *data, string_t output)
 	string_format_append(output, "h6: %u", pdata->h6);
 };
 
-enum
+enum : unsigned int
 {
 	htu21_cmd_meas_temp_hold_master =		0xe3,
 	htu21_cmd_meas_hum_hold_master =		0xe5,
@@ -2262,23 +2253,23 @@ enum
 	htu21_cmd_meas_hum_no_hold_master =		0xf5,
 	htu21_cmd_reset =						0xfe,
 
-	htu21_user_reg_rh12_temp14 =			0b00000000,
-	htu21_user_reg_rh8_temp12 =				0b00000001,
-	htu21_user_reg_rh10_temp13 =			0b10000000,
-	htu21_user_reg_rh11_temp11 =			0b10000001,
-	htu21_user_reg_bat_stat =				0b01000000,
-	htu21_user_reg_reserved =				0b00111000,
-	htu21_user_reg_heater_enable =			0b00000100,
-	htu21_user_reg_otp_reload_disable =		0b00000010,
+	htu21_user_reg_rh12_temp14 =			0b0000'0000,
+	htu21_user_reg_rh8_temp12 =				0b0000'0001,
+	htu21_user_reg_rh10_temp13 =			0b1000'0000,
+	htu21_user_reg_rh11_temp11 =			0b1000'0001,
+	htu21_user_reg_bat_stat =				0b0100'0000,
+	htu21_user_reg_reserved =				0b0011'1000,
+	htu21_user_reg_heater_enable =			0b0000'0100,
+	htu21_user_reg_otp_reload_disable =		0b0000'0010,
 
-	htu21_status_mask =						0b00000011,
-	htu21_status_measure_temperature =		0b00000000,
-	htu21_status_measure_humidity =			0b00000010,
+	htu21_status_mask =						0b0000'0011,
+	htu21_status_measure_temperature =		0b0000'0000,
+	htu21_status_measure_humidity =			0b0000'0010,
 
 	htu21_delay_reset =						2,
 };
 
-typedef enum
+typedef enum : unsigned int
 {
 	htu21_state_init,
 	htu21_state_reset,
@@ -2487,7 +2478,7 @@ static bool htu21_poll(data_t *data)
 				humidity = 100;
 
 			data->values[sensor_type_temperature].value = temperature;
-			data->values[sensor_type_temperature].stamp = time((time_t *)0);
+			data->values[sensor_type_temperature].stamp = time(nullptr);
 			data->values[sensor_type_humidity].value = humidity;
 			data->values[sensor_type_humidity].stamp = data->values[sensor_type_temperature].stamp;
 
@@ -2511,7 +2502,7 @@ static void htu21_dump(const data_t *data, string_t output)
 	string_format_append(output, "raw humidity: %u", pdata->raw_humidity);
 }
 
-enum
+enum : unsigned int
 {
 	veml7700_reg_conf =		0x00,
 	veml7700_reg_als_wh =	0x01,
@@ -2523,13 +2514,13 @@ enum
 	veml7700_reg_id =		0x07,
 };
 
-enum
+enum : unsigned int
 {
 	veml7700_reg_id_id_1 =	0x81,
 	veml7700_reg_id_id_2 =	0xc4,
 };
 
-enum
+enum : unsigned int
 {
 	veml7700_conf_reserved1 =		0b000 << 13,
 	veml7700_conf_als_gain_1 =		0b00 << 11,
@@ -2552,7 +2543,7 @@ enum
 	veml7700_conf_als_sd =			0b1 << 0,
 };
 
-enum { veml7700_autoranging_data_size = 6 };
+static constexpr unsigned int  veml7700_autoranging_data_size = 6;
 
 static const device_autoranging_data_t veml7700_autoranging_data[veml7700_autoranging_data_size] =
 {
@@ -2564,7 +2555,7 @@ static const device_autoranging_data_t veml7700_autoranging_data[veml7700_autora
 	{{	veml7700_conf_als_it_25,	veml7700_conf_als_gain_1_8 },	{ 100,	65536	}, 0, { 1.8432, 0 }},
 };
 
-typedef enum
+typedef enum : unsigned int
 {
 	veml7700_state_init,
 	veml7700_state_measuring,
@@ -2687,7 +2678,7 @@ static bool veml7700_poll(data_t *data)
 					- (raw_lux * raw_lux * raw_lux * 9.3924e-09f)
 					+ (raw_lux * raw_lux * 8.1488e-05f)
 					+ (raw_lux * 1.0023e+00f);
-			data->values[sensor_type_visible_light].stamp = time((time_t *)0);
+			data->values[sensor_type_visible_light].stamp = time(nullptr);
 
 			break;
 		}
@@ -2710,7 +2701,7 @@ static void veml7700_dump(const data_t *data, string_t output)
 	string_format_append(output, "raw als: %u, ", pdata->raw_white);
 }
 
-enum
+enum : unsigned int
 {
 	bme680_reg_meas_status_0 =	0x1d,
 
@@ -2728,47 +2719,47 @@ enum
 	bme680_reg_reset =			0xe0,
 	bme680_reg_calibration_2 =	0xe1,
 
-	bme680_reg_meas_status_0_new_data =		0b10000000,
-	bme680_reg_meas_status_0_measuring =	0b00100000,
+	bme680_reg_meas_status_0_new_data =		0b1000'0000,
+	bme680_reg_meas_status_0_measuring =	0b0010'0000,
 
-	bme680_reg_ctrl_gas_0_heat_on =		0b00000000,
-	bme680_reg_ctrl_gas_0_heat_off =	0b00001000,
+	bme680_reg_ctrl_gas_0_heat_on =		0b0000'0000,
+	bme680_reg_ctrl_gas_0_heat_off =	0b0000'1000,
 
-	bme680_reg_ctrl_gas_1_run_gas =		0b00010000,
+	bme680_reg_ctrl_gas_1_run_gas =		0b0001'0000,
 
-	bme680_reg_ctrl_hum_osrh_h_skip =	0b00000000,
-	bme680_reg_ctrl_hum_osrh_h_1 =		0b00000001,
-	bme680_reg_ctrl_hum_osrh_h_2 =		0b00000010,
-	bme680_reg_ctrl_hum_osrh_h_4 =		0b00000011,
-	bme680_reg_ctrl_hum_osrh_h_8 =		0b00000100,
-	bme680_reg_ctrl_hum_osrh_h_16 =		0b00000101,
+	bme680_reg_ctrl_hum_osrh_h_skip =	0b0000'0000,
+	bme680_reg_ctrl_hum_osrh_h_1 =		0b0000'0001,
+	bme680_reg_ctrl_hum_osrh_h_2 =		0b0000'0010,
+	bme680_reg_ctrl_hum_osrh_h_4 =		0b0000'0011,
+	bme680_reg_ctrl_hum_osrh_h_8 =		0b0000'0100,
+	bme680_reg_ctrl_hum_osrh_h_16 =		0b0000'0101,
 
-	bme680_reg_ctrl_meas_osrs_t_skip =	0b00000000,
-	bme680_reg_ctrl_meas_osrs_t_1 =		0b00100000,
-	bme680_reg_ctrl_meas_osrs_t_2 =		0b01000000,
-	bme680_reg_ctrl_meas_osrs_t_4 =		0b01100000,
-	bme680_reg_ctrl_meas_osrs_t_8 =		0b10000000,
-	bme680_reg_ctrl_meas_osrs_t_16 =	0b10100000,
+	bme680_reg_ctrl_meas_osrs_t_skip =	0b0000'0000,
+	bme680_reg_ctrl_meas_osrs_t_1 =		0b0010'0000,
+	bme680_reg_ctrl_meas_osrs_t_2 =		0b0100'0000,
+	bme680_reg_ctrl_meas_osrs_t_4 =		0b0110'0000,
+	bme680_reg_ctrl_meas_osrs_t_8 =		0b1000'0000,
+	bme680_reg_ctrl_meas_osrs_t_16 =	0b1010'0000,
 
-	bme680_reg_ctrl_meas_osrs_mask =	0b00011100,
-	bme680_reg_ctrl_meas_osrs_p_skip =	0b00000000,
-	bme680_reg_ctrl_meas_osrs_p_1 =		0b00000100,
-	bme680_reg_ctrl_meas_osrs_p_2 =		0b00001000,
-	bme680_reg_ctrl_meas_osrs_p_4 =		0b00001100,
-	bme680_reg_ctrl_meas_osrs_p_8 =		0b00010000,
+	bme680_reg_ctrl_meas_osrs_mask =	0b0001'1100,
+	bme680_reg_ctrl_meas_osrs_p_skip =	0b0000'0000,
+	bme680_reg_ctrl_meas_osrs_p_1 =		0b0000'0100,
+	bme680_reg_ctrl_meas_osrs_p_2 =		0b0000'1000,
+	bme680_reg_ctrl_meas_osrs_p_4 =		0b0000'1100,
+	bme680_reg_ctrl_meas_osrs_p_8 =		0b0001'0000,
 
-	bme680_reg_ctrl_meas_sleep =		0b00000000,
-	bme680_reg_ctrl_meas_forced =		0b00000001,
+	bme680_reg_ctrl_meas_sleep =		0b0000'0000,
+	bme680_reg_ctrl_meas_forced =		0b0000'0001,
 
-	bme680_reg_config_filter_mask =		0b00011100,
-	bme680_reg_config_filter_0 =		0b00000000,
-	bme680_reg_config_filter_1 =		0b00000100,
-	bme680_reg_config_filter_3 =		0b00001000,
-	bme680_reg_config_filter_7 =		0b00001100,
-	bme680_reg_config_filter_15 =		0b00010000,
-	bme680_reg_config_filter_31 =		0b00010100,
-	bme680_reg_config_filter_63 =		0b00011000,
-	bme680_reg_config_filter_127 =		0b00011100,
+	bme680_reg_config_filter_mask =		0b0001'1100,
+	bme680_reg_config_filter_0 =		0b0000'0000,
+	bme680_reg_config_filter_1 =		0b0000'0100,
+	bme680_reg_config_filter_3 =		0b0000'1000,
+	bme680_reg_config_filter_7 =		0b0000'1100,
+	bme680_reg_config_filter_15 =		0b0001'0000,
+	bme680_reg_config_filter_31 =		0b0001'0100,
+	bme680_reg_config_filter_63 =		0b0001'1000,
+	bme680_reg_config_filter_127 =		0b0001'1100,
 
 	bme680_reg_id_bme680 =				0x61,
 
@@ -2802,7 +2793,7 @@ enum
 	bme680_calibration_offset_t1 =		33,
 };
 
-typedef enum
+typedef enum : unsigned int
 {
 	bme680_state_init,
 	bme680_state_otp_ready,
@@ -3013,16 +3004,16 @@ static bool bme680_poll(data_t *data)
 				humidity = 0.0f;
 
 			data->values[sensor_type_temperature].value = temperature;
-			data->values[sensor_type_temperature].stamp = time((time_t *)0);
+			data->values[sensor_type_temperature].stamp = time(nullptr);
 
 			if(airpressure > 0)
 			{
 				data->values[sensor_type_airpressure].value = airpressure;
-				data->values[sensor_type_airpressure].stamp = time((time_t *)0);
+				data->values[sensor_type_airpressure].stamp = time(nullptr);
 			}
 
 			data->values[sensor_type_humidity].value = humidity;
-			data->values[sensor_type_humidity].stamp = time((time_t *)0);
+			data->values[sensor_type_humidity].stamp = time(nullptr);
 
 			pdata->state = bme680_state_finished;
 
@@ -3256,7 +3247,7 @@ static void run_sensors(void *parameters)
 	i2c_slave_t slave;
 	unsigned int buses;
 	sensor_type_t type;
-	const run_parameters_t *run = (const run_parameters_t *)parameters;
+	auto run = (const run_parameters_t *)parameters;
 
 	module = run->module;
 
@@ -3295,7 +3286,7 @@ static void run_sensors(void *parameters)
 				continue;
 			}
 
-			new_data = (data_t *)util_memory_alloc_spiram(sizeof(*new_data));
+			new_data = util_memory_alloc_spiram(sizeof(*new_data));
 			assert(new_data);
 
 			for(type = sensor_type_first; type < sensor_type_size; type++)
@@ -3307,13 +3298,13 @@ static void run_sensors(void *parameters)
 			new_data->slave = slave;
 			new_data->info = infoptr;
 
-			new_data->private_data = (void *)0;
-			new_data->next = (data_t *)0;
+			new_data->private_data = nullptr;
+			new_data->next = nullptr;
 
 			assert(infoptr->init_fn);
 
 			if(infoptr->private_data_size > 0)
-				new_data->private_data = (void *)util_memory_alloc_spiram(infoptr->private_data_size);
+				new_data->private_data = util_memory_alloc_spiram(infoptr->private_data_size);
 
 			if(!infoptr->init_fn(new_data))
 			{
@@ -3390,12 +3381,12 @@ void sensor_init(void)
 
 	inited = true;
 
-	if(xTaskCreatePinnedToCore(run_sensors, "sensors 1", 3 * 1024, &run[i2c_module_0_fast], 1, (TaskHandle_t *)0, 1) != pdPASS)
+	if(xTaskCreatePinnedToCore(run_sensors, "sensors 1", 3 * 1024, &run[i2c_module_0_fast], 1, nullptr, 1) != pdPASS)
 		util_abort("sensor: xTaskCreatePinnedToNode sensors thread 0");
 
 	util_sleep(100);
 
-	if(xTaskCreatePinnedToCore(run_sensors, "sensors 2", 3 * 1024, &run[i2c_module_1_slow], 1, (TaskHandle_t *)0, 1) != pdPASS)
+	if(xTaskCreatePinnedToCore(run_sensors, "sensors 2", 3 * 1024, &run[i2c_module_1_slow], 1, nullptr, 1) != pdPASS)
 		util_abort("sensor: xTaskCreatePinnedToNode sensors thread 1");
 }
 

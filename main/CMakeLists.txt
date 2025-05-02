@@ -32,6 +32,7 @@ target_compile_options(${COMPONENT_TARGET} PRIVATE
 		-Wall
 		-Wextra
 		-Werror
+		-std=gnu23
 		-Wformat-overflow=2
 		-Wshift-overflow=2
 		-Wimplicit-fallthrough=5
@@ -77,5 +78,6 @@ target_compile_options(${COMPONENT_TARGET} PRIVATE
 		-Wno-inline
 		-Wno-packed
 		-Wno-pointer-sign
+		-Wenum-int-mismatch
 		-fno-strict-aliasing
 	)
