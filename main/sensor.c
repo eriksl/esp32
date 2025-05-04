@@ -108,11 +108,7 @@ typedef struct
 		unsigned int up;
 	} threshold;
 	unsigned int overflow;
-	struct
-	{
-		float factor;
-		float offset;
-	} correction;
+	float factor;
 } device_autoranging_data_t;
 
 [[nodiscard]] static unsigned int unsigned_20_top_be(const uint8_t ptr[const static 3])
@@ -206,10 +202,10 @@ typedef struct
 
 static const device_autoranging_data_t bh1750_autoranging_data[bh1750_autoranging_data_size] =
 {
-	{{	bh1750_opcode_one_hmode2,	254	},	{ 0,	50000 }, 65535, { 0.13,	0,	}},
-	{{	bh1750_opcode_one_hmode2,	69	},	{ 1000, 50000 }, 65535, { 0.50,	0,	}},
-	{{	bh1750_opcode_one_hmode2,	31	},	{ 1000, 50000 }, 65535, { 1.10,	0,	}},
-	{{	bh1750_opcode_one_lmode,	31	},	{ 1000, 65536 }, 65535, { 2.40,	0,	}},
+	{{	bh1750_opcode_one_hmode2,	254	},	{ 0,	50000 }, 65535, 0.13 },
+	{{	bh1750_opcode_one_hmode2,	69	},	{ 1000, 50000 }, 65535, 0.50 },
+	{{	bh1750_opcode_one_hmode2,	31	},	{ 1000, 50000 }, 65535, 1.10 },
+	{{	bh1750_opcode_one_lmode,	31	},	{ 1000, 65536 }, 65535, 2.40 },
 };
 
 static bool bh1750_detect(i2c_slave_t slave)
@@ -251,8 +247,6 @@ static bool bh1750_init(data_t *data)
 static bool bh1750_poll(data_t *data)
 {
 	bh1750_private_data_t *pdata = data->private_data;
-	float factor, offset;
-	unsigned int overflow, scale_down_threshold, scale_up_threshold;
 	uint8_t buffer[2];
 
 	assert(pdata);
@@ -287,12 +281,6 @@ static bool bh1750_poll(data_t *data)
 
 		case(bh1750_state_measuring):
 		{
-			scale_down_threshold =	bh1750_autoranging_data[pdata->scaling].threshold.down;
-			scale_up_threshold =	bh1750_autoranging_data[pdata->scaling].threshold.up;
-			overflow =				bh1750_autoranging_data[pdata->scaling].overflow;
-			factor =				bh1750_autoranging_data[pdata->scaling].correction.factor;
-			offset =				bh1750_autoranging_data[pdata->scaling].correction.offset;
-
 			pdata->state = bh1750_state_finished;
 
 			if(!i2c_receive(data->slave, 2, buffer))
@@ -303,27 +291,27 @@ static bool bh1750_poll(data_t *data)
 
 			pdata->raw_value = unsigned_16_be(buffer);
 
-			if((pdata->raw_value >= overflow) && (pdata->scaling >= (bh1750_autoranging_data_size - 1)))
+			if((pdata->raw_value >= bh1750_autoranging_data[pdata->scaling].overflow) && (pdata->scaling >= (bh1750_autoranging_data_size - 1)))
 			{
 				pdata->overflows++;
 				break;
 			}
 
-			if((pdata->raw_value < scale_down_threshold) && (pdata->scaling > 0))
+			if((pdata->raw_value < bh1750_autoranging_data[pdata->scaling].threshold.down) && (pdata->scaling > 0))
 			{
 				pdata->scaling--;
 				pdata->scaling_down++;
 				break;
 			}
 
-			if((pdata->raw_value >= scale_up_threshold) && (pdata->scaling < (bh1750_autoranging_data_size - 1)))
+			if((pdata->raw_value >= bh1750_autoranging_data[pdata->scaling].threshold.up) && (pdata->scaling < (bh1750_autoranging_data_size - 1)))
 			{
 				pdata->scaling++;
 				pdata->scaling_up++;
 				break;
 			}
 
-			data->values[sensor_type_visible_light].value = ((float)pdata->raw_value * factor) + offset;
+			data->values[sensor_type_visible_light].value = ((float)pdata->raw_value * bh1750_autoranging_data[pdata->scaling].factor);
 			data->values[sensor_type_visible_light].stamp = time(nullptr);
 
 			break;
@@ -1076,10 +1064,10 @@ typedef struct
 
 static const device_autoranging_data_t tsl2561_autoranging_data[tsl2561_autoranging_data_size] =
 {
-	{{	tsl2561_tim_integ_402ms,	tsl2561_tim_high_gain	},	{	0,		50000	},	65535,	{	0.48,	0	}},
-	{{	tsl2561_tim_integ_402ms,	tsl2561_tim_low_gain	},	{	256,	50000	},	65535,	{	7.4,	0	}},
-	{{	tsl2561_tim_integ_101ms,	tsl2561_tim_low_gain	},	{	256,	30000	},	37177,	{	28,		0	}},
-	{{	tsl2561_tim_integ_13ms,		tsl2561_tim_low_gain	},	{	256,	65536	},	5047,	{	200,	0	}},
+	{{	tsl2561_tim_integ_402ms,	tsl2561_tim_high_gain	},	{	0,		50000	},	65535,	0.48	},
+	{{	tsl2561_tim_integ_402ms,	tsl2561_tim_low_gain	},	{	256,	50000	},	65535,	7.4		},
+	{{	tsl2561_tim_integ_101ms,	tsl2561_tim_low_gain	},	{	256,	30000	},	37177,	28		},
+	{{	tsl2561_tim_integ_13ms,		tsl2561_tim_low_gain	},	{	256,	65536	},	5047,	200		},
 };
 
 static bool tsl2561_write(i2c_slave_t slave, tsl2561_reg_t reg, unsigned int value)
@@ -1287,7 +1275,7 @@ static bool tsl2561_poll(data_t *data)
 						else
 							value = (0.0304f * pdata->channel[0]) - (0.062f * pdata->channel[1] * (float)pow(ratio, 1.4f));
 
-				value = (value * tsl2561_autoranging_data[pdata->scaling].correction.factor) + tsl2561_autoranging_data[pdata->scaling].correction.offset;
+				value = (value * tsl2561_autoranging_data[pdata->scaling].factor);
 
 				if(value < 0)
 					value = 0;
@@ -2547,12 +2535,12 @@ static constexpr unsigned int  veml7700_autoranging_data_size = 6;
 
 static const device_autoranging_data_t veml7700_autoranging_data[veml7700_autoranging_data_size] =
 {
-	{{	veml7700_conf_als_it_800,	veml7700_conf_als_gain_2 },		{ 0,	32768	}, 0, { 0.0036,	0 }},
-	{{	veml7700_conf_als_it_800,	veml7700_conf_als_gain_1_8 },	{ 100,	32768	}, 0, { 0.0576,	0 }},
-	{{	veml7700_conf_als_it_200,	veml7700_conf_als_gain_2 },		{ 100,	32768	}, 0, { 0.0144,	0 }},
-	{{	veml7700_conf_als_it_200,	veml7700_conf_als_gain_1_8 },	{ 100,	32768	}, 0, { 0.2304,	0 }},
-	{{	veml7700_conf_als_it_25,	veml7700_conf_als_gain_2 },		{ 100,	32768	}, 0, { 0.1152,	0 }},
-	{{	veml7700_conf_als_it_25,	veml7700_conf_als_gain_1_8 },	{ 100,	65536	}, 0, { 1.8432, 0 }},
+	{{	veml7700_conf_als_it_800,	veml7700_conf_als_gain_2 },		{ 0,	32768	}, 0, 0.0036	},
+	{{	veml7700_conf_als_it_800,	veml7700_conf_als_gain_1_8 },	{ 100,	32768	}, 0, 0.0576	},
+	{{	veml7700_conf_als_it_200,	veml7700_conf_als_gain_2 },		{ 100,	32768	}, 0, 0.0144	},
+	{{	veml7700_conf_als_it_200,	veml7700_conf_als_gain_1_8 },	{ 100,	32768	}, 0, 0.2304	},
+	{{	veml7700_conf_als_it_25,	veml7700_conf_als_gain_2 },		{ 100,	32768	}, 0, 0.1152	},
+	{{	veml7700_conf_als_it_25,	veml7700_conf_als_gain_1_8 },	{ 100,	65536	}, 0, 1.8432	},
 };
 
 typedef enum : unsigned int
@@ -2671,7 +2659,7 @@ static bool veml7700_poll(data_t *data)
 				break;
 			}
 
-			raw_lux = ((pdata->raw_als * veml7700_autoranging_data[pdata->scaling].correction.factor) + veml7700_autoranging_data[pdata->scaling].correction.offset);
+			raw_lux = pdata->raw_als * veml7700_autoranging_data[pdata->scaling].factor;
 
 			data->values[sensor_type_visible_light].value =
 					(raw_lux * raw_lux * raw_lux * raw_lux * 6.0135e-13f)
