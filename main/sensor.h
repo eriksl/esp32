@@ -8,6 +8,7 @@ typedef enum
 	sensor_opt3001,
 	sensor_max44009,
 	sensor_asair,
+	sensor_apds9930,
 	sensor_tsl2561,
 	sensor_hdc1080,
 	sensor_sht3x,
