@@ -70,7 +70,7 @@ static const module_info_t module_info[i2c_module_size] =
 	[i2c_module_0_fast] =
 	{
 		.id = i2c_module_0_fast,
-		.name = "module 0, fast",
+		.name = "module 0, on main CPU, 400 kHz", // FIXME: make bus speed configurable
 		.sda = CONFIG_BSP_I2C0_SDA,
 		.scl = CONFIG_BSP_I2C0_SCL,
 		.speed = i2c_module_speed_fast,
@@ -78,7 +78,7 @@ static const module_info_t module_info[i2c_module_size] =
 	[i2c_module_1_slow] =
 	{
 		.id = i2c_module_1_slow,
-		.name = "module 1, slow",
+		.name = "module 1, on main CPU, 100 kHz",
 		.sda = CONFIG_BSP_I2C1_SDA,
 		.scl = CONFIG_BSP_I2C1_SCL,
 		.speed = i2c_module_speed_slow,
