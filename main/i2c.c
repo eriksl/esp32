@@ -46,6 +46,7 @@ typedef struct
 {
 	bool has_mux;
 	unsigned int buses;
+	unsigned int selected_bus;
 	i2c_master_bus_handle_t handle;
 	i2c_master_dev_handle_t mux_dev_handle;
 	bus_t *bus[i2c_bus_size];
@@ -127,12 +128,18 @@ static void set_mux(i2c_module_t module, i2c_bus_t bus)
 	if(!data->mux_dev_handle)
 		return;
 
+	if(data->selected_bus == bus)
+		return;
+
 	if(bus == i2c_bus_none)
 		reg[0] = 0;
 	else
 		reg[0] = (1 << (bus - i2c_bus_0));
 
 	util_warn_on_esp_err("i2c_master_transmit mux", i2c_master_transmit(module_ptr->mux_dev_handle, reg, 1, i2c_timeout_ms));
+
+	if(rv == ESP_OK)
+		data->selected_bus = bus;
 }
 
 static bool slave_check(slave_t *slave)
@@ -307,6 +314,7 @@ void i2c_init(void)
 		}
 
 		for(bus = i2c_bus_first; bus < buses; bus++)
+		data->selected_bus = i2c_bus_invalid;
 		{
 			bus_ptr = (bus_t *)util_memory_alloc_spiram(sizeof(*bus_ptr));
 			assert(bus_ptr);
