@@ -510,7 +510,11 @@ static const cli_command_t cli_commands[] =
 	},
 
 	{ "sensor-info", "si", "info about registered sensors", command_sensor_info,
-		{},
+		{	1,
+			{
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "include disabled devices", .unsigned_int = { 0, 1 }},
+			}
+		},
 	},
 
 	{ "sensor-json", "sj", "sensors values in json layout", command_sensor_json,
