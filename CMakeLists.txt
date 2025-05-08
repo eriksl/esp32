@@ -6,6 +6,6 @@ set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
-set(COMPONENTS main bt esp_psram wear_levelling)
+set(COMPONENTS main bt esp_psram wear_levelling soc ulp)
 
 project(esp32-s3-develop)

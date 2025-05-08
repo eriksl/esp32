@@ -46,6 +46,12 @@ menu "BSP - do not change, set automically, when invoked using script idf"
 	config BSP_I2C1_SCL
 		int "GPIO used for SCL on second I2C module"
 
+	config BSP_I2C2_SDA
+		int "GPIO used for SDA on ULP I2C module"
+
+	config BSP_I2C2_SCL
+		int "GPIO used for SCL on ULP I2C module"
+
 	config BSP_MCPWM0
 		int "GPIO used for MCPWM0 @ 150 Hz / 16 bit"
 

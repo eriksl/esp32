@@ -3,9 +3,9 @@ WEMOS Lolin S3 mini
 	AVAILABLE	USED	FREE	designated function/marking		used
 
 0				*				board boot select
-1	*															LEDpixel 1
-2	*			*												SPI 2 display D/C
-3	#			 				board boot select				LEDpixel 2
+1	*															SPI 2 display D/C
+2	*			*												I2C 2 SCL (RTC/ULP)
+3	*			 				board boot select				I2C 2 SDA (RTC/ULP)
 4	*			*												LEDPWM 1 5 kHz SPI 2 display backlight
 5	*															I2C 0 SDA
 6	*															I2C 0 SCL
@@ -39,8 +39,8 @@ WEMOS Lolin S3 mini
 34	#			*				SP0/1 IO5=IO_D5					LEDPWM 3 120 Hz
 35	#			*				SP0/1 IO6=IO_D6					UART TxD
 36	#			*				SP0/1 IO7=IO_D7					UART RxD
-37	#			*				SP0/1 DQS						MCPWM 3 2400 Hz
-38	*			*												MCPWM 2 2400 Hz
+37	#			*				SP0/1 DQS						LEDpixel 1
+38	*			*												LEDpixel 2
 39								JTAG MTCK
 40								JTAG MTDO
 41								JTAG MDTI
@@ -60,7 +60,11 @@ SCK			12*	SCK		L-1-4		44	SCK		R-2-2		3	orange			D1	brown		24	D/C(SCL)
 MOSI		11*	MOSI	L-1-6		18	MOSI	R-2-5		4	yellow			D3	orange		27	LCD_SDI
 CS			10*	CS0		L-1-7		16	CS		R-2-6		5	green			D0	black		23	LCD_/CS
 Vss			 G	GND		R-1-7		 G	GND		R-2-7		6	blue			GND	white		 1	Vss
-D/C			 2	D/C		R-1-3		21	D/C		R-1-5		7	purple			D2	red			25	/WR(D/C)
+D/C			 1	D/C		R-2-1		21	D/C		R-1-5		7	purple			D2	red			25	/WR(D/C)
 BL			 4	LEDPWM	L-1-3		17	LEDPWM	R-1-6		8	grey			D5	green		29	BL_ON/OFF
+
+			I2C 0					I2C 1					I2C 2 (RTC/ULP)
+			 5	SDA		L-2-3		14	SDA		L-2-8		 3	SDA		L-2-2
+			 6	SCL		L-2-4		15	SCL		R-1-8		 2	SCL		L-1-2
 
 *) IOMUX fixed assigned

@@ -19,8 +19,16 @@ typedef struct
 	time_t stamp;
 } sensor_value_t;
 
+typedef enum : unsigned int
+{
+	sensor_found,
+	sensor_not_found,
+	sensor_disabled,
+} sensor_detect_t;
+
 typedef struct data_T
 {
+	sensor_detect_t state;
 	i2c_slave_t slave;
 	sensor_value_t values[sensor_type_size];
 	const struct info_T *info;
@@ -36,7 +44,7 @@ typedef struct info_T
 	sensor_type_t type; // bitmask!
 	unsigned int precision;
 	size_t private_data_size;
-	bool (*const detect_fn)(i2c_slave_t);
+	sensor_detect_t (*const detect_fn)(i2c_slave_t);
 	bool (*const init_fn)(data_t *);
 	bool (*const poll_fn)(data_t *);
 	void (*const dump_fn)(const data_t *, string_t);
@@ -82,12 +90,15 @@ static SemaphoreHandle_t data_mutex;
 static data_t *data_root = nullptr;
 
 static unsigned int stat_sensors_skipped[i2c_module_size] = { 0 };
+static unsigned int stat_sensors_not_skipped[i2c_module_size] = { 0 };
 static unsigned int stat_sensors_probed[i2c_module_size] = { 0 };
 static unsigned int stat_sensors_found[i2c_module_size] = { 0 };
+static unsigned int stat_sensors_disabled[i2c_module_size] = { 0 };
 static unsigned int stat_sensors_confirmed[i2c_module_size] = { 0 };
 static unsigned int stat_poll_run[i2c_module_size] = { 0 };
 static unsigned int stat_poll_ok[i2c_module_size] = { 0 };
 static unsigned int stat_poll_error[i2c_module_size] = { 0 };
+static unsigned int stat_poll_skipped[i2c_module_size] = { 0 };
 
 static inline void data_mutex_take(void)
 {
@@ -184,6 +195,7 @@ enum : unsigned int
 typedef enum : unsigned int
 {
 	bh1750_state_init,
+	bh1750_state_reset,
 	bh1750_state_measuring,
 	bh1750_state_finished,
 }  bh1750_state_t;
@@ -208,18 +220,21 @@ static const device_autoranging_data_t bh1750_autoranging_data[bh1750_autorangin
 	{{	bh1750_opcode_one_lmode,	31	},	{ 1000, 65536 }, 65535, 2.40 },
 };
 
-static bool bh1750_detect(i2c_slave_t slave)
+static sensor_detect_t bh1750_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[8];
 
-	if(!i2c_receive(slave, sizeof(buffer), buffer))
-		return(false);
+	if(!i2c_send_1_receive(slave, bh1750_opcode_powerdown, sizeof(buffer), buffer))
+		return(sensor_not_found);
 
 	if((buffer[2] != 0xff) || (buffer[3] != 0xff) || (buffer[4] != 0xff) ||
 			(buffer[5] != 0xff) || (buffer[6] != 0xff) || (buffer[7] != 0xff))
-		return(false);
+		return(sensor_not_found);
 
-	return(true);
+	if(i2c_slave_ulp(slave)) // ULP doesn't support I2C read transactions without writing one byte
+		return(sensor_disabled);
+
+	return(sensor_found);
 }
 
 static bool bh1750_init(data_t *data)
@@ -229,10 +244,10 @@ static bool bh1750_init(data_t *data)
 	assert(pdata);
 
 	if(!i2c_send_1(data->slave, bh1750_opcode_poweron))
+	{
+		log("bh1750: init error");
 		return(false);
-
-	if(!i2c_send_1(data->slave, bh1750_opcode_reset))
-		return(false);
+	}
 
 	pdata->raw_value = 0;
 	pdata->scaling = 0;
@@ -253,24 +268,37 @@ static bool bh1750_poll(data_t *data)
 
 	switch(pdata->state)
 	{
-		case(bh1750_state_finished):
 		case(bh1750_state_init):
+		{
+			if(!i2c_send_1(data->slave, bh1750_opcode_reset))
+			{
+				log("bh1750: poll: error 1");
+				return(false);
+			}
+
+			pdata->state = bh1750_state_reset;
+
+			break;
+		}
+
+		case(bh1750_state_reset):
+		case(bh1750_state_finished):
 		{
 			if(!i2c_send_1(data->slave, bh1750_opcode_change_meas_hi | ((bh1750_autoranging_data[pdata->scaling].data[1] >> 5) & 0b0000'0111)))
 			{
-				log("bh1750: warning: error sending change meas hi");
+				log("bh1750: poll error 2");
 				return(false);
 			}
 
 			if(!i2c_send_1(data->slave, bh1750_opcode_change_meas_lo | ((bh1750_autoranging_data[pdata->scaling].data[1] >> 0) & 0b0001'1111)))
 			{
-				log("bh1750: warning: error sending change meas lo");
+				log("bh1750: poll error 2");
 				return(false);
 			}
 
 			if(!i2c_send_1(data->slave, bh1750_autoranging_data[pdata->scaling].data[0]))
 			{
-				log("bh1750: warning: error sending opcode");
+				log("bh1750: poll error 3");
 				return(false);
 			}
 
@@ -283,7 +311,7 @@ static bool bh1750_poll(data_t *data)
 		{
 			pdata->state = bh1750_state_finished;
 
-			if(!i2c_receive(data->slave, 2, buffer))
+			if(!i2c_receive(data->slave, sizeof(buffer), buffer))
 			{
 				log("bh1750: poll: warning: error in receive data");
 				return(false);
@@ -348,14 +376,14 @@ typedef struct
 	unsigned int raw_value[2];
 } tmp75_private_data_t;
 
-static bool tmp75_detect(i2c_slave_t slave)
+static sensor_detect_t tmp75_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[2];
 
 	if(!i2c_send_1_receive(slave, tmp75_reg_conf, sizeof(buffer), buffer))
-		return(false);
+		return(sensor_not_found);
 
-	return(true);
+	return(sensor_found);
 }
 
 static bool tmp75_init(data_t *data)
@@ -488,23 +516,23 @@ static bool opt3001_start_measurement(data_t *data)
 	return(true);
 }
 
-static bool opt3001_detect(i2c_slave_t slave)
+static sensor_detect_t opt3001_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[2];
 
 	if(!i2c_send_1_receive(slave, opt3001_reg_id_manuf, sizeof(buffer), buffer))
-		return(false);
+		return(sensor_not_found);
 
 	if(unsigned_16_be(buffer) != opt3001_id_manuf_ti)
-		return(false);
+		return(sensor_not_found);
 
 	if(!i2c_send_1_receive(slave, opt3001_reg_id_dev, sizeof(buffer), buffer))
-		return(false);
+		return(sensor_not_found);
 
 	if(unsigned_16_be(buffer) != opt3001_id_dev_opt3001)
-		return(false);
+		return(sensor_not_found);
 
-	return(true);
+	return(sensor_found);
 }
 
 static bool opt3001_init(data_t *data)
@@ -654,41 +682,41 @@ typedef struct
 	unsigned int exponent;
 } max44009_private_data_t;
 
-static bool max44009_detect(i2c_slave_t slave)
+static sensor_detect_t max44009_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[2];
 
 	if(!i2c_send_1_receive(slave, max44009_reg_ints, sizeof(buffer), buffer))
-		return(false);
+		return(sensor_not_found);
 
 	if((buffer[0] != max44009_probe_ints) || (buffer[1] != max44009_probe_ints))
-		return(false);
+		return(sensor_not_found);
 
 	if(!i2c_send_1_receive(slave, max44009_reg_inte, sizeof(buffer), buffer))
-		return(false);
+		return(sensor_not_found);
 
 	if((buffer[0] != max44009_probe_inte) || (buffer[1] != max44009_probe_inte))
-		return(false);
+		return(sensor_not_found);
 
 	if(!i2c_send_1_receive(slave, max44009_reg_thresh_msb, sizeof(buffer), buffer))
-		return(false);
+		return(sensor_not_found);
 
 	if((buffer[0] != max44009_probe_thresh_msb) || (buffer[1] != max44009_probe_thresh_msb))
-		return(false);
+		return(sensor_not_found);
 
 	if(!i2c_send_1_receive(slave, max44009_reg_thresh_lsb, sizeof(buffer), buffer))
-		return(false);
+		return(sensor_not_found);
 
 	if((buffer[0] != max44009_probe_thresh_lsb) || (buffer[1] != max44009_probe_thresh_lsb))
 		return(false);
 
 	if(!i2c_send_1_receive(slave, max44009_reg_thresh_timer, sizeof(buffer), buffer))
-		return(false);
+		return(sensor_not_found);
 
 	if((buffer[0] != max44009_probe_thresh_timer) || (buffer[1] != max44009_probe_thresh_timer))
-		return(false);
+		return(sensor_not_found);
 
-	return(true);
+	return(sensor_found);
 }
 
 static bool max44009_init(data_t *data)
@@ -836,17 +864,17 @@ static bool asair_init_chip(data_t *data)
 	return(false);
 }
 
-static bool asair_detect(i2c_slave_t slave)
+static sensor_detect_t asair_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[1];
 
 	if(!i2c_send_1_receive(slave, asair_cmd_get_status, sizeof(buffer), buffer))
-		return(false);
+		return(sensor_not_found);
 
 	if(!i2c_send_1(slave, asair_cmd_reset))
-		return(false);
+		return(sensor_not_found);
 
-	return(true);
+	return(sensor_found);
 }
 
 static bool asair_init(data_t *data)
@@ -1070,48 +1098,40 @@ static const device_autoranging_data_t tsl2561_autoranging_data[tsl2561_autorang
 	{{	tsl2561_tim_integ_13ms,		tsl2561_tim_low_gain	},	{	256,	65536	},	5047,	200		},
 };
 
-static bool tsl2561_write(i2c_slave_t slave, tsl2561_reg_t reg, unsigned int value)
+static bool tsl2561_write_byte(i2c_slave_t slave, tsl2561_reg_t reg, unsigned int value)
 {
-	if(!i2c_send_2(slave, tsl2561_cmd_cmd | tsl2561_cmd_clear | (reg & tsl2561_cmd_address), value))
-	{
-		log("sensor: tsl2561: error 1");
+	return(i2c_send_2(slave, tsl2561_cmd_cmd | tsl2561_cmd_clear | (reg & tsl2561_cmd_address), value));
+}
+
+static bool tsl2561_read_byte(i2c_slave_t slave, tsl2561_reg_t reg, unsigned int *value)
+{
+	uint8_t buffer[1];
+
+	if(!i2c_send_1_receive(slave, tsl2561_cmd_cmd | (reg & tsl2561_cmd_address), sizeof(buffer), buffer))
 		return(false);
-	}
+
+	*value = buffer[0];
 
 	return(true);
 }
 
-static bool tsl2561_read_byte(i2c_slave_t slave, tsl2561_reg_t reg, uint8_t *byte)
-{
-	if(!i2c_send_1_receive(slave, tsl2561_cmd_cmd | (reg & tsl2561_cmd_address), sizeof(*byte), byte))
-	{
-		log("sensor: tsl2561: error 2");
-		return(false);
-	}
-
-	return(true);
-}
-
-static bool tsl2561_read_word(i2c_slave_t slave, tsl2561_reg_t reg, uint16_t *word)
+static bool tsl2561_read_word(i2c_slave_t slave, tsl2561_reg_t reg, unsigned int *value)
 {
 	uint8_t buffer[2];
 
 	if(!i2c_send_1_receive(slave, tsl2561_cmd_cmd | (reg & tsl2561_cmd_address), sizeof(buffer), buffer))
-	{
-		log("sensor: tsl2561: error 3");
 		return(false);
-	}
 
-	*word = unsigned_16_le(buffer);
+	*value = unsigned_16_le(buffer);
 
 	return(true);
 }
 
 static bool tsl2561_write_check(i2c_slave_t slave, tsl2561_reg_t reg, unsigned int value)
 {
-	uint8_t rv;
+	unsigned rv;
 
-	if(!tsl2561_write(slave, reg, value))
+	if(!tsl2561_write_byte(slave, reg, value))
 		return(false);
 
 	if(!tsl2561_read_byte(slave, reg, &rv))
@@ -1123,42 +1143,41 @@ static bool tsl2561_write_check(i2c_slave_t slave, tsl2561_reg_t reg, unsigned i
 	return(true);
 }
 
-static bool tsl2561_detect(i2c_slave_t slave)
+static sensor_detect_t tsl2561_detect(i2c_slave_t slave)
 {
-	uint8_t regval;
-	uint16_t word;
+	unsigned int regval;
 
 	if(!tsl2561_read_byte(slave, tsl2561_reg_id, &regval))
-		return(false);
+		return(sensor_not_found);
 
 	if(regval != tsl2561_id_tsl2561)
-		return(false);
+		return(sensor_not_found);
 
-	if(!tsl2561_read_word(slave, tsl2561_reg_threshlow, &word))
-		return(false);
+	if(!tsl2561_read_word(slave, tsl2561_reg_threshlow, &regval))
+		return(sensor_not_found);
 
-	if(word != tsl2561_probe_threshold)
-		return(false);
+	if(regval != tsl2561_probe_threshold)
+		return(sensor_not_found);
 
-	if(!tsl2561_read_word(slave, tsl2561_reg_threshhigh, &word))
-		return(false);
+	if(!tsl2561_read_word(slave, tsl2561_reg_threshhigh, &regval))
+		return(sensor_not_found);
 
-	if(word != tsl2561_probe_threshold)
-		return(false);
+	if(regval != tsl2561_probe_threshold)
+		return(sensor_not_found);
 
 	if(!tsl2561_write_check(slave, tsl2561_reg_control, tsl2561_ctrl_power_off))
-		return(false);
+		return(sensor_not_found);
 
 	if(tsl2561_write_check(slave, tsl2561_reg_id, 0x00)) // id register should not be writable
-		return(false);
+		return(sensor_not_found);
 
-	return(true);
+	return(sensor_found);
 }
 
 static bool tsl2561_init(data_t *data)
 {
 	tsl2561_private_data_t *pdata = data->private_data;
-	uint8_t regval;
+	unsigned int regval;
 
 	assert(pdata);
 
@@ -1170,17 +1189,29 @@ static bool tsl2561_init(data_t *data)
 	pdata->channel[0] = 0;
 	pdata->channel[1] = 0;
 
-	if(!tsl2561_write_check(data->slave, tsl2561_reg_interrupt, 0x00)) // disable interrupts
+	if(!tsl2561_write_check(data->slave, tsl2561_reg_interrupt, 0x00))
+	{
+		log("tsl2561: init: error 1");
 		return(false);
+	}
 
-	if(!tsl2561_write(data->slave, tsl2561_reg_control, tsl2561_ctrl_power_on))	// power up
+	if(!tsl2561_write_byte(data->slave, tsl2561_reg_control, tsl2561_ctrl_power_on))
+	{
+		log("tsl2561: init: error 2");
 		return(false);
+	}
 
 	if(!tsl2561_read_byte(data->slave, tsl2561_reg_control, &regval))
+	{
+		log("tsl2561: init: error 3");
 		return(false);
+	}
 
 	if((regval & 0x0f) != tsl2561_ctrl_power_on)
+	{
+		log("tsl2561: init: error 4");
 		return(false);
+	}
 
 	return(true);
 }
@@ -1188,7 +1219,6 @@ static bool tsl2561_init(data_t *data)
 static bool tsl2561_poll(data_t *data)
 {
 	tsl2561_private_data_t *pdata = data->private_data;
-	uint8_t buffer[2];
 	unsigned int overflow, scale_down_threshold, scale_up_threshold;
 	float value, ratio;
 
@@ -1201,7 +1231,7 @@ static bool tsl2561_poll(data_t *data)
 		{
 			if(!tsl2561_write_check(data->slave, tsl2561_reg_timeint, tsl2561_autoranging_data[pdata->scaling].data[0] | tsl2561_autoranging_data[pdata->scaling].data[1]))
 			{
-				log("sensor: tsl2561 poll error 1");
+				log("tsl2561: poll: error 1");
 				return(false);
 			}
 
@@ -1218,21 +1248,17 @@ static bool tsl2561_poll(data_t *data)
 
 			pdata->state = tsl2561_state_finished;
 
-			if(!i2c_send_1_receive(data->slave, tsl2561_cmd_cmd | tsl2561_reg_data0, sizeof(buffer), buffer))
+			if(!tsl2561_read_word(data->slave, tsl2561_reg_data0, &pdata->channel[0]))
 			{
-				log("sensor: tsl2561 poll error 2");
+				log("tsl2561: poll: error 2");
 				return(false);
 			}
 
-			pdata->channel[0] = unsigned_16_le(&buffer[0]);
-
-			if(!i2c_send_1_receive(data->slave, tsl2561_cmd_cmd | tsl2561_reg_data1, sizeof(buffer), buffer))
+			if(!tsl2561_read_word(data->slave, tsl2561_reg_data1, &pdata->channel[1]))
 			{
-				log("sensor: tsl2561 poll error 3");
+				log("tsl2561: poll: error 3");
 				return(false);
 			}
-
-			pdata->channel[1] = unsigned_16_le(&buffer[0]);
 
 			if(((pdata->channel[0] >= overflow) || (pdata->channel[1] >= overflow)) && (pdata->scaling >= (tsl2561_autoranging_data_size - 1)))
 			{
@@ -1351,7 +1377,7 @@ typedef struct
 	unsigned int raw_humidity;
 } hdc1080_private_data_t;
 
-static bool hdc1080_send_16(i2c_slave_t slave, unsigned int reg, unsigned int word)
+static bool hdc1080_write_word(i2c_slave_t slave, unsigned int reg, unsigned int word)
 {
 	uint8_t buffer[3];
 
@@ -1362,23 +1388,26 @@ static bool hdc1080_send_16(i2c_slave_t slave, unsigned int reg, unsigned int wo
 	return(i2c_send(slave, sizeof(buffer), buffer));
 }
 
-static bool hdc1080_detect(i2c_slave_t slave)
+static sensor_detect_t hdc1080_detect(i2c_slave_t slave)
 {
-	uint8_t buffer[4];
+	uint8_t buffer[2];
 
-	if(!i2c_send_1_receive(slave, hdc1080_reg_man_id, 2, buffer))
-		return(false);
+	if(!i2c_send_1_receive(slave, hdc1080_reg_man_id, sizeof(buffer), buffer))
+		return(sensor_not_found);
 
 	if(unsigned_16_be(buffer) != hdc1080_man_id)
-		return(false);
+		return(sensor_not_found);
 
 	if(!i2c_send_1_receive(slave, hdc1080_reg_dev_id, sizeof(buffer), buffer))
-		return(false);
+		return(sensor_not_found);
 
 	if(unsigned_16_be(buffer) != hdc1080_dev_id)
-		return(false);
+		return(sensor_not_found);
 
-	return(true);
+	if(i2c_slave_ulp(slave)) // ULP doesn't support I2C read transactions without writing one byte
+		return(sensor_disabled);
+
+	return(sensor_found);
 }
 
 static bool hdc1080_init(data_t *data)
@@ -1389,7 +1418,7 @@ static bool hdc1080_init(data_t *data)
 
 	pdata->state = hdc1080_state_init;
 
-	if(!hdc1080_send_16(data->slave, hdc1080_reg_conf, hdc1080_conf_rst))
+	if(!hdc1080_write_word(data->slave, hdc1080_reg_conf, hdc1080_conf_rst))
 	{
 		log("hdc1080: init failed");
 		return(false);
@@ -1437,7 +1466,7 @@ static bool hdc1080_poll(data_t *data)
 				return(false);
 			}
 
-			if(!hdc1080_send_16(data->slave, hdc1080_reg_conf, conf))
+			if(!hdc1080_write_word(data->slave, hdc1080_reg_conf, conf))
 			{
 				log("hdc1080: poll error 3");
 				return(false);
@@ -1677,15 +1706,18 @@ static bool sht3x_fetch_data(i2c_slave_t slave, unsigned int *result1, unsigned 
 	return(true);
 }
 
-static bool sht3x_detect(i2c_slave_t slave)
+static sensor_detect_t sht3x_detect(i2c_slave_t slave)
 {
+	if(i2c_slave_ulp(slave)) // ULP doesn't support I2C transactions with a 16 bit write followed by a read, and neither does it support a read without an 8 bit write command.
+		return(sensor_disabled);
+
 	if(!sht3x_send_command(slave, sht3x_cmd_break))
 	{
 		log("sht3x: detect error");
-		return(false);
+		return(sensor_not_found);
 	}
 
-	return(true);
+	return(sensor_found);
 }
 
 static bool sht3x_init(data_t *data)
@@ -2001,17 +2033,17 @@ static bool bmx280_read_otp(data_t *data)
 	return(true);
 }
 
-static bool bmx280_detect(i2c_slave_t slave)
+static sensor_detect_t bmx280_detect(i2c_slave_t slave)
 {
 	uint8_t	buffer[1];
 
 	if(!i2c_send_1_receive(slave, bmx280_reg_id, sizeof(buffer), buffer))
-		return(false);
+		return(sensor_not_found);
 
 	if((buffer[0] != bmx280_reg_id_bmp280) && (buffer[0] != bmx280_reg_id_bme280))
-		return(false);
+		return(sensor_not_found);
 
-	return(true);
+	return(sensor_found);
 }
 
 static bool bmx280_init(data_t *data)
@@ -2323,14 +2355,17 @@ static bool htu21_get_data(data_t *data, unsigned int *result)
 	return(true);
 }
 
-static bool htu21_detect(i2c_slave_t slave)
+static sensor_detect_t htu21_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[1];
 
-	if(!i2c_send_1_receive(slave, htu21_cmd_read_user, sizeof(buffer), buffer))
-		return(false);
+	if(i2c_slave_ulp(slave)) // ULP doesn't support I2C read transactions without writing one byte
+		return(sensor_disabled);
 
-	return(true);
+	if(!i2c_send_1_receive(slave, htu21_cmd_read_user, sizeof(buffer), buffer))
+		return(sensor_not_found);
+
+	return(sensor_found);
 }
 
 static bool htu21_init(data_t *data)
@@ -2560,17 +2595,17 @@ typedef struct
 	unsigned int raw_white;
 } veml7700_private_data_t;
 
-static bool veml7700_detect(i2c_slave_t slave)
+static sensor_detect_t veml7700_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[2];
 
 	if(!i2c_send_1_receive(slave, veml7700_reg_id, sizeof(buffer), buffer))
-		return(false);
+		return(sensor_not_found);
 
 	if((buffer[0] != veml7700_reg_id_id_1) || (buffer[1] != veml7700_reg_id_id_2))
-		return(false);
+		return(sensor_not_found);
 
-	return(true);
+	return(sensor_found);
 }
 
 static bool veml7700_init(data_t *data)
@@ -2857,17 +2892,17 @@ static bool bme680_read_otp(data_t *data)
 	return(true);
 }
 
-static bool bme680_detect(i2c_slave_t slave)
+static sensor_detect_t bme680_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[1];
 
 	if(!i2c_send_1_receive(slave, bme680_reg_id, sizeof(buffer), buffer))
-		return(false);
+		return(sensor_not_found);
 
 	if(buffer[0] != bme680_reg_id_bme680)
-		return(false);
+		return(sensor_not_found);
 
-	return(true);
+	return(sensor_found);
 }
 
 static bool bme680_init(data_t *data)
@@ -3217,17 +3252,17 @@ static bool apds9930_read_register_2x2(i2c_slave_t slave, unsigned int reg, unsi
 	return(true);
 }
 
-static bool apds9930_detect(i2c_slave_t slave)
+static sensor_detect_t apds9930_detect(i2c_slave_t slave)
 {
 	unsigned int id;
 
 	if(!apds9930_read_register(slave, apds9930_reg_id, &id))
-		return(false);
+		return(sensor_not_found);
 
 	if((id != apds9930_id_apds9930) && (id != apds9930_id_tmd27711) && (id != apds9930_id_tmd27713))
-		return(false);
+		return(sensor_not_found);
 
-	return(true);
+	return(sensor_found);
 }
 
 static bool apds9930_init(data_t *data)
@@ -3613,10 +3648,10 @@ static void run_sensors(void *parameters)
 	i2c_slave_t slave;
 	unsigned int buses;
 	sensor_type_t type;
+	sensor_detect_t detected;
 	auto run = (const run_parameters_t *)parameters;
 
 	module = run->module;
-
 	buses = i2c_buses(module);
 
 	for(bus = i2c_bus_first; bus < buses; bus++)
@@ -3631,12 +3666,12 @@ static void run_sensors(void *parameters)
 				continue;
 			}
 
-			stat_sensors_probed[module]++;
+			stat_sensors_not_skipped[module]++;
 
-			if(!i2c_probe_slave(module, bus, infoptr->address))
+			if(!i2c_probe_slave(module, bus, infoptr->address, i2c_probe_no_write, infoptr->name))
 				continue;
 
-			stat_sensors_found[module]++;
+			stat_sensors_probed[module]++;
 
 			if(!(slave = i2c_register_slave(infoptr->name, module, bus, infoptr->address)))
 			{
@@ -3646,11 +3681,15 @@ static void run_sensors(void *parameters)
 
 			assert(infoptr->detect_fn);
 
-			if(!infoptr->detect_fn(slave))
+			detected = infoptr->detect_fn(slave);
+
+			if(detected == sensor_not_found)
 			{
 				i2c_unregister_slave(&slave);
 				continue;
 			}
+
+			stat_sensors_found[module]++;
 
 			new_data = util_memory_alloc_spiram(sizeof(*new_data));
 			assert(new_data);
@@ -3661,6 +3700,7 @@ static void run_sensors(void *parameters)
 				new_data->values[type].stamp = (time_t)0;
 			}
 
+			new_data->state = detected;
 			new_data->slave = slave;
 			new_data->info = infoptr;
 
@@ -3672,17 +3712,22 @@ static void run_sensors(void *parameters)
 			if(infoptr->private_data_size > 0)
 				new_data->private_data = util_memory_alloc_spiram(infoptr->private_data_size);
 
-			if(!infoptr->init_fn(new_data))
+			if(detected == sensor_disabled)
+				stat_sensors_disabled[module]++;
+			else
 			{
-				log_format("sensor: warning: failed to init sensor %s on bus %u", infoptr->name, bus);
-				i2c_unregister_slave(&slave);
-				if(new_data->private_data)
-					free(new_data->private_data);
-				free(new_data);
-				continue;
-			}
+				if(!infoptr->init_fn(new_data))
+				{
+					log_format("sensor: warning: failed to init sensor %s on bus %u", infoptr->name, bus);
+					i2c_unregister_slave(&slave);
+					if(new_data->private_data)
+						free(new_data->private_data);
+					free(new_data);
+					continue;
+				}
 
-			stat_sensors_confirmed[module]++;
+				stat_sensors_confirmed[module]++;
+			}
 
 			data_mutex_take();
 
@@ -3710,15 +3755,16 @@ static void run_sensors(void *parameters)
 		stat_poll_run[module]++;
 
 		for(dataptr = data_root; dataptr; dataptr = dataptr->next)
-		{
-			if(dataptr->info->poll_fn)
-				if(dataptr->info->poll_fn(dataptr))
-					stat_poll_ok[module]++;
-				else
-					stat_poll_error[module]++;
+			if(dataptr->state == sensor_disabled)
+				stat_poll_skipped[module]++;
 			else
-				log_format("sensor: error: no poll function for sensor %s", dataptr->info->name);
-		}
+				if(dataptr->info->poll_fn)
+					if(dataptr->info->poll_fn(dataptr))
+						stat_poll_ok[module]++;
+					else
+						stat_poll_error[module]++;
+				else
+					log_format("sensor: error: no poll function for sensor %s", dataptr->info->name);
 
 		util_sleep(1000);
 	}
@@ -3728,7 +3774,7 @@ static void run_sensors(void *parameters)
 
 void sensor_init(void)
 {
-	static run_parameters_t run[2] =
+	static run_parameters_t run[i2c_module_size] =
 	{
 		[i2c_module_0_fast] =
 		{
@@ -3738,7 +3784,13 @@ void sensor_init(void)
 		{
 			.module = i2c_module_1_slow,
 		},
+		[i2c_module_2_ulp] =
+		{
+			.module = i2c_module_2_ulp,
+		},
 	};
+	i2c_module_t thread;
+	char name[16];
 
 	assert(!inited);
 
@@ -3747,13 +3799,18 @@ void sensor_init(void)
 
 	inited = true;
 
-	if(xTaskCreatePinnedToCore(run_sensors, "sensors 1", 3 * 1024, &run[i2c_module_0_fast], 1, nullptr, 1) != pdPASS)
-		util_abort("sensor: xTaskCreatePinnedToNode sensors thread 0");
+	for(thread = i2c_module_first; thread < i2c_module_size; thread++)
+	{
+		if(i2c_module_available(thread))
+		{
+			util_sleep(100);
 
-	util_sleep(100);
+			snprintf(name, sizeof(name), "sensors %u", thread);
 
-	if(xTaskCreatePinnedToCore(run_sensors, "sensors 2", 3 * 1024, &run[i2c_module_1_slow], 1, nullptr, 1) != pdPASS)
-		util_abort("sensor: xTaskCreatePinnedToNode sensors thread 1");
+			if(xTaskCreatePinnedToCore(run_sensors, name, 3 * 1024, &run[thread], 1, nullptr, 1) != pdPASS)
+				util_abort("sensor: xTaskCreatePinnedToNode sensors thread");
+		}
+	}
 }
 
 void command_sensor_info(cli_command_call_t *call)
@@ -3765,8 +3822,12 @@ void command_sensor_info(cli_command_call_t *call)
 	i2c_bus_t bus;
 	unsigned int address;
 	sensor_type_t type;
+	bool include_disabled;
 
-	assert(call->parameter_count == 0);
+	include_disabled = false;
+
+	if((call->parameter_count > 0) && (call->parameters[0].unsigned_int > 0))
+		include_disabled = true;
 
 	string_assign_cstr(call->result, "SENSOR info");
 
@@ -3782,6 +3843,9 @@ void command_sensor_info(cli_command_call_t *call)
 	{
 		slave = dataptr->slave;
 
+		if((dataptr->state == sensor_disabled) && !include_disabled)
+			continue;
+
 		if(!slave)
 		{
 			string_append_cstr(call->result, "\nslave = NULL");
@@ -3794,10 +3858,13 @@ void command_sensor_info(cli_command_call_t *call)
 		{
 			string_format_append(call->result, "\n- %s@%u/%u/%x:", name, module, bus, address);
 
-			for(type = sensor_type_first; type < sensor_type_size; type++)
-				if(dataptr->info->type & (1 << type))
-					string_format_append(call->result, " %s: %.*f %s", sensor_type_info[type].type,
-							(int)dataptr->info->precision, (double)dataptr->values[type].value, sensor_type_info[type].unity);
+			if(dataptr->state == sensor_disabled)
+				string_append_cstr(call->result, " [disabled]");
+			else
+				for(type = sensor_type_first; type < sensor_type_size; type++)
+					if(dataptr->info->type & (1 << type))
+						string_format_append(call->result, " %s: %.*f %s", sensor_type_info[type].type,
+								(int)dataptr->info->precision, (double)dataptr->values[type].value, sensor_type_info[type].unity);
 		}
 	}
 
@@ -3828,6 +3895,9 @@ void command_sensor_json(cli_command_call_t *call)
 
 	for(dataptr = data_root, first_sensor = true; dataptr; dataptr = dataptr->next)
 	{
+		if(dataptr->state == sensor_disabled)
+			continue;
+
 		slave = dataptr->slave;
 
 		if(slave && i2c_get_slave_info(slave, &module, &bus, &address, &name))
@@ -3915,15 +3985,21 @@ void command_sensor_dump(cli_command_call_t *call)
 		else
 		{
 			string_format_append(call->result, "\n- sensor %s at module %u, bus %u, address 0x%x", name, (unsigned int)module, (unsigned int)bus, address);
-			string_append_cstr(call->result, "\n  values:");
 
-			for(type = sensor_type_first; type < sensor_type_size; type++)
+			if(dataptr->state == sensor_disabled)
+				string_append_cstr(call->result, ": [disabled]");
+			else
 			{
-				if(dataptr->info->type & (1 << type))
+				string_append_cstr(call->result, "\n  values:");
+
+				for(type = sensor_type_first; type < sensor_type_size; type++)
 				{
-					util_time_to_string(time_string, &dataptr->values[type].stamp);
-					string_format_append(call->result, " %s=%.*f [%s]", sensor_type_info[type].type, (int)dataptr->info->precision, (double)dataptr->values[type].value,
-						string_cstr(time_string));
+					if(dataptr->info->type & (1 << type))
+					{
+						util_time_to_string(time_string, &dataptr->values[type].stamp);
+						string_format_append(call->result, " %s=%.*f [%s]", sensor_type_info[type].type, (int)dataptr->info->precision, (double)dataptr->values[type].value,
+							string_cstr(time_string));
+					}
 				}
 			}
 
@@ -3950,11 +4026,14 @@ void command_sensor_stats(cli_command_call_t *call)
 	{
 		string_format_append(call->result, "\n- module %u", (unsigned int)module);
 		string_format_append(call->result, "\n-  sensors skipped: %u", stat_sensors_skipped[module]);
+		string_format_append(call->result, "\n-  sensors not skipped: %u", stat_sensors_not_skipped[module]);
 		string_format_append(call->result, "\n-  sensors probed: %u", stat_sensors_probed[module]);
 		string_format_append(call->result, "\n-  sensors found: %u", stat_sensors_found[module]);
 		string_format_append(call->result, "\n-  sensors confirmed: %u", stat_sensors_confirmed[module]);
+		string_format_append(call->result, "\n-  sensors disabled: %u", stat_sensors_disabled[module]);
 		string_format_append(call->result, "\n-  complete poll runs: %u", stat_poll_run[module]);
 		string_format_append(call->result, "\n-  sensor poll succeeded: %u", stat_poll_ok[module]);
+		string_format_append(call->result, "\n-  sensor poll skipped: %u", stat_poll_skipped[module]);
 		string_format_append(call->result, "\n-  sensor poll failed: %u", stat_poll_error[module]);
 	}
 }

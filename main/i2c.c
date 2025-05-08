@@ -11,6 +11,9 @@
 #include <driver/i2c_master.h>
 #include <freertos/FreeRTOS.h>
 
+#include <ulp_riscv.h>
+#include <ulp_riscv_i2c.h>
+
 enum
 {
 	i2c_timeout_ms = 1000,
@@ -35,11 +38,13 @@ typedef struct
 
 typedef struct
 {
+	bool available;
 	i2c_module_t id;
 	const char *name;
 	unsigned int sda;
 	unsigned int scl;
 	unsigned int speed;
+	bool ulp;
 } module_info_t;
 
 typedef struct
@@ -69,19 +74,65 @@ static const module_info_t module_info[i2c_module_size] =
 {
 	[i2c_module_0_fast] =
 	{
+#if((CONFIG_BSP_I2C0_SDA >= 0) && (CONFIG_BSP_I2C0_SCL >= 0))
+		.available = true,
 		.id = i2c_module_0_fast,
 		.name = "module 0, on main CPU, 400 kHz", // FIXME: make bus speed configurable
 		.sda = CONFIG_BSP_I2C0_SDA,
 		.scl = CONFIG_BSP_I2C0_SCL,
 		.speed = i2c_module_speed_fast,
+		.ulp = false,
+#else
+		.available = false,
+		.id = i2c_module_unavailable,
+		.name = "module 0 unavailable",
+		.sda = -1,
+		.scl = -1,
+		.speed = i2c_module_speed_none,
+		.ulp = false,
+#endif
 	},
+
 	[i2c_module_1_slow] =
 	{
+#if((CONFIG_BSP_I2C1_SDA >= 0) && (CONFIG_BSP_I2C1_SCL >= 0))
+		.available = true,
 		.id = i2c_module_1_slow,
 		.name = "module 1, on main CPU, 100 kHz",
 		.sda = CONFIG_BSP_I2C1_SDA,
 		.scl = CONFIG_BSP_I2C1_SCL,
 		.speed = i2c_module_speed_slow,
+		.ulp = false,
+#else
+		.available = false,
+		.id = i2c_module_unavailable,
+		.name = "module 1 unavailable",
+		.sda = -1,
+		.scl = -1,
+		.speed = i2c_module_speed_none,
+		.ulp = false,
+#endif
+	},
+
+	[i2c_module_2_ulp] =
+	{
+#if((CONFIG_BSP_I2C2_SDA >= 0) && (CONFIG_BSP_I2C2_SCL >= 0))
+		.available = true,
+		.id = i2c_module_2_ulp,
+		.name = "module 2, on ULP, 400 kHz",
+		.sda = CONFIG_BSP_I2C2_SDA,
+		.scl = CONFIG_BSP_I2C2_SCL,
+		.speed = i2c_module_speed_fast,
+		.ulp = true,
+#else
+		.available = false,
+		.id = i2c_module_unavailable,
+		.name = "module 2 unavailable",
+		.sda = -1,
+		.scl = -1,
+		.speed = i2c_module_speed_none,
+		.ulp = false,
+#endif
 	},
 };
 
@@ -113,30 +164,46 @@ static inline void module_mutex_give(i2c_module_t module)
 _Static_assert(i2c_bus_none == 0);
 _Static_assert(i2c_bus_0 == 1);
 
+static bool i2c_send_receive_intern(bool lock, i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t *send_buffer, unsigned int receive_buffer_size, uint8_t *receive_buffer);
+
 static void set_mux(i2c_module_t module, i2c_bus_t bus)
 {
-	uint8_t reg[1];
 	const module_info_t *info;
 	module_data_t *data;
+	uint8_t buffer_in[1];
+	esp_err_t rv;
 
+	assert(inited);
 	assert(module < i2c_module_size);
 	assert(bus < i2c_bus_size);
 
 	info = &module_info[module];
 	data = &module_data[module];
 
-	if(!data->mux_dev_handle)
+	assert(info->available);
+
+	if(!data->has_mux)
 		return;
 
 	if(data->selected_bus == bus)
 		return;
 
-	if(bus == i2c_bus_none)
-		reg[0] = 0;
-	else
-		reg[0] = (1 << (bus - i2c_bus_0));
+	assert(bus < data->buses);
+	assert(info->ulp || data->mux_dev_handle);
 
-	util_warn_on_esp_err("i2c_master_transmit mux", i2c_master_transmit(module_ptr->mux_dev_handle, reg, 1, i2c_timeout_ms));
+	if(bus == i2c_bus_none)
+		buffer_in[0] = 0;
+	else
+		buffer_in[0] = (1 << (bus - i2c_bus_0));
+
+	if(info->ulp)
+	{
+		ulp_riscv_i2c_master_set_slave_addr(i2c_bus_mux_address);
+		ulp_riscv_i2c_master_set_slave_reg_addr(buffer_in[0]);
+		util_warn_on_esp_err("ulp_riscv_i2c_master_write_to_device", rv = ulp_riscv_i2c_master_write_to_device(buffer_in, sizeof(buffer_in)));
+	}
+	else
+		util_warn_on_esp_err("i2c_master_transmit", rv = i2c_master_transmit(data->mux_dev_handle, buffer_in, sizeof(buffer_in), i2c_timeout_ms));
 
 	if(rv == ESP_OK)
 		data->selected_bus = bus;
@@ -164,13 +231,10 @@ static bool slave_check(slave_t *slave)
 		return(false);
 	}
 
-	if(slave->bus >= i2c_bus_size)
-	{
-		log_format("i2c: check slave: bus id in slave struct out of bounds: %u", (unsigned int)slave->bus);
-		return(false);
-	}
 	info = &module_info[slave->module];
 	data = &module_data[slave->module];
+
+	assert(info->available);
 
 	if(!info)
 	{
@@ -178,19 +242,25 @@ static bool slave_check(slave_t *slave)
 		return(false);
 	}
 
-	if(module->id >= i2c_module_size)
+	if(slave->bus >= data->buses)
 	{
-		log_format("i2c: check slave: module id out of bounds: %u", (unsigned int)module->id);
+		log_format("i2c: check slave: bus id in slave struct out of bounds: %u", (unsigned int)slave->bus);
 		return(false);
 	}
 
-	if(!(bus = module->bus[slave->bus]))
+	if(info->id >= i2c_module_size)
+	{
+		log_format("i2c: check slave: module id out of bounds: %u", (unsigned int)info->id);
+		return(false);
+	}
+
+	if(!(bus = data->bus[slave->bus]))
 	{
 		log_format("i2c: check slave: bus unknown %u", slave->bus);
 		goto finish;
 	}
 
-	if(bus->id >= i2c_bus_size)
+	if(bus->id >= data->buses)
 	{
 		log_format("i2c: check slave: bus id out of bounds: %u", (unsigned int)bus->id);
 		return(false);
@@ -231,7 +301,7 @@ finish:
 
 void i2c_init(void)
 {
-	static const i2c_master_bus_config_t module_config[i2c_module_size] =
+	static const i2c_master_bus_config_t main_i2c_module_config[i2c_module_size] =
 	{
 		[i2c_module_0_fast] =
 		{
@@ -262,13 +332,36 @@ void i2c_init(void)
 			},
 		},
 	};
+#if((CONFIG_BSP_I2C2_SDA >= 0) && (CONFIG_BSP_I2C2_SCL >= 0))
+	static const ulp_riscv_i2c_cfg_t ulp_i2c_module_config =
+	{
+		.i2c_pin_cfg =
+		{
+			.sda_io_num = CONFIG_BSP_I2C2_SDA,
+			.scl_io_num = CONFIG_BSP_I2C2_SCL,
+			.sda_pullup_en = false,
+			.scl_pullup_en = false,
+		},
+		.i2c_timing_cfg =
+		{
+			.scl_low_period = 1.4,
+			.scl_high_period = 0.3,
+			.sda_duty_period = 1,
+			.scl_start_period = 2,
+			.scl_stop_period = 1.3,
+			.i2c_trans_timeout = 20,
+		},
+	};
+#endif
+
 	i2c_module_t module;
 	const module_info_t *info;
 	module_data_t *data;
 	i2c_bus_t bus;
 	bus_t *bus_ptr;
-	unsigned int rv, buses;
 	i2c_device_config_t dev_config_mux;
+	uint8_t buffer_in[1];
+	uint8_t buffer_out[1];
 
 	assert(!inited);
 
@@ -288,43 +381,90 @@ void i2c_init(void)
 	{
 		info = &module_info[module];
 
+		if(!info->available)
+			continue;
+
 		module_mutex_take(module);
 
 		data = &module_data[module];
 
-		if(rv == ESP_OK)
+		data->has_mux = false;
+
+#if((CONFIG_BSP_I2C2_SDA >= 0) && (CONFIG_BSP_I2C2_SCL >= 0))
+		if(info->ulp)
 		{
-			dev_config_mux.dev_addr_length = I2C_ADDR_BIT_LEN_7;
-			dev_config_mux.device_address = i2c_bus_mux_address;
-			dev_config_mux.scl_speed_hz = module_ptr->speed;
-			dev_config_mux.scl_wait_us = 0;
-			dev_config_mux.flags.disable_ack_check = 0;
 			data->handle = nullptr;
 			data->mux_dev_handle = nullptr;
 
-			buses = i2c_bus_size;
-			module_mutex_take(module);
-			util_warn_on_esp_err("i2c master bus add device mux", i2c_master_bus_add_device(module_ptr->handle, &dev_config_mux, &module_ptr->mux_dev_handle));
-			module_mutex_give(module);
+			util_abort_on_esp_err("ulp_riscv_i2c_master_init", ulp_riscv_i2c_master_init(&ulp_i2c_module_config));
+			ulp_riscv_i2c_master_set_slave_addr(i2c_bus_mux_address);
+			ulp_riscv_i2c_master_set_slave_reg_addr(0xff);
+
+			if((ulp_riscv_i2c_master_read_from_device(buffer_out, sizeof(buffer_out)) == ESP_OK) &&
+					(ulp_riscv_i2c_master_read_from_device(buffer_out, sizeof(buffer_out)) == ESP_OK) &&
+					(buffer_out[0] == 0xff))
+			{
+				ulp_riscv_i2c_master_set_slave_reg_addr(0x00);
+
+				if((ulp_riscv_i2c_master_read_from_device(buffer_out, sizeof(buffer_out)) == ESP_OK) &&
+						(ulp_riscv_i2c_master_read_from_device(buffer_out, sizeof(buffer_out)) == ESP_OK) &&
+						(buffer_out[0] == 0x00))
+					data->has_mux = true;
+			}
 		}
 		else
+#endif
 		{
-			buses = 1;
-			data->mux_dev_handle = (i2c_master_dev_handle_t)0;
+			util_abort_on_esp_err("i2c_new_master_bus", i2c_new_master_bus(&main_i2c_module_config[module], &data->handle));
+
+			if(i2c_master_probe(data->handle, i2c_bus_mux_address, i2c_timeout_ms) == ESP_OK)
+			{
+				dev_config_mux.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+				dev_config_mux.device_address = i2c_bus_mux_address;
+				dev_config_mux.scl_speed_hz = info->speed;
+				dev_config_mux.scl_wait_us = 0;
+				dev_config_mux.flags.disable_ack_check = 0;
+
+				util_warn_on_esp_err("i2c master bus add device mux", i2c_master_bus_add_device(data->handle, &dev_config_mux, &data->mux_dev_handle));
+
+				buffer_in[0] = 0xff;
+
+				if((i2c_master_transmit_receive(data->mux_dev_handle, buffer_in, sizeof(buffer_in), buffer_out, sizeof(buffer_out), i2c_timeout_ms) == ESP_OK) &&
+						(i2c_master_transmit_receive(data->mux_dev_handle, buffer_in, sizeof(buffer_in), buffer_out, sizeof(buffer_out), i2c_timeout_ms) == ESP_OK) &&
+						(buffer_out[0] == 0xff))
+				{
+					buffer_in[0] = 0x00;
+
+					if((i2c_master_transmit_receive(data->mux_dev_handle, buffer_in, sizeof(buffer_in), buffer_out, sizeof(buffer_out), i2c_timeout_ms) == ESP_OK) &&
+							(i2c_master_transmit_receive(data->mux_dev_handle, buffer_in, sizeof(buffer_in), buffer_out, sizeof(buffer_out), i2c_timeout_ms) == ESP_OK) &&
+							(buffer_out[0] == 0x00))
+						data->has_mux = true;
+				}
+
+				if(!data->has_mux)
+					i2c_master_bus_rm_device(data->mux_dev_handle);
+			}
+
+			if(!data->has_mux)
+				data->mux_dev_handle = nullptr;
 		}
 
-		for(bus = i2c_bus_first; bus < buses; bus++)
 		data->selected_bus = i2c_bus_invalid;
+		data->buses = data->has_mux ? i2c_bus_size : 1;
+
+		for(bus = i2c_bus_first; bus < i2c_bus_size; bus++)
+			data->bus[bus] = nullptr;
+
+		for(bus = i2c_bus_first; bus < data->buses; bus++)
 		{
-			bus_ptr = (bus_t *)util_memory_alloc_spiram(sizeof(*bus_ptr));
+			bus_ptr = util_memory_alloc_spiram(sizeof(*bus_ptr));
 			assert(bus_ptr);
 			bus_ptr->id = bus;
-			bus_ptr->slaves = (slave_t *)0;
+			bus_ptr->slaves = nullptr;
 			data->bus[bus] = bus_ptr;
 		}
 
-		for(; bus < i2c_bus_size; bus++)
-			module_ptr->bus[bus] = (bus_t *)0;
+		module_mutex_give(module);
 	}
 
 	inited = true;
@@ -345,37 +485,44 @@ i2c_slave_t i2c_register_slave(const char *name, i2c_module_t module, i2c_bus_t 
 	assert(bus < i2c_bus_size);
 	assert(address < 128);
 
-	new_slave = (slave_t *)0;
+	new_slave = nullptr;
 
 	data_mutex_take();
 
 	info = &module_info[module];
 	data = &module_data[module];
 
-	dev_config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
-	dev_config.device_address = address;
-	dev_config.scl_speed_hz = module_ptr->speed;
-	dev_config.scl_wait_us = 0;
-	dev_config.flags.disable_ack_check = 0;
 	assert(bus < data->buses);
+	assert(info->available);
 
-	module_mutex_take(module);
-	rv = i2c_master_bus_add_device(module_ptr->handle, &dev_config, &dev_handle);
-	module_mutex_give(module);
-
-	if(rv != ESP_OK)
+	if(info->ulp)
+		dev_handle = nullptr;
+	else
 	{
-		util_warn_on_esp_err("i2c_master_bus_add_device", rv);
-		goto error;
+		dev_config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+		dev_config.device_address = address;
+		dev_config.scl_speed_hz = info->speed;
+		dev_config.scl_wait_us = 0;
+		dev_config.flags.disable_ack_check = 0;
+
+		module_mutex_take(module);
+		rv = i2c_master_bus_add_device(data->handle, &dev_config, &dev_handle);
+		module_mutex_give(module);
+
+		if(rv != ESP_OK)
+		{
+			util_warn_on_esp_err("i2c_master_bus_add_device", rv);
+			goto error;
+		}
 	}
 
-	new_slave = (slave_t *)util_memory_alloc_spiram(sizeof(*new_slave));
+	new_slave = util_memory_alloc_spiram(sizeof(*new_slave));
 	new_slave->name = name;
 	new_slave->handle = dev_handle;
 	new_slave->module = module;
 	new_slave->bus = bus;
 	new_slave->address = address;
-	new_slave->next = (slave_t *)0;
+	new_slave->next = nullptr;
 
 	if(!(bus_ptr = data->bus[bus]))
 	{
@@ -431,17 +578,24 @@ bool i2c_unregister_slave(i2c_slave_t *slave)
 	assert((**_slave).module < i2c_module_size);
 	assert((**_slave).bus < i2c_bus_size);
 
-	module_mutex_take((**_slave).module);
-	util_abort_on_esp_err("i2c_master_bus_rm_device", i2c_master_bus_rm_device((**_slave).handle));
-	module_mutex_give((**_slave).module);
-
 	data_mutex_take();
 
 	info = &module_info[(**_slave).module];
 	data = &module_data[(**_slave).module];
 
 	assert(info);
+	assert(info->available);
 	assert(info->id == (**_slave).module);
+	assert((**_slave).bus < data->buses);
+
+	if(info->ulp)
+		assert(!(**_slave).handle);
+	else
+	{
+		module_mutex_take((**_slave).module);
+		util_abort_on_esp_err("i2c_master_bus_rm_device", i2c_master_bus_rm_device((**_slave).handle));
+		module_mutex_give((**_slave).module);
+	}
 
 	if(!(bus = data->bus[(**_slave).bus]))
 	{
@@ -500,9 +654,14 @@ finish:
 	return(error);
 }
 
-bool i2c_probe_slave(i2c_module_t module, i2c_bus_t bus, unsigned int address)
+bool i2c_probe_slave(i2c_module_t module, i2c_bus_t bus, unsigned int address, unsigned int probe_write_value, const char *probe_name)
 {
-	unsigned int rv;
+	const module_info_t *info;
+	module_data_t *data;
+	uint8_t buffer_in[1];
+	uint8_t buffer_out[1];
+	bool success;
+	i2c_slave_t slave;
 
 	assert(inited);
 	assert(module < i2c_module_size);
@@ -510,35 +669,89 @@ bool i2c_probe_slave(i2c_module_t module, i2c_bus_t bus, unsigned int address)
 	assert(address < 128);
 
 	module_mutex_take(module);
-	set_mux(module, bus);
-	rv = i2c_master_probe(module_data[module].handle, address, i2c_timeout_ms);
+
+	info = &module_info[module];
+	data = &module_data[module];
+
+	assert(info->available);
+	assert(bus < data->buses);
+
+	if(info->ulp)
+	{
+		success = false;
+
+		// skip the probe if the slave cannot handle a one byte write
+		if(probe_write_value == i2c_probe_no_write)
+			success = true;
+		else
+		{
+			if((slave = i2c_register_slave(probe_name, module, bus, address)))
+			{
+				set_mux(module, bus);
+				buffer_in[0] = probe_write_value;
+				success = i2c_send_receive_intern(false, slave, sizeof(buffer_in), buffer_in, sizeof(buffer_out), buffer_out);
+				i2c_unregister_slave(&slave);
+			}
+		}
+	}
+	else
+	{
+		set_mux(module, bus);
+		success = i2c_master_probe(data->handle, address, i2c_timeout_ms) == ESP_OK;
+	}
+
 	module_mutex_give(module);
 
-	if(rv != ESP_ERR_NOT_FOUND)
-		util_warn_on_esp_err("i2c_master_probe", rv);
-
-	return(rv == ESP_OK);
+	return(success);
 }
 
 bool i2c_send(i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t *send_buffer)
 {
+	uint8_t receive_buffer[1];
 	slave_t *_slave = (slave_t *)slave;
-	unsigned int rv;
+	const module_info_t *info;
+	esp_err_t rv;
 
 	assert(inited);
 	assert(_slave);
-
-	if(send_buffer_length == 0)
-		return(true);
-
 	assert(send_buffer);
 
-	if(!slave_check(_slave))
+	info = &module_info[_slave->module];
+
+	assert(info->available);
+
+	if(send_buffer_length < 1)
+	{
+		log("i2c: i2c_send called with zero length data");
 		return(false);
+	}
+
+	if(!slave_check(_slave))
+	{
+		log("i2c_send: slave_check failed");
+		return(false);
+	}
 
 	module_mutex_take(_slave->module);
 	set_mux(_slave->module, _slave->bus);
-	util_warn_on_esp_err("i2c_master_transmit", rv = i2c_master_transmit(_slave->handle, send_buffer, send_buffer_length, i2c_timeout_ms));
+
+	if(info->ulp)
+	{
+		ulp_riscv_i2c_master_set_slave_addr(_slave->address);
+		ulp_riscv_i2c_master_set_slave_reg_addr(send_buffer[0]);
+
+		if(send_buffer_length < 2)
+			rv = ulp_riscv_i2c_master_read_from_device(receive_buffer, sizeof(receive_buffer));
+		else
+			rv = ulp_riscv_i2c_master_write_to_device(send_buffer + 1, send_buffer_length - 1);
+
+		if(rv != ESP_OK)
+			util_warn_on_esp_err("ulp_riscv_i2c_master_write_to_device", rv);
+
+	}
+	else
+		util_warn_on_esp_err("i2c_master_transmit", rv = i2c_master_transmit(_slave->handle, send_buffer, send_buffer_length, i2c_timeout_ms));
+
 	module_mutex_give(_slave->module);
 
 	return(rv == ESP_OK);
@@ -546,37 +759,59 @@ bool i2c_send(i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t 
 
 bool i2c_send_1(i2c_slave_t slave, unsigned int byte)
 {
-	uint8_t buffer[1] = { byte };
+	uint8_t buffer[1];
 
-	return(i2c_send(slave, 1, buffer));
+	buffer[0] = byte;
+
+	return(i2c_send(slave, sizeof(buffer), buffer));
 }
 
 bool i2c_send_2(i2c_slave_t slave, unsigned int byte_1, unsigned int byte_2)
 {
-	uint8_t buffer[2] = { byte_1, byte_2 };
+	uint8_t buffer[2];
 
-	return(i2c_send(slave, 2, buffer));
+	buffer[0] = byte_1;
+	buffer[1] = byte_2;
+
+	return(i2c_send(slave, sizeof(buffer), buffer));
 }
 
 bool i2c_send_3(i2c_slave_t slave, unsigned int byte_1, unsigned int byte_2, unsigned int byte_3)
 {
-	uint8_t buffer[3] = { byte_1, byte_2, byte_3 };
+	uint8_t buffer[3];
 
-	return(i2c_send(slave, 3, buffer));
+	buffer[0] = byte_1;
+	buffer[1] = byte_2;
+	buffer[2] = byte_3;
+
+	return(i2c_send(slave, sizeof(buffer), buffer));
 }
 
 bool i2c_receive(i2c_slave_t slave, unsigned int receive_buffer_size, uint8_t *receive_buffer)
 {
 	slave_t *_slave = (slave_t *)slave;
+	const module_info_t *info;
 	unsigned int rv;
 
 	assert(inited);
 	assert(_slave);
+	assert(receive_buffer);
+
+	info = &module_info[_slave->module];
+
+	assert(info->available);
+
+	if(info->ulp)
+	{
+		log("i2c: i2c_receive called for ULP I2C module");
+		return(false);
+	}
 
 	if(receive_buffer_size == 0)
+	{
+		log("i2c: i2c_receive called with zero receive buffer size");
 		return(true);
-
-	assert(receive_buffer);
+	}
 
 	if(!slave_check(_slave))
 		return(false);
@@ -589,37 +824,71 @@ bool i2c_receive(i2c_slave_t slave, unsigned int receive_buffer_size, uint8_t *r
 	return(rv == ESP_OK);
 }
 
-bool i2c_send_receive(i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t *send_buffer, unsigned int receive_buffer_size, uint8_t *receive_buffer)
+static bool i2c_send_receive_intern(bool lock, i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t *send_buffer, unsigned int receive_buffer_size, uint8_t *receive_buffer)
 {
 	slave_t *_slave = (slave_t *)slave;
+	const module_info_t *info;
 	unsigned int rv;
 
 	assert(inited);
 	assert(_slave);
-
-	if((send_buffer_length == 0) || (receive_buffer_size == 0))
-		return(true);
-
 	assert(send_buffer);
 	assert(receive_buffer);
+
+	info = &module_info[_slave->module];
+
+	assert(info->available);
+
+	if((send_buffer_length == 0) || (receive_buffer_size == 0))
+	{
+		log("i2c: i2c_send_receive called with zero receive buffer size or zero send buffer size");
+		return(true);
+	}
 
 	if(!slave_check(_slave))
 		return(false);
 
-	module_mutex_take(_slave->module);
+	if(lock)
+		module_mutex_take(_slave->module);
+
 	set_mux(_slave->module, _slave->bus);
-	util_warn_on_esp_err("i2c_master_transmit_receive", rv =
-			i2c_master_transmit_receive(_slave->handle, send_buffer, send_buffer_length, receive_buffer, receive_buffer_size, i2c_timeout_ms));
-	module_mutex_give(_slave->module);
+
+	if(info->ulp)
+	{
+		if(send_buffer_length != 1)
+		{
+			log("i2c: i2c_send_receive: send buffer length should be 1 when using ULP I2C");
+			rv = ESP_ERR_NOT_FOUND;
+			goto error;
+		}
+
+		ulp_riscv_i2c_master_set_slave_addr(_slave->address);
+		ulp_riscv_i2c_master_set_slave_reg_addr(send_buffer[0]);
+		rv = ulp_riscv_i2c_master_read_from_device(receive_buffer, receive_buffer_size);
+	}
+	else
+		util_warn_on_esp_err("i2c_master_transmit_receive", rv =
+				i2c_master_transmit_receive(_slave->handle, send_buffer, send_buffer_length, receive_buffer, receive_buffer_size, i2c_timeout_ms));
+
+error:
+	if(lock)
+		module_mutex_give(_slave->module);
 
 	return(rv == ESP_OK);
 }
 
+bool i2c_send_receive(i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t *send_buffer, unsigned int receive_buffer_size, uint8_t *receive_buffer)
+{
+	return(i2c_send_receive_intern(true, slave, send_buffer_length, send_buffer, receive_buffer_size, receive_buffer));
+}
+
 bool i2c_send_1_receive(i2c_slave_t slave, unsigned int byte, unsigned int receive_buffer_size, uint8_t *receive_buffer)
 {
-	uint8_t send_buffer[1] = { byte };
+	uint8_t send_buffer[1];
 
-	return(i2c_send_receive(slave, 1, send_buffer, receive_buffer_size, receive_buffer));
+	send_buffer[0] = byte;
+
+	return(i2c_send_receive_intern(true, slave, sizeof(send_buffer), send_buffer, receive_buffer_size, receive_buffer));
 }
 
 bool i2c_get_slave_info(i2c_slave_t slave, i2c_module_t *module, i2c_bus_t *bus, unsigned int *address, const char **name)
@@ -654,44 +923,57 @@ i2c_slave_t i2c_find_slave(i2c_module_t module, i2c_bus_t bus, unsigned int addr
 	data_mutex_take();
 
 	assert(module < i2c_module_size);
+	assert(i2c_module_available(module));
 
 	data = &module_data[module];
 	assert(data);
 
-	if(moduleptr->mux_dev_handle)
+	for(bus_index = i2c_bus_first; bus_index < data->buses; bus_index++) // FIXME check
 	{
-		for(bus_index = i2c_bus_first; bus_index < i2c_bus_size; bus_index++)
-		{
-			if(!(busptr = moduleptr->bus[bus_index]))
-				continue;
-
-			for(slaveptr = busptr->slaves; slaveptr; slaveptr = slaveptr->next)
-				if((address == slaveptr->address) && ((bus == i2c_bus_none) || (slaveptr->bus == i2c_bus_none) || (bus == slaveptr->bus)))
-					goto found;
-		}
-	}
-	else
-	{
-		busptr = moduleptr->bus[i2c_bus_none];
-		assert(busptr);
+		if(!(busptr = data->bus[bus_index]))
+			continue;
 
 		for(slaveptr = busptr->slaves; slaveptr; slaveptr = slaveptr->next)
-			if(address == slaveptr->address)
+			if((address == slaveptr->address) && ((bus == i2c_bus_none) || (slaveptr->bus == i2c_bus_none) || (bus == slaveptr->bus)))
 				goto found;
 	}
 
-	slaveptr = (slave_t *)0;
+	slaveptr = nullptr;
 
 found:
 	data_mutex_give();
 	return((i2c_slave_t)slaveptr);
 }
 
+bool i2c_module_available(i2c_module_t module)
+{
+	return(module_info[module].available);
+}
+
 unsigned int i2c_buses(i2c_module_t module)
 {
 	assert(module < i2c_module_size);
 
-	return(module_data[module].mux_dev_handle ? i2c_bus_size : (i2c_bus_none + 1));
+	return(module_data[module].buses);
+}
+
+bool i2c_ulp(i2c_module_t module)
+{
+	const module_info_t *info;
+
+	assert(module < i2c_module_size);
+	info = &module_info[module];
+
+	assert(info->available);
+
+	return(info->ulp);
+}
+
+bool i2c_slave_ulp(i2c_slave_t slave)
+{
+	slave_t *_slave = (slave_t *)slave;
+
+	return(i2c_ulp(_slave->module));
 }
 
 void command_i2c_info(cli_command_call_t *call)
@@ -710,21 +992,27 @@ void command_i2c_info(cli_command_call_t *call)
 	for(module_index = i2c_module_first; module_index < i2c_module_size; module_index++)
 	{
 		info = &module_info[module_index];
-		data = &module_data[module_index];
 
-		string_format_append(call->result, "\n- module [%u]: \"%s\", sda=%u, scl=%u, speed=%u khz", info->id, info->name, info->sda, info->scl, info->speed / 1000);
-
-		for(bus_index = i2c_bus_first; bus_index < i2c_bus_size; bus_index++)
+		if(info->available)
 		{
-			if((bus = data->bus[bus_index]))
-			{
-				string_format_append(call->result, "\n-  i2c bus %u: %s", bus->id, bus_name[bus->id]);
+			data = &module_data[module_index];
 
-				for(slave = bus->slaves; slave; slave = slave->next)
-					string_format_append(call->result, "\n-   slave [0x%x]: name: %s, module: %u, bus: %u, handle: %p",
-							slave->address, slave->name, slave->module, slave->bus, slave->handle);
+			string_format_append(call->result, "\n- module [%u]: \"%s\", sda=%u, scl=%u, speed=%u khz", info->id, info->name, info->sda, info->scl, info->speed / 1000);
+
+			for(bus_index = i2c_bus_first; bus_index < data->buses; bus_index++)
+			{
+				if((bus = data->bus[bus_index]))
+				{
+					string_format_append(call->result, "\n-  i2c bus %u: %s", bus->id, bus_name[bus->id]);
+
+					for(slave = bus->slaves; slave; slave = slave->next)
+						string_format_append(call->result, "\n-   slave [0x%x]: name: %s, module: %u, bus: %u, handle: %p",
+								slave->address, slave->name, slave->module, slave->bus, slave->handle);
+				}
 			}
 		}
+		else
+			string_format_append(call->result, "\n- module [%u]: unavailable", info->id);
 	}
 
 	data_mutex_give();

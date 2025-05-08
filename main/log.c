@@ -17,7 +17,7 @@
 
 enum
 {
-	log_buffer_size = 8192,
+	log_buffer_size = 8192 - CONFIG_ULP_COPROC_RESERVE_MEM,
 	log_buffer_entries = 62,
 	log_buffer_data_size = 120,
 	log_buffer_magic_word = 0x4afbcafe,
@@ -266,7 +266,6 @@ exit:
 void log_init(void)
 {
 	assert(!inited);
-	assert(rtc_slow_memory == (char *)0x50000000);
 
 	log_buffer = (log_t *)(void *)rtc_slow_memory;
 

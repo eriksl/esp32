@@ -39,7 +39,7 @@ typedef enum
 
 struct io_data_T;
 
-typedef struct
+typedef struct io_info_T
 {
 	io_id_t id;
 	const char *name;
@@ -59,6 +59,7 @@ typedef struct
 		} ledpixel;
 	};
 	void (*info_fn)(const struct io_data_T *data, string_t result);
+	bool (*detect_fn)(const struct io_info_T *info, unsigned int module, unsigned int bus, unsigned int address);
 	bool (*init_fn)(struct io_data_T *data);
 	bool (*read_fn)(struct io_data_T *data, unsigned int pin, unsigned int *value);
 	bool (*write_fn)(struct io_data_T *data, unsigned int pin, unsigned int value);
@@ -89,9 +90,9 @@ static const char *cap_to_string[io_cap_size] =
 	[io_cap_output] = "output",
 };
 
-static unsigned int stat_i2c_probe_skipped;
-static unsigned int stat_i2c_probe_tried;
-static unsigned int stat_i2c_probe_found;
+static unsigned int stat_i2c_detect_skipped;
+static unsigned int stat_i2c_detect_tried;
+static unsigned int stat_i2c_detect_found;
 
 static inline void data_mutex_take(void)
 {
@@ -373,6 +374,13 @@ static void pcf8574_info(const io_data_t *dataptr, string_t result)
 	string_format_append(result, "\n- output %#02x", (unsigned int)dataptr->int_value[pcf8574_int_value_cache_out]);
 }
 
+static bool pcf8574_detect(const io_info_t *info, unsigned int module, unsigned int bus, unsigned int address)
+{
+	assert(inited);
+
+	return(i2c_probe_slave(module, bus, address, 0xff, info->name));
+}
+
 static bool pcf8574_init(io_data_t *dataptr)
 {
 	assert(inited);
@@ -444,6 +452,7 @@ static const io_info_t info[io_id_size] =
 		.max_value = 65535,
 		.bus = io_bus_apb,
 		.info_fn = esp32_mcpwm_info,
+		.detect_fn = nullptr,
 		.init_fn = esp32_mcpwm_init,
 		.read_fn = (void *)0,
 		.write_fn = esp32_mcpwm_write,
@@ -458,6 +467,7 @@ static const io_info_t info[io_id_size] =
 		.max_value = 16383,
 		.bus = io_bus_apb,
 		.info_fn = esp32_ledpwm_info,
+		.detect_fn = nullptr,
 		.init_fn = esp32_ledpwm_init,
 		.read_fn = (void *)0,
 		.write_fn = esp32_ledpwm_write,
@@ -472,6 +482,7 @@ static const io_info_t info[io_id_size] =
 		.max_value = 255,
 		.bus = io_bus_apb,
 		.info_fn = esp32_pdm_info,
+		.detect_fn = nullptr,
 		.init_fn = esp32_pdm_init,
 		.read_fn = (void *)0,
 		.write_fn = esp32_pdm_write,
@@ -487,6 +498,7 @@ static const io_info_t info[io_id_size] =
 		.bus = io_bus_apb,
 		.ledpixel.instance = lp_0_notify,
 		.info_fn = esp32_ledpixel_info,
+		.detect_fn = nullptr,
 		.init_fn = esp32_ledpixel_init,
 		.read_fn = (void *)0,
 		.write_fn = esp32_ledpixel_write,
@@ -502,6 +514,7 @@ static const io_info_t info[io_id_size] =
 		.bus = io_bus_apb,
 		.ledpixel.instance = lp_1,
 		.info_fn = esp32_ledpixel_info,
+		.detect_fn = nullptr,
 		.init_fn = esp32_ledpixel_init,
 		.read_fn = (void *)0,
 		.write_fn = esp32_ledpixel_write,
@@ -517,6 +530,7 @@ static const io_info_t info[io_id_size] =
 		.bus = io_bus_apb,
 		.ledpixel.instance = lp_2,
 		.info_fn = esp32_ledpixel_info,
+		.detect_fn = nullptr,
 		.init_fn = esp32_ledpixel_init,
 		.read_fn = (void *)0,
 		.write_fn = esp32_ledpixel_write,
@@ -532,6 +546,7 @@ static const io_info_t info[io_id_size] =
 		.bus = io_bus_apb,
 		.ledpixel.instance = lp_3,
 		.info_fn = esp32_ledpixel_info,
+		.detect_fn = nullptr,
 		.init_fn = esp32_ledpixel_init,
 		.read_fn = (void *)0,
 		.write_fn = esp32_ledpixel_write,
@@ -547,6 +562,7 @@ static const io_info_t info[io_id_size] =
 		.bus = io_bus_i2c,
 		.i2c.address = 0x26,
 		.info_fn = pcf8574_info,
+		.detect_fn = pcf8574_detect,
 		.init_fn = pcf8574_init,
 		.read_fn = pcf8574_read,
 		.write_fn = pcf8574_write,
@@ -562,6 +578,7 @@ static const io_info_t info[io_id_size] =
 		.bus = io_bus_i2c,
 		.i2c.address = 0x3a,
 		.info_fn = pcf8574_info,
+		.detect_fn = pcf8574_detect,
 		.init_fn = pcf8574_init,
 		.read_fn = pcf8574_read,
 		.write_fn = pcf8574_write,
@@ -655,6 +672,9 @@ void io_init(void)
 		{
 			case(io_bus_apb):
 			{
+				if(infoptr->detect_fn && !infoptr->detect_fn(infoptr, 0, 0, 0))
+					continue;
+
 				dataptr = (io_data_t *)util_memory_alloc_spiram(sizeof(*dataptr));
 				assert(dataptr);
 
@@ -686,19 +706,22 @@ void io_init(void)
 			{
 				for(module = i2c_module_first; module < i2c_module_size; module++)
 				{
+					if(!i2c_module_available(module))
+						continue;
+
 					buses = i2c_buses(module);
 
 					for(bus = 0; bus < buses; bus++)
 					{
 						if(find_io(infoptr->bus, (unsigned int)module, (unsigned int)bus, infoptr->i2c.address))
 						{
-							stat_i2c_probe_skipped++;
+							stat_i2c_detect_skipped++;
 							continue;
 						}
 
-						stat_i2c_probe_tried++;
+						stat_i2c_detect_tried++;
 
-						if(!i2c_probe_slave(module, bus, infoptr->i2c.address))
+						if(infoptr->detect_fn && !infoptr->detect_fn(infoptr, module, bus, infoptr->i2c.address))
 							continue;
 
 						if(!(slave = i2c_register_slave(infoptr->name, module, bus, infoptr->i2c.address)))
@@ -723,7 +746,7 @@ void io_init(void)
 							continue;
 						}
 
-						stat_i2c_probe_found++;
+						stat_i2c_detect_found++;
 
 						if(!data_root)
 							data_root = dataptr;
@@ -1007,10 +1030,10 @@ void command_io_stats(cli_command_call_t *call)
 	assert(call->parameter_count == 0);
 
 	string_assign_cstr(call->result, "IO STATS");
-	string_assign_cstr(call->result, "\n- probing");
-	string_format_append(call->result, "\n-  skipped: %u", stat_i2c_probe_skipped);
-	string_format_append(call->result, "\n-  tried: %u", stat_i2c_probe_tried);
-	string_format_append(call->result, "\n-  found: %u", stat_i2c_probe_found);
+	string_assign_cstr(call->result, "\n- detecting");
+	string_format_append(call->result, "\n-  skipped: %u", stat_i2c_detect_skipped);
+	string_format_append(call->result, "\n-  tried: %u", stat_i2c_detect_tried);
+	string_format_append(call->result, "\n-  found: %u", stat_i2c_detect_found);
 }
 
 void command_io_read(cli_command_call_t *call)
