@@ -4355,12 +4355,12 @@ void command_sensor_dump(cli_command_call_t *call)
 							string_cstr(time_string));
 					}
 				}
-			}
 
-			if(dataptr->info->dump_fn)
-			{
-				string_append_cstr(call->result, "\n  private data: ");
-				dataptr->info->dump_fn(dataptr, call->result);
+				if(dataptr->info->dump_fn)
+				{
+					string_append_cstr(call->result, "\n  private data: ");
+					dataptr->info->dump_fn(dataptr, call->result);
+				}
 			}
 		}
 	}
