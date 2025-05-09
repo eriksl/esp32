@@ -3465,6 +3465,347 @@ static void apds9930_dump(const data_t *data, string_t output)
 	string_format_append(output, "autoranging data size: %u", pdata->autoranging_data_size);
 }
 
+enum : unsigned int
+{
+	apds9960_reg_enable =		0x80,
+	apds9960_reg_atime =		0x81,
+	apds9960_reg_wtime =		0x83,
+	apds9960_reg_ailt =			0x84,
+	apds9960_reg_aiht =			0x86,
+	apds9960_reg_pilt =			0x89,
+	apds9960_reg_piht =			0x8b,
+	apds9960_reg_pers =			0x8c,
+	apds9960_reg_config1 =		0x8d,
+	apds9960_reg_ppulse =		0x8e,
+	apds9960_reg_control =		0x8f,
+	apds9960_reg_config2 =		0x90,
+	apds9960_reg_id =			0x92,
+	apds9960_reg_status =		0x93,
+	apds9960_reg_cdata =		0x94,
+	apds9960_reg_rdata =		0x96,
+	apds9960_reg_gdata =		0x98,
+	apds9960_reg_bdata =		0x9a,
+	apds9960_reg_pdata =		0x9c,
+	apds9960_reg_poffset_ur =	0x9d,
+	apds9960_reg_poffset_dl =	0x9e,
+	apds9960_reg_config3 =		0x9f,
+	apds9960_reg_gpenth =		0xa0,
+	apds9960_reg_gexth =		0xa1,
+	apds9960_reg_gconf1 =		0xa2,
+	apds9960_reg_gconf2 =		0xa3,
+	apds9960_reg_goffset_u =	0xa4,
+	apds9960_reg_goffset_d =	0xa5,
+	apds9960_reg_goffset_l =	0xa7,
+	apds9960_reg_goffset_r =	0xa9,
+	apds9960_reg_gpulse =		0xa6,
+	apds9960_reg_gconf3 =		0xaa,
+	apds9960_reg_gconf4 =		0xab,
+	apds9960_reg_gflvl =		0xae,
+	apds9960_reg_gstatus =		0xaf,
+	apds9960_reg_iforce =		0xe4,
+	apds9960_reg_piclear =		0xe5,
+	apds9960_reg_ciclear =		0xe6,
+	apds9960_reg_aiclear =		0xe7,
+	apds9960_reg_gfifo_u =		0xfc,
+	apds9960_reg_gfifo_d =		0xfd,
+	apds9960_reg_gfifo_l =		0xfe,
+	apds9960_reg_gfifo_r =		0xff,
+
+	apds9960_enable_gen =		1 << 6,
+	apds9960_enable_pien =		1 << 5,
+	apds9960_enable_aien =		1 << 4,
+	apds9960_enable_wen =		1 << 3,
+	apds9960_enable_pen =		1 << 2,
+	apds9960_enable_aen =		1 << 1,
+	apds9960_enable_pon =		1 << 0,
+	apds9960_enable_poff =		0 << 0,
+
+	apds9960_atime_2_78 =		0xff,
+	apds9960_atime_27_8 =		0xf6,
+	apds9960_atime_103 =		0xdb,
+	apds9960_atime_175 =		0xc0,
+	apds9960_atime_200 =		0xb6,
+	apds9960_atime_712 =		0x00,
+
+	apds9960_config1_no_wlong =	0b0110'0000,
+	apds9960_config1_wlong =	0b0110'0010,
+
+	apds9960_config2_psien =	(1 << 7) | (1 << 0),
+	apds9960_config2_cpsien =	(1 << 6) | (1 << 0),
+	apds9960_config2_none =		(1 << 0),
+
+	apds9960_ctrl_again_1 =		0b00 << 0,
+	apds9960_ctrl_again_4 =		0b01 << 0,
+	apds9960_ctrl_again_16 =	0b10 << 0,
+	apds9960_ctrl_again_64 =	0b11 << 0,
+
+	apds9960_id_apds9960_a8 =	0xa8,
+	apds9960_id_apds9960_ab =	0xab,
+	apds9960_id_apds9960_9c =	0x9c,
+
+	apds9960_status_cpsat =		1 << 7,
+	apds9960_status_pgsat =		1 << 6,
+	apds9960_status_pint =		1 << 5,
+	apds9960_status_aint =		1 << 4,
+	apds9960_status_gint =		1 << 2,
+	apds9960_status_pvalid =	1 << 1,
+	apds9960_status_avalid =	1 << 0,
+};
+
+typedef enum : unsigned int
+{
+	apds9960_state_init,
+	apds9960_state_measuring,
+	apds9960_state_finished,
+} apds9960_state_t;
+
+typedef struct
+{
+	unsigned int type;
+	apds9960_state_t state;
+	unsigned int scaling;
+	unsigned int not_readys;
+	unsigned int overflows;
+	unsigned int scales_up;
+	unsigned int scales_down;
+	struct
+	{
+		unsigned int clear;
+		unsigned int r;
+		unsigned int g;
+		unsigned int b;
+	} data;
+} apds9960_private_data_t;
+
+enum : unsigned int
+{
+	apds9960_autoranging_data_size = 5,
+};
+
+static const device_autoranging_data_t apds9960_autoranging_data[apds9960_autoranging_data_size] =
+{
+	{{	apds9960_atime_712,		apds9960_ctrl_again_64	},	{ 0,	32768	}, 0, 	712 * 6		},
+	{{	apds9960_atime_712,		apds9960_ctrl_again_16	},	{ 100,	32768	}, 0, 	712 * 16	},
+	{{	apds9960_atime_175,		apds9960_ctrl_again_4	},	{ 100,	32768	}, 0, 	175 * 4		},
+	{{	apds9960_atime_175,		apds9960_ctrl_again_1	},	{ 100,	32768	}, 0, 	175 * 1		},
+	{{	apds9960_atime_2_78,	apds9960_ctrl_again_1	},	{ 100,	65536	}, 0,	2.78 * 1	},
+};
+
+static bool apds9960_read_register(i2c_slave_t slave, unsigned int reg, unsigned int *value)
+{
+	uint8_t buffer_in[1];
+	uint8_t buffer_out[1];
+
+	buffer_in[0] = reg;
+
+	if(!i2c_send_receive(slave, sizeof(buffer_in), buffer_in, sizeof(buffer_out), buffer_out))
+		return(false);
+
+	*value = buffer_out[0];
+
+	return(true);
+}
+
+static bool apds9960_write_register(i2c_slave_t slave, unsigned int reg, unsigned int value)
+{
+	uint8_t buffer_in[2];
+
+	buffer_in[0] = reg;
+	buffer_in[1] = value;
+
+	if(!i2c_send(slave, sizeof(buffer_in), buffer_in))
+		return(false);
+
+	return(true);
+}
+
+static sensor_detect_t apds9960_detect(i2c_slave_t slave)
+{
+	unsigned int id;
+
+	if(!apds9960_read_register(slave, apds9960_reg_id, &id))
+		return(sensor_not_found);
+
+	if((id != apds9960_id_apds9960_a8) && (id != apds9960_id_apds9960_ab) && (id != apds9960_id_apds9960_9c))
+		return(sensor_not_found);
+
+	return(sensor_found);
+}
+
+static bool apds9960_init(data_t *data)
+{
+	apds9960_private_data_t *pdata = (apds9960_private_data_t *)data->private_data;
+	unsigned int id;
+
+	assert(pdata);
+
+	if(!apds9960_read_register(data->slave, apds9960_reg_id, &id))
+	{
+		log("apds9960: init: error 1");
+		return(false);
+	}
+
+	if(!apds9960_write_register(data->slave, apds9960_reg_config1, apds9960_config1_no_wlong))
+	{
+		log("apds9960: init: error 2");
+		return(false);
+	}
+
+	if(!apds9960_write_register(data->slave, apds9960_reg_config2, apds9960_config2_none))
+	{
+		log("apds9960: init: error 3");
+		return(false);
+	}
+
+	pdata->type = id;
+	pdata->state = apds9960_state_init;
+	pdata->scaling = apds9960_autoranging_data_size - 1;
+	pdata->not_readys = 0;
+	pdata->overflows = 0;
+	pdata->scales_up = 0;
+	pdata->scales_down = 0;
+	pdata->data.clear = 0;
+	pdata->data.r = 0;
+	pdata->data.g = 0;
+	pdata->data.b = 0;
+
+	return(true);
+}
+
+static bool apds9960_poll(data_t *data)
+{
+	uint8_t buffer[8];
+	unsigned int value, r, g, b, again, atime;
+	apds9960_private_data_t *pdata = (apds9960_private_data_t *)data->private_data;
+	unsigned int scale_down_threshold, scale_up_threshold;
+
+	assert(pdata);
+
+	switch(pdata->state)
+	{
+		case(apds9960_state_init):
+		case(apds9960_state_finished):
+		{
+			atime = apds9960_autoranging_data[pdata->scaling].data[0];
+			again = apds9960_autoranging_data[pdata->scaling].data[1];
+
+			if(!apds9960_write_register(data->slave, apds9960_reg_enable, apds9960_enable_poff))
+			{
+				log("apds9960: poll: error 1");
+				return(false);
+			}
+
+			if(!apds9960_write_register(data->slave, apds9960_reg_atime, atime))
+			{
+				log("apds9960: poll: error 2");
+				return(false);
+			}
+
+			if(!apds9960_write_register(data->slave, apds9960_reg_control, again))
+			{
+				log("apds9960: poll: error 3");
+				return(false);
+			}
+
+			if(!apds9960_write_register(data->slave, apds9960_reg_enable, apds9960_enable_aen | apds9960_enable_pon))
+			{
+				log("apds9960: poll: error 4");
+				return(false);
+			}
+
+			pdata->state = apds9960_state_measuring;
+			break;
+		}
+
+		case(apds9960_state_measuring):
+		{
+			scale_down_threshold = apds9960_autoranging_data[pdata->scaling].threshold.down;
+			scale_up_threshold =   apds9960_autoranging_data[pdata->scaling].threshold.up;
+
+			pdata->state = apds9960_state_finished;
+
+			if(!apds9960_read_register(data->slave, apds9960_reg_status, &value))
+			{
+				log("apds9960: poll: error 1");
+				return(false);
+			}
+
+			if(!(value & apds9960_status_avalid))
+			{
+				log("apds9960: poll: error 2");
+				pdata->not_readys++;
+				return(false);
+			}
+
+			if(value & apds9960_status_cpsat)
+			{
+				pdata->overflows++;
+
+				if(pdata->scaling < (apds9960_autoranging_data_size - 1))
+				{
+					pdata->scaling++;
+					pdata->scales_up++;
+				}
+
+				break;
+			}
+
+			if(!i2c_send_1_receive(data->slave, apds9960_reg_cdata, sizeof(buffer), buffer))
+			{
+				log("apds9960: poll: error 3");
+				return(false);
+			}
+
+			pdata->data.clear = unsigned_16_le(&buffer[0]);
+			r = unsigned_16_le(&buffer[2]);
+			g = unsigned_16_le(&buffer[4]);
+			b = unsigned_16_le(&buffer[6]);
+
+			if((pdata->data.clear < scale_down_threshold) && (pdata->scaling > 0))
+			{
+				pdata->scaling--;
+				pdata->scales_down++;
+				break;
+			}
+
+			if((pdata->data.clear >= scale_up_threshold) && (pdata->scaling < (apds9960_autoranging_data_size - 1)))
+			{
+				pdata->scaling++;
+				pdata->scales_up++;
+				break;
+			}
+
+			pdata->data.r = (r * 100) / (r + g + b);
+			pdata->data.g = (g * 100) / (r + g + b);
+			pdata->data.b = (b * 100) / (r + g + b);
+
+			data->values[sensor_type_visible_light].value = (pdata->data.clear * 100.0f) / apds9960_autoranging_data[pdata->scaling].factor;
+			data->values[sensor_type_visible_light].stamp = time(nullptr);
+
+			break;
+		}
+	}
+
+	return(true);
+}
+
+static void apds9960_dump(const data_t *data, string_t output)
+{
+	apds9960_private_data_t *pdata = data->private_data;
+
+	string_format_append(output, "type: 0x%02x, ", pdata->type);
+	string_format_append(output, "state: %u, ", pdata->state);
+	string_format_append(output, "scaling: %u, ", pdata->scaling);
+	string_format_append(output, "not readys: %u, ", pdata->not_readys);
+	string_format_append(output, "overflows: %u, ", pdata->overflows);
+	string_format_append(output, "scales up: %u, ", pdata->scales_up);
+	string_format_append(output, "scales down: %u, ", pdata->scales_down);
+	string_format_append(output, "data clear: %u, ", pdata->data.clear);
+	string_format_append(output, "data r: %u%%, ", pdata->data.r);
+	string_format_append(output, "data g: %u%%, ", pdata->data.g);
+	string_format_append(output, "data b: %u%%", pdata->data.b);
+}
+
 static const info_t info[sensor_size] =
 {
 	[sensor_bh1750] =
@@ -3635,6 +3976,19 @@ static const info_t info[sensor_size] =
 		.init_fn = bme680_init,
 		.poll_fn = bme680_poll,
 		.dump_fn = bme680_dump,
+	},
+	[sensor_apds9960] =
+	{
+		.name = "apds9960",
+		.id = sensor_apds9960,
+		.address = 0x39,
+		.type = (1 << sensor_type_visible_light),
+		.precision = 2,
+		.private_data_size = sizeof(apds9960_private_data_t),
+		.detect_fn = apds9960_detect,
+		.init_fn = apds9960_init,
+		.poll_fn = apds9960_poll,
+		.dump_fn = apds9960_dump,
 	},
 };
 
