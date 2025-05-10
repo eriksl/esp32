@@ -3806,6 +3806,360 @@ static void apds9960_dump(const data_t *data, string_t output)
 	string_format_append(output, "data b: %u%%", pdata->data.b);
 }
 
+typedef enum : unsigned int
+{
+	tsl2591_reg_enable =		0x00,
+	tsl2591_reg_control =		0x01,
+	tsl2591_reg_ailtl =			0x04,
+	tsl2591_reg_ailth =			0x05,
+	tsl2591_reg_aihtl =			0x06,
+	tsl2591_reg_aihth =			0x07,
+	tsl2591_reg_npailtl =		0x08,
+	tsl2591_reg_npailth =		0x09,
+	tsl2591_reg_npaihtl =		0x0a,
+	tsl2591_reg_npaihth =		0x0b,
+	tsl2591_reg_persist =		0x0c,
+	tsl2591_reg_pid =			0x11,
+	tsl2591_reg_id =			0x12,
+	tsl2591_reg_status =		0x13,
+	tsl2591_reg_c0datal =		0x14,
+	tsl2591_reg_c0datah =		0x15,
+	tsl2591_reg_c1datal =		0x16,
+	tsl2591_reg_c1datah =		0x17,
+} tsl2591_reg_t;
+
+enum : unsigned int
+{
+	tsl2591_cmd_cmd =							0b1 << 7,
+	tsl2591_cmd_transaction_normal =			0b01 << 5,
+	tsl2591_cmd_transaction_special =			0b11 << 5,
+	tsl2591_cmd_sf_interrupt_set =				0b00100 << 0,
+	tsl2591_cmd_sf_interrupt_clear_als =		0b00110 << 0,
+	tsl2591_cmd_sf_interrupt_clear_als_nals =	0b00111 << 0,
+	tsl2591_cmd_sf_interrupt_clear_nals =		0b01010 << 0,
+};
+
+enum : unsigned int
+{
+	tsl2591_enable_npien =	0b1 << 7,
+	tsl2591_enable_sai =	0b1 << 6,
+	tsl2591_enable_aien =	0b1 << 4,
+	tsl2591_enable_aen =	0b1 << 1,
+	tsl2591_enable_pon =	0b1 << 0,
+};
+
+enum : unsigned int
+{
+	tsl2591_control_sreset =		0b1 << 7,
+	tsl2591_control_again_0 =		0b00 << 4,
+	tsl2591_control_again_25 =		0b01 << 4,
+	tsl2591_control_again_400 =		0b10 << 4,
+	tsl2591_control_again_9500 =	0b11 << 4,
+	tsl2591_control_atime_100 =		0b000 << 0,
+	tsl2591_control_atime_200 =		0b001 << 0,
+	tsl2591_control_atime_300 =		0b010 << 0,
+	tsl2591_control_atime_400 =		0b011 << 0,
+	tsl2591_control_atime_500 =		0b100 << 0,
+	tsl2591_control_atime_600 =		0b101 << 0,
+};
+
+enum : unsigned int
+{
+	tsl2591_pid_mask =	0b11 << 4,
+	tsl2591_pid_value = 0b00 << 4,
+};
+
+enum : unsigned int
+{
+	tsl2591_id_mask =	0xff,
+	tsl2591_id_value =	0x50,
+};
+
+enum : unsigned int
+{
+	tsl2591_status_npintr = 0b1 << 5,
+	tsl2591_status_aint =	0b1 << 4,
+	tsl2591_status_avalid =	0b1 << 0,
+};
+
+enum : unsigned int { tsl2591_autoranging_data_size = 5 };
+
+static const device_autoranging_data_t tsl2591_autoranging_data[tsl2591_autoranging_data_size] =
+{
+	{{	tsl2591_control_again_9500,	tsl2591_control_atime_600 }, {	0,		50000	}, 56095,	0.096,	},
+	{{	tsl2591_control_again_400,	tsl2591_control_atime_600 }, {	100,	50000	}, 56095,	5.8,	},
+	{{	tsl2591_control_again_25,	tsl2591_control_atime_400 }, {	100,	50000	}, 65536,	49,		},
+	{{	tsl2591_control_again_0,	tsl2591_control_atime_400 }, {	100,	50000	}, 65536,	490,	},
+	{{	tsl2591_control_again_0,	tsl2591_control_atime_100 }, {	100,	50000	}, 65536,	1960,	},
+};
+
+enum : unsigned int { tsl2591_factor_size = 7 };
+
+static const struct
+{
+	float	lower_bound;
+	float	upper_bound;
+	float	ch_factor[2];
+} tsl2591_factors[tsl2591_factor_size] =
+{
+	{	0,		0.125,	{	1,		-0.895	}},
+	{	0.125,	0.250,	{	1.070,	-1.145	}},
+	{	0.250,	0.375,	{	1.115,	-1.790	}},
+	{	0.375,	0.500,	{	1.126,	-2.050	}},
+	{	0.500,	0.610,	{	0.740,	-1.002	}},
+	{	0.610,	0.800,	{	0.420,	-0.500	}},
+	{	0.800,	1.300,	{	0.48,	-0.037	}},
+};
+
+typedef enum : unsigned int
+{
+	tsl2591_state_init,
+	tsl2591_state_reset,
+	tsl2591_state_ready,
+	tsl2591_state_measuring,
+	tsl2591_state_finished,
+} tsl2591_state_t;
+
+typedef struct
+{
+	tsl2591_state_t	state;
+	unsigned int	scaling;
+	unsigned int	scales_up;
+	unsigned int	scales_down;
+	unsigned int	overflows;
+	unsigned int	channel[2];
+	float			ratio;
+	unsigned int	ratio_index;
+	float			factor[2];
+} tsl2591_private_data_t;
+
+static bool tsl2591_write(i2c_slave_t slave, tsl2591_reg_t reg, unsigned int value)
+{
+	return(i2c_send_2(slave, tsl2591_cmd_cmd | reg, value));
+}
+
+static bool tsl2591_read_byte(i2c_slave_t slave, tsl2591_reg_t reg, unsigned int *value)
+{
+	uint8_t buffer_out[1];
+
+	if(!i2c_send_1_receive(slave, tsl2591_cmd_cmd | reg, sizeof(buffer_out), buffer_out))
+		return(false);
+
+	*value = buffer_out[0];
+
+	return(true);
+}
+
+static bool tsl2591_write_check(i2c_slave_t slave, tsl2591_reg_t reg, unsigned int value)
+{
+	unsigned int rv;
+
+	if(!tsl2591_write(slave, reg, value))
+		return(false);
+
+	if(!tsl2591_read_byte(slave, reg, &rv))
+		return(false);
+
+	if(value != rv)
+		return(false);
+
+	return(true);
+}
+
+static sensor_detect_t tsl2591_detect(i2c_slave_t slave)
+{
+	unsigned int regval;
+
+	if(!tsl2591_read_byte(slave, tsl2591_reg_pid, &regval))
+		return(sensor_not_found);
+
+	if((regval & tsl2591_pid_mask) != tsl2591_pid_value)
+		return(sensor_not_found);
+
+	if(!tsl2591_read_byte(slave, tsl2591_reg_id, &regval))
+		return(sensor_not_found);
+
+	if((regval & tsl2591_id_mask) != tsl2591_id_value)
+		return(sensor_not_found);
+
+	if(tsl2591_write_check(slave, tsl2591_reg_id, 0x00)) // id register should not be writable
+		return(sensor_not_found);
+
+	return(sensor_found);
+}
+
+static bool tsl2591_init(data_t *data)
+{
+	tsl2591_private_data_t *pdata = data->private_data;
+
+	assert(pdata);
+
+	pdata->state = tsl2591_state_init;
+	pdata->scaling = tsl2591_autoranging_data_size - 1;
+	pdata->scales_up = 0;
+	pdata->scales_down = 0;
+	pdata->overflows = 0;
+	pdata->channel[0] = 0;
+	pdata->channel[1] = 0;
+	pdata->ratio = 0;
+	pdata->ratio_index = 0;
+	pdata->factor[0] = 0;
+	pdata->factor[1] = 0;
+
+	return(true);
+}
+
+static bool tsl2591_poll(data_t *data)
+{
+	tsl2591_private_data_t *pdata = data->private_data;
+	uint8_t buffer[4];
+	unsigned int overflow, scale_down_threshold, scale_up_threshold;
+	unsigned int control_opcode;
+	bool found;
+
+	assert(pdata);
+
+	switch(pdata->state)
+	{
+		case(tsl2591_state_init):
+		{
+			tsl2591_write(data->slave, tsl2591_reg_control, tsl2591_control_sreset);
+			pdata->state = tsl2591_state_reset;
+
+			break;
+		}
+
+		case(tsl2591_state_reset):
+		{
+			if(!tsl2591_write_check(data->slave, tsl2591_reg_enable, tsl2591_enable_aen | tsl2591_enable_pon))
+			{
+				log("tsl2591: poll: error 1");
+				break;
+			}
+
+			pdata->state = tsl2591_state_ready;
+
+			break;
+		}
+
+		case(tsl2591_state_ready):
+		case(tsl2591_state_finished):
+		{
+			control_opcode = tsl2591_autoranging_data[pdata->scaling].data[0] | tsl2591_autoranging_data[pdata->scaling].data[1] ;
+
+			if(!tsl2591_write_check(data->slave, tsl2591_reg_control, control_opcode))
+			{
+				log("tsl2591: poll: error 2");
+				break;
+			}
+
+			pdata->state = tsl2591_state_measuring;
+			break;
+		}
+
+		case(tsl2591_state_measuring):
+		{
+			pdata->state = tsl2591_state_finished;
+
+			scale_down_threshold =	tsl2591_autoranging_data[pdata->scaling].threshold.down;
+			scale_up_threshold =	tsl2591_autoranging_data[pdata->scaling].threshold.up;
+			overflow =				tsl2591_autoranging_data[pdata->scaling].overflow;
+
+			if(!i2c_send_1_receive(data->slave, tsl2591_cmd_cmd | tsl2591_reg_c0datal, sizeof(buffer), buffer))
+			{
+				log("tsl2591: poll: error 3");
+				break;
+			}
+
+			pdata->channel[0] = unsigned_16_le(&buffer[0]);
+			pdata->channel[1] = unsigned_16_le(&buffer[2]);
+
+			if(((pdata->channel[0] < scale_down_threshold) || (pdata->channel[1] < scale_down_threshold)) && (pdata->scaling > 0))
+			{
+				pdata->scaling--;
+				pdata->scales_down++;
+				break;
+			}
+
+			if(((pdata->channel[0] >= scale_up_threshold) || (pdata->channel[1] >= scale_up_threshold)) && (pdata->scaling < (tsl2591_autoranging_data_size - 1)))
+			{
+				pdata->scaling++;
+				pdata->scales_up++;
+				break;
+			}
+
+			if((pdata->channel[0] <= 0) || (pdata->channel[1] <= 0) || (pdata->channel[0] >= overflow) || (pdata->channel[1] >= overflow))
+			{
+				pdata->overflows++;
+				break;
+			}
+
+			pdata->ratio = (float)pdata->channel[1] / (float)pdata->channel[0];
+			found = false;
+
+			for(pdata->ratio_index = 0; pdata->ratio_index < tsl2591_factor_size; pdata->ratio_index++)
+			{
+				if((pdata->ratio >= tsl2591_factors[pdata->ratio_index].lower_bound) && (pdata->ratio < tsl2591_factors[pdata->ratio_index].upper_bound))
+				{
+					pdata->factor[0] = tsl2591_factors[pdata->ratio_index].ch_factor[0];
+					pdata->factor[1] = tsl2591_factors[pdata->ratio_index].ch_factor[1];
+					found = true;
+
+					break;
+				}
+			}
+
+			if(!found)
+			{
+				pdata->overflows++;
+				break;
+			}
+
+			data->values[sensor_type_visible_light].value = (((pdata->channel[0] * pdata->factor[0]) + (pdata->channel[1] * pdata->factor[1])) / 1000.0f) *
+					tsl2591_autoranging_data[pdata->scaling].factor;
+			data->values[sensor_type_visible_light].stamp = time(nullptr);
+
+			break;
+		}
+	}
+
+	return(true);
+}
+
+static void tsl2591_dump(const data_t *data, string_t output)
+{
+	tsl2591_private_data_t *pdata = data->private_data;
+
+	string_format_append(output, "state: %u, ", pdata->state);
+	string_format_append(output, "scaling: %u, ", pdata->scaling);
+	string_format_append(output, "scales up: %u, ", pdata->scales_up);
+	string_format_append(output, "scales down: %u, ", pdata->scales_down);
+	string_format_append(output, "overflows: %u, ", pdata->overflows);
+	string_format_append(output, "data channel 0: %u, ", pdata->channel[0]);
+	string_format_append(output, "data channel 1: %u, ", pdata->channel[1]);
+	string_format_append(output, "ratio: %f, ", (double)pdata->ratio);
+	string_format_append(output, "ratio index: %u, ", pdata->ratio_index);
+	string_format_append(output, "factor 0: %f, ", (double)pdata->factor[0]);
+	string_format_append(output, "factor 1: %f", (double)pdata->factor[1]);
+}
+
+static sensor_detect_t tsl2591_28_detect(i2c_slave_t slave)
+{
+	const data_t *data;
+	i2c_module_t this_module, module;
+	i2c_bus_t this_bus, bus;
+	unsigned int this_address, address;
+	const char *this_name, *name;
+
+	if(i2c_get_slave_info(slave, &this_module, &this_bus, &this_address, &this_name))
+		for(data = data_root; data; data = data->next)
+			if(i2c_get_slave_info(data->slave, &module, &bus, &address, &name) &&
+						(data->state == sensor_found) && (module == this_module) && (bus == this_bus) && (data->info->id == sensor_tsl2591))
+				return(sensor_disabled);
+
+	return(sensor_not_found);
+}
+
 static const info_t info[sensor_size] =
 {
 	[sensor_bh1750] =
@@ -3990,6 +4344,32 @@ static const info_t info[sensor_size] =
 		.poll_fn = apds9960_poll,
 		.dump_fn = apds9960_dump,
 	},
+	[sensor_tsl2591] =
+	{
+		.name = "tsl2591",
+		.id = sensor_tsl2591,
+		.address = 0x29,
+		.type = (1 << sensor_type_visible_light),
+		.precision = 2,
+		.private_data_size = sizeof(tsl2591_private_data_t),
+		.detect_fn = tsl2591_detect,
+		.init_fn = tsl2591_init,
+		.poll_fn = tsl2591_poll,
+		.dump_fn = tsl2591_dump,
+	},
+	[sensor_tsl2591_28] =
+	{
+		.name = "tsl2591-dummy",
+		.id = sensor_tsl2591_28,
+		.address = 0x28,
+		.type = (1 << sensor_type_visible_light),
+		.precision = 2,
+		.private_data_size = 0,
+		.detect_fn = tsl2591_28_detect,
+		.init_fn = nullptr,
+		.poll_fn = nullptr,
+		.dump_fn = nullptr,
+	},
 };
 
 static void run_sensors(void *parameters)
@@ -4061,8 +4441,6 @@ static void run_sensors(void *parameters)
 			new_data->private_data = nullptr;
 			new_data->next = nullptr;
 
-			assert(infoptr->init_fn);
-
 			if(infoptr->private_data_size > 0)
 				new_data->private_data = util_memory_alloc_spiram(infoptr->private_data_size);
 
@@ -4070,6 +4448,8 @@ static void run_sensors(void *parameters)
 				stat_sensors_disabled[module]++;
 			else
 			{
+				assert(infoptr->init_fn);
+
 				if(!infoptr->init_fn(new_data))
 				{
 					log_format("sensor: warning: failed to init sensor %s on bus %u", infoptr->name, bus);
