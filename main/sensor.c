@@ -2432,6 +2432,7 @@ static bool htu21_poll(data_t *data)
 			if(buffer[0] != (htu21_user_reg_rh11_temp11 | htu21_user_reg_otp_reload_disable))
 			{
 				log("htu21: poll: error 4");
+				data->state = sensor_disabled;
 				break;
 			}
 
