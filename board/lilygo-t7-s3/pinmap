@@ -28,18 +28,18 @@ LilyGO T3 S3
 [23]
 [24]
 [25]
-26				*				SP0/1 CS1=CS1
-27				*				SP0/1 HD=IO_D3
-28				*				SP0/1 WP=IO_D2
-29				*				SP0/1 CS0=CS0
-30				*				SP0/1 CLK=CLK
-31				*				SP0/1 Q=IO_D1
-32				*				SP0/1 D=IO_D0
-33				*				SP0/1 IO4=IO_D4
-34				*				SP0/1 IO5=IO_D5
-35	!			*				SP0/1 IO6=IO_D6					*available but unusable due to OCT-SPI SPIRAM*
-36	!			*				SP0/1 IO7=IO_D7					*available but unusable due to OCT-SPI SPIRAM*
-37	!			*				SP0/1 DQS						*available but unusable due to OCT-SPI SPIRAM*
+26				*				SPI0/1 CS1=CS1
+27				*				SPI0/1 HD=IO_D3
+28				*				SPI0/1 WP=IO_D2
+29				*				SPI0/1 CS0=CS0
+30				*				SPI0/1 CLK=CLK
+31				*				SPI0/1 Q=IO_D1
+32				*				SPI0/1 D=IO_D0
+33				*				SPI0/1 IO4=IO_D4
+34				*				SPI0/1 IO5=IO_D5
+35	!			*				SPI0/1 IO6=IO_D6				*available but unusable due to OCT-SPI SPIRAM*
+36	!			*				SPI0/1 IO7=IO_D7				*available but unusable due to OCT-SPI SPIRAM*
+37	!			*				SPI0/1 DQS						*available but unusable due to OCT-SPI SPIRAM*
 38	*			*												SPI 2 LCD D/C
 39	*			*				JTAG MTCK, label: TCK			MCPWM 2 2400 Hz
 40	*			*				JTAG MTDO, label: TDO			MCPWM 3 2400 Hz
