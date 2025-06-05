@@ -19,6 +19,7 @@ typedef enum
 	sensor_apds9960,
 	sensor_tsl2591,
 	sensor_tsl2591_28, // this must come after sensor_tsl2591
+	sensor_am2320,
 	sensor_size,
 	sensor_error = sensor_size,
 	sensor_none = sensor_size,

@@ -4157,6 +4157,201 @@ static sensor_detect_t tsl2591_28_detect(i2c_slave_t slave)
 	return(sensor_not_found);
 }
 
+enum
+{
+	am2320_command_read_register = 0x03,
+};
+
+enum
+{
+	am2320_register_values = 0x00,
+	am2320_register_values_length = 0x04,
+	am2320_register_id = 0x08,
+	am2320_register_id_length = 0x02,
+};
+
+typedef enum
+{
+	am2320_state_init,
+	am2320_state_waking,
+	am2320_state_measuring,
+} am2320_state_t;
+
+typedef struct
+{
+	am2320_state_t state;
+	uint32_t raw_humidity_data;
+	uint32_t raw_temperature_data;
+} am2320_private_data_t;
+
+static unsigned int am2320_crc16(int length, const uint8_t *data)
+{
+	uint8_t outer, inner, testbit;
+	uint16_t crc;
+
+	crc = 0xffff;
+
+	for(outer = 0; outer < length; outer++)
+	{
+		crc ^= data[outer];
+
+		for(inner = 0; inner < 8; inner++)
+		{
+			testbit = !!(crc & 0x01);
+			crc >>= 1;
+			if(testbit)
+				crc ^= 0xa001;
+		}
+	}
+
+	return(crc);
+}
+
+static sensor_detect_t am2320_detect(i2c_slave_t slave)
+{
+	unsigned int crc1, crc2;
+	uint8_t buffer[am2320_register_id_length + 4];
+	unsigned int module, bus, address;
+	const char *name;
+
+	if(!i2c_get_slave_info(slave, &module, &bus, &address, &name))
+	{
+		log("am2320: detect: get_slave_info failed");
+		return(sensor_not_found);
+	}
+
+	i2c_probe_slave(module, bus, address, i2c_probe_no_write, name);
+	util_sleep(50);
+
+	if(!i2c_probe_slave(module, bus, address, i2c_probe_no_write, name))
+		return(sensor_not_found);
+
+	// request ID (but do not check it, it's unreliable)
+	if(!i2c_send_3(slave, am2320_command_read_register, am2320_register_id, am2320_register_id_length))
+		return(sensor_not_found);
+
+	if(!i2c_receive(slave, sizeof(buffer), buffer))
+		return(sensor_not_found);
+
+	if((buffer[0] != am2320_command_read_register) || (buffer[1] != am2320_register_id_length))
+		return(sensor_not_found);
+
+	crc1 = unsigned_16_le(&buffer[am2320_register_id_length + 2]);
+	crc2 = am2320_crc16(am2320_register_id_length + 2, buffer);
+
+	if(crc1 != crc2)
+		return(sensor_not_found);
+
+	return(sensor_found);
+}
+
+static bool am2320_init(data_t *data)
+{
+	am2320_private_data_t *pdata = data->private_data;
+
+	pdata->state = am2320_state_init;
+	pdata->raw_temperature_data = 0;
+	pdata->raw_humidity_data = 0;
+
+	return(true);
+}
+
+static bool am2320_poll(data_t *data)
+{
+	am2320_private_data_t *pdata = data->private_data;
+	uint8_t buffer[am2320_register_values_length + 4];
+	unsigned int crc1, crc2;
+	int humidity, temperature;
+	unsigned int module, bus, address;
+	const char *name;
+
+	if(!i2c_get_slave_info(data->slave, &module, &bus, &address, &name))
+	{
+		log("am2320: poll: get_slave_info failed");
+		return(sensor_not_found);
+	}
+
+	assert(pdata);
+
+	switch(pdata->state)
+	{
+		case(am2320_state_init):
+		case(am2320_state_waking):
+		{
+			i2c_probe_slave(module, bus, address, i2c_probe_no_write, name);
+
+			pdata->state = am2320_state_measuring;
+			break;
+		}
+
+		case(am2320_state_measuring):
+		{
+			pdata->state = am2320_state_waking;
+
+			if(!i2c_send_3(data->slave, am2320_command_read_register, am2320_register_values, am2320_register_values_length))
+				return(false);
+
+			if(!i2c_receive(data->slave, sizeof(buffer), buffer))
+			{
+				log("am2320: poll error 1");
+				return(false);
+			}
+
+			if((buffer[0] != am2320_command_read_register) || (buffer[1] != am2320_register_values_length))
+			{
+				log("am2320: poll error 2");
+				return(false);
+			}
+
+			crc1 = unsigned_16_le(&buffer[am2320_register_values_length + 2]);
+			crc2 = am2320_crc16(am2320_register_values_length + 2, buffer);
+
+			if(crc1 != crc2)
+			{
+				log("am2320: poll error 3");
+				return(false);
+			}
+
+			pdata->raw_temperature_data = unsigned_16_be(&buffer[4]);
+			pdata->raw_humidity_data = unsigned_16_be(&buffer[2]);
+
+			temperature = (unsigned int)pdata->raw_temperature_data;
+
+			if(temperature & 0x8000)
+			{
+				temperature &= 0x7fff;
+				temperature = 0 - temperature;
+			}
+
+			humidity = pdata->raw_humidity_data;
+
+			if(humidity > 1000)
+				humidity  = 1000;
+
+			data->values[sensor_type_temperature].value = temperature / 10.0;
+			data->values[sensor_type_temperature].stamp = time(nullptr);
+
+			data->values[sensor_type_humidity].value = humidity / 10.0;
+			data->values[sensor_type_humidity].stamp = time(nullptr);
+		}
+
+		break;
+	}
+
+	return(true);
+}
+
+static void am2320_dump(const data_t *data, string_t output)
+{
+	am2320_private_data_t *pdata = data->private_data;
+
+	assert(pdata);
+
+	string_format_append(output, "state: %u, ", pdata->state);
+	string_format_append(output, "raw temperature data: %lu, ", pdata->raw_temperature_data);
+	string_format_append(output, "raw humidity data: %lu", pdata->raw_humidity_data);
+}
+
 static const info_t info[sensor_size] =
 {
 	[sensor_bh1750] =
@@ -4370,6 +4565,21 @@ static const info_t info[sensor_size] =
 		.init_fn = nullptr,
 		.poll_fn = nullptr,
 		.dump_fn = nullptr,
+	},
+	[sensor_am2320] =
+	{
+		.name = "am2320",
+		.id = sensor_am2320,
+		.address = 0x5c,
+		.type = (1 << sensor_type_temperature) | (1 << sensor_type_humidity),
+		.flags.force_detect = 1,
+		.flags.no_constrained = 1,
+		.precision = 1,
+		.private_data_size = sizeof(am2320_private_data_t),
+		.detect_fn = am2320_detect,
+		.init_fn = am2320_init,
+		.poll_fn = am2320_poll,
+		.dump_fn = am2320_dump,
 	},
 };
 
