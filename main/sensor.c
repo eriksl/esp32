@@ -26,6 +26,12 @@ typedef enum : unsigned int
 	sensor_disabled,
 } sensor_detect_t;
 
+typedef struct
+{
+	unsigned int force_detect:1; // if the device does all of it's probing itself (e.g. if it needs additional steps before the device can be probed)
+	unsigned int no_constrained:1; // if the device cannot work with constrained I2C functionality (i.e. the RTC/ULP I2C module feature set)
+} sensor_flags_t;
+
 typedef struct data_T
 {
 	sensor_detect_t state;
@@ -41,6 +47,7 @@ typedef struct info_T
 	const char *name;
 	sensor_t id;
 	unsigned int address;
+	sensor_flags_t flags;
 	sensor_type_t type; // bitmask!
 	unsigned int precision;
 	size_t private_data_size;
@@ -89,6 +96,7 @@ static bool inited = false;
 static SemaphoreHandle_t data_mutex;
 static data_t *data_root = nullptr;
 
+static unsigned int stat_sensors_not_considered[i2c_module_size] = { 0 };
 static unsigned int stat_sensors_skipped[i2c_module_size] = { 0 };
 static unsigned int stat_sensors_not_skipped[i2c_module_size] = { 0 };
 static unsigned int stat_sensors_probed[i2c_module_size] = { 0 };
@@ -230,9 +238,6 @@ static sensor_detect_t bh1750_detect(i2c_slave_t slave)
 	if((buffer[2] != 0xff) || (buffer[3] != 0xff) || (buffer[4] != 0xff) ||
 			(buffer[5] != 0xff) || (buffer[6] != 0xff) || (buffer[7] != 0xff))
 		return(sensor_not_found);
-
-	if(i2c_slave_ulp(slave)) // ULP doesn't support I2C read transactions without writing one byte
-		return(sensor_disabled);
 
 	return(sensor_found);
 }
@@ -1404,9 +1409,6 @@ static sensor_detect_t hdc1080_detect(i2c_slave_t slave)
 	if(unsigned_16_be(buffer) != hdc1080_dev_id)
 		return(sensor_not_found);
 
-	if(i2c_slave_ulp(slave)) // ULP doesn't support I2C read transactions without writing one byte
-		return(sensor_disabled);
-
 	return(sensor_found);
 }
 
@@ -1708,9 +1710,6 @@ static bool sht3x_fetch_data(i2c_slave_t slave, unsigned int *result1, unsigned 
 
 static sensor_detect_t sht3x_detect(i2c_slave_t slave)
 {
-	if(i2c_slave_ulp(slave)) // ULP doesn't support I2C transactions with a 16 bit write followed by a read, and neither does it support a read without an 8 bit write command.
-		return(sensor_disabled);
-
 	if(!sht3x_send_command(slave, sht3x_cmd_break))
 	{
 		log("sht3x: detect error");
@@ -2358,9 +2357,6 @@ static bool htu21_get_data(data_t *data, unsigned int *result)
 static sensor_detect_t htu21_detect(i2c_slave_t slave)
 {
 	uint8_t buffer[1];
-
-	if(i2c_slave_ulp(slave)) // ULP doesn't support I2C read transactions without writing one byte
-		return(sensor_disabled);
 
 	if(!i2c_send_1_receive(slave, htu21_cmd_read_user, sizeof(buffer), buffer))
 		return(sensor_not_found);
@@ -4169,6 +4165,7 @@ static const info_t info[sensor_size] =
 		.id = sensor_bh1750,
 		.address = 0x23,
 		.type = (1 << sensor_type_visible_light),
+		.flags.no_constrained = 1,
 		.precision = 0,
 		.private_data_size = sizeof(bh1750_private_data_t),
 		.detect_fn = bh1750_detect,
@@ -4260,6 +4257,7 @@ static const info_t info[sensor_size] =
 		.id = sensor_hdc1080,
 		.address = 0x40,
 		.type = (1 << sensor_type_temperature) | (1 << sensor_type_humidity),
+		.flags.no_constrained = 1,
 		.precision = 1,
 		.private_data_size = sizeof(hdc1080_private_data_t),
 		.detect_fn = hdc1080_detect,
@@ -4273,6 +4271,7 @@ static const info_t info[sensor_size] =
 		.id = sensor_sht3x,
 		.address = 0x44,
 		.type = (1 << sensor_type_temperature) | (1 << sensor_type_humidity),
+		.flags.no_constrained = 1,
 		.precision = 1,
 		.private_data_size = sizeof(sht3x_private_data_t),
 		.detect_fn = sht3x_detect,
@@ -4299,6 +4298,7 @@ static const info_t info[sensor_size] =
 		.id = sensor_htu21,
 		.address = 0x40,
 		.type = (1 << sensor_type_temperature) | (1 << sensor_type_humidity),
+		.flags.no_constrained = 1,
 		.precision = 1,
 		.private_data_size = sizeof(htu21_private_data_t),
 		.detect_fn = htu21_detect,
@@ -4395,6 +4395,12 @@ static void run_sensors(void *parameters)
 		{
 			infoptr = &info[sensor];
 
+			if(i2c_ulp(module) && infoptr->flags.no_constrained)
+			{
+				stat_sensors_not_considered[module]++;
+				continue;
+			}
+
 			if(i2c_find_slave(module, bus, infoptr->address))
 			{
 				stat_sensors_skipped[module]++;
@@ -4403,7 +4409,7 @@ static void run_sensors(void *parameters)
 
 			stat_sensors_not_skipped[module]++;
 
-			if(!i2c_probe_slave(module, bus, infoptr->address, i2c_probe_no_write, infoptr->name))
+			if(!infoptr->flags.force_detect && !i2c_probe_slave(module, bus, infoptr->address, 0, infoptr->name))
 				continue;
 
 			stat_sensors_probed[module]++;
@@ -4760,6 +4766,7 @@ void command_sensor_stats(cli_command_call_t *call)
 	for(module = i2c_module_first; module < i2c_module_size; module++)
 	{
 		string_format_append(call->result, "\n- module %u", (unsigned int)module);
+		string_format_append(call->result, "\n-  sensors not considered: %u", stat_sensors_not_considered[module]);
 		string_format_append(call->result, "\n-  sensors skipped: %u", stat_sensors_skipped[module]);
 		string_format_append(call->result, "\n-  sensors not skipped: %u", stat_sensors_not_skipped[module]);
 		string_format_append(call->result, "\n-  sensors probed: %u", stat_sensors_probed[module]);
