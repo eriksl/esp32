@@ -581,7 +581,7 @@ static void config_dump(cli_command_call_t *call, const char *namespace)
 		string_assign_cstr(key, info.key);
 
 		if(!get_value_as_string(info.namespace_name, key, &info, &type, dst))
-			string_assign_cstr(dst, "<not found");
+			string_assign_cstr(dst, "<not found>");
 
 		if(namespace)
 			string_format_append(call->result, "\n- %-7s %-20s %s", type, string_cstr(key), string_cstr(dst));
