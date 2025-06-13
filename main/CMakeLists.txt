@@ -28,11 +28,10 @@ idf_component_register(
 	INCLUDE_DIRS
 		"")
 
-target_compile_options(${COMPONENT_TARGET} PRIVATE
+set(ALLFLAGS
 		-Wall
 		-Wextra
 		-Werror
-		-std=gnu23
 		-Wformat-overflow=2
 		-Wshift-overflow=2
 		-Wimplicit-fallthrough=5
@@ -59,16 +58,12 @@ target_compile_options(${COMPONENT_TARGET} PRIVATE
 		-Wunsafe-loop-optimizations
 		-Wshadow
 		-Wpointer-arith
-		-Wbad-function-cast
 		-Wcast-qual
 		-Wwrite-strings
 		-Wlogical-op
 		-Wvla
 		-Wdisabled-optimization
 		-Wunreachable-code
-		-Wdiscarded-array-qualifiers
-		-Wmissing-prototypes
-		-Wold-style-definition
 		-Wmissing-declarations
 		-Wcast-align
 		-Wmultistatement-macros
@@ -77,7 +72,36 @@ target_compile_options(${COMPONENT_TARGET} PRIVATE
 		-Wno-redundant-decls
 		-Wno-inline
 		-Wno-packed
+		-fno-strict-aliasing
+)
+
+set(CFLAGS
+		-std=gnu23
+		-Wbad-function-cast
+		-Wmissing-prototypes
+		-Wold-style-definition
 		-Wno-pointer-sign
 		-Wenum-int-mismatch
-		-fno-strict-aliasing
-	)
+		-Wdiscarded-array-qualifiers
+)
+
+set(CXXFLAGS
+		-Wctor-dtor-privacy
+		-Weffc++
+		-Wold-style-cast
+		-Woverloaded-virtual
+)
+
+string(JOIN " " ALLCFLAGS ${ALLFLAGS} ${CFLAGS})
+string(JOIN " " ALLCXXFLAGS ${ALLFLAGS} ${CXXFLAGS})
+
+FILE(GLOB CSOURCES *.c)
+FILE(GLOB CXXSOURCES *.cpp)
+
+set_source_files_properties(${CSOURCES}
+		PROPERTIES COMPILE_FLAGS ${ALLCFLAGS}
+)
+
+set_source_files_properties(${CXXSOURCES}
+		PROPERTIES COMPILE_FLAGS ${ALLCXXFLAGS}
+)

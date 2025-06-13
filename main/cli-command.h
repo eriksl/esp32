@@ -33,7 +33,7 @@ typedef struct
 	string_t string;
 } cli_parameter_t;
 
-_Static_assert(sizeof(cli_parameter_t) == 12);
+static_assert(sizeof(cli_parameter_t) == 12);
 
 typedef struct
 {
@@ -46,7 +46,7 @@ typedef struct
 	string_t			result_oob;
 } cli_command_call_t;
 
-_Static_assert(sizeof(cli_command_call_t) == 216);
+static_assert(sizeof(cli_command_call_t) == 216);
 
 typedef void(cli_command_function_t)(cli_command_call_t *);
 
