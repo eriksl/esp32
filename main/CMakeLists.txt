@@ -88,7 +88,6 @@ set(CFLAGS
 
 set(CXXFLAGS
 		-Wctor-dtor-privacy
-		-Weffc++
 		-Wold-style-cast
 		-Woverloaded-virtual
 )
