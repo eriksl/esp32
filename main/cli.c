@@ -12,6 +12,7 @@
 #include "console.h"
 #include "wlan.h"
 #include "cli-command.h"
+#include "alias.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
@@ -168,6 +169,15 @@ static void command_info_cli(cli_command_call_t *call)
 
 static const cli_command_t cli_commands[] =
 {
+	{ "alias", nullptr, "set alias", command_alias,
+		{	2,
+			{
+				{ cli_parameter_string, 0, 0, 0, 0, "alias", {} },
+				{ cli_parameter_string_raw, 0, 0, 0, 0, "substitution text", {} },
+			},
+		},
+	},
+
 	{ "bt-info", "bi", "show information about bluetooth", bluetooth_command_info,
 		{}
 	},
@@ -682,6 +692,8 @@ static void run_receive_queue(void *)
 			cli_stats_commands_received_packet++;
 		else
 			cli_stats_commands_received_raw++;
+
+		alias_expand(&data);
 
 		string_parse_offset = 0;
 		previous_string_parse_offset = 0;

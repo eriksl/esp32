@@ -127,3 +127,5 @@ void command_io_dump(cli_command_call_t *call);
 void command_io_read(cli_command_call_t *call);
 void command_io_stats(cli_command_call_t *call);
 void command_io_write(cli_command_call_t *call);
+
+void command_alias(cli_command_call_t *call);
