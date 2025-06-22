@@ -13,6 +13,7 @@ typedef enum
 	cli_source_console,
 	cli_source_wlan_tcp,
 	cli_source_wlan_udp,
+	cli_source_script,
 	cli_source_size,
 } cli_source_t;
 
@@ -44,6 +45,12 @@ typedef struct
 				char sin6_addr[32];
 			} address;
 		} ip;
+
+		struct
+		{
+			char name[16];
+			void *task; // TaskHandle_t
+		} script;
 	};
 	unsigned int magic_number_tail;
 } cli_buffer_t;

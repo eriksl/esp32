@@ -525,6 +525,18 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
+	{ "run", nullptr, "run a script", command_run,
+		{	5,
+			{
+				{ cli_parameter_string, 0, 1, 0, 0, "script name", {} },
+				{ cli_parameter_string, 0, 0, 0, 0, "parameter 1", {} },
+				{ cli_parameter_string, 0, 0, 0, 0, "parameter 2", {} },
+				{ cli_parameter_string, 0, 0, 0, 0, "parameter 3", {} },
+				{ cli_parameter_string, 0, 0, 0, 0, "parameter 4", {} },
+			},
+		},
+	},
+
 	{ "sensor-dump", "sd", "dump registered sensors", command_sensor_dump,
 		{	1,
 			{
@@ -1060,16 +1072,35 @@ static void run_send_queue(void *)
 				break;
 			}
 
+			case(cli_source_script):
+			{
+				if(string_at_back(cli_buffer.data) == '\n')
+					string_pop_back(cli_buffer.data);
+
+				if(string_length(cli_buffer.data) > 0)
+					log_format("%s: %s", cli_buffer.script.name, string_cstr(cli_buffer.data));
+
+				break;
+			}
+
 			default:
 			{
 				log_format("cli: invalid source type: %u", cli_buffer.source);
 				break;
 			}
+		}
 
+		string_free(&cli_buffer.data);
+
+		if(cli_buffer.source == cli_source_script)
+		{
+			assert(cli_buffer.script.task);
+			xTaskNotifyGive(cli_buffer.script.task);
+			cli_buffer.script.name[0] = '\0';
+			cli_buffer.script.task = nullptr;
 		}
 
 		cli_buffer.source = cli_source_none;
-		string_free(&cli_buffer.data);
 	}
 }
 

@@ -23,6 +23,7 @@ idf_component_register(
 		"pdm.c"
 		"process.cpp"
 		"ramdisk.c"
+		"script.cpp"
 		"string.c"
 		"sensor.c"
 		"util.c"
