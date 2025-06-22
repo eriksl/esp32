@@ -17,9 +17,9 @@ idf_component_register(
 		"log.c"
 		"mcpwm.c"
 		"notify.c"
+		"ota.c"
 		"packet.c"
 		"perftest.c"
-		"ota.c"
 		"pdm.c"
 		"ramdisk.c"
 		"string.c"
@@ -88,7 +88,6 @@ set(CFLAGS
 
 set(CXXFLAGS
 		-Wctor-dtor-privacy
-		-Wold-style-cast
 		-Woverloaded-virtual
 )
 
