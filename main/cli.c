@@ -391,14 +391,6 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
-	{ "info-process", "ps", "show information about running processes", info_command_info_process,
-		{	1,
-			{
-				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "core id", .unsigned_int = { 0, 1 }},
-			}
-		},
-	},
-
 	{ "io-dump", "iod", "dump everything known about found IOs", command_io_dump,
 		{}
 	},
@@ -506,6 +498,22 @@ static const cli_command_t cli_commands[] =
     { "pdm-info", "pin", "info about pdm channels", command_pdm_info,
         {}
     },
+
+	{ "process-list", "ps", "show information about running processes", command_process_list,
+		{	1,
+			{
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "core id", .unsigned_int = { 0, 1 }},
+			}
+		},
+	},
+
+	{ "process-stop", "kill", "stop running process", command_process_kill,
+		{	1,
+			{
+				{ cli_parameter_string, 0, 1, 0, 0, "process", {} },
+			}
+		},
+	},
 
 	{ "reset", "r", "reset", command_reset,
 		{}

@@ -80,7 +80,6 @@ void info_command_info(cli_command_call_t *call);
 void info_command_info_board(cli_command_call_t *call);
 void info_command_info_memory(cli_command_call_t *call);
 void info_command_info_partitions(cli_command_call_t *call);
-void info_command_info_process(cli_command_call_t *call);
 
 void log_command_info(cli_command_call_t *call);
 void log_command_log(cli_command_call_t *call);
@@ -129,3 +128,6 @@ void command_io_stats(cli_command_call_t *call);
 void command_io_write(cli_command_call_t *call);
 
 void command_alias(cli_command_call_t *call);
+
+void command_process_list(cli_command_call_t *call);
+void command_process_kill(cli_command_call_t *call);

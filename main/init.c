@@ -25,6 +25,7 @@
 #include "io.h"
 #include "pdm.h"
 #include "ledpixel.h"
+#include "process.h"
 
 __attribute__((noreturn)) void app_main(void);
 
@@ -36,6 +37,7 @@ void app_main(void)
 	notify_init();
 	notify(notify_sys_booting);
 	info_init();
+	process_init();
 	string_module_init();
 	log_init();
 	config_init();

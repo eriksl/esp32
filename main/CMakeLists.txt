@@ -21,6 +21,7 @@ idf_component_register(
 		"packet.c"
 		"perftest.c"
 		"pdm.c"
+		"process.cpp"
 		"ramdisk.c"
 		"string.c"
 		"sensor.c"
