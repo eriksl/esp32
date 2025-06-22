@@ -31,6 +31,12 @@ class ThreadState
 
 		std::string script;
 		std::ifstream file;
+		struct
+		{
+			bool active;
+			unsigned int target;
+			unsigned int current;
+		} repeat;
 		std::array<std::string, parameter_size> parameter;
 };
 
@@ -81,18 +87,38 @@ static void script_run(ThreadState *initial_thread_state)
 					}
 
 					if((ix + 1) >= line.length())
+					{
+						expanded_line.append(1, '$');
 						continue;
+					}
 
-					if((line.at(ix + 1) >= '0') && (line.at(ix + 1) <= '9'))
+					if((line.at(ix + 1) >= '0') && (line.at(ix + 1) <= '3'))
 					{
 						parameter_index = (unsigned int)line.at(ix + 1) - '0';
-						ix++;
 
 						if(parameter_index >= parameter_size)
 							continue;
 
 						expanded_line.append(thread_state->parameter.at(parameter_index));
+						ix++;
+						continue;
 					}
+
+					if(line.at(ix + 1) == 'r')
+					{
+						expanded_line.append(std::to_string(thread_state->repeat.current));
+						ix++;
+						continue;
+					}
+
+					if(line.at(ix + 1) == 'R')
+					{
+						expanded_line.append(std::to_string(thread_state->repeat.target));
+						ix++;
+						continue;
+					}
+
+					expanded_line.append(1, line.at(ix));
 				}
 
 				if((pos = expanded_line.find(' ')) == std::string::npos)
@@ -111,6 +137,10 @@ static void script_run(ThreadState *initial_thread_state)
 					thread_states.push_front(thread_state);
 
 					thread_state = new ThreadState;
+
+					thread_state->repeat.active = false;
+					thread_state->repeat.target = 0;
+					thread_state->repeat.current = 0;
 
 					for(start = expanded_line.find(' '); (start != std::string::npos) && (start < expanded_line.length()) && (expanded_line.at(start) == ' '); start++)
 						(void)0;
@@ -183,8 +213,43 @@ static void script_run(ThreadState *initial_thread_state)
 
 				if(command == "repeat")
 				{
-					thread_state->file.seekg(0);
-					util_sleep(100);
+					if(thread_state->repeat.active)
+					{
+						if((thread_state->repeat.target != 0) && (thread_state->repeat.current++ >= thread_state->repeat.target))
+						{
+							thread_state->repeat.target = 0;
+							thread_state->repeat.current = 0;
+							thread_state->repeat.active = false;
+						}
+						else
+						{
+							thread_state->file.seekg(0);
+							util_sleep(100);
+						}
+					}
+					else
+					{
+						unsigned int target = 0;
+
+						if(pos != std::string::npos)
+						{
+							try
+							{
+								target = static_cast<unsigned int>(std::stoul(expanded_line.substr(pos)));
+							}
+							catch(...)
+							{
+								target = 0;
+							}
+						}
+
+						thread_state->repeat.target = target;
+						thread_state->repeat.current = 1;
+						thread_state->repeat.active = true;
+						thread_state->file.seekg(0);
+						util_sleep(100);
+					}
+
 					continue;
 				}
 
@@ -222,6 +287,9 @@ void command_run(cli_command_call_t *call)
 
 	assert((call->parameter_count > 0) && (call->parameter_count <= (parameter_size + 1)));
 
+	thread_state->repeat.active = false;
+	thread_state->repeat.target = 0;
+	thread_state->repeat.current = 0;
 	thread_state->script = string_cstr(call->parameters[0].string);
 
 	for(ix = 0; (ix + 1) < call->parameter_count; ix++)
