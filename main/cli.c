@@ -153,6 +153,12 @@ static void command_reset(cli_command_call_t *call)
 	esp_restart();
 }
 
+static void command_write(cli_command_call_t *call)
+{
+	if(call->parameter_count == 1)
+		string_assign_string(call->result, call->parameters[0].string);
+}
+
 static void command_info_cli(cli_command_call_t *call)
 {
 	assert(call->parameter_count == 0);
@@ -562,6 +568,14 @@ static const cli_command_t cli_commands[] =
 
 	{ "wlan-ip-info", "wii", "show information about tcp/udp over wlan", wlan_command_ip_info,
 		{}
+	},
+
+	{ "write", "w", "write to output", command_write,
+		{	1,
+			{
+				{ cli_parameter_string_raw, 0, 1, 0, 0, "text", {} },
+			},
+		},
 	},
 
 	{ (const char *)0, (const char *)0, (const char *)0, (cli_command_function_t *)0,
