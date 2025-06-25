@@ -47,6 +47,7 @@ static_assert(sizeof(log_t) < log_buffer_size);
 
 RTC_NOINIT_ATTR static char rtc_slow_memory[log_buffer_size];
 static bool inited = false;
+static bool monitor = false;
 static log_t *log_buffer = (log_t *)0;
 static QueueHandle_t log_display_queue = (QueueHandle_t)0;
 static SemaphoreHandle_t data_mutex;
@@ -111,10 +112,13 @@ static void _log_cstr(bool append_strerror, const char *string)
 
 		data_mutex_give();
 
-		if(strlen(string) >= sizeof(entry->data))
-			console_write_line(string);
-		else
-			console_write_line(entry->data);
+		if(monitor)
+		{
+			if(strlen(string) >= sizeof(entry->data))
+				console_write_line(string);
+			else
+				console_write_line(entry->data);
+		}
 
 		log_signal_display(current);
 	}
@@ -169,7 +173,9 @@ static void _log_format(bool append_strerror, const char *fmt, va_list ap)
 
 		data_mutex_give();
 
-		console_write_line(entry->data);
+		if(monitor)
+			console_write_line(entry->data);
+
 		log_signal_display(current);
 	}
 	else
@@ -288,6 +294,11 @@ void log_init(void)
 	log("boot");
 }
 
+void log_setmonitor(bool val)
+{
+	monitor = !!val;
+}
+
 void log_command_info(cli_command_call_t *call)
 {
 	assert(inited);
@@ -358,4 +369,14 @@ void log_command_log_clear(cli_command_call_t *call)
 	log_clear();
 
 	string_format_append(call->result, "\nlog cleared");
+}
+
+void log_command_log_monitor(cli_command_call_t *call)
+{
+	assert(inited);
+
+	if(call->parameter_count == 1)
+		monitor = call->parameters[0].unsigned_int != 0;
+
+	string_format_append(call->result, "log monitor: %s", monitor ? "yes" : "no");
 }

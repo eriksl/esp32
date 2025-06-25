@@ -84,6 +84,7 @@ void info_command_info_partitions(cli_command_call_t *call);
 void log_command_info(cli_command_call_t *call);
 void log_command_log(cli_command_call_t *call);
 void log_command_log_clear(cli_command_call_t *call);
+void log_command_log_monitor(cli_command_call_t *call);
 
 void command_ota_start(cli_command_call_t *call);
 void command_ota_write(cli_command_call_t *call);

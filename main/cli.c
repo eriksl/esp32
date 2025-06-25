@@ -464,6 +464,14 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
+	{ "log-monitor", "lm", "enable/disable output log to console", log_command_log_monitor,
+		{	1,
+			{
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "activate", { .unsigned_int = { 0, 1 }} },
+			},
+		},
+	},
+
     { "mcpwm-info", "mpi", "info about MCPWM channels and timers", command_mcpwm_info,
         {}
     },
