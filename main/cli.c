@@ -479,7 +479,7 @@ static const cli_command_t cli_commands[] =
 	{ "ota-commit", (const char*)0, "verify and select finished ota session", command_ota_commit,
 		{	1,
 			{
-				{ cli_parameter_string, 0, 1, 1, 1, "checksum", .string = { 64, 64 }},
+				{ cli_parameter_string, 0, 1, 1, 1, "checksum", { .string = { 64, 64 }} },
 			},
 		}
 	},
