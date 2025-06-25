@@ -644,5 +644,5 @@ void display_spi_generic_bright(unsigned int percentage)
 {
 	assert(percentage <= 100);
 
-	ledpwm_set(ledpwm_channel, ((1UL << 14) * percentage) / 100);
+	ledpwm_set(ledpwm_channel, ((1UL << 14) * (100 - percentage)) / 100);
 }
