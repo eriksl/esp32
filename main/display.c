@@ -102,13 +102,13 @@ static const display_info_t info[dt_size] =
 	[dt_no_display] =
 	{
 		.name = "No display",
-		.init_fn = (void *)0,
-		.bright_fn = (void *)0,
-		.write_fn = (void *)0,
-		.clear_fn = (void *)0,
-		.box_fn = (void *)0,
-		.plot_line_fn = (void *)0,
-		.scroll_fn = (void *)0,
+		.init_fn = nullptr,
+		.bright_fn = nullptr,
+		.write_fn = nullptr,
+		.clear_fn = nullptr,
+		.box_fn = nullptr,
+		.plot_line_fn = nullptr,
+		.scroll_fn = nullptr,
 	},
 	[dt_spi_generic] =
 	{
@@ -122,6 +122,7 @@ static const display_info_t info[dt_size] =
 		.scroll_fn = (void *)0,
 	},
 };
+
 const display_rgb_t display_colour_map[dc_size] =
 {
 	[dc_black] =	{	0x00,	0x00,	0x00	},
@@ -892,7 +893,7 @@ static void __attribute__((noreturn)) run_display_info(void *)
 
 					png_read_end(png_ptr, (png_infop)0);
 
-	abort:
+abort:
 					assert(png_ptr);
 					assert(info_ptr);
 
@@ -907,7 +908,7 @@ static void __attribute__((noreturn)) run_display_info(void *)
 						row_pointer = (png_bytep)0;
 					}
 
-	skip:
+skip:
 					if(fd >= 0)
 					{
 						close(fd);
@@ -936,9 +937,9 @@ static void __attribute__((noreturn)) run_display_info(void *)
 			time_spent = esp_timer_get_time() - time_start;
 			stat_display_show = time_spent / 1000ULL;
 
-	next1:
+next1:
 			page_data_mutex_give();
-	next2:
+next2:
 			util_sleep(fastskip ? 100 : 8000);
 			fastskip = false;
 		}
@@ -1145,10 +1146,10 @@ void display_init(void)
 	clear(dc_black);
 	brightness(75);
 
-	if(xTaskCreatePinnedToCore(run_display_log, "display-log", 3 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
+	if(xTaskCreatePinnedToCore(run_display_log, "display-log", 3 * 1024, nullptr, 1, (TaskHandle_t *)0, 1) != pdPASS)
 		util_abort("display: xTaskCreatePinnedToNode display log");
 
-	if(xTaskCreatePinnedToCore(run_display_info, "display-info", 5 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
+	if(xTaskCreatePinnedToCore(run_display_info, "display-info", 5 * 1024, nullptr, 1, (TaskHandle_t *)0, 1) != pdPASS)
 		util_abort("display: xTaskCreatePinnedToNode display run");
 }
 
