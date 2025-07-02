@@ -52,16 +52,16 @@ WEMOS Lolin S3 mini
 47	*			*				board LED pixel					LEDpixel 0 NOTIFY
 48
 
-board		SPI 2					SPI 3			 		IDC connector 		analyser		BuyDisplay connector
+board		SPI 2					SPI 3			 		IDC connector 		analyser		BuyDisplay connector	BD serial connector (2x4 pin IDC)
 
-MISO		13*	MISO	L-1-5		43	MISO	R-2-1		1	brown			D4	yellow		28	LCD_SDO
-Vdd			 V	+5V		R-2-8		 V	+5V		R-2-8		2	red								 2	Vdd
-SCK			12*	SCK		L-1-4		44	SCK		R-2-2		3	orange			D1	brown		24	D/C(SCL)
-MOSI		11*	MOSI	L-1-6		18	MOSI	R-2-5		4	yellow			D3	orange		27	LCD_SDI
-CS			10*	CS0		L-1-7		16	CS		R-2-6		5	green			D0	black		23	LCD_/CS
-Vss			 G	GND		R-1-7		 G	GND		R-2-7		6	blue			GND	white		 1	Vss
-D/C			 1	D/C		R-2-1		21	D/C		R-1-5		7	purple			D2	red			25	/WR(D/C)
-BL			 4	LEDPWM	L-1-3		17	LEDPWM	R-1-6		8	grey			D5	green		29	BL_ON/OFF
+MISO		13*	MISO	L-1-5		43	MISO	R-2-1		1	brown			D4	yellow		28	LCD_SDO				6	MISO (SDO)		orange
+Vdd			 V	+5V		R-2-8		 V	+5V		R-2-8		2	red								 2	Vdd					3-4	V (Vdd)			green/blue
+SCK			12*	SCK		L-1-4		44	SCK		R-2-2		3	orange			D1	brown		24	D/C(SCL)			8	SCK (SCLK)		brown
+MOSI		11*	MOSI	L-1-6		18	MOSI	R-2-5		4	yellow			D3	orange		27	LCD_SDI				7	MOSI (SDI)		red
+CS			10*	CS0		L-1-7		16	CS		R-2-6		5	green			D0	black		23	LCD_/CS				5	CS (/SCS)		yellow
+Vss			 G	GND		R-1-7		 G	GND		R-2-7		6	blue			GND	white		 1	Vss					1-2	Vss (VSS)		purple/grey
+D/C			 1	D/C		R-2-1		21	D/C		R-1-5		7	purple			D2	red			25	/WR(D/C)			NC
+BL			 4	LEDPWM	L-1-3		17	LEDPWM	R-1-6		8	grey			D5	green		29	BL_ON/OFF			NC
 
 			I2C 0					I2C 1					I2C 2 (RTC/ULP)
 			 5	SDA		L-2-3		14	SDA		L-2-8		 3	SDA		L-2-2
