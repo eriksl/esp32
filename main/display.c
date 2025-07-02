@@ -123,6 +123,18 @@ static const display_info_t info[dt_size] =
 		.set_layer_fn = nullptr,
 		.show_layer_fn = nullptr,
 	},
+	[dt_ra8875] =
+	{
+		.name = "SPI LCD display based on RA8875",
+		.init_fn = display_ra8875_init,
+		.bright_fn = display_ra8875_bright,
+		.write_fn = display_ra8875_write,
+		.clear_fn = display_ra8875_clear,
+		.box_fn = display_ra8875_box,
+		.plot_line_fn = display_ra8875_plot_line,
+		.set_layer_fn = display_ra8875_set_layer,
+		.show_layer_fn = display_ra8875_show_layer,
+	},
 };
 
 const display_rgb_t display_colour_map[dc_size] =
