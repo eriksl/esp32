@@ -108,7 +108,6 @@ static const display_info_t info[dt_size] =
 		.clear_fn = nullptr,
 		.box_fn = nullptr,
 		.plot_line_fn = nullptr,
-		.scroll_fn = nullptr,
 	},
 	[dt_spi_generic] =
 	{
@@ -119,7 +118,6 @@ static const display_info_t info[dt_size] =
 		.clear_fn = display_spi_generic_clear,
 		.box_fn = display_spi_generic_box,
 		.plot_line_fn = display_spi_generic_plot_line,
-		.scroll_fn = (void *)0,
 	},
 };
 
@@ -546,23 +544,14 @@ static void __attribute__((noreturn)) run_display_log(void *)
 			strlcat(log_line, entry_text, sizeof(log_line));
 			unicode_length = utf8_to_unicode((uint8_t *)log_line, unicode_buffer_size, unicode_buffer);
 
-			if(info[display_type].scroll_fn && ((display_log_y + font->net.height) >= y_size))
-			{
-				info[display_type].scroll_fn(1);
-				display_log_y = y_size - font->net.height - 1;
-			}
-
 			info[display_type].write_fn(font, dc_white, dc_black, 0, display_log_y, x_size - 1, display_log_y + font->net.height - 1, unicode_length, unicode_buffer);
 
 			display_log_y += font->net.height;
 
-			if(!info[display_type].scroll_fn)
-			{
-				if((display_log_y + font->net.height) > y_size)
-					display_log_y = 0;
+			if((display_log_y + font->net.height) > y_size)
+				display_log_y = 0;
 
-				box(dc_black, 0, display_log_y, x_size - 1, display_log_y + font->net.height - 1);
-			}
+			box(dc_black, 0, display_log_y, x_size - 1, display_log_y + font->net.height - 1);
 		}
 	}
 

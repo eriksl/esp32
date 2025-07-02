@@ -93,7 +93,6 @@ typedef struct
 				unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
 				unsigned int line_unicode_length, const uint32_t *line_unicode);
 	void (*clear_fn)(display_colour_t);
-	void (*scroll_fn)(unsigned int lines);
 	void (*box_fn)(display_colour_t, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y);
 	void (*plot_line_fn)(unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int rgb_pixels_length, const display_rgb_t *pixels);
 } display_info_t;
