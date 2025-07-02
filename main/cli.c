@@ -381,9 +381,9 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
-    { "info-board", "ib", "BSP info", info_command_info_board,
-        {}
-    },
+	{ "info-board", "ib", "BSP info", info_command_info_board,
+		{}
+	},
 
 	{ "info-cli", "ic", "show information about the cli", command_info_cli,
 		{}
@@ -440,13 +440,13 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-    { "ledpixel-info", "lpxi", "info about LEDpixels channels", command_ledpixel_info,
-        {}
-    },
+	{ "ledpixel-info", "lpxi", "info about LEDpixels channels", command_ledpixel_info,
+		{}
+	},
 
-    { "ledpwm-info", "lpi", "info about LED PWM channels and timers", command_ledpwm_info,
-        {}
-    },
+	{ "ledpwm-info", "lpi", "info about LED PWM channels and timers", command_ledpwm_info,
+		{}
+	},
 
 	{ "log", "l", "show log", log_command_log,
 		{	1,
@@ -472,9 +472,9 @@ static const cli_command_t cli_commands[] =
 		},
 	},
 
-    { "mcpwm-info", "mpi", "info about MCPWM channels and timers", command_mcpwm_info,
-        {}
-    },
+	{ "mcpwm-info", "mpi", "info about MCPWM channels and timers", command_mcpwm_info,
+		{}
+	},
 
 	{ "ota-commit", (const char*)0, "verify and select finished ota session", command_ota_commit,
 		{	1,
@@ -509,9 +509,9 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-    { "pdm-info", "pin", "info about pdm channels", command_pdm_info,
-        {}
-    },
+	{ "pdm-info", "pin", "info about pdm channels", command_pdm_info,
+		{}
+	},
 
 	{ "process-list", "ps", "show information about running processes", command_process_list,
 		{	1,
