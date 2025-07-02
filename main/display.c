@@ -108,6 +108,8 @@ static const display_info_t info[dt_size] =
 		.clear_fn = nullptr,
 		.box_fn = nullptr,
 		.plot_line_fn = nullptr,
+		.set_layer_fn = nullptr,
+		.show_layer_fn = nullptr,
 	},
 	[dt_spi_generic] =
 	{
@@ -118,6 +120,8 @@ static const display_info_t info[dt_size] =
 		.clear_fn = display_spi_generic_clear,
 		.box_fn = display_spi_generic_box,
 		.plot_line_fn = display_spi_generic_plot_line,
+		.set_layer_fn = nullptr,
+		.show_layer_fn = nullptr,
 	},
 };
 
@@ -608,6 +612,7 @@ static void __attribute__((noreturn)) run_display_info(void *)
 	// all static due to prevent clobbering by longjmp
 
 	static int current_page;
+	static unsigned int current_layer;
 	static display_page_t *display_pages_ptr;
 	static display_colour_t current_colour;
 	static unsigned int row, y;
@@ -632,6 +637,7 @@ static void __attribute__((noreturn)) run_display_info(void *)
 	static bool fastskip = false;
 	static struct stat statb;
 
+	current_layer = 0;
 	current_colour = dc_black;
 
 	for(;;)
@@ -697,6 +703,9 @@ static void __attribute__((noreturn)) run_display_info(void *)
 			assert(page_border_size > 0);
 
 			time_start = esp_timer_get_time();
+
+			if(info[display_type].set_layer_fn)
+				info[display_type].set_layer_fn((current_layer + 1) % 2);
 
 			box(current_colour,	0,										0,										x_size - 1,				page_border_size - 1);
 			box(current_colour,	(x_size - 1) - (page_border_size - 1),	0,										x_size - 1,				y_size - 1);
@@ -922,6 +931,11 @@ skip:
 
 			if((display_pages_ptr->expiry > 0) && (time((time_t *)0) > display_pages_ptr->expiry))
 				page_erase(display_pages_ptr);
+
+			current_layer = (current_layer + 1) % 2;
+
+			if(info[display_type].show_layer_fn)
+				info[display_type].show_layer_fn(current_layer);
 
 			time_spent = esp_timer_get_time() - time_start;
 			stat_display_show = time_spent / 1000ULL;

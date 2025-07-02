@@ -95,6 +95,8 @@ typedef struct
 	void (*clear_fn)(display_colour_t);
 	void (*box_fn)(display_colour_t, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y);
 	void (*plot_line_fn)(unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int rgb_pixels_length, const display_rgb_t *pixels);
+	void (*set_layer_fn)(unsigned int layer);
+	void (*show_layer_fn)(unsigned int layer);
 } display_info_t;
 
 void display_init(void);
