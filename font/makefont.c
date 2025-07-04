@@ -439,7 +439,7 @@ int main(int argc, char *const argv[])
 						hexval |= hexvaladd;
 					}
 
-					if((current_row_input >= shave_top) && (current_row_input < (height - shave_bottom)))
+					if((current_row_input >= shave_top) && (current_row_input < (height + shave_top)))
 					{
 						if(current_row_input >= rows_size)
 						{
@@ -465,6 +465,8 @@ int main(int argc, char *const argv[])
 			}
 		}
 	}
+
+	fclose(input);
 
 	for(ix = 0; ix < basic_glyphs_size; ix++)
 	{
@@ -513,8 +515,6 @@ int main(int argc, char *const argv[])
 			printf(" %04x %02x%02x%02x%02x\n", binval, bin_buffer[0], bin_buffer[1], bin_buffer[2], bin_buffer[3]);
 		}
 	}
-
-	fclose(input);
 
 	hash_ctx = EVP_MD_CTX_new();
 	EVP_DigestInit_ex(hash_ctx, EVP_sha256(), (ENGINE *)0);
