@@ -629,7 +629,7 @@ static void __attribute__((noreturn)) run_display_info(void *)
 	static unsigned int current_layer;
 	static display_page_t *display_pages_ptr;
 	static display_colour_t current_colour;
-	static unsigned int row, y;
+	static unsigned int row, y1, y2;
 	static unsigned int image_x_size, image_y_size, row_bytes, colour_type, bit_depth;
 	static int pad, chop;
 	static unsigned int unicode_length;
@@ -784,20 +784,25 @@ static void __attribute__((noreturn)) run_display_info(void *)
 			{
 				case(dpt_text):
 				{
-					y = font->net.height + page_border_size + page_text_offset;
+					y1 = font->net.height + page_border_size + page_text_offset;
 
 					for(row = 0; (row < display_page_text_lines_size) && (row < display_rows) && string_length(display_pages_ptr->text.line[row]); row++)
 					{
+						y2 = y1 + (font->net.height - 1);
+
+						if(y2 > y_size - page_border_size)
+							y2 = y_size - page_border_size;
+
 						unicode_length = utf8_to_unicode((const uint8_t *)string_cstr(display_pages_ptr->text.line[row]), unicode_buffer_size, unicode_buffer);
 						write_fn(font, dc_black, dc_white,
-								page_border_size, y, (x_size - 1) - page_border_size, y + (font->net.height - 1),
+								page_border_size, y1, (x_size - 1) - page_border_size, y2,
 								unicode_length, unicode_buffer);
 
-						y += font->net.height;
+						y1 += font->net.height;
 					}
 
-					if(y < ((y_size - 1) - page_border_size))
-						box(dc_white, page_border_size, y, (x_size - 1) - page_border_size, (y_size - 1) - page_border_size);
+					if(y1 < ((y_size - 1) - page_border_size))
+						box(dc_white, page_border_size, y1, (x_size - 1) - page_border_size, (y_size - 1) - page_border_size);
 
 					break;
 				}
@@ -894,9 +899,9 @@ static void __attribute__((noreturn)) run_display_info(void *)
 
 					for(row = 0; row < image_y_size; row++)
 					{
-						y = page_border_size + page_text_offset + (font->net.height - 1) + row;
+						y1 = page_border_size + page_text_offset + (font->net.height - 1) + row;
 
-						if((y + page_border_size) > y_size)
+						if((y1 + page_border_size) > y_size)
 							break;
 
 						png_read_row(png_ptr, row_pointer, (png_bytep)0);
