@@ -474,13 +474,13 @@ int main(int argc, char *const argv[])
 
 		printf("* basic glyph %u/%u\n", ix, glyph->codepoint);
 
-		for(current_row_output = 0; current_row_output < rows_size; current_row_output++)
+		for(current_row_output = 0; current_row_output < height; current_row_output++)
 		{
 			printf("%2u: ", current_row_output);
 
 			binval = glyph->row[current_row_output];
 
-			for(bitindex = 0; bitindex < cols_size; bitindex++)
+			for(bitindex = 0; bitindex < width; bitindex++)
 				printf("%c", (binval & (1 << bitindex)) ? 'X' : '.');
 
 			bin_buffer[0] = (binval & 0x000000ff) >> 0;
@@ -498,13 +498,13 @@ int main(int argc, char *const argv[])
 
 		printf("* extra glyph %u/%u\n", ix, glyph->codepoint);
 
-		for(current_row_output = 0; current_row_output < rows_size; current_row_output++)
+		for(current_row_output = 0; current_row_output < height; current_row_output++)
 		{
 			printf("%2u: ", current_row_output);
 
 			binval = glyph->row[current_row_output];
 
-			for(bitindex = 0; bitindex < cols_size; bitindex++)
+			for(bitindex = 0; bitindex < width; bitindex++)
 				printf("%c", (binval & (1 << bitindex)) ? 'X' : '.');
 
 			bin_buffer[0] = (binval & 0x000000ff) >> 0;
