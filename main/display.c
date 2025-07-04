@@ -166,11 +166,13 @@ static unsigned int stat_skipped_incomplete_images = 0;
 
 static inline void page_data_mutex_take(void)
 {
+	assert(page_data_mutex);
 	xSemaphoreTake(page_data_mutex, portMAX_DELAY);
 }
 
 static inline void page_data_mutex_give(void)
 {
+	assert(page_data_mutex);
 	xSemaphoreGive(page_data_mutex);
 }
 
@@ -995,69 +997,70 @@ static void display_info(string_t output)
 		return;
 	}
 
+	string_format_append(output, "\nDISPLAY current type %s, ", info[display_type].name);
+
 	if(!font_valid)
+		string_append_cstr(output, "no display font loaded");
+	else
 	{
-		string_assign_cstr(output, "\n- no display font loaded");
-		return;
-	}
+		string_append_cstr(output, "font info: ");
+		string_format_append(output, "\n- magic word: %08x", font->magic_word);
+		string_format_append(output, "\n- raw width: %u", (unsigned int)font->raw.width);
+		string_format_append(output, "\n- raw height: %u", (unsigned int)font->raw.height);
+		string_format_append(output, "\n- net width: %u", (unsigned int)font->net.width);
+		string_format_append(output, "\n- net height: %u", (unsigned int)font->net.height);
+		string_format_append(output, "\n- basic glyphs: %d", font_basic_glyphs_size);
+		string_format_append(output, "\n- extra glyphs: %u", (unsigned int)font->extra_glyphs);
+		string_format_append(output, "\n- columns: %u", display_columns);
+		string_format_append(output, "\n- rows: %u", display_rows);
 
-	string_format_append(output, "\nDISPLAY current type %s, font info: ", info[display_type].name);
-	string_format_append(output, "\n- magic word: %08x", font->magic_word);
-	string_format_append(output, "\n- raw width: %u", (unsigned int)font->raw.width);
-	string_format_append(output, "\n- raw height: %u", (unsigned int)font->raw.height);
-	string_format_append(output, "\n- net width: %u", (unsigned int)font->net.width);
-	string_format_append(output, "\n- net height: %u", (unsigned int)font->net.height);
-	string_format_append(output, "\n- basic glyphs: %d", font_basic_glyphs_size);
-	string_format_append(output, "\n- extra glyphs: %u", (unsigned int)font->extra_glyphs);
-	string_format_append(output, "\n- columns: %u", display_columns);
-	string_format_append(output, "\n- rows: %u", display_rows);
+		string_append_cstr(output, "\nPAGES:");
 
-	string_append_cstr(output, "\nPAGES:");
-
-	for(page = 0; page < display_page_size; page++)
-	{
-		page_ptr = &display_pages[page];
-
-		if(page_ptr->expiry > 0)
-			util_time_to_string(datetime, &page_ptr->expiry);
-		else
-			string_assign_cstr(datetime, "<infinite>");
-
-		switch(page_ptr->type)
+		for(page = 0; page < display_page_size; page++)
 		{
-			case(dpt_text):
+			page_ptr = &display_pages[page];
+
+			if(page_ptr->expiry > 0)
+				util_time_to_string(datetime, &page_ptr->expiry);
+			else
+				string_assign_cstr(datetime, "<infinite>");
+
+			switch(page_ptr->type)
 			{
-				string_format_append(output, "\ntext: %s [%s]", string_cstr(page_ptr->name), string_cstr(datetime));
-
-				for(line = 0; (line < display_page_text_lines_size); line++)
+				case(dpt_text):
 				{
-					if(!string_length(page_ptr->text.line[line]))
-						break;
+					string_format_append(output, "\ntext: %s [%s]", string_cstr(page_ptr->name), string_cstr(datetime));
 
-					string_format_append(output, "\n- [%u]: %s", line, string_cstr(page_ptr->text.line[line]));
+					for(line = 0; (line < display_page_text_lines_size); line++)
+					{
+						if(!string_length(page_ptr->text.line[line]))
+							break;
+
+						string_format_append(output, "\n- [%u]: %s", line, string_cstr(page_ptr->text.line[line]));
+					}
+
+					break;
 				}
 
-				break;
-			}
+				case(dpt_image):
+				{
+					string_format_append(output, "\nimage: %s, file: %s/%u [%s]", string_cstr(page_ptr->name), string_cstr(page_ptr->image.filename), page_ptr->image.length, string_cstr(datetime));
+					break;
+				}
 
-			case(dpt_image):
-			{
-				string_format_append(output, "\nimage: %s, file: %s/%u [%s]", string_cstr(page_ptr->name), string_cstr(page_ptr->image.filename), page_ptr->image.length, string_cstr(datetime));
-				break;
+				default:
+				{
+					goto done;
+				}
 			}
-
-			default:
-			{
-				goto done;
-			}
-		}
 done:
-		(void)0;
-	}
+			(void)0;
+		}
 
-	string_append_cstr(output, "\nSTATS:");
-	string_format_append(output, "\n- display draw time: %u ms", stat_display_show);
-	string_format_append(output, "\n- incomplete images skipped: %u", stat_skipped_incomplete_images);
+		string_append_cstr(output, "\nSTATS:");
+		string_format_append(output, "\n- display draw time: %u ms", stat_display_show);
+		string_format_append(output, "\n- incomplete images skipped: %u", stat_skipped_incomplete_images);
+	}
 }
 
 static bool brightness(unsigned int percentage)
@@ -1125,12 +1128,6 @@ void display_init(void)
 		return;
 	}
 
-	if(!(font_valid = load_font("font_small")))
-	{
-		log("display: load font failed");
-		return;
-	}
-
 	unicode_buffer = (uint32_t *)util_memory_alloc_spiram(sizeof(uint32_t) * unicode_buffer_size);
 
 	page_data_mutex = xSemaphoreCreateMutex();
@@ -1157,6 +1154,12 @@ void display_init(void)
 	}
 
 	inited = true;
+
+	if(!(font_valid = load_font("font_small")))
+	{
+		log("display: load font failed");
+		return;
+	}
 
 	clear(dc_black);
 	brightness(75);
