@@ -55,14 +55,14 @@ typedef struct __attribute__((packed))
 	uint32_t extra_glyphs;
 	glyph_t basic_glyph[basic_glyphs_size];
 	glyph_t extra_glyph[extra_glyphs_size];
-} header_t;
+} font_t;
 
-_Static_assert(offsetof(header_t, basic_glyph) == 56);
-_Static_assert(offsetof(header_t, extra_glyph) == 17464);
+_Static_assert(offsetof(font_t, basic_glyph) == 56);
+_Static_assert(offsetof(font_t, extra_glyph) == 17464);
 
 int main(int argc, char *const argv[])
 {
-	header_t header;
+	font_t font;
 	glyph_t *glyph;
 	FILE *input, *output;
 	const char *range_string;
@@ -281,17 +281,17 @@ int main(int argc, char *const argv[])
 	for(range_index = 0; (range_index < ranges_size) && (range[range_index][1] > 0); range_index++)
 		printf("*** range[%u]: from %u to %u\n", range_index, range[range_index][0], range[range_index][1]);
 
-	header.magic_word = magic_word;
-	memset(&header.checksum, 0, sizeof(header.checksum));
-	header.raw.width = font_width;
-	header.raw.height = font_height;
-	header.net.width = width;
-	header.net.height = height;
-	header.extra_glyphs = 0;
+	font.magic_word = magic_word;
+	memset(&font.checksum, 0, sizeof(font.checksum));
+	font.raw.width = font_width;
+	font.raw.height = font_height;
+	font.net.width = width;
+	font.net.height = height;
+	font.extra_glyphs = 0;
 
 	for(ix = 0; ix < basic_glyphs_size; ix++)
 	{
-		glyph = &header.basic_glyph[ix];
+		glyph = &font.basic_glyph[ix];
 		glyph->codepoint = 0;
 
 		for(current_row_output = 0; current_row_output < rows_size; current_row_output++)
@@ -300,7 +300,7 @@ int main(int argc, char *const argv[])
 
 	for(ix = 0; ix < extra_glyphs_size; ix++)
 	{
-		glyph = &header.extra_glyph[ix];
+		glyph = &font.extra_glyph[ix];
 		glyph->codepoint = 0;
 
 		for(current_row_output = 0; current_row_output < rows_size; current_row_output++)
@@ -383,16 +383,16 @@ int main(int argc, char *const argv[])
 									if(include_glyph)
 									{
 										if(current_char_codepoint < basic_glyphs_size)
-											glyph = &header.basic_glyph[current_char_codepoint];
+											glyph = &font.basic_glyph[current_char_codepoint];
 										else
 										{
-											if((header.extra_glyphs + 1) >= extra_glyphs_size)
+											if((font.extra_glyphs + 1) >= extra_glyphs_size)
 											{
-												fprintf(stderr, "out of memory allocated for extra glyphs: %u\n", header.extra_glyphs);
+												fprintf(stderr, "out of memory allocated for extra glyphs: %u\n", font.extra_glyphs);
 												exit(1);
 											}
 
-											glyph = &header.extra_glyph[header.extra_glyphs++];
+											glyph = &font.extra_glyph[font.extra_glyphs++];
 										}
 
 										glyph->codepoint = current_char_codepoint;
@@ -468,7 +468,7 @@ int main(int argc, char *const argv[])
 
 	for(ix = 0; ix < basic_glyphs_size; ix++)
 	{
-		glyph = &header.basic_glyph[ix];
+		glyph = &font.basic_glyph[ix];
 
 		printf("* basic glyph %u/%u\n", ix, glyph->codepoint);
 
@@ -492,7 +492,7 @@ int main(int argc, char *const argv[])
 
 	for(ix = 0; ix < extra_glyphs_size; ix++)
 	{
-		glyph = &header.extra_glyph[ix];
+		glyph = &font.extra_glyph[ix];
 
 		printf("* extra glyph %u/%u\n", ix, glyph->codepoint);
 
@@ -518,7 +518,7 @@ int main(int argc, char *const argv[])
 
 	hash_ctx = EVP_MD_CTX_new();
 	EVP_DigestInit_ex(hash_ctx, EVP_sha256(), (ENGINE *)0);
-	EVP_DigestUpdate(hash_ctx, &header, sizeof(header));
+	EVP_DigestUpdate(hash_ctx, &font, sizeof(font));
 	EVP_DigestFinal_ex(hash_ctx, hash, &hash_size);
 	EVP_MD_CTX_free(hash_ctx);
 	*hash_text = '\0';
@@ -529,10 +529,10 @@ int main(int argc, char *const argv[])
 		strcat(hash_text, hash_digit);
 	}
 
-	printf("*** font finished, %u basic glyphs, %u extra glyphs, checksum: %s\n", basic_glyphs_size, header.extra_glyphs, hash_text);
+	printf("*** font finished, %u basic glyphs, %u extra glyphs, checksum: %s\n", basic_glyphs_size, font.extra_glyphs, hash_text);
 
-	memcpy(&header.checksum, hash, sizeof(header.checksum));
-	fwrite(&header, sizeof(header), 1, output);
+	memcpy(&font.checksum, hash, sizeof(font.checksum));
+	fwrite(&font, sizeof(font), 1, output);
 
 	fclose(output);
 }
