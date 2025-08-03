@@ -457,13 +457,13 @@ enum : unsigned int
 	opt3001_reg_limit_high =	0x03,
 	opt3001_reg_id_manuf =		0x7e,
 	opt3001_reg_id_dev =		0x7f,
-} opt3001_register;
+};
 
 enum : unsigned int
 {
 	opt3001_id_manuf_ti =		0x5449,
 	opt3001_id_dev_opt3001 =	0x3001,
-} opt3001_id;
+};
 
 enum : unsigned int
 {
@@ -808,13 +808,13 @@ enum : unsigned int
 	asair_cmd_measure_2 =		0x00,
 	asair_cmd_get_status =		0x71,
 	asair_cmd_reset =			0xba,
-} asair_cmd;
+};
 
 enum : unsigned int
 {
 	asair_status_busy =		1 << 7,
 	asair_status_ready =	1 << 3,
-} asair_status;
+};
 
 typedef enum : unsigned int
 {

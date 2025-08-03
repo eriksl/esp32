@@ -120,7 +120,7 @@ void fs_command_list(cli_command_call_t *call)
 				ticks = statb.st_mtim.tv_sec;
 				util_time_to_string(mtime, &ticks);
 
-				string_format_append(call->result, "\n%2u %3ldk %6ld %19s %19s %s", statb.st_ino, statb.st_blocks * 512 / 1024, statb.st_size, string_cstr(ctime), string_cstr(mtime), dirent->d_name);
+				string_format_append(call->result, "\n%2u %3ldk %6ld %19s %19s %s", statb.st_ino, statb.st_blocks / 2, statb.st_size, string_cstr(ctime), string_cstr(mtime), dirent->d_name);
 			}
 			else
 				string_format_append(call->result, "\n%3ldk %s", statb.st_size / 1024, dirent->d_name);

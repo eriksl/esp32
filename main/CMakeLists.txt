@@ -32,66 +32,76 @@ idf_component_register(
 	INCLUDE_DIRS
 		"")
 
+#		-Wtrailing-whitespace=any
+#		-Wleading-whitespace=tabs
+
 set(ALLFLAGS
 		-Wall
 		-Wextra
 		-Werror
+		-Wdouble-promotion
+		-Wformat=2
 		-Wformat-overflow=2
+		-Wformat-signedness
+		-Wnull-dereference
 		-Wshift-overflow=2
 		-Wimplicit-fallthrough=5
-		-Wformat-signedness
-		-Wformat-truncation=1
-		-Wstringop-overflow=4
 		-Wunused-const-variable=2
-		-Warray-bounds=2
-		-Wswitch-bool
-		-Wduplicated-branches
-		-Wduplicated-cond
-		-Wlto-type-mismatch
-		-Wnull-dereference
-		-Wpacked
-		-Wfloat-equal
-		-Wmissing-include-dirs
-		-Wmissing-noreturn
-		-Wbool-compare
+		-Wuse-after-free=3
+		-Wuninitialized
+		-Wstrict-overflow=5
+		-Wstringop-overflow=4
 		-Wsuggest-attribute=noreturn
 		-Wsuggest-attribute=format
-		-Wmissing-format-attribute
+		-Walloc-size
+		-Walloc-zero
+		-Wcalloc-transposed-args
+		-Warray-bounds=2
+		-Wduplicated-branches
+		-Wduplicated-cond
 		-Wtrampolines
+		-Wfloat-equal
+		-Wshadow
 		-Wframe-larger-than=2048
 		-Wunsafe-loop-optimizations
-		-Wshadow
 		-Wpointer-arith
 		-Wcast-qual
-		-Wwrite-strings
-		-Wlogical-op
-		-Wvla
-		-Wdisabled-optimization
-		-Wunreachable-code
-		-Wmissing-declarations
 		-Wcast-align
-		-Wmultistatement-macros
-		-Warray-bounds=2
-		-Wdouble-promotion
-		-Wno-redundant-decls
+		-Wwrite-strings
+		-Wdangling-pointer=2
+		-Wlogical-op
+		-Wmissing-declarations
+		-Winvalid-utf8
+		-Wvla
+		-Woverlength-strings
+		-Wmissing-include-dirs
+		-Wmissing-noreturn
+		-Wmissing-format-attribute
 		-Wno-inline
+		-Wno-redundant-decls
 		-Wno-packed
+		-Wno-conversion
+		-Wno-float-conversion
+		-Wno-sign-conversion
 		-fno-strict-aliasing
 )
+
+#		-Wdeprecated-non-prototype
 
 set(CFLAGS
 		-std=gnu23
 		-Wbad-function-cast
-		-Wmissing-prototypes
+		-Wstrict-prototypes
 		-Wold-style-definition
-		-Wno-pointer-sign
-		-Wenum-int-mismatch
+		-Wmissing-prototypes
+		-Wmissing-variable-declarations
 		-Wdiscarded-array-qualifiers
+		-Wno-pointer-sign
 )
 
 set(CXXFLAGS
 		-Wctor-dtor-privacy
-		-Woverloaded-virtual
+		-Wzero-as-null-pointer-constant
 )
 
 string(JOIN " " ALLCFLAGS ${ALLFLAGS} ${CFLAGS})
