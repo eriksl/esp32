@@ -74,7 +74,6 @@ set(ALLFLAGS
 		-Winvalid-utf8
 		-Wvla
 		-Woverlength-strings
-		-Wmissing-include-dirs
 		-Wmissing-noreturn
 		-Wmissing-format-attribute
 		-Wno-inline
@@ -86,6 +85,7 @@ set(ALLFLAGS
 		-fno-strict-aliasing
 )
 
+#		-Wmissing-include-dirs
 #		-Wdeprecated-non-prototype
 
 set(CFLAGS
