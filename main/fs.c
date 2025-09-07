@@ -205,9 +205,11 @@ void fs_command_write(cli_command_call_t *call)
 		return;
 	}
 
-	if((length = write(fd, string_data(call->oob), string_length(call->oob))) != call->parameters[1].unsigned_int)
+	length = write(fd, string_data(call->oob), string_length(call->oob));
+
+	if(length != call->parameters[1].unsigned_int)
 	{
-		string_assign_cstr(call->result, "ERROR: write failed");
+		string_format(call->result, "ERROR: write failed, writing: %u, written: %u, errno: %d", string_length(call->oob), call->parameters[1].unsigned_int, errno);
 		close(fd);
 		return;
 	}

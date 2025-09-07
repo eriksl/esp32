@@ -76,6 +76,7 @@ typedef struct
 } vfs_ramdisk_context_t;
 
 static bool inited = false;
+static uint32_t last_inode;
 
 static void data_mutex_take(vfs_ramdisk_context_t *context)
 {
@@ -270,13 +271,11 @@ static int ramdisk_open(void *ctx, const char *path, int fcntl_flags, int file_a
 			{
 				assert(!parent->next);
 				parent->next = meta;
-				meta->inode = parent->inode + 1;
 			}
 			else
-			{
-				meta->inode = 1;
 				context->root = meta;
-			}
+
+			meta->inode = last_inode++;
 		}
 		else
 		{
@@ -883,6 +882,8 @@ void ramdisk_init(void)
 	esp_vfs_ramdisk->ftruncate_p = ramdisk_ftruncate;
 
 	util_abort_on_esp_err("esp_vfs_register", esp_vfs_register(context->mountpoint, esp_vfs_ramdisk, context));
+
+	last_inode = 0;
 
 	inited = true;
 
