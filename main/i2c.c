@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include "i2c.h"
 #include "string.h"
@@ -16,6 +17,10 @@
 
 enum
 {
+	i2c_address_shift = 1,
+	i2c_write_flag = 0x00,
+	i2c_read_flag = 0x01,
+
 	i2c_timeout_ms = 1000,
 	i2c_bus_mux_address = 0x70,
 };
@@ -23,7 +28,6 @@ enum
 typedef struct slave_T
 {
 	const char *name;
-	i2c_master_dev_handle_t handle;
 	i2c_module_t module;
 	i2c_bus_t bus;
 	unsigned int address;
@@ -52,8 +56,8 @@ typedef struct
 	bool has_mux;
 	unsigned int buses;
 	unsigned int selected_bus;
-	i2c_master_bus_handle_t handle;
-	i2c_master_dev_handle_t mux_dev_handle;
+	i2c_master_bus_handle_t bus_handle;
+	i2c_master_dev_handle_t device_handle;
 	bus_t *bus[i2c_bus_size];
 } module_data_t;
 
@@ -164,52 +168,7 @@ static inline void module_mutex_give(i2c_module_t module)
 _Static_assert(i2c_bus_none == 0);
 _Static_assert(i2c_bus_0 == 1);
 
-static bool i2c_send_receive_intern(bool lock, i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t *send_buffer, unsigned int receive_buffer_size, uint8_t *receive_buffer);
-
-static void set_mux(i2c_module_t module, i2c_bus_t bus)
-{
-	const module_info_t *info;
-	module_data_t *data;
-	uint8_t buffer_in[1];
-	esp_err_t rv;
-
-	assert(inited);
-	assert(module < i2c_module_size);
-	assert(bus < i2c_bus_size);
-
-	info = &module_info[module];
-	data = &module_data[module];
-
-	assert(info->available);
-
-	if(!data->has_mux)
-		return;
-
-	if(data->selected_bus == bus)
-		return;
-
-	assert(bus < data->buses);
-	assert(info->ulp || data->mux_dev_handle);
-
-	if(bus == i2c_bus_none)
-		buffer_in[0] = 0;
-	else
-		buffer_in[0] = (1 << (bus - i2c_bus_0));
-
-	if(info->ulp)
-	{
-		ulp_riscv_i2c_master_set_slave_addr(i2c_bus_mux_address);
-		ulp_riscv_i2c_master_set_slave_reg_addr(buffer_in[0]);
-		util_warn_on_esp_err("ulp_riscv_i2c_master_write_to_device", rv = ulp_riscv_i2c_master_write_to_device(buffer_in, sizeof(buffer_in)));
-	}
-	else
-		util_warn_on_esp_err("i2c_master_transmit", rv = i2c_master_transmit(data->mux_dev_handle, buffer_in, sizeof(buffer_in), i2c_timeout_ms));
-
-	if(rv == ESP_OK)
-		data->selected_bus = bus;
-}
-
-static bool slave_check(slave_t *slave)
+static bool slave_check(slave_t *slave) // FIXME
 {
 	const module_info_t *info;
 	module_data_t *data;
@@ -299,6 +258,360 @@ finish:
 	return(rv);
 }
 
+//
+// ULP controller implementation
+//
+
+static bool ll_ulp_send(unsigned int address, unsigned int size, const uint8_t *data, bool verbose)
+{
+	esp_err_t rv;
+	uint8_t dummy[1];
+
+	if(size == 0)
+	{
+		if(verbose)
+			log_format("ll ulp send: address: 0x%02x: cannot send 0 bytes using ULP I2C", address);
+
+		return(false);
+	}
+
+	ulp_riscv_i2c_master_set_slave_addr(address);
+	ulp_riscv_i2c_master_set_slave_reg_addr(data[0]);
+
+	if(size > 1)
+	{
+		rv = ulp_riscv_i2c_master_write_to_device(&data[1], size - 1);
+
+		if(verbose && (rv != ESP_OK))
+			util_warn_on_esp_err("ll ulp send: ulp_riscv_i2c_master_write_to_device", rv);
+	}
+	else
+	{
+		// workaround for writing only one byte, which the ULP I2C can't do
+		// instead write one byte, then read one (dummy) byte, which it can do
+
+		if(verbose)
+			log_format("ll ulp send: address: 0x%02x, emulating one byte write by a write/read cycle", address);
+
+		rv = ulp_riscv_i2c_master_read_from_device(dummy, sizeof(dummy));
+
+		if(verbose && (rv != ESP_OK))
+			util_warn_on_esp_err("ll ulp send: ulp_riscv_i2c_master_read_from_device", rv);
+	}
+
+	return(rv == ESP_OK);
+}
+
+static bool ll_ulp_receive(unsigned int address, unsigned int receive_buffer_size, uint8_t *receive_buffer, bool verbose)
+{
+	if(verbose)
+		log_format("ll ulp receive: address 0x%02x: ULP I2C does not support reading without writing", address);
+
+	return(false);
+}
+
+static bool ll_ulp_send_receive(unsigned int address, unsigned int send_buffer_length, const uint8_t *send_buffer,
+		unsigned int receive_buffer_size, uint8_t *receive_buffer, bool verbose)
+{
+	esp_err_t rv;
+
+	if(send_buffer_length != 1)
+	{
+		log_format("ll ulp send receive: address 0x%02x: ULP I2C can only send one byte in write/read transaction", address);
+		return(false);
+	}
+
+	ulp_riscv_i2c_master_set_slave_addr(address);
+	ulp_riscv_i2c_master_set_slave_reg_addr(send_buffer[0]);
+
+	rv = ulp_riscv_i2c_master_read_from_device(receive_buffer, receive_buffer_size);
+
+	if(verbose && (rv != ESP_OK))
+	{
+		log_format("ll ulp send_receive: address 0x%02x:", address);
+		util_warn_on_esp_err("ll ulp send receive: ulp_riscv_i2c_master_read_from_device", rv);
+	}
+
+	return(rv == ESP_OK);
+}
+
+//
+// main controller implementation
+//
+
+static bool ll_main_send(const module_info_t *info, module_data_t *data, unsigned int address_in, unsigned int send_buffer_length, const uint8_t *send_buffer, bool verbose)
+{
+	esp_err_t rv;
+	i2c_operation_job_t i2c_operations[3];
+	unsigned int current;
+	unsigned int cooked_send_buffer_length = send_buffer_length + 1;
+	uint8_t cooked_send_buffer[cooked_send_buffer_length];
+
+	assert(info->available);
+	assert(data->device_handle);
+
+	cooked_send_buffer[0] = (uint8_t)((address_in << i2c_address_shift) | i2c_write_flag);
+	memcpy(&cooked_send_buffer[1], send_buffer, send_buffer_length);
+
+	current = 0;
+
+	i2c_operations[current++].command = I2C_MASTER_CMD_START;
+
+	i2c_operations[current].command = I2C_MASTER_CMD_WRITE;
+	i2c_operations[current].write.ack_check = true;
+	i2c_operations[current].write.data = cooked_send_buffer;
+	i2c_operations[current].write.total_bytes = cooked_send_buffer_length;
+	current++;
+
+	i2c_operations[current++].command = I2C_MASTER_CMD_STOP;
+
+	rv = i2c_master_execute_defined_operations(data->device_handle, i2c_operations, current, -1);
+
+	if(verbose && (rv != ESP_OK))
+		util_warn_on_esp_err("ll main send: module i2c_master_execute_defined_operations", rv);
+
+	return(rv == ESP_OK);
+}
+
+static bool ll_main_receive(const module_info_t *info, module_data_t *data, unsigned int address_in, unsigned int receive_buffer_size, uint8_t *receive_buffer, bool verbose)
+{
+	uint8_t address;
+	esp_err_t rv;
+	i2c_operation_job_t i2c_operations[5];
+	unsigned int current;
+
+	assert(info->available);
+	assert(data->device_handle);
+
+	if((receive_buffer_size == 0) || !receive_buffer)
+	{
+		if(verbose)
+			log_format("ll main receive: address 0x%02x: main I2C module cannot handle zero byte reads", address_in);
+
+		return(false);
+	}
+
+	address = (uint8_t)((address_in << i2c_address_shift) | i2c_read_flag);
+
+	current = 0;
+
+	i2c_operations[current++].command = I2C_MASTER_CMD_START;
+
+	i2c_operations[current].command = I2C_MASTER_CMD_WRITE;
+	i2c_operations[current].write.ack_check = true;
+	i2c_operations[current].write.data = &address;
+	i2c_operations[current].write.total_bytes = 1;
+	current++;
+
+	if(receive_buffer_size > 1)
+	{
+		i2c_operations[current].command = I2C_MASTER_CMD_READ;
+		i2c_operations[current].read.ack_value = I2C_ACK_VAL;
+		i2c_operations[current].read.data = receive_buffer;
+		i2c_operations[current].read.total_bytes = receive_buffer_size - 1;
+		current++;
+	}
+
+	if(receive_buffer_size > 0)
+	{
+		i2c_operations[current].command = I2C_MASTER_CMD_READ;
+		i2c_operations[current].read.ack_value = I2C_NACK_VAL;
+		i2c_operations[current].read.data = &receive_buffer[receive_buffer_size - 1];
+		i2c_operations[current].read.total_bytes = 1;
+		current++;
+	}
+
+	i2c_operations[current++].command = I2C_MASTER_CMD_STOP;
+
+	rv = i2c_master_execute_defined_operations(data->device_handle, i2c_operations, current, 500);
+
+	if(verbose && (rv != ESP_OK))
+		util_warn_on_esp_err("ll main receive: i2c_master_defined_operations", rv);
+
+	return(rv == ESP_OK);
+}
+
+static bool ll_main_send_receive(const module_info_t *info, module_data_t *data, unsigned int address_in, unsigned int send_buffer_length, const uint8_t *send_buffer,
+		unsigned int receive_buffer_size, uint8_t *receive_buffer, bool verbose)
+{
+	esp_err_t rv;
+	i2c_operation_job_t i2c_operations[7];
+	unsigned int current;
+	unsigned int cooked_send_buffer_length = send_buffer_length + 1;
+	uint8_t cooked_send_buffer[cooked_send_buffer_length];
+	uint8_t read_address;
+
+	assert(info->available);
+	assert(data->device_handle);
+
+	cooked_send_buffer[0] = (uint8_t)((address_in << i2c_address_shift) | i2c_write_flag);
+	read_address = (uint8_t)((address_in << i2c_address_shift) | i2c_read_flag);
+
+	memcpy(&cooked_send_buffer[1], send_buffer, send_buffer_length);
+
+	current = 0;
+
+	i2c_operations[current++].command = I2C_MASTER_CMD_START;
+
+	i2c_operations[current].command = I2C_MASTER_CMD_WRITE;
+	i2c_operations[current].write.ack_check = true;
+	i2c_operations[current].write.data = cooked_send_buffer;
+	i2c_operations[current].write.total_bytes = cooked_send_buffer_length;
+	current++;
+
+	i2c_operations[current++].command = I2C_MASTER_CMD_START;
+
+	i2c_operations[current].command = I2C_MASTER_CMD_WRITE;
+	i2c_operations[current].write.ack_check = true;
+	i2c_operations[current].write.data = &read_address;
+	i2c_operations[current].write.total_bytes = 1;
+	current++;
+
+	if(receive_buffer_size > 0)
+	{
+		i2c_operations[current].command = I2C_MASTER_CMD_READ;
+		i2c_operations[current].read.ack_value = I2C_ACK_VAL;
+		i2c_operations[current].read.data = receive_buffer;
+		i2c_operations[current].read.total_bytes = receive_buffer_size - 1;
+		current++;
+	}
+
+	i2c_operations[current].command = I2C_MASTER_CMD_READ;
+	i2c_operations[current].read.ack_value = I2C_NACK_VAL;
+	i2c_operations[current].read.data = &receive_buffer[receive_buffer_size - 1];
+	i2c_operations[current].read.total_bytes = 1;
+	current++;
+
+	i2c_operations[current++].command = I2C_MASTER_CMD_STOP;
+
+	rv = i2c_master_execute_defined_operations(data->device_handle, i2c_operations, current, 500);
+
+	if(verbose && (rv != ESP_OK))
+		util_warn_on_esp_err("ll main send receive: i2c_master_defined_operations", rv);
+
+	return(rv == ESP_OK);
+}
+
+//
+// generic internal interface
+//
+
+static bool ll_send(const module_info_t *info, module_data_t *data, unsigned int address, unsigned int send_buffer_length, const uint8_t *send_buffer, bool verbose)
+{
+	bool success;
+	assert(info->available);
+
+	if(info->ulp)
+		success = ll_ulp_send(address, send_buffer_length, send_buffer, verbose);
+	else
+		success = ll_main_send(info, data, address, send_buffer_length, send_buffer, verbose);
+
+	return(success);
+}
+
+static bool ll_receive(const module_info_t *info, module_data_t *data, unsigned int address, unsigned int receive_buffer_size, uint8_t *receive_buffer, bool verbose)
+{
+	bool success;
+	assert(info->available);
+
+	if(info->ulp)
+		success = ll_ulp_receive(address, receive_buffer_size, receive_buffer, verbose);
+	else
+		success = ll_main_receive(info, data, address, receive_buffer_size, receive_buffer, verbose);
+
+	return(success);
+}
+
+static bool ll_send_receive(const module_info_t *info, module_data_t *data, unsigned int address, unsigned int send_buffer_length, const uint8_t *send_buffer,
+		unsigned int receive_buffer_size, uint8_t *receive_buffer, bool verbose)
+{
+	bool success;
+
+	assert(send_buffer_length > 0);
+	assert(send_buffer);
+	assert(receive_buffer_size > 0);
+	assert(receive_buffer);
+
+	if(info->ulp)
+		success = ll_ulp_send_receive(address, send_buffer_length, send_buffer, receive_buffer_size, receive_buffer, verbose);
+	else
+		success = ll_main_send_receive(info, data, address, send_buffer_length, send_buffer, receive_buffer_size, receive_buffer, verbose);
+
+	return(success);
+}
+
+static bool ll_probe(const module_info_t *info, module_data_t *data, unsigned int address)
+{
+	uint8_t buffer_in[1];
+	uint8_t buffer_out[1];
+	bool success;
+
+	assert(info->available);
+	assert(address < 128);
+
+	success = false;
+
+	// The ULP can't just write zero bytes. Implement the probe with a write-read-cyle which it can do.
+
+	if(info->ulp)
+	{
+		buffer_in[0] = 0;
+		success = ll_ulp_send_receive(address, sizeof(buffer_in), buffer_in, sizeof(buffer_out), buffer_out, false);
+	}
+	else
+		success = ll_main_send(info, data, address, 0, nullptr, false);
+
+	return(success);
+}
+
+static bool set_mux(i2c_module_t module, i2c_bus_t bus)
+{
+	const module_info_t *info;
+	module_data_t *data;
+	unsigned int bus_bits;
+	bool success;
+	uint8_t buffer_out[2];
+
+	assert(inited);
+	assert(module < i2c_module_size);
+	assert(bus < i2c_bus_size);
+
+	info = &module_info[module];
+	data = &module_data[module];
+
+	assert(info->available);
+
+	if(!data->has_mux)
+		return(false);
+
+	assert(bus < data->buses);
+
+	if(bus == i2c_bus_none)
+		bus_bits = 0;
+	else
+		bus_bits = (1 << (bus - i2c_bus_0));
+
+	buffer_out[0] = buffer_out[1] = (uint8_t)bus_bits;
+
+	// ULP can't write one byte.
+	// The implemented workaround in ll_send, writing one byte and reading one byte with a repeated start condition
+	// doesn't work on the mux. The transaction is OK but the bus is not switched. So instead write the same data twice, that works.
+
+	if(info->ulp)
+		success = ll_ulp_send(i2c_bus_mux_address, 2, buffer_out, true);
+	else
+		success = ll_main_send(info, data, i2c_bus_mux_address, 1, buffer_out, true);
+
+	if(success)
+		data->selected_bus = bus;
+
+	return(success);
+}
+
+//
+// generic external interface
+//
+
 void i2c_init(void)
 {
 	static const i2c_master_bus_config_t main_i2c_module_config[i2c_module_size] =
@@ -332,7 +645,7 @@ void i2c_init(void)
 			},
 		},
 	};
-#if((CONFIG_BSP_I2C2_SDA >= 0) && (CONFIG_BSP_I2C2_SCL >= 0))
+
 	static const ulp_riscv_i2c_cfg_t ulp_i2c_module_config =
 	{
 		.i2c_pin_cfg =
@@ -352,14 +665,20 @@ void i2c_init(void)
 			.i2c_trans_timeout = 20,
 		},
 	};
-#endif
+
+	i2c_device_config_t device_config =
+	{
+		.dev_addr_length = I2C_ADDR_BIT_LEN_7,
+		.device_address = I2C_DEVICE_ADDRESS_NOT_USED,
+		.scl_wait_us = 0,
+		.flags.disable_ack_check = 0,
+	};
 
 	i2c_module_t module;
 	const module_info_t *info;
 	module_data_t *data;
 	i2c_bus_t bus;
 	bus_t *bus_ptr;
-	i2c_device_config_t dev_config_mux;
 	uint8_t buffer_in[1];
 	uint8_t buffer_out[1];
 
@@ -388,65 +707,31 @@ void i2c_init(void)
 
 		data = &module_data[module];
 
-		data->has_mux = false;
-
-#if((CONFIG_BSP_I2C2_SDA >= 0) && (CONFIG_BSP_I2C2_SCL >= 0))
 		if(info->ulp)
 		{
-			data->handle = nullptr;
-			data->mux_dev_handle = nullptr;
-
-			util_abort_on_esp_err("ulp_riscv_i2c_master_init", ulp_riscv_i2c_master_init(&ulp_i2c_module_config));
-			ulp_riscv_i2c_master_set_slave_addr(i2c_bus_mux_address);
-			ulp_riscv_i2c_master_set_slave_reg_addr(0xff);
-
-			if((ulp_riscv_i2c_master_read_from_device(buffer_out, sizeof(buffer_out)) == ESP_OK) &&
-					(ulp_riscv_i2c_master_read_from_device(buffer_out, sizeof(buffer_out)) == ESP_OK) &&
-					(buffer_out[0] == 0xff))
-			{
-				ulp_riscv_i2c_master_set_slave_reg_addr(0x00);
-
-				if((ulp_riscv_i2c_master_read_from_device(buffer_out, sizeof(buffer_out)) == ESP_OK) &&
-						(ulp_riscv_i2c_master_read_from_device(buffer_out, sizeof(buffer_out)) == ESP_OK) &&
-						(buffer_out[0] == 0x00))
-					data->has_mux = true;
-			}
+			data->bus_handle = nullptr;
+			util_abort_on_esp_err("ulp riscv i2c master init", ulp_riscv_i2c_master_init(&ulp_i2c_module_config));
 		}
 		else
-#endif
 		{
-			util_abort_on_esp_err("i2c_new_master_bus", i2c_new_master_bus(&main_i2c_module_config[module], &data->handle));
+			util_abort_on_esp_err("i2c new master bus", i2c_new_master_bus(&main_i2c_module_config[module], &data->bus_handle));
 
-			if(i2c_master_probe(data->handle, i2c_bus_mux_address, i2c_timeout_ms) == ESP_OK)
-			{
-				dev_config_mux.dev_addr_length = I2C_ADDR_BIT_LEN_7;
-				dev_config_mux.device_address = i2c_bus_mux_address;
-				dev_config_mux.scl_speed_hz = info->speed;
-				dev_config_mux.scl_wait_us = 0;
-				dev_config_mux.flags.disable_ack_check = 0;
+			device_config.scl_speed_hz = info->speed,
+			util_warn_on_esp_err("i2c master bus add device", i2c_master_bus_add_device(data->bus_handle, &device_config, &data->device_handle));
+		}
 
-				util_warn_on_esp_err("i2c master bus add device mux", i2c_master_bus_add_device(data->handle, &dev_config_mux, &data->mux_dev_handle));
+		data->has_mux = false;
 
-				buffer_in[0] = 0xff;
+		buffer_out[0] = 0xff;
 
-				if((i2c_master_transmit_receive(data->mux_dev_handle, buffer_in, sizeof(buffer_in), buffer_out, sizeof(buffer_out), i2c_timeout_ms) == ESP_OK) &&
-						(i2c_master_transmit_receive(data->mux_dev_handle, buffer_in, sizeof(buffer_in), buffer_out, sizeof(buffer_out), i2c_timeout_ms) == ESP_OK) &&
-						(buffer_out[0] == 0xff))
-				{
-					buffer_in[0] = 0x00;
-
-					if((i2c_master_transmit_receive(data->mux_dev_handle, buffer_in, sizeof(buffer_in), buffer_out, sizeof(buffer_out), i2c_timeout_ms) == ESP_OK) &&
-							(i2c_master_transmit_receive(data->mux_dev_handle, buffer_in, sizeof(buffer_in), buffer_out, sizeof(buffer_out), i2c_timeout_ms) == ESP_OK) &&
-							(buffer_out[0] == 0x00))
-						data->has_mux = true;
-				}
-
-				if(!data->has_mux)
-					i2c_master_bus_rm_device(data->mux_dev_handle);
-			}
-
-			if(!data->has_mux)
-				data->mux_dev_handle = nullptr;
+		if(ll_probe(info, data, i2c_bus_mux_address) &&
+					ll_send_receive(info, data, i2c_bus_mux_address, sizeof(buffer_out), buffer_out, sizeof(buffer_in), buffer_in, true) &&
+					(buffer_in[0] == 0xff))
+		{
+			buffer_out[0] = 0x00;
+			if(ll_send_receive(info, data, i2c_bus_mux_address, sizeof(buffer_out), buffer_out, sizeof(buffer_in), buffer_in, true) &&
+					(buffer_in[0] == 0x00))
+				data->has_mux = true;
 		}
 
 		data->selected_bus = i2c_bus_invalid;
@@ -473,12 +758,9 @@ void i2c_init(void)
 i2c_slave_t i2c_register_slave(const char *name, i2c_module_t module, i2c_bus_t bus, unsigned int address)
 {
 	slave_t *new_slave, *slave_ptr;
-	i2c_device_config_t dev_config;
-	i2c_master_dev_handle_t dev_handle;
 	const module_info_t *info;
 	module_data_t *data;
 	bus_t *bus_ptr;
-	unsigned int rv;
 
 	assert(inited);
 	assert(module < i2c_module_size);
@@ -495,30 +777,8 @@ i2c_slave_t i2c_register_slave(const char *name, i2c_module_t module, i2c_bus_t 
 	assert(bus < data->buses);
 	assert(info->available);
 
-	if(info->ulp)
-		dev_handle = nullptr;
-	else
-	{
-		dev_config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
-		dev_config.device_address = address;
-		dev_config.scl_speed_hz = info->speed;
-		dev_config.scl_wait_us = 0;
-		dev_config.flags.disable_ack_check = 0;
-
-		module_mutex_take(module);
-		rv = i2c_master_bus_add_device(data->handle, &dev_config, &dev_handle);
-		module_mutex_give(module);
-
-		if(rv != ESP_OK)
-		{
-			util_warn_on_esp_err("i2c_master_bus_add_device", rv);
-			goto error;
-		}
-	}
-
 	new_slave = util_memory_alloc_spiram(sizeof(*new_slave));
 	new_slave->name = name;
-	new_slave->handle = dev_handle;
 	new_slave->module = module;
 	new_slave->bus = bus;
 	new_slave->address = address;
@@ -588,15 +848,6 @@ bool i2c_unregister_slave(i2c_slave_t *slave)
 	assert(info->id == (**_slave).module);
 	assert((**_slave).bus < data->buses);
 
-	if(info->ulp)
-		assert(!(**_slave).handle);
-	else
-	{
-		module_mutex_take((**_slave).module);
-		util_abort_on_esp_err("i2c_master_bus_rm_device", i2c_master_bus_rm_device((**_slave).handle));
-		module_mutex_give((**_slave).module);
-	}
-
 	if(!(bus = data->bus[(**_slave).bus]))
 	{
 		log_format("i2c unregister slave: bus unknown %u", (**_slave).bus);
@@ -654,14 +905,11 @@ finish:
 	return(error);
 }
 
-bool i2c_probe_slave(i2c_module_t module, i2c_bus_t bus, unsigned int address, unsigned int probe_write_value, const char *probe_name)
+bool i2c_probe_slave(i2c_module_t module, i2c_bus_t bus, unsigned int address)
 {
+	bool success;
 	const module_info_t *info;
 	module_data_t *data;
-	uint8_t buffer_in[1];
-	uint8_t buffer_out[1];
-	bool success;
-	i2c_slave_t slave;
 
 	assert(inited);
 	assert(module < i2c_module_size);
@@ -676,30 +924,8 @@ bool i2c_probe_slave(i2c_module_t module, i2c_bus_t bus, unsigned int address, u
 	assert(info->available);
 	assert(bus < data->buses);
 
-	if(info->ulp)
-	{
-		success = false;
-
-		// skip the probe if the slave cannot handle a one byte write
-		if(probe_write_value == i2c_probe_no_write)
-			success = true;
-		else
-		{
-			if((slave = i2c_register_slave(probe_name, module, bus, address)))
-			{
-				set_mux(module, bus);
-				buffer_in[0] = probe_write_value;
-				success = i2c_send_receive_intern(false, slave, sizeof(buffer_in), buffer_in, sizeof(buffer_out), buffer_out);
-				i2c_unregister_slave(&slave);
-			}
-		}
-	}
-	else
-	{
-		set_mux(module, bus);
-		success = i2c_master_probe(data->handle, address, i2c_timeout_ms) == ESP_OK;
-	}
-
+	set_mux(module, bus);
+	success = ll_probe(info, data, address);
 	module_mutex_give(module);
 
 	return(success);
@@ -707,54 +933,59 @@ bool i2c_probe_slave(i2c_module_t module, i2c_bus_t bus, unsigned int address, u
 
 bool i2c_send(i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t *send_buffer)
 {
-	uint8_t receive_buffer[1];
 	slave_t *_slave = (slave_t *)slave;
 	const module_info_t *info;
-	esp_err_t rv;
+	module_data_t *data;
+	bool success;
 
 	assert(inited);
 	assert(_slave);
-	assert(send_buffer);
 
 	info = &module_info[_slave->module];
+	data = &module_data[_slave->module];
 
 	assert(info->available);
 
-	if(send_buffer_length < 1)
+	if(!slave_check(_slave)) // FIXME
 	{
-		log("i2c: i2c_send called with zero length data");
-		return(false);
-	}
-
-	if(!slave_check(_slave))
-	{
-		log("i2c_send: slave_check failed");
+		log("i2c send: slave_check failed");
 		return(false);
 	}
 
 	module_mutex_take(_slave->module);
 	set_mux(_slave->module, _slave->bus);
-
-	if(info->ulp)
-	{
-		ulp_riscv_i2c_master_set_slave_addr(_slave->address);
-		ulp_riscv_i2c_master_set_slave_reg_addr(send_buffer[0]);
-
-		if(send_buffer_length < 2)
-			rv = ulp_riscv_i2c_master_read_from_device(receive_buffer, sizeof(receive_buffer));
-		else
-			rv = ulp_riscv_i2c_master_write_to_device(send_buffer + 1, send_buffer_length - 1);
-
-		if(rv != ESP_OK)
-			util_warn_on_esp_err("ulp_riscv_i2c_master_write_to_device", rv);
-
-	}
-	else
-		util_warn_on_esp_err("i2c_master_transmit", rv = i2c_master_transmit(_slave->handle, send_buffer, send_buffer_length, i2c_timeout_ms));
-
+	success = ll_send(info, data, _slave->address, send_buffer_length, send_buffer, true);
 	module_mutex_give(_slave->module);
 
-	return(rv == ESP_OK);
+	return(success);
+}
+
+bool i2c_receive(i2c_slave_t slave, unsigned int receive_buffer_size, uint8_t *receive_buffer)
+{
+	slave_t *_slave = (slave_t *)slave;
+	const module_info_t *info;
+	module_data_t *data;
+	bool success;
+
+	assert(inited);
+	assert(_slave);
+	assert(receive_buffer);
+	assert(receive_buffer_size > 0);
+
+	info = &module_info[_slave->module];
+	data = &module_data[_slave->module];
+
+	assert(info->available);
+
+	if(!slave_check(_slave))
+		return(false);
+
+	module_mutex_take(_slave->module);
+	set_mux(_slave->module, _slave->bus);
+	success = ll_receive(info, data, _slave->address, receive_buffer_size, receive_buffer, true);
+	module_mutex_give(_slave->module);
+
+	return(success);
 }
 
 bool i2c_send_1(i2c_slave_t slave, unsigned int byte)
@@ -787,48 +1018,13 @@ bool i2c_send_3(i2c_slave_t slave, unsigned int byte_1, unsigned int byte_2, uns
 	return(i2c_send(slave, sizeof(buffer), buffer));
 }
 
-bool i2c_receive(i2c_slave_t slave, unsigned int receive_buffer_size, uint8_t *receive_buffer)
+bool i2c_send_receive(i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t *send_buffer,
+		unsigned int receive_buffer_size, uint8_t *receive_buffer)
 {
 	slave_t *_slave = (slave_t *)slave;
 	const module_info_t *info;
-	unsigned int rv;
-
-	assert(inited);
-	assert(_slave);
-	assert(receive_buffer);
-
-	info = &module_info[_slave->module];
-
-	assert(info->available);
-
-	if(info->ulp)
-	{
-		log("i2c: i2c_receive called for ULP I2C module");
-		return(false);
-	}
-
-	if(receive_buffer_size == 0)
-	{
-		log("i2c: i2c_receive called with zero receive buffer size");
-		return(true);
-	}
-
-	if(!slave_check(_slave))
-		return(false);
-
-	module_mutex_take(_slave->module);
-	set_mux(_slave->module, _slave->bus);
-	util_warn_on_esp_err("i2c_master_receive", rv = i2c_master_receive(_slave->handle, receive_buffer, receive_buffer_size, i2c_timeout_ms));
-	module_mutex_give(_slave->module);
-
-	return(rv == ESP_OK);
-}
-
-static bool i2c_send_receive_intern(bool lock, i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t *send_buffer, unsigned int receive_buffer_size, uint8_t *receive_buffer)
-{
-	slave_t *_slave = (slave_t *)slave;
-	const module_info_t *info;
-	unsigned int rv;
+	module_data_t *data;
+	bool success;
 
 	assert(inited);
 	assert(_slave);
@@ -836,50 +1032,22 @@ static bool i2c_send_receive_intern(bool lock, i2c_slave_t slave, unsigned int s
 	assert(receive_buffer);
 
 	info = &module_info[_slave->module];
+	data = &module_data[_slave->module];
 
 	assert(info->available);
-
-	if((send_buffer_length == 0) || (receive_buffer_size == 0))
-	{
-		log("i2c: i2c_send_receive called with zero receive buffer size or zero send buffer size");
-		return(true);
-	}
 
 	if(!slave_check(_slave))
 		return(false);
 
-	if(lock)
-		module_mutex_take(_slave->module);
+	module_mutex_take(_slave->module);
 
 	set_mux(_slave->module, _slave->bus);
 
-	if(info->ulp)
-	{
-		if(send_buffer_length != 1)
-		{
-			log("i2c: i2c_send_receive: send buffer length should be 1 when using ULP I2C");
-			rv = ESP_ERR_NOT_FOUND;
-			goto error;
-		}
+	success = ll_send_receive(info, data, _slave->address, send_buffer_length, send_buffer, receive_buffer_size, receive_buffer, true);
 
-		ulp_riscv_i2c_master_set_slave_addr(_slave->address);
-		ulp_riscv_i2c_master_set_slave_reg_addr(send_buffer[0]);
-		rv = ulp_riscv_i2c_master_read_from_device(receive_buffer, receive_buffer_size);
-	}
-	else
-		util_warn_on_esp_err("i2c_master_transmit_receive", rv =
-				i2c_master_transmit_receive(_slave->handle, send_buffer, send_buffer_length, receive_buffer, receive_buffer_size, i2c_timeout_ms));
+	module_mutex_give(_slave->module);
 
-error:
-	if(lock)
-		module_mutex_give(_slave->module);
-
-	return(rv == ESP_OK);
-}
-
-bool i2c_send_receive(i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t *send_buffer, unsigned int receive_buffer_size, uint8_t *receive_buffer)
-{
-	return(i2c_send_receive_intern(true, slave, send_buffer_length, send_buffer, receive_buffer_size, receive_buffer));
+	return(success);
 }
 
 bool i2c_send_1_receive(i2c_slave_t slave, unsigned int byte, unsigned int receive_buffer_size, uint8_t *receive_buffer)
@@ -888,7 +1056,7 @@ bool i2c_send_1_receive(i2c_slave_t slave, unsigned int byte, unsigned int recei
 
 	send_buffer[0] = byte;
 
-	return(i2c_send_receive_intern(true, slave, sizeof(send_buffer), send_buffer, receive_buffer_size, receive_buffer));
+	return(i2c_send_receive(slave, sizeof(send_buffer), send_buffer, receive_buffer_size, receive_buffer));
 }
 
 bool i2c_get_slave_info(i2c_slave_t slave, i2c_module_t *module, i2c_bus_t *bus, unsigned int *address, const char **name)
@@ -1006,8 +1174,8 @@ void command_i2c_info(cli_command_call_t *call)
 					string_format_append(call->result, "\n-  i2c bus %u: %s", bus->id, bus_name[bus->id]);
 
 					for(slave = bus->slaves; slave; slave = slave->next)
-						string_format_append(call->result, "\n-   slave [0x%x]: name: %s, module: %u, bus: %u, handle: %p",
-								slave->address, slave->name, slave->module, slave->bus, slave->handle);
+						string_format_append(call->result, "\n-   slave [0x%x]: name: %s, module: %u, bus: %u",
+								slave->address, slave->name, slave->module, slave->bus);
 				}
 			}
 		}

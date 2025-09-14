@@ -237,6 +237,7 @@ static int ramdisk_open(void *ctx, const char *path, int fcntl_flags, int file_a
 
 	if(file_in_use(context, relpath, fcntl_flags))
 	{
+		log_format("! open: file %s in use", relpath);
 		errno = EBUSY;
 		data_mutex_give(context);
 		return(-1);
@@ -282,6 +283,7 @@ static int ramdisk_open(void *ctx, const char *path, int fcntl_flags, int file_a
 		{
 			errno = ENOENT;
 			data_mutex_give(context);
+			log_format("! open: file %s not found", relpath);
 			return(-1);
 		}
 	}
@@ -294,6 +296,7 @@ static int ramdisk_open(void *ctx, const char *path, int fcntl_flags, int file_a
 	{
 		errno = ENOMEM;
 		data_mutex_give(context);
+		log_format("! open: file %s no more fds", relpath);
 		return(-1);
 	}
 
