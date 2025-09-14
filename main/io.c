@@ -378,7 +378,7 @@ static bool pcf8574_detect(const io_info_t *info, unsigned int module, unsigned 
 {
 	assert(inited);
 
-	return(i2c_probe_slave(module, bus, address, 0xff, info->name));
+	return(i2c_probe_slave(module, bus, address));
 }
 
 static bool pcf8574_init(io_data_t *dataptr)

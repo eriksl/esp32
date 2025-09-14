@@ -4220,10 +4220,10 @@ static sensor_detect_t am2320_detect(i2c_slave_t slave)
 		return(sensor_not_found);
 	}
 
-	i2c_probe_slave(module, bus, address, i2c_probe_no_write, name);
+	i2c_probe_slave(module, bus, address);
 	util_sleep(50);
 
-	if(!i2c_probe_slave(module, bus, address, i2c_probe_no_write, name))
+	if(!i2c_probe_slave(module, bus, address))
 		return(sensor_not_found);
 
 	// request ID (but do not check it, it's unreliable)
@@ -4278,7 +4278,7 @@ static bool am2320_poll(data_t *data)
 		case(am2320_state_init):
 		case(am2320_state_waking):
 		{
-			i2c_probe_slave(module, bus, address, i2c_probe_no_write, name);
+			i2c_probe_slave(module, bus, address); // FIXME
 
 			pdata->state = am2320_state_measuring;
 			break;
@@ -4619,7 +4619,7 @@ static void run_sensors(void *parameters)
 
 			stat_sensors_not_skipped[module]++;
 
-			if(!infoptr->flags.force_detect && !i2c_probe_slave(module, bus, infoptr->address, 0, infoptr->name))
+			if(!infoptr->flags.force_detect && !i2c_probe_slave(module, bus, infoptr->address))
 				continue;
 
 			stat_sensors_probed[module]++;

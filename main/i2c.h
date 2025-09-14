@@ -36,11 +36,6 @@ typedef enum
 	i2c_bus_invalid = i2c_bus_size,
 } i2c_bus_t;
 
-enum
-{
-	i2c_probe_no_write = 0xffff,
-};
-
 struct i2c_opaque_t {} __attribute__((aligned(sizeof(int))));
 
 typedef struct i2c_opaque_t *i2c_slave_t;
@@ -53,7 +48,7 @@ bool i2c_ulp(i2c_module_t module);
 bool i2c_slave_ulp(i2c_slave_t slave);
 i2c_slave_t i2c_register_slave(const char *name, i2c_module_t module, i2c_bus_t bus, unsigned int address);
 bool i2c_unregister_slave(i2c_slave_t *slave);
-bool i2c_probe_slave(i2c_module_t module, i2c_bus_t bus, unsigned int address, unsigned int probe_write_value, const char *probe_name);
+bool i2c_probe_slave(i2c_module_t module, i2c_bus_t bus, unsigned int address);
 bool i2c_get_slave_info(i2c_slave_t slave, i2c_module_t *module, i2c_bus_t *bus, unsigned int *address, const char **name);
 i2c_slave_t i2c_find_slave(i2c_module_t module, i2c_bus_t bus, unsigned int address);
 bool i2c_send(i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t *send_buffer);
