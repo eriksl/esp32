@@ -72,7 +72,6 @@ set(ALLFLAGS
 		-Wlogical-op
 		-Wmissing-declarations
 		-Winvalid-utf8
-		-Wvla
 		-Woverlength-strings
 		-Wmissing-noreturn
 		-Wmissing-format-attribute
@@ -82,6 +81,7 @@ set(ALLFLAGS
 		-Wno-conversion
 		-Wno-float-conversion
 		-Wno-sign-conversion
+		-Wno-vla
 		-fno-strict-aliasing
 )
 
