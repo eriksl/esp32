@@ -8,6 +8,7 @@
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
+#include "config.h"
 
 #include <driver/i2c_master.h>
 #include <freertos/FreeRTOS.h>
@@ -47,7 +48,6 @@ typedef struct
 	const char *name;
 	unsigned int sda;
 	unsigned int scl;
-	unsigned int speed;
 	bool ulp;
 } module_info_t;
 
@@ -56,6 +56,7 @@ typedef struct
 	bool has_mux;
 	unsigned int buses;
 	unsigned int selected_bus;
+	unsigned int speed_khz;
 	i2c_master_bus_handle_t bus_handle;
 	i2c_master_dev_handle_t device_handle;
 	bus_t *bus[i2c_bus_size];
@@ -76,15 +77,14 @@ static const char *bus_name[i2c_bus_size] =
 
 static const module_info_t module_info[i2c_module_size] =
 {
-	[i2c_module_0_fast] =
+	[i2c_module_0] =
 	{
 #if((CONFIG_BSP_I2C0_SDA >= 0) && (CONFIG_BSP_I2C0_SCL >= 0))
 		.available = true,
-		.id = i2c_module_0_fast,
-		.name = "module 0, on main CPU, 400 kHz", // FIXME: make bus speed configurable
+		.id = i2c_module_0,
+		.name = "module 0, on main CPU",
 		.sda = CONFIG_BSP_I2C0_SDA,
 		.scl = CONFIG_BSP_I2C0_SCL,
-		.speed = i2c_module_speed_fast,
 		.ulp = false,
 #else
 		.available = false,
@@ -92,20 +92,18 @@ static const module_info_t module_info[i2c_module_size] =
 		.name = "module 0 unavailable",
 		.sda = -1,
 		.scl = -1,
-		.speed = i2c_module_speed_none,
 		.ulp = false,
 #endif
 	},
 
-	[i2c_module_1_slow] =
+	[i2c_module_1] =
 	{
 #if((CONFIG_BSP_I2C1_SDA >= 0) && (CONFIG_BSP_I2C1_SCL >= 0))
 		.available = true,
-		.id = i2c_module_1_slow,
-		.name = "module 1, on main CPU, 100 kHz",
+		.id = i2c_module_1,
+		.name = "module 1, on main CPU",
 		.sda = CONFIG_BSP_I2C1_SDA,
 		.scl = CONFIG_BSP_I2C1_SCL,
-		.speed = i2c_module_speed_slow,
 		.ulp = false,
 #else
 		.available = false,
@@ -113,7 +111,6 @@ static const module_info_t module_info[i2c_module_size] =
 		.name = "module 1 unavailable",
 		.sda = -1,
 		.scl = -1,
-		.speed = i2c_module_speed_none,
 		.ulp = false,
 #endif
 	},
@@ -123,10 +120,9 @@ static const module_info_t module_info[i2c_module_size] =
 #if((CONFIG_BSP_I2C2_SDA >= 0) && (CONFIG_BSP_I2C2_SCL >= 0))
 		.available = true,
 		.id = i2c_module_2_ulp,
-		.name = "module 2, on ULP, 400 kHz",
+		.name = "module 2, on ULP",
 		.sda = CONFIG_BSP_I2C2_SDA,
 		.scl = CONFIG_BSP_I2C2_SCL,
-		.speed = i2c_module_speed_fast,
 		.ulp = true,
 #else
 		.available = false,
@@ -134,7 +130,6 @@ static const module_info_t module_info[i2c_module_size] =
 		.name = "module 2 unavailable",
 		.sda = -1,
 		.scl = -1,
-		.speed = i2c_module_speed_none,
 		.ulp = false,
 #endif
 	},
@@ -365,7 +360,7 @@ static bool ll_main_send(const module_info_t *info, module_data_t *data, unsigne
 
 	i2c_operations[current++].command = I2C_MASTER_CMD_STOP;
 
-	rv = i2c_master_execute_defined_operations(data->device_handle, i2c_operations, current, -1);
+	rv = i2c_master_execute_defined_operations(data->device_handle, i2c_operations, current, 20);
 
 	if(verbose && (rv != ESP_OK))
 		util_warn_on_esp_err("ll main send: module i2c_master_execute_defined_operations", rv);
@@ -624,7 +619,7 @@ void i2c_init(void)
 {
 	static const i2c_master_bus_config_t main_i2c_module_config[i2c_module_size] =
 	{
-		[i2c_module_0_fast] =
+		[i2c_module_0] =
 		{
 			.i2c_port = 0,
 			.sda_io_num = CONFIG_BSP_I2C0_SDA,
@@ -635,10 +630,10 @@ void i2c_init(void)
 			.trans_queue_depth = 0,
 			.flags =
 			{
-				.enable_internal_pullup = 1, // this is not necessary but suppresses a spurious warning
+				.enable_internal_pullup = 0,
 			},
 		},
-		[i2c_module_1_slow] =
+		[i2c_module_1] =
 		{
 			.i2c_port = 1,
 			.sda_io_num = CONFIG_BSP_I2C1_SDA,
@@ -649,37 +644,9 @@ void i2c_init(void)
 			.trans_queue_depth = 0,
 			.flags =
 			{
-				.enable_internal_pullup = 1, // this is not necessary but suppresses a spurious warning
+				.enable_internal_pullup = 0,
 			},
 		},
-	};
-
-	static const ulp_riscv_i2c_cfg_t ulp_i2c_module_config =
-	{
-		.i2c_pin_cfg =
-		{
-			.sda_io_num = CONFIG_BSP_I2C2_SDA,
-			.scl_io_num = CONFIG_BSP_I2C2_SCL,
-			.sda_pullup_en = false,
-			.scl_pullup_en = false,
-		},
-		.i2c_timing_cfg =
-		{
-			.scl_low_period = 1.4,
-			.scl_high_period = 0.3,
-			.sda_duty_period = 1,
-			.scl_start_period = 2,
-			.scl_stop_period = 1.3,
-			.i2c_trans_timeout = 20,
-		},
-	};
-
-	i2c_device_config_t device_config =
-	{
-		.dev_addr_length = I2C_ADDR_BIT_LEN_7,
-		.device_address = I2C_DEVICE_ADDRESS_NOT_USED,
-		.scl_wait_us = 0,
-		.flags.disable_ack_check = 0,
 	};
 
 	i2c_module_t module;
@@ -689,6 +656,8 @@ void i2c_init(void)
 	bus_t *bus_ptr;
 	uint8_t buffer_in[1];
 	uint8_t buffer_out[1];
+	string_auto(config_name, 64);
+	uint32_t config_value;
 
 	assert(!inited);
 
@@ -715,16 +684,85 @@ void i2c_init(void)
 
 		data = &module_data[module];
 
+		string_format(config_name, "i2c.%u.speed", module);
+
+		if(config_get_uint(config_name, &config_value))
+			data->speed_khz = config_value;
+		else
+			data->speed_khz = 100;
+
 		if(info->ulp)
 		{
+			static const ulp_riscv_i2c_cfg_t ulp_i2c_module_config_slow =
+			{
+				.i2c_pin_cfg =
+				{
+					.sda_io_num = CONFIG_BSP_I2C2_SDA,
+					.scl_io_num = CONFIG_BSP_I2C2_SCL,
+					.sda_pullup_en = false,
+					.scl_pullup_en = false,
+				},
+				.i2c_timing_cfg =
+				{
+					.scl_high_period = 5.0f,
+					.scl_low_period = 5.0f,
+					.sda_duty_period = 2.0f,
+					.scl_start_period = 3.0f,
+					.scl_stop_period = 6.0f,
+					.i2c_trans_timeout = 20,
+				},
+			};
+
+			static const ulp_riscv_i2c_cfg_t ulp_i2c_module_config_fast =
+			{
+				.i2c_pin_cfg =
+				{
+					.sda_io_num = CONFIG_BSP_I2C2_SDA,
+					.scl_io_num = CONFIG_BSP_I2C2_SCL,
+					.sda_pullup_en = false,
+					.scl_pullup_en = false,
+				},
+				.i2c_timing_cfg =
+				{
+					.scl_high_period = 0.5f,
+					.scl_low_period = 1.3f,
+					.sda_duty_period = 1.0f,
+					.scl_start_period = 2.0f,
+					.scl_stop_period = 1.3f,
+					.i2c_trans_timeout = 20,
+				},
+			};
+
+			const ulp_riscv_i2c_cfg_t *ulp_i2c_module_config;
+
 			data->bus_handle = nullptr;
-			util_abort_on_esp_err("ulp riscv i2c master init", ulp_riscv_i2c_master_init(&ulp_i2c_module_config));
+
+			if(data->speed_khz >= 400)
+			{
+				data->speed_khz = 400;
+				ulp_i2c_module_config = &ulp_i2c_module_config_fast;
+			}
+			else
+			{
+				data->speed_khz = 100;
+				ulp_i2c_module_config = &ulp_i2c_module_config_slow;
+			}
+
+			util_abort_on_esp_err("ulp riscv i2c master init", ulp_riscv_i2c_master_init(ulp_i2c_module_config));
 		}
 		else
 		{
+			i2c_device_config_t device_config =
+			{
+				.dev_addr_length = I2C_ADDR_BIT_LEN_7,
+				.device_address = I2C_DEVICE_ADDRESS_NOT_USED,
+				.scl_wait_us = 0,
+				.scl_speed_hz = data->speed_khz * 1000,
+				.flags.disable_ack_check = 0,
+			};
+
 			util_abort_on_esp_err("i2c new master bus", i2c_new_master_bus(&main_i2c_module_config[module], &data->bus_handle));
 
-			device_config.scl_speed_hz = info->speed,
 			util_warn_on_esp_err("i2c master bus add device", i2c_master_bus_add_device(data->bus_handle, &device_config, &data->device_handle));
 		}
 
@@ -1161,6 +1199,12 @@ void command_i2c_info(cli_command_call_t *call)
 	bus_t *bus;
 	slave_t *slave;
 
+	if(!inited)
+	{
+		string_assign_cstr(call->result, "I2C init not complete, come back later");
+		return;
+	}
+
 	data_mutex_take();
 
 	string_format(call->result, "I2C info");
@@ -1173,7 +1217,7 @@ void command_i2c_info(cli_command_call_t *call)
 		{
 			data = &module_data[module_index];
 
-			string_format_append(call->result, "\n- module [%u]: \"%s\", sda=%u, scl=%u, speed=%u khz", info->id, info->name, info->sda, info->scl, info->speed / 1000);
+			string_format_append(call->result, "\n- module [%u]: \"%s\", sda: %u, scl: %u, speed: %u khz", info->id, info->name, info->sda, info->scl, data->speed_khz);
 
 			for(bus_index = i2c_bus_first; bus_index < data->buses; bus_index++)
 			{
@@ -1186,6 +1230,72 @@ void command_i2c_info(cli_command_call_t *call)
 								slave->address, slave->name, slave->module, slave->bus);
 				}
 			}
+		}
+		else
+			string_format_append(call->result, "\n- module [%u]: unavailable", info->id);
+	}
+
+	data_mutex_give();
+}
+
+void command_i2c_speed(cli_command_call_t *call)
+{
+	const module_info_t *info;
+	module_data_t *data;
+	i2c_module_t module_index;
+	unsigned int speed;
+
+	if(!inited)
+	{
+		string_assign_cstr(call->result, "I2C init not complete, come back later");
+		return;
+	};
+
+	assert(call->parameter_count <= 2);
+
+	if(call->parameter_count == 2)
+	{
+		string_auto(config_name, 64);
+		uint32_t config_value;
+
+		data_mutex_take();
+
+		module_index = (i2c_module_t)call->parameters[0].unsigned_int;
+		assert(module_index < i2c_module_size);
+		speed = call->parameters[1].unsigned_int;
+
+		info = &module_info[module_index];
+
+		if(!info->available)
+		{
+			data_mutex_give();
+			string_format(call->result, "I2C module #%u unavailable", (unsigned int)module_index);
+			return;
+		}
+
+		data = &module_data[module_index];
+		data->speed_khz = config_value = speed;
+
+		string_format(config_name, "i2c.%u.speed", module_index);
+
+		config_set_uint(config_name, config_value);
+
+		data_mutex_give();
+	}
+
+	data_mutex_take();
+
+	string_format(call->result, "I2C speed");
+
+	for(module_index = i2c_module_first; module_index < i2c_module_size; module_index++)
+	{
+		info = &module_info[module_index];
+
+		if(info->available)
+		{
+			data = &module_data[module_index];
+
+			string_format_append(call->result, "\n- module [%u]: \"%s\", speed: %u khz", info->id, info->name, data->speed_khz);
 		}
 		else
 			string_format_append(call->result, "\n- module [%u]: unavailable", info->id);

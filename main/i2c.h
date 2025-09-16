@@ -1,22 +1,15 @@
 #pragma once
 
-enum
-{
-	i2c_module_speed_slow = 100000,
-	i2c_module_speed_fast = 400000,
-	i2c_module_speed_ulp = 400000,
-	i2c_module_speed_none = 0,
-};
-
 typedef enum
 {
-	i2c_module_0_fast = 0,
-	i2c_module_first = i2c_module_0_fast,
-	i2c_module_1_slow,
+	i2c_module_0 = 0,
+	i2c_module_1,
 	i2c_module_2_ulp,
 	i2c_module_size,
 	i2c_module_error = i2c_module_size,
 	i2c_module_unavailable = i2c_module_size,
+	i2c_module_first = i2c_module_0,
+	i2c_module_last = i2c_module_2_ulp,
 } i2c_module_t;
 
 typedef enum

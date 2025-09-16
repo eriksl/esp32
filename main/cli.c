@@ -13,6 +13,7 @@
 #include "wlan.h"
 #include "cli-command.h"
 #include "alias.h"
+#include "i2c.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
@@ -375,6 +376,15 @@ static const cli_command_t cli_commands[] =
 
 	{ "i2c-info", "i2i", "info about the I2C interfaces", command_i2c_info,
 		{},
+	},
+
+	{ "i2c-speed", "i2s", "set speed of I2C interface", command_i2c_speed,
+		{	2,
+			{
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "module", .unsigned_int = { i2c_module_first, i2c_module_last }},
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "speed in kHz", .unsigned_int = { 0, 500 }},
+			},
+		}
 	},
 
 	{ "info", (const char *)0, "show some generic information", info_command_info,

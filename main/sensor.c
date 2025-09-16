@@ -4727,13 +4727,13 @@ void sensor_init(void)
 {
 	static run_parameters_t run[i2c_module_size] =
 	{
-		[i2c_module_0_fast] =
+		[i2c_module_0] =
 		{
-			.module = i2c_module_0_fast,
+			.module = i2c_module_0,
 		},
-		[i2c_module_1_slow] =
+		[i2c_module_1] =
 		{
-			.module = i2c_module_1_slow,
+			.module = i2c_module_1,
 		},
 		[i2c_module_2_ulp] =
 		{
