@@ -117,6 +117,7 @@ void command_pdm_info(cli_command_call_t *call);
 void command_ledpixel_info(cli_command_call_t *call);
 
 void command_i2c_info(cli_command_call_t *call);
+void command_i2c_speed(cli_command_call_t *call);
 
 void command_sensor_dump(cli_command_call_t *call);
 void command_sensor_info(cli_command_call_t *call);
