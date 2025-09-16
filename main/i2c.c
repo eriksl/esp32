@@ -385,6 +385,15 @@ static bool ll_main_receive(const module_info_t *info, module_data_t *data, unsi
 
 	if((receive_buffer_size == 0) || !receive_buffer)
 	{
+		receive_buffer_size = 0;
+		receive_buffer = nullptr;
+	}
+
+	// FIXME For the moment no zero size reads are permitted due to a bug in the ESP-IDF driver code.
+	// When that's fixed, this code and the next comment can be removed.
+
+	if((receive_buffer_size == 0) || !receive_buffer)
+	{
 		if(verbose)
 			log_format("ll main receive: address 0x%02x: main I2C module cannot handle zero byte reads", address_in);
 
@@ -412,14 +421,13 @@ static bool ll_main_receive(const module_info_t *info, module_data_t *data, unsi
 		current++;
 	}
 
-	if(receive_buffer_size > 0)
-	{
-		i2c_operations[current].command = I2C_MASTER_CMD_READ;
-		i2c_operations[current].read.ack_value = I2C_NACK_VAL;
-		i2c_operations[current].read.data = &receive_buffer[receive_buffer_size - 1];
-		i2c_operations[current].read.total_bytes = 1;
-		current++;
-	}
+	// The conditions are only relevant when zero byte read are permitted. For the moment they're not because of a bug in
+	// the ESP-IDF driver code.
+	i2c_operations[current].command = I2C_MASTER_CMD_READ;
+	i2c_operations[current].read.ack_value = I2C_NACK_VAL;
+	i2c_operations[current].read.data = receive_buffer ? &receive_buffer[receive_buffer_size - 1] : nullptr;
+	i2c_operations[current].read.total_bytes = receive_buffer ? 1 : 0;
+	current++;
 
 	i2c_operations[current++].command = I2C_MASTER_CMD_STOP;
 
