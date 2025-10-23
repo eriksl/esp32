@@ -23,7 +23,7 @@ idf_component_register(
 		"perftest.c"
 		"pdm.c"
 		"process.cpp"
-		"ramdisk.c"
+		"ramdisk.cpp"
 		"script.cpp"
 		"string.c"
 		"sensor.c"
