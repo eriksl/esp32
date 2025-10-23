@@ -72,9 +72,9 @@ void fs_command_list(cli_command_call_t *call)
 	struct stat statb;
 	string_auto(filename, 64);
 	bool option_long;
-	time_t ticks;
 	string_auto(ctime, 32);
 	string_auto(mtime, 32);
+	int inode, length, allocated;
 
 	assert(inited);
 	assert((call->parameter_count > 0) && (call->parameter_count < 3));
@@ -106,25 +106,27 @@ void fs_command_list(cli_command_call_t *call)
 
 		if(stat(string_cstr(filename), &statb))
 		{
-			if(option_long)
-				string_format_append(call->result, "\n%2u %3ldk %6ld %19s %19s %s", 0U, -1L, -1L, "1970/01/01 00:00:00", "1970/01/01", dirent->d_name);
-			else
-				string_format_append(call->result, "\n%3ldk %s", 0L, dirent->d_name);
+			inode = -1;
+			length = -1;
+			allocated = -1;
+			string_clear(ctime);
+			string_clear(mtime);
 		}
 		else
 		{
-			if(option_long)
-			{
-				ticks = statb.st_ctim.tv_sec;
-				util_time_to_string(ctime, &ticks);
-				ticks = statb.st_mtim.tv_sec;
-				util_time_to_string(mtime, &ticks);
-
-				string_format_append(call->result, "\n%2u %3ldk %6ld %19s %19s %s", statb.st_ino, statb.st_blocks / 2, statb.st_size, string_cstr(ctime), string_cstr(mtime), dirent->d_name);
-			}
-			else
-				string_format_append(call->result, "\n%3ldk %s", statb.st_size / 1024, dirent->d_name);
+			inode = statb.st_ino;
+			length = statb.st_size;
+			allocated = (statb.st_blocks * 512UL) / 1024UL;
+			util_time_to_string(ctime, &statb.st_ctim.tv_sec);
+			util_time_to_string(mtime, &statb.st_mtim.tv_sec);
 		}
+
+		if(option_long)
+			string_format_append(call->result, "\n%-20s %7d %3dk %19s %19s %11d",
+					dirent->d_name, length, allocated, string_cstr(ctime), string_cstr(mtime), inode);
+		else
+			string_format_append(call->result, "\n%3luk %-20s",
+					length / 1024UL, dirent->d_name);
 	}
 
 	closedir(dir);
