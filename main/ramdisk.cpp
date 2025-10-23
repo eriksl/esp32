@@ -1,6 +1,8 @@
 #include <string>
 #include <map>
 
+#include <stdexcept>
+
 extern "C" {
 #include <string.h>
 #include <stdint.h>
@@ -19,6 +21,7 @@ extern "C" {
 #include <errno.h>
 #include <fcntl.h>
 #include <time.h>
+#include <sys/ioctl.h>
 }
 
 class File
@@ -78,6 +81,7 @@ class Directory
 		const File *get_file_by_fileno_const(unsigned int fileno) const;
 		File *get_file_by_name(const std::string &filename);
 		const File *get_file_by_name_const(const std::string &filename) const;
+		unsigned int get_used() const;
 
 		int opendir(const std::string &path) const;
 		int readdir(Dirent *dirent) const;
@@ -110,11 +114,12 @@ class FileDescriptor
 		unsigned int get_fileno() const;
 		unsigned int get_fcntl_flags() const;
 		unsigned int get_offset() const;
+		bool is_fs() const;
 
 		void set_offset(unsigned int offset);
 
 		FileDescriptor() = delete;
-		FileDescriptor(unsigned int fd, unsigned int fileno, unsigned int fcntl_flags, unsigned int offset);
+		FileDescriptor(unsigned int fd, unsigned int fileno, unsigned int fcntl_flags, unsigned int offset, bool fs);
 
 	private:
 
@@ -122,6 +127,7 @@ class FileDescriptor
 		unsigned int fileno;
 		unsigned int fcntl_flags;
 		unsigned int offset;
+		bool fs;
 };
 
 class Ramdisk
@@ -129,13 +135,14 @@ class Ramdisk
 	public:
 
 		Ramdisk() = delete;
-		Ramdisk(const std::string &mountpoint);
+		Ramdisk(const std::string &mountpoint, unsigned int size);
 
 		static DIR *static_opendir(void *context, const char *name);
 		static struct dirent *static_readdir(void *context, DIR *pdir);
 		static int static_closedir(void *context, DIR *pdir);
 		static int static_stat(void *context, const char *path, struct stat *st);
 		static int static_fstat(void *context, int fd, struct stat *st);
+		static int static_ioctl(void *context, int fd, int op, va_list);
 		static int static_open(void *context, const char *path, int fcntl_flags, int file_access_mode);
 		static int static_close(void *context, int fd);
 		static int static_read(void *context, int fd, void *data, size_t size);
@@ -171,6 +178,9 @@ class Ramdisk
 		unsigned int last_fileno;
 		FileDescriptorTable fd_table;
 		DirentTable dirent_table;
+		SemaphoreHandle_t mutex;
+		unsigned int size;
+
 		static constexpr esp_vfs_dir_ops_t vfs_dir_ops =
 		{
 			.stat_p = Ramdisk::static_stat,
@@ -201,12 +211,11 @@ class Ramdisk
 			.close_p = Ramdisk::static_close,
 			.fstat_p = Ramdisk::static_fstat,
 			.fcntl_p = nullptr,
-			.ioctl_p = nullptr,
+			.ioctl_p = Ramdisk::static_ioctl,
 			.fsync_p = nullptr,
 			.dir = &vfs_dir_ops,
 			.select = nullptr,
 		};
-		SemaphoreHandle_t mutex;
 
 		bool file_in_use(const std::string &filename, unsigned int fcntl_flags) const;
 		void all_stat(const File *fp, struct stat *st) const;
@@ -216,6 +225,7 @@ class Ramdisk
 		int closedir(DIR *pdir);
 		int stat(const std::string &path, struct stat *st);
 		int fstat(int fd, struct stat *st);
+		int ioctl(int fd, int op, int *intp);
 		int open(const std::string &path, int fcntl_flags);
 		int close(int fd);
 		int read(int fd, unsigned int size, uint8_t *data);
@@ -278,10 +288,37 @@ void File::time_update(bool update_ctime)
 
 int File::read(unsigned int offset, unsigned int size, uint8_t *data) const
 {
-	if((offset + size) >= this->contents.length())
-		size = this->contents.length() - offset;
+	unsigned int osize = size;
+	unsigned int olength = this->contents.length();
 
-	this->contents.copy(data, size, offset);
+	if(offset > this->contents.length())
+	{
+		log_format("ramdisk::File::read: offset out of range: %u -> %u (o: %u, l:%u)", // FIXME
+				osize, size,
+				offset, olength);
+
+		return(-EIO);
+	}
+
+	if((offset + size) > this->contents.length())
+	{
+		size = this->contents.length() - offset;
+		log_format("ramdisk::File::read: adjust size: %u -> %u (o: %u, l:%u)", // FIXME
+				osize, size,
+				offset, olength);
+	}
+
+	try // FIXME
+	{
+		this->contents.copy(data, size, offset);
+	}
+	catch(const std::out_of_range &e)
+	{
+		log_format("ramdisk::File::read: out of range: l:%u/%u, s: %u/%u, o:%u", // FIXME
+				olength, this->contents.length(),
+				osize, size,
+				offset);
+	}
 
 	return(size);
 }
@@ -389,6 +426,17 @@ const File *Directory::get_file_by_name_const(const std::string &filename) const
 			return(&it->second);
 
 	return(nullptr);
+}
+
+unsigned int Directory::get_used() const
+{
+	FileMap::const_iterator it;
+	unsigned int total;
+
+	for(it = this->files.begin(), total = 0; it != this->files.end(); it++)
+		total += it->second.get_allocated();
+
+	return(total);
 }
 
 int Directory::opendir(const std::string &path_in) const
@@ -512,8 +560,8 @@ int Directory::unlink(const std::string &path_in)
 	return(0);
 }
 
-FileDescriptor::FileDescriptor(unsigned int fd_in, unsigned int fileno_in, unsigned int fcntl_flags_in, unsigned int offset_in)
-	: fd(fd_in), fileno(fileno_in), fcntl_flags(fcntl_flags_in), offset(offset_in)
+FileDescriptor::FileDescriptor(unsigned int fd_in, unsigned int fileno_in, unsigned int fcntl_flags_in, unsigned int offset_in, bool fs_in)
+	: fd(fd_in), fileno(fileno_in), fcntl_flags(fcntl_flags_in), offset(offset_in), fs(fs_in)
 {
 }
 
@@ -537,13 +585,18 @@ unsigned int FileDescriptor::get_offset() const
 	return(this->offset);
 }
 
+bool FileDescriptor::is_fs() const
+{
+	return(this->fs);
+}
+
 void FileDescriptor::set_offset(unsigned int new_offset)
 {
 	this->offset = new_offset;
 }
 
-Ramdisk::Ramdisk(const std::string &mountpoint_in)
-	: mountpoint(mountpoint_in), root("/"), last_fileno(0)
+Ramdisk::Ramdisk(const std::string &mountpoint_in, unsigned int size_in)
+	: mountpoint(mountpoint_in), root("/"), last_fileno(0), size(size_in)
 {
 	this->mutex = xSemaphoreCreateMutex();
 	assert(this->mutex);
@@ -599,6 +652,15 @@ int Ramdisk::static_fstat(void *context, int fd, struct stat *st)
 {
 	Ramdisk *ramdisk = reinterpret_cast<Ramdisk *>(context);
 	return(ramdisk->fstat(fd, st));
+}
+
+int Ramdisk::static_ioctl(void *context, int fd, int op, va_list ap)
+{
+	Ramdisk *ramdisk = reinterpret_cast<Ramdisk *>(context);
+
+	int *intp = va_arg(ap, int *);
+
+	return(ramdisk->ioctl(fd, op, intp));
 }
 
 int Ramdisk::static_open(void *context, const char *path, int fcntl_flags, int file_access_mode)
@@ -710,6 +772,38 @@ int Ramdisk::fstat(int fd, struct stat *st)
 	return(0);
 }
 
+int Ramdisk::ioctl(int fd, int op, int *intp)
+{
+	switch(op)
+	{
+		case(IO_RAMDISK_GET_USED):
+		{
+			*intp = this->root.get_used();
+			break;
+		}
+
+		case(IO_RAMDISK_SET_SIZE):
+		{
+			this->size = *intp;
+			break;
+		}
+
+		case(IO_RAMDISK_GET_SIZE):
+		{
+			*intp = this->size;
+			break;
+		}
+
+		default:
+		{
+			errno = EINVAL;
+			return(-1);
+		}
+	}
+
+	return(0);
+}
+
 DIR *Ramdisk::opendir(const std::string &path)
 {
 	Mutex(&this->mutex);
@@ -789,12 +883,30 @@ int Ramdisk::open(const std::string &path, int fcntl_flags)
 	unsigned int fd, offset;
 	int fileno;
 	File *fp;
+	bool fs;
 
-	if(this->file_in_use(path, fcntl_flags))
+	if(fcntl_flags & O_DIRECTORY)
 	{
-		log_format("open: file \"%s\" in use", path.c_str());
-		errno = EBUSY;
-		return(-1);
+		if(fcntl_flags & (O_WRONLY | O_RDWR | O_APPEND | O_CREAT | O_TRUNC))
+		{
+			errno = EINVAL;
+			return(-1);
+		}
+
+		if(path != "/")
+		{
+			errno = ENOENT;
+			return(-1);
+		}
+	}
+	else
+	{
+		if(this->file_in_use(path, fcntl_flags))
+		{
+			log_format("open: file \"%s\" in use", path.c_str());
+			errno = EBUSY;
+			return(-1);
+		}
 	}
 
 	for(fd = 0; fd < fd_max; fd++)
@@ -807,34 +919,44 @@ int Ramdisk::open(const std::string &path, int fcntl_flags)
 		return(-1);
 	}
 
-	if(fcntl_flags & O_CREAT)
-		while(this->root.get_file_by_fileno_const(this->last_fileno))
-			this->last_fileno++;
-
-	if((fileno = this->root.open(path, fcntl_flags, this->last_fileno)) < 0)
-	{
-		errno = 0 - fileno;
-		return(-1);
-	}
-
-	if(!(fp = this->root.get_file_by_fileno(fileno)))
-	{
-		errno = ENXIO;
-		return(-1);
-	}
-
 	offset = 0;
 
-	if((fcntl_flags & O_RDWR) || (fcntl_flags & O_WRONLY))
+	if(fcntl_flags & O_DIRECTORY)
 	{
-		if(fcntl_flags & O_APPEND)
-			offset = fp->get_length();
+		fs = true;
+		fileno = 0;
+	}
+	else
+	{
+		fs = false;
 
-		if(fcntl_flags & O_TRUNC)
-			fp->truncate(0);
+		if(fcntl_flags & O_CREAT)
+			while(this->root.get_file_by_fileno_const(this->last_fileno))
+				this->last_fileno++;
+
+		if((fileno = this->root.open(path, fcntl_flags, this->last_fileno)) < 0)
+		{
+			errno = 0 - fileno;
+			return(-1);
+		}
+
+		if(!(fp = this->root.get_file_by_fileno(fileno)))
+		{
+			errno = EIO;
+			return(-1);
+		}
+
+		if((fcntl_flags & O_RDWR) || (fcntl_flags & O_WRONLY))
+		{
+			if(fcntl_flags & O_APPEND)
+				offset = fp->get_length();
+
+			if(fcntl_flags & O_TRUNC)
+				fp->truncate(0);
+		}
 	}
 
-	this->fd_table.insert(std::pair(fd, FileDescriptor(fd, fileno, fcntl_flags, offset)));
+	this->fd_table.insert(std::pair(fd, FileDescriptor(fd, fileno, fcntl_flags, offset, fs)));
 
 	return(fd);
 }
@@ -851,10 +973,13 @@ int Ramdisk::close(int fd)
 		return(-1);
 	}
 
-	if((rv = this->root.close(fd)) < 0)
+	if(!it->second.is_fs())
 	{
-		errno = 0 - rv;
-		return(-1);
+		if((rv = this->root.close(fd)) < 0)
+		{
+			errno = 0 - rv;
+			return(-1);
+		}
 	}
 
 	this->fd_table.erase(it);
@@ -862,7 +987,7 @@ int Ramdisk::close(int fd)
 	return(0);
 }
 
-int Ramdisk::read(int fd, unsigned int size, uint8_t *data)
+int Ramdisk::read(int fd, unsigned int data_size, uint8_t *data)
 {
 	Mutex(&this->mutex);
 	FileDescriptorTable::iterator it;
@@ -874,7 +999,13 @@ int Ramdisk::read(int fd, unsigned int size, uint8_t *data)
 		return(-1);
 	}
 
-	if((received = this->root.read(it->second.get_fileno(), it->second.get_offset(), size, data)) < 0)
+	if(it->second.is_fs())
+	{
+		errno = EINVAL;
+		return(-1);
+	}
+
+	if((received = this->root.read(it->second.get_fileno(), it->second.get_offset(), data_size, data)) < 0)
 	{
 		errno = 0 - received;
 		return(-1);
@@ -894,6 +1025,12 @@ int Ramdisk::write(int fd, unsigned int length, const uint8_t *data)
 	if((it = this->fd_table.find(fd)) == this->fd_table.end())
 	{
 		errno = EBADF;
+		return(-1);
+	}
+
+	if(it->second.is_fs())
+	{
+		errno = EINVAL;
 		return(-1);
 	}
 
@@ -918,6 +1055,12 @@ int Ramdisk::lseek(int fd, unsigned int mode, int delta_offset)
 	if((it = this->fd_table.find(fd)) == this->fd_table.end())
 	{
 		errno = EBADF;
+		return(-1);
+	}
+
+	if(it->second.is_fs())
+	{
+		errno = EINVAL;
 		return(-1);
 	}
 
@@ -1009,6 +1152,12 @@ int Ramdisk::ftruncate(int fd, unsigned int length)
 		return(-1);
 	}
 
+	if(it->second.is_fs())
+	{
+		errno = EINVAL;
+		return(-1);
+	}
+
 	if(!(fp = this->root.get_file_by_fileno(it->second.get_fileno())))
 	{
 		errno = ENOENT;
@@ -1086,7 +1235,7 @@ Ramdisk::Mutex::~Mutex()
 	this->mutex = nullptr;
 }
 
-void ramdisk_init(void)
+void ramdisk_init(unsigned int size)
 {
-	new Ramdisk("/ramdisk");
+	new Ramdisk("/ramdisk", size);
 }

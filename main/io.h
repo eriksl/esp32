@@ -25,7 +25,7 @@ typedef enum
 	io_cap_error = io_cap_size,
 } io_capabilities_t;
 
-_Static_assert(io_cap_size < 32); // bitmap
+_Static_assert(io_cap_size < 32, "io_cap_size < 32"); // bitmap
 
 void io_init(void);
 bool io_info(string_t result, unsigned int io);

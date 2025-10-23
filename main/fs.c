@@ -8,6 +8,7 @@
 #include "util.h"
 #include "cli-command.h"
 #include "info.h"
+#include "ramdisk.h"
 
 #include <esp_littlefs.h>
 
@@ -16,6 +17,7 @@
 #include <assert.h>
 #include <dirent.h>
 #include <errno.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <mbedtls/sha256.h>
 
@@ -41,7 +43,7 @@ void fs_init(void)
 
 void fs_command_info(cli_command_call_t *call)
 {
-	unsigned int total, used, avail, usedpct;
+	int total, used, avail, usedpct, fd;
 
 	assert(inited);
 	assert(call->parameter_count == 0);
@@ -53,16 +55,21 @@ void fs_command_info(cli_command_call_t *call)
 	string_assign_cstr(call->result, "LITTLEFS");
 
 	if(esp_littlefs_mounted("littlefs"))
-		string_format_append(call->result, " mounted at /littlefs:\n- total size: %u kB\n- used: %u kB\n- available %u kB, %u%% used", total / 1024, used / 1024, avail / 1024, usedpct);
+		string_format_append(call->result, " mounted at /littlefs:\n- total size: %d kB\n- used: %d kB\n- available %d kB, %d%% used", total / 1024, used / 1024, avail / 1024, usedpct);
 	else
 		string_append_cstr(call->result, " not mounted");
 
-	total = initial_free_spiram / 2;
-	used = (initial_free_spiram - heap_caps_get_free_size(MALLOC_CAP_SPIRAM)) / 2;
-	avail = total - used;
-	usedpct = (100 * used) / total;
+	if((fd = open("/ramdisk", O_RDONLY | O_DIRECTORY)) >= 0)
+	{
+		ioctl(fd, IO_RAMDISK_GET_SIZE, &total);
+		ioctl(fd, IO_RAMDISK_GET_USED, &used);
+		close(fd);
 
-	string_format_append(call->result, "\nRAMDISK mounted at /ramdisk:\n- total size: %u kB\n- used: %u kB\n- available %u kB, %u%% used", total / 1024, used / 1024, avail / 1024, usedpct);
+		avail = total - used;
+		usedpct = (100 * used) / total;
+
+		string_format_append(call->result, "\nRAMDISK mounted at /ramdisk:\n- total size: %d kB\n- used: %d kB\n- available %d kB, %d%% used", total / 1024, used / 1024, avail / 1024, usedpct);
+	}
 }
 
 void fs_command_list(cli_command_call_t *call)

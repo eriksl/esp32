@@ -12,7 +12,7 @@ idf_component_register(
         "i2c.c"
 		"info.c"
 		"io.c"
-		"init.c"
+		"init.cpp"
 		"ledpixel.c"
 		"ledpwm.c"
 		"log.c"
