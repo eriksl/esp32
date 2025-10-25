@@ -347,6 +347,15 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
+	{ "fs-rename", "mv", "rename file on the filesystem", fs_command_rename,
+		{	2,
+			{
+				{ cli_parameter_string, 0, 1, 1, 1, "from file", .string = { 1, 64 }},
+				{ cli_parameter_string, 0, 1, 1, 1, "to file", .string = { 1, 64 }},
+			}
+		}
+	},
+
 	{ "fs-write", (const char*)0, "write to a file on the filesystem", fs_command_write,
 		{	3,
 			{

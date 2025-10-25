@@ -301,12 +301,7 @@ int File::read(unsigned int offset, unsigned int size, uint8_t *data) const
 	}
 
 	if((offset + size) > this->contents.length())
-	{
 		size = this->contents.length() - offset;
-		log_format("ramdisk::File::read: adjust size: %u -> %u (o: %u, l:%u)", // FIXME
-				osize, size,
-				offset, olength);
-	}
 
 	try // FIXME
 	{
@@ -533,7 +528,9 @@ int Directory::write(unsigned int fileno, unsigned int offset, unsigned int leng
 
 int Directory::rename(const std::string &from, const std::string &to)
 {
+	FileMap::iterator it;
 	File *fp;
+	std::string to_filename;
 
 	if(!to.starts_with(this->path))
 		return(-EXDEV);
@@ -541,7 +538,16 @@ int Directory::rename(const std::string &from, const std::string &to)
 	if(!(fp = this->get_file_by_name(from)))
 		return(-ENOENT);
 
-	return(fp->rename(to.substr(this->path.length())));
+	to_filename = to.substr(this->path.length());
+
+	for(it = this->files.begin(); it != this->files.end(); it++)
+		if(it->second.get_filename() == to_filename)
+			break;
+
+	if(it != this->files.end())
+		this->files.erase(it);
+
+	return(fp->rename(to_filename));
 }
 
 int Directory::unlink(const std::string &path_in)
@@ -1212,7 +1218,27 @@ int Ramdisk::unlink(const std::string &path)
 int Ramdisk::rename(const std::string &from, const std::string &to)
 {
 	Mutex(&this->mutex);
+	const File *fp;
+	FileDescriptorTable::const_iterator it;
+	unsigned int fileno;
 	int rv;
+
+	log_format("rename %s -> %s", from.c_str(), to.c_str());
+
+	if((fp = this->root.get_file_by_name(to)))
+	{
+		fileno = fp->get_fileno();
+
+		for(it = this->fd_table.begin(); it != this->fd_table.end(); it++)
+			if(it->second.get_fileno() == fileno)
+				break;
+
+		if(it != this->fd_table.end())
+		{
+			errno = EEXIST;
+			return(-1);
+		}
+	}
 
 	if((rv = this->root.rename(from, to)) < 0)
 	{

@@ -75,6 +75,7 @@ void fs_command_info(cli_command_call_t *call);
 void fs_command_list(cli_command_call_t *call);
 void fs_command_read(cli_command_call_t *call);
 void fs_command_write(cli_command_call_t *call);
+void fs_command_rename(cli_command_call_t *call);
 
 void info_command_info(cli_command_call_t *call);
 void info_command_info_board(cli_command_call_t *call);

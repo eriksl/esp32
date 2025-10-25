@@ -242,6 +242,17 @@ void fs_command_erase(cli_command_call_t *call)
 		string_assign_cstr(call->result, "OK file erased");
 }
 
+void fs_command_rename(cli_command_call_t *call)
+{
+	assert(inited);
+	assert(call->parameter_count == 2);
+
+	if(rename(string_cstr(call->parameters[0].string), string_cstr(call->parameters[1].string)))
+		string_assign_cstr(call->result, "file rename failed");
+	else
+		string_assign_cstr(call->result, "OK file renamed");
+}
+
 void fs_command_checksum(cli_command_call_t *call)
 {
 	int fd;
