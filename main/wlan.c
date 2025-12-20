@@ -81,6 +81,9 @@ static unsigned int udp_receive_errors;
 static unsigned int udp_receive_incomplete_packets;
 static unsigned int udp_receive_invalid_packets;
 
+static bool static_ipv6_address_set;
+static esp_ip6_addr_t static_ipv6_address;
+
 typedef struct
 {
 	uint32_t valid_transitions;
@@ -340,7 +343,6 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 		{
 			const ip_event_got_ip6_t *event = (const ip_event_got_ip6_t *)event_data;
 			string_auto(ipv6_address_string, 64);
-			esp_ip6_addr_t ipv6_address;
 			const char *address_type;
 
 			switch(util_ipv6_address_type(&event->ip6_info.ip))
@@ -351,8 +353,8 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 
 					set_state(ws_ipv6_link_local_address_acquired);
 
-					if(config_get_string_cstr(key_ipv6_static_address, ipv6_address_string) && !esp_netif_str_to_ip6(string_cstr(ipv6_address_string), &ipv6_address))
-						util_warn_on_esp_err("esp_netif_add_ip6_address", esp_netif_add_ip6_address(netif_sta, ipv6_address, true));
+					if(static_ipv6_address_set)
+						util_warn_on_esp_err("esp_netif_add_ip6_address", esp_netif_add_ip6_address(netif_sta, static_ipv6_address, true));
 
 					break;
 				}
@@ -605,6 +607,9 @@ static void run_udp(void *)
 	si6_addr.sin6_family = AF_INET6;
 	si6_addr.sin6_port = htons(24);
 
+	if(static_ipv6_address_set) // UGLY: if a static address is set, use the static address and not the SLAAC or link-local address
+		memcpy(&si6_addr.sin6_addr.s6_addr[0], &static_ipv6_address.addr, sizeof(static_ipv6_address.addr)); // UGLY: there is no function to convert and ESP ipv6 address to a sin6_addr.
+
 	rv = bind(udp_socket_fd, (const struct sockaddr *)&si6_addr, sizeof(si6_addr));
 	assert(rv == 0);
 
@@ -799,6 +804,9 @@ void wlan_command_ipv6_static(cli_command_call_t *call)
 		string_assign_cstr(ipv6_address_string, ip6addr_ntoa((const ip6_addr_t *)&ipv6_address));
 		string_tolower(ipv6_address_string);
 		config_set_string_cstr(key_ipv6_static_address, ipv6_address_string);
+
+		static_ipv6_address = ipv6_address;
+		static_ipv6_address_set = true;
 	}
 
 	string_assign_cstr(call->result, "ipv6 static address: ");
@@ -813,6 +821,7 @@ void wlan_init(void)
 {
 	string_auto_init(hostname_key, "hostname");
 	string_auto(hostname, 16);
+	string_auto(ipv6_address_string, 64);
 	wifi_init_config_t init_config = WIFI_INIT_CONFIG_DEFAULT();
 	static esp_sntp_config_t sntp_config = ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(0, {});
 	uint32_t enabled;
@@ -841,6 +850,11 @@ void wlan_init(void)
 	set_state(ws_init);
 
 	slaac_active = false;
+
+	if(config_get_string_cstr(key_ipv6_static_address, ipv6_address_string) && !esp_netif_str_to_ip6(string_cstr(ipv6_address_string), &static_ipv6_address))
+		static_ipv6_address_set = true;
+	else
+		static_ipv6_address_set = false;
 
 	if(!config_get_uint_cstr(key_ipv6_slaac_force_enabled, &enabled))
 		enabled = 0;
@@ -1037,14 +1051,6 @@ void wlan_command_info(cli_command_call_t *call)
 	{
 		util_esp_ipv6_addr_to_string(ipv6_str, &esp_ip6_addr[ix]);
 		string_format_append(call->result, "\n- address %u: %s (%s)", ix, string_cstr(ipv6_str), util_ipv6_address_type_string(&esp_ip6_addr[ix]));
-	}
-
-	rv = esp_netif_get_all_preferred_ip6(netif, esp_ip6_addr);
-
-	for(ix = 0; ix < rv; ix++)
-	{
-		util_esp_ipv6_addr_to_string(ipv6_str, &esp_ip6_addr[ix]);
-		string_format_append(call->result, "\n- preferred address %u: %s (%s)", ix, string_cstr(ipv6_str), util_ipv6_address_type_string(&esp_ip6_addr[ix]));
 	}
 
 	string_append_cstr(call->result, "\nhostname: ");
