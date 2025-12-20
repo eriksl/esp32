@@ -129,7 +129,7 @@ void fs_command_list(cli_command_call_t *call)
 		}
 
 		if(option_long)
-			string_format_append(call->result, "\n%-20s %7d %3dk %19s %19s %11d",
+			string_format_append(call->result, "\n%-20s %7d %4dk %19s %19s %11d",
 					dirent->d_name, length, allocated, string_cstr(ctime), string_cstr(mtime), inode);
 		else
 			string_format_append(call->result, "\n%3luk %-20s",
