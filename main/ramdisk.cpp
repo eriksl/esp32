@@ -289,19 +289,18 @@ void File::time_update(bool update_ctime)
 int File::read(unsigned int offset, unsigned int size, uint8_t *data) const
 {
 	unsigned int osize = size;
-	unsigned int olength = this->contents.length();
+	unsigned int length = this->contents.length();
 
-	if(offset > this->contents.length())
+	if(offset > length)
 	{
-		log_format("ramdisk::File::read: offset out of range: %u -> %u (o: %u, l:%u)", // FIXME
-				osize, size,
-				offset, olength);
+		log_format("ramdisk::File::read: offset out of range: s:%u l:%u o:%u)", // FIXME
+				size, length, offset);
 
 		return(-EIO);
 	}
 
-	if((offset + size) > this->contents.length())
-		size = this->contents.length() - offset;
+	if((offset + size) > length)
+		size = length - offset;
 
 	try // FIXME
 	{
@@ -309,9 +308,9 @@ int File::read(unsigned int offset, unsigned int size, uint8_t *data) const
 	}
 	catch(const std::out_of_range &e)
 	{
-		log_format("ramdisk::File::read: out of range: l:%u/%u, s: %u/%u, o:%u", // FIXME
-				olength, this->contents.length(),
+		log_format("ramdisk::File::read: out of range: s:%u/%u l:%u/%u o:%u", // FIXME
 				osize, size,
+				length, this->contents.length(),
 				offset);
 	}
 
@@ -1222,8 +1221,6 @@ int Ramdisk::rename(const std::string &from, const std::string &to)
 	FileDescriptorTable::const_iterator it;
 	unsigned int fileno;
 	int rv;
-
-	log_format("rename %s -> %s", from.c_str(), to.c_str());
 
 	if((fp = this->root.get_file_by_name(to)))
 	{
