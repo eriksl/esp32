@@ -37,6 +37,8 @@ uint32_t util_md5_32(unsigned int length, const uint8_t *data);
 unsigned int util_partition_to_slot(const esp_partition_t *partition);
 void util_esp_ipv4_addr_to_string(string_t dst, const esp_ip4_addr_t *src);
 void util_esp_ipv6_addr_to_string(string_t dst, const esp_ip6_addr_t *src);
+bool util_sin6_addr_is_ipv4(const void *data /* const struct sockaddr_in6 */);
+void util_sin6_addr_to_string(string_t dst, unsigned int length, const void *src /* const struct sockaddr_in6 */);
 ipv6_address_t util_ipv6_address_type(const void *);
 const char *util_ipv6_address_type_string(const void *);
 void util_mac_addr_to_string(string_t dst, const uint8_t mac[6], bool inverse);

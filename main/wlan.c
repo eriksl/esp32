@@ -83,6 +83,8 @@ static unsigned int udp_receive_invalid_packets;
 
 static bool static_ipv6_address_set;
 static esp_ip6_addr_t static_ipv6_address;
+static struct sockaddr_in6 default_ipv6_sockaddr;
+static struct sockaddr_in6 static_ipv6_sockaddr;
 
 typedef struct
 {
@@ -603,14 +605,8 @@ static void run_udp(void *)
 	udp_socket_fd = socket(AF_INET6, SOCK_DGRAM, 0);
 	assert(udp_socket_fd >= 0);
 
-	memset(&si6_addr, 0, sizeof(si6_addr));
-	si6_addr.sin6_family = AF_INET6;
-	si6_addr.sin6_port = htons(24);
-
-	if(static_ipv6_address_set) // UGLY: if a static address is set, use the static address and not the SLAAC or link-local address
-		memcpy(&si6_addr.sin6_addr.s6_addr[0], &static_ipv6_address.addr, sizeof(static_ipv6_address.addr)); // UGLY: there is no function to convert and ESP ipv6 address to a sin6_addr.
-
-	rv = bind(udp_socket_fd, (const struct sockaddr *)&si6_addr, sizeof(si6_addr));
+	// see udp_send for explanation
+	rv = bind(udp_socket_fd, (const struct sockaddr *)&default_ipv6_sockaddr, sizeof(default_ipv6_sockaddr));
 	assert(rv == 0);
 
 	for(;;)
@@ -672,6 +668,8 @@ static void run_udp(void *)
 void wlan_udp_send(const cli_buffer_t *src)
 {
 	int sent;
+	bool source_address_workaround_required = false;
+	unsigned int rv;
 
 	assert(inited);
 
@@ -681,12 +679,32 @@ void wlan_udp_send(const cli_buffer_t *src)
 		return;
 	}
 
+	if(!util_sin6_addr_is_ipv4(src->ip.address.sin6_addr) && (static_ipv6_address_set))
+	{
+		// if a static ipv6 address is set, use the static address and not the SLAAC or link-local address for replies
+		source_address_workaround_required = true;
+	}
+
+	if(source_address_workaround_required)
+	{
+		// bind to static ipv6 address to have correct source address in sent packet
+		rv = bind(udp_socket_fd, (const struct sockaddr *)&static_ipv6_sockaddr, sizeof(static_ipv6_sockaddr));
+		assert(rv == 0);
+	}
+
 	sent = sendto(udp_socket_fd, string_data(src->data), string_length(src->data), 0, (const struct sockaddr *)&src->ip.address.sin6_addr, src->ip.address.sin6_length);
 
 	if(sent <= 0)
 	{
 		udp_send_errors++;
 		return;
+	}
+
+	if(source_address_workaround_required)
+	{
+		// unbind to any address to be able to receive packets from both ipv4 and ipv6
+		rv = bind(udp_socket_fd, (const struct sockaddr *)&default_ipv6_sockaddr, sizeof(default_ipv6_sockaddr));
+		assert(rv == 0);
 	}
 
 	udp_send_packets++;
@@ -807,6 +825,7 @@ void wlan_command_ipv6_static(cli_command_call_t *call)
 
 		static_ipv6_address = ipv6_address;
 		static_ipv6_address_set = true;
+		memcpy(&static_ipv6_sockaddr.sin6_addr, &ipv6_address, sizeof(static_ipv6_sockaddr.sin6_addr));
 	}
 
 	string_assign_cstr(call->result, "ipv6 static address: ");
@@ -851,8 +870,19 @@ void wlan_init(void)
 
 	slaac_active = false;
 
+	memset(&default_ipv6_sockaddr, 0, sizeof(default_ipv6_sockaddr));
+	default_ipv6_sockaddr.sin6_family = AF_INET6;
+	default_ipv6_sockaddr.sin6_port = htons(24);
+
+	memset(&static_ipv6_sockaddr, 0, sizeof(static_ipv6_sockaddr));
+	static_ipv6_sockaddr.sin6_family = AF_INET6;
+	static_ipv6_sockaddr.sin6_port = htons(24);
+
 	if(config_get_string_cstr(key_ipv6_static_address, ipv6_address_string) && !esp_netif_str_to_ip6(string_cstr(ipv6_address_string), &static_ipv6_address))
+	{
 		static_ipv6_address_set = true;
+		memcpy(&static_ipv6_sockaddr.sin6_addr, &static_ipv6_address, sizeof(static_ipv6_sockaddr.sin6_addr));
+	}
 	else
 		static_ipv6_address_set = false;
 

@@ -19,6 +19,8 @@
 
 #include <stddef.h>
 #include <sys/time.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 static bool inited;
 
@@ -87,6 +89,61 @@ void util_esp_ipv6_addr_to_string(string_t dst, const esp_ip6_addr_t *src)
 {
 	string_format(dst, "%s", ip6addr_ntoa((const ip6_addr_t *)src));
 	string_tolower(dst);
+}
+
+bool util_sin6_addr_is_ipv4(const void *in)
+{
+	const struct sockaddr_in6 *sockaddr_in6 = (const struct sockaddr_in6 *)in;
+	const struct in6_addr *addr_in6;
+	const char *addr;
+
+	if(sockaddr_in6->sin6_family == AF_INET)
+		return(true);
+
+	if(sockaddr_in6->sin6_family != AF_INET6)
+		return(false);
+
+	addr_in6 = &sockaddr_in6->sin6_addr;
+	addr = &addr_in6->s6_addr[0];
+
+	if((addr[0] == 0) && (addr[1] == 0) && (addr[2] == 0) && (addr [3] == 0) &&
+			(addr[4] == 0) && (addr[5] == 0) && (addr[6] == 0) && (addr [7] == 0) &&
+			(addr[8] == 0) && (addr[9] == 0) && (addr[10] == 0xff) && (addr [11] == 0xff))
+		return(true);
+
+	return(false);
+}
+
+void util_sin6_addr_to_string(string_t dst, unsigned int length, const void *data)
+{
+	const struct sockaddr_in6 *addr_in6;
+	string_auto(address_string, 128);
+
+	if(length != sizeof(struct sockaddr_in6))
+	{
+		string_assign_cstr(dst, "invalid length");
+		return;
+	}
+
+	addr_in6 = (const struct sockaddr_in6 *)data;
+
+	if(util_sin6_addr_is_ipv4(addr_in6))
+		//util_esp_ipv4_addr_to_string(address_string, &addr_in6->sin6_addr.s6_addr[12]);
+		//string_assign_cstr(ipaddr_ntoa(&addr_in6->sin6_addr));
+		string_format(address_string, "%u.%u.%u.%u",
+				addr_in6->sin6_addr.s6_addr[12],
+				addr_in6->sin6_addr.s6_addr[13],
+				addr_in6->sin6_addr.s6_addr[14],
+				addr_in6->sin6_addr.s6_addr[15]);
+	else
+	{
+		string_assign_cstr(address_string, ip6addr_ntoa((const ip6_addr_t *)&addr_in6->sin6_addr));
+		string_tolower(address_string);
+	}
+
+	string_format(dst, "[address: %s, port %u]",
+			string_cstr(address_string),
+			addr_in6->sin6_port);
 }
 
 void util_mac_addr_to_string(string_t dst, const uint8_t mac[6], bool invert)
