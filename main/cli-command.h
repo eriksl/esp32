@@ -98,7 +98,6 @@ void string_command_info(cli_command_call_t *call);
 void wlan_command_client_config(cli_command_call_t *call);
 void wlan_command_info(cli_command_call_t *call);
 void wlan_command_ip_info(cli_command_call_t *call);
-void wlan_command_ipv6_slaac(cli_command_call_t *call);
 void wlan_command_ipv6_static(cli_command_call_t *call);
 
 void command_display_brightness(cli_command_call_t *call);
