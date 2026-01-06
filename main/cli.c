@@ -14,6 +14,7 @@
 #include "cli-command.h"
 #include "alias.h"
 #include "i2c.h"
+#include "udp.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
@@ -593,6 +594,10 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
+	{ "udp-info", "ui", "show information about udp", net_udp_command_info,
+		{}
+	},
+
 	{ "wlan-client-config", "wcc", "set wireless ssid and password in client mode", wlan_command_client_config,
 		{	2,
 			{
@@ -1096,7 +1101,7 @@ static void run_send_queue(void *)
 
 			case(cli_source_wlan_udp):
 			{
-				wlan_udp_send(&cli_buffer);
+				net_udp_send(&cli_buffer);
 				break;
 			}
 

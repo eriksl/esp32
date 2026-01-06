@@ -27,6 +27,7 @@ idf_component_register(
 		"script.cpp"
 		"string.c"
 		"sensor.c"
+		"udp.cpp"
 		"util.c"
 		"wlan.c"
 	INCLUDE_DIRS

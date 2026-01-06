@@ -26,7 +26,6 @@ enum
 	packet_size = 4096,
 	packet_overhead = 128,
 	tcp_mtu = 1200,
-	udp_mtu = packet_size + packet_overhead,
 };
 
 typedef enum
@@ -55,7 +54,6 @@ static unsigned int state_time;
 static TimerHandle_t state_timer;
 static TimerHandle_t tcp_defragmentation_timer;
 static int tcp_socket_fd = -1;
-static int udp_socket_fd = -1;
 
 static unsigned int tcp_send_bytes;
 static unsigned int tcp_send_segments;
@@ -68,16 +66,6 @@ static unsigned int tcp_receive_accepts;
 static unsigned int tcp_receive_accept_errors;
 static unsigned int tcp_receive_errors;
 static unsigned int tcp_receive_defragmentation_timeouts;
-
-static unsigned int udp_send_bytes;
-static unsigned int udp_send_packets;
-static unsigned int udp_send_errors;
-static unsigned int udp_send_no_connection;
-static unsigned int udp_receive_bytes;
-static unsigned int udp_receive_packets;
-static unsigned int udp_receive_errors;
-static unsigned int udp_receive_incomplete_packets;
-static unsigned int udp_receive_invalid_packets;
 
 static bool static_ipv6_address_set;
 static esp_ip6_addr_t static_ipv6_address;
@@ -580,113 +568,6 @@ void wlan_tcp_send(const cli_buffer_t *src)
 	}
 }
 
-static void run_udp(void *)
-{
-	string_t udp_receive_buffer;
-	int rv;
-	struct sockaddr_in6 si6_addr;
-	unsigned int si6_addr_length;
-	int length;
-	cli_buffer_t cli_buffer;
-
-	assert(inited);
-	_Static_assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr));
-	_Static_assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr_in));
-	_Static_assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr_in6));
-
-	udp_receive_buffer = string_new(packet_size + packet_overhead);
-	assert(udp_receive_buffer);
-
-	udp_socket_fd = socket(AF_INET6, SOCK_DGRAM, 0);
-	assert(udp_socket_fd >= 0);
-
-	memset(&si6_addr, 0, sizeof(si6_addr));
-	si6_addr.sin6_family = AF_INET6;
-	si6_addr.sin6_port = htons(24);
-
-	rv = bind(udp_socket_fd, (const struct sockaddr *)&si6_addr, sizeof(si6_addr));
-	assert(rv == 0);
-
-	for(;;)
-	{
-		si6_addr_length = sizeof(si6_addr);
-
-		string_clear(udp_receive_buffer);
-		length = string_recvfrom_fd(udp_receive_buffer, udp_socket_fd, &si6_addr_length, &si6_addr);
-
-		util_memcpy(&cli_buffer.ip.address.sin6_addr, &si6_addr, si6_addr_length);
-		cli_buffer.ip.address.sin6_length = si6_addr_length;
-
-		if(length == 0)
-		{
-			udp_receive_errors++;
-			log("udp: zero packet received");
-			util_sleep(100);
-			continue;
-		}
-
-		if(length < 0)
-		{
-			udp_receive_errors++;
-			util_sleep(100);
-			continue;
-		}
-
-		udp_receive_bytes += length;
-
-		if(!packet_complete(udp_receive_buffer))
-		{
-			udp_receive_incomplete_packets++;
-			continue;
-		}
-
-		if(!packet_valid(udp_receive_buffer))
-		{
-			udp_receive_invalid_packets++;
-			continue;
-		}
-
-		udp_receive_packets++;
-
-		cli_buffer.source = cli_source_wlan_udp;
-		cli_buffer.packetised = 1;
-		cli_buffer.mtu = udp_mtu;
-		cli_buffer.data = string_new(string_length(udp_receive_buffer));
-		string_assign_string(cli_buffer.data, udp_receive_buffer);
-
-		cli_receive_queue_push(&cli_buffer);
-	}
-
-	close(udp_socket_fd);
-	udp_socket_fd = -1;
-
-	string_free(&udp_receive_buffer);
-}
-
-void wlan_udp_send(const cli_buffer_t *src)
-{
-	int sent;
-
-	assert(inited);
-
-	if(udp_socket_fd < 0)
-	{
-		udp_send_no_connection++;
-		return;
-	}
-
-	sent = sendto(udp_socket_fd, string_data(src->data), string_length(src->data), 0, (const struct sockaddr *)&src->ip.address.sin6_addr, src->ip.address.sin6_length);
-
-	if(sent <= 0)
-	{
-		udp_send_errors++;
-		return;
-	}
-
-	udp_send_packets++;
-	udp_send_bytes += sent;
-}
-
 void wlan_command_client_config(cli_command_call_t *call)
 {
 	string_auto(value, 64);
@@ -857,9 +738,6 @@ void wlan_init(void)
 	if(xTaskCreatePinnedToCore(run_tcp, "wlan-tcp", 3 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
         util_abort("wlan: xTaskCreatePinnedToNode run_tcp");
 
-	if(xTaskCreatePinnedToCore(run_udp, "wlan-udp", 3 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
-        util_abort("wlan: xTaskCreatePinnedToNode run_udp");
-
 	xTimerStart(state_timer, portMAX_DELAY);
 }
 
@@ -882,17 +760,6 @@ void wlan_command_ip_info(cli_command_call_t *call)
 	string_format_append(call->result, "\n- receive errors: %u", tcp_receive_errors);
 	string_format_append(call->result, "\n- accepted connections: %u", tcp_receive_accepts);
 	string_format_append(call->result, "\n- accept errors: %u", tcp_receive_accept_errors);
-	string_append_cstr(call->result, "\nudp sending");
-	string_format_append(call->result, "\n- sent bytes %u", udp_send_bytes);
-	string_format_append(call->result, "\n- sent packets: %u", udp_send_packets);
-	string_format_append(call->result, "\n- send errors: %u", udp_send_errors);
-	string_format_append(call->result, "\n- disconnected socket events: %u", udp_send_no_connection);
-	string_append_cstr(call->result, "\nudp receiving");
-	string_format_append(call->result, "\n- received bytes: %u", udp_receive_bytes);
-	string_format_append(call->result, "\n- received packets: %u", udp_receive_packets);
-	string_format_append(call->result, "\n- received incomplete packets: %u", udp_receive_incomplete_packets);
-	string_format_append(call->result, "\n- received invalid packets: %u", udp_receive_invalid_packets);
-	string_format_append(call->result, "\n- receive errors: %u", udp_receive_errors);
 }
 
 void wlan_command_info(cli_command_call_t *call)

@@ -32,6 +32,8 @@ extern "C"
 __attribute__((noreturn)) void app_main(void);
 }
 
+#include "udp.h"
+
 void app_main(void)
 {
 	try
@@ -54,6 +56,7 @@ void app_main(void)
 		cli_init();
 		bt_init();
 		wlan_init();
+		net_udp_init();
 		perftest_init();
 		console_init_2();
 		display_init();
