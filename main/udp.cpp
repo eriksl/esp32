@@ -15,28 +15,60 @@ extern "C" {
 
 #include <assert.h>
 
-enum
+class UDP;
+
+extern "C"
 {
-	packet_size = 4096, // FIXME
-	packet_overhead = 128, // FIXME
-	udp_mtu = packet_size + packet_overhead,
+	static void run(UDP *);
+}
+
+class UDP
+{
+	public:
+
+		enum
+		{
+			packet_size = 4096, // FIXME
+			packet_overhead = 128, // FIXME
+			udp_mtu = packet_size + packet_overhead,
+		};
+
+		int socket_fd;
+
+		unsigned int send_bytes;
+		unsigned int send_packets;
+		unsigned int send_errors;
+		unsigned int send_no_connection;
+		unsigned int receive_bytes;
+		unsigned int receive_packets;
+		unsigned int receive_errors;
+		unsigned int receive_incomplete_packets;
+		unsigned int receive_invalid_packets;
+
+		UDP();
+
+		void send(const cli_buffer_t *src);
+		void command_info(cli_command_call_t *call);
 };
 
-static bool inited = false;
+UDP::UDP() :
+	socket_fd(-1),
+	send_bytes(0),
+	send_packets(0),
+	send_errors(0),
+	send_no_connection(0),
+	receive_bytes(0),
+	receive_packets(0),
+	receive_errors(0),
+	receive_incomplete_packets(0),
+	receive_invalid_packets(0)
+{
 
-static unsigned int udp_send_bytes;
-static unsigned int udp_send_packets;
-static unsigned int udp_send_errors;
-static unsigned int udp_send_no_connection;
-static unsigned int udp_receive_bytes;
-static unsigned int udp_receive_packets;
-static unsigned int udp_receive_errors;
-static unsigned int udp_receive_incomplete_packets;
-static unsigned int udp_receive_invalid_packets;
+	if(xTaskCreatePinnedToCore(reinterpret_cast<TaskFunction_t>(&run), "udp", 3 * 1024, static_cast<void *>(this), 1, (TaskHandle_t *)0, 1) != pdPASS)
+        util_abort("udp: xTaskCreatePinnedToCore");
+}
 
-static int udp_socket_fd = -1;
-
-static void run(void *)
+static void run(UDP *_this)
 {
 	string_t udp_receive_buffer;
 	int rv;
@@ -45,22 +77,21 @@ static void run(void *)
 	int length;
 	cli_buffer_t cli_buffer;
 
-	assert(inited);
 	static_assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr));
 	static_assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr_in));
 	static_assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr_in6));
 
-	udp_receive_buffer = string_new(udp_mtu);
+	udp_receive_buffer = string_new(UDP::udp_mtu);
 	assert(udp_receive_buffer);
 
-	udp_socket_fd = socket(AF_INET6, SOCK_DGRAM, 0);
-	assert(udp_socket_fd >= 0);
+	_this->socket_fd = socket(AF_INET6, SOCK_DGRAM, 0);
+	assert(_this->socket_fd >= 0);
 
 	memset(&si6_addr, 0, sizeof(si6_addr));
 	si6_addr.sin6_family = AF_INET6;
 	si6_addr.sin6_port = htons(24);
 
-	rv = bind(udp_socket_fd, (const struct sockaddr *)&si6_addr, sizeof(si6_addr));
+	rv = ::bind(_this->socket_fd, (const struct sockaddr *)&si6_addr, sizeof(si6_addr));
 	assert(rv == 0);
 
 	for(;;)
@@ -68,14 +99,14 @@ static void run(void *)
 		si6_addr_length = sizeof(si6_addr);
 
 		string_clear(udp_receive_buffer);
-		length = string_recvfrom_fd(udp_receive_buffer, udp_socket_fd, &si6_addr_length, &si6_addr);
+		length = string_recvfrom_fd(udp_receive_buffer, _this->socket_fd, &si6_addr_length, &si6_addr);
 
 		util_memcpy(&cli_buffer.ip.address.sin6_addr, &si6_addr, si6_addr_length);
 		cli_buffer.ip.address.sin6_length = si6_addr_length;
 
 		if(length == 0)
 		{
-			udp_receive_errors++;
+			_this->receive_errors++;
 			log("udp: zero packet received");
 			util_sleep(100);
 			continue;
@@ -83,91 +114,103 @@ static void run(void *)
 
 		if(length < 0)
 		{
-			udp_receive_errors++;
+			_this->receive_errors++;
 			util_sleep(100);
 			continue;
 		}
 
-		udp_receive_bytes += length;
+		_this->receive_bytes += length;
 
 		if(!packet_complete(udp_receive_buffer))
 		{
-			udp_receive_incomplete_packets++;
+			_this->receive_incomplete_packets++;
 			continue;
 		}
 
 		if(!packet_valid(udp_receive_buffer))
 		{
-			udp_receive_invalid_packets++;
+			_this->receive_invalid_packets++;
 			continue;
 		}
 
-		udp_receive_packets++;
+		_this->receive_packets++;
 
 		cli_buffer.source = cli_source_wlan_udp;
 		cli_buffer.packetised = 1;
-		cli_buffer.mtu = udp_mtu;
+		cli_buffer.mtu = UDP::udp_mtu;
 		cli_buffer.data = string_new(string_length(udp_receive_buffer));
 		string_assign_string(cli_buffer.data, udp_receive_buffer);
 
 		cli_receive_queue_push(&cli_buffer);
 	}
 
-	close(udp_socket_fd);
-	udp_socket_fd = -1;
+	close(_this->socket_fd);
+	_this->socket_fd = -1;
 
 	string_free(&udp_receive_buffer);
 }
 
-void net_udp_send(const cli_buffer_t *src)
+void UDP::send(const cli_buffer_t *src)
 {
 	int sent;
 
-	assert(inited);
-
-	if(udp_socket_fd < 0)
+	if(this->socket_fd < 0)
 	{
-		udp_send_no_connection++;
+		this->send_no_connection++;
 		return;
 	}
 
-	sent = sendto(udp_socket_fd, string_data(src->data), string_length(src->data), 0, (const struct sockaddr *)&src->ip.address.sin6_addr, src->ip.address.sin6_length);
+	sent = ::sendto(this->socket_fd, string_data(src->data), string_length(src->data), 0, (const struct sockaddr *)&src->ip.address.sin6_addr, src->ip.address.sin6_length);
 
 	if(sent <= 0)
 	{
-		udp_send_errors++;
+		this->send_errors++;
 		return;
 	}
 
-	udp_send_packets++;
-	udp_send_bytes += sent;
+	this->send_packets++;
+	this->send_bytes += sent;
 }
 
-void net_udp_init(void)
+void UDP::command_info(cli_command_call_t *call)
 {
-	assert(!inited);
-
-	if(xTaskCreatePinnedToCore(run, "udp", 3 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
-        util_abort("udp: xTaskCreatePinnedToCore");
-
-	inited = true;
-}
-
-void net_udp_command_info(cli_command_call_t *call)
-{
-	assert(inited);
 	assert(call->parameter_count == 0);
 
 	string_assign_cstr(call->result, "UDP INFO");
 	string_append_cstr(call->result, "\nsending");
-	string_format_append(call->result, "\n- sent bytes %u", udp_send_bytes);
-	string_format_append(call->result, "\n- sent packets: %u", udp_send_packets);
-	string_format_append(call->result, "\n- send errors: %u", udp_send_errors);
-	string_format_append(call->result, "\n- disconnected socket events: %u", udp_send_no_connection);
+	string_format_append(call->result, "\n- sent bytes %u", this->send_bytes);
+	string_format_append(call->result, "\n- sent packets: %u", this->send_packets);
+	string_format_append(call->result, "\n- send errors: %u", this->send_errors);
+	string_format_append(call->result, "\n- disconnected socket events: %u", this->send_no_connection);
 	string_append_cstr(call->result, "\nreceiving");
-	string_format_append(call->result, "\n- received bytes: %u", udp_receive_bytes);
-	string_format_append(call->result, "\n- received packets: %u", udp_receive_packets);
-	string_format_append(call->result, "\n- received incomplete packets: %u", udp_receive_incomplete_packets);
-	string_format_append(call->result, "\n- received invalid packets: %u", udp_receive_invalid_packets);
-	string_format_append(call->result, "\n- receive errors: %u", udp_receive_errors);
+	string_format_append(call->result, "\n- received bytes: %u", this->receive_bytes);
+	string_format_append(call->result, "\n- received packets: %u", this->receive_packets);
+	string_format_append(call->result, "\n- received incomplete packets: %u", this->receive_incomplete_packets);
+	string_format_append(call->result, "\n- received invalid packets: %u", this->receive_invalid_packets);
+	string_format_append(call->result, "\n- receive errors: %u", this->receive_errors);
+}
+
+static UDP *UDP_singleton = nullptr;
+
+void net_udp_init(void)
+{
+	assert(!UDP_singleton);
+
+	UDP_singleton = new UDP();
+
+	assert(UDP_singleton);
+}
+
+void net_udp_send(const cli_buffer_t *src)
+{
+	assert(UDP_singleton);
+
+	return(UDP_singleton->send(src));
+}
+
+void net_udp_command_info(cli_command_call_t *call)
+{
+	assert(UDP_singleton);
+
+	return(UDP_singleton->command_info(call));
 }
