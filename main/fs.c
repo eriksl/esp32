@@ -173,17 +173,15 @@ void fs_command_read(cli_command_call_t *call)
 	}
 
 	if(lseek(fd, call->parameters[1].unsigned_int, SEEK_SET) == -1)
+		length = 0;
+	else
 	{
-		string_assign_cstr(call->result, "ERROR: lseek failed");
-		close(fd);
-		return;
-	}
-
-	if((length = string_read_fd(call->result_oob, fd, call->parameters[0].unsigned_int)) < 0)
-	{
-		string_assign_cstr(call->result, "ERROR: read failed");
-		close(fd);
-		return;
+		if((length = string_read_fd(call->result_oob, fd, call->parameters[0].unsigned_int)) < 0)
+		{
+			string_assign_cstr(call->result, "ERROR: read failed");
+			close(fd);
+			return;
+		}
 	}
 
 	close(fd);
