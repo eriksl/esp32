@@ -287,3 +287,17 @@ void fs_command_checksum(cli_command_call_t *call)
 
 	string_format(call->result, "OK checksum: %s", string_cstr(hash_text));
 }
+
+void fs_command_truncate(cli_command_call_t *call)
+{
+	assert(call->parameter_count == 2);
+
+	if(truncate(string_cstr(call->parameters[0].string), call->parameters[1].unsigned_int))
+	{
+		string_assign_cstr(call->result, "ERROR: cannot truncate file: ");
+		string_append_cstr(call->result, strerror(errno));
+		return;
+	}
+
+	string_assign_cstr(call->result, "OK truncated");
+}

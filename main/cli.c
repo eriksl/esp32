@@ -356,6 +356,15 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
+	{ "fs-truncate", (const char*)0, "truncate a file", fs_command_truncate,
+		{	3,
+			{
+				{ cli_parameter_string,			0, 1, 1, 1, "file", .string = { 1, 64 }},
+				{ cli_parameter_unsigned_int,	0, 1, 0, 0, "length", {} },
+			}
+		}
+	},
+
 	{ "fs-write", (const char*)0, "write to a file on the filesystem", fs_command_write,
 		{	3,
 			{
