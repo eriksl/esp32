@@ -1,167 +1,60 @@
 diff --git a/components/esp_driver_i2c/i2c_master.c b/components/esp_driver_i2c/i2c_master.c
-index 562e6788a3..21efd585fb 100644
+index 162042c701..1c22f8a572 100644
 --- a/components/esp_driver_i2c/i2c_master.c
 +++ b/components/esp_driver_i2c/i2c_master.c
-@@ -155,11 +155,11 @@ static void s_i2c_err_log_print(i2c_master_event_t event, bool bypass_nack_log)
-     if (event == I2C_EVENT_TIMEOUT) {
-         ESP_LOGE(TAG, "I2C transaction timeout detected");
-     }
+@@ -153,14 +153,6 @@ static esp_err_t s_i2c_hw_fsm_reset(i2c_master_bus_handle_t i2c_master, bool cle
+ 
+ static void s_i2c_err_log_print(i2c_master_event_t event, bool bypass_nack_log)
+ {
+-    if (event == I2C_EVENT_TIMEOUT) {
+-        ESP_LOGE(TAG, "I2C transaction timeout detected");
+-    }
 -    if (bypass_nack_log != true) {
 -        if (event == I2C_EVENT_NACK) {
--            ESP_LOGE(TAG, "I2C transaction unexpected nack detected");
+-            ESP_LOGD(TAG, "I2C transaction unexpected nack detected");
 -        }
 -    }
-+//    if (bypass_nack_log != true) {
-+//        if (event == I2C_EVENT_NACK) {
-+//            ESP_LOGE(TAG, "I2C transaction unexpected nack detected");
-+//        }
-+//    }
  }
  
  //////////////////////////////////////I2C operation functions////////////////////////////////////////////
-@@ -942,13 +942,10 @@ static esp_err_t s_i2c_synchronous_transaction(i2c_master_dev_handle_t i2c_dev,
-     i2c_dev->master_bus->trans_finish = false;
-     i2c_dev->master_bus->queue_trans = false;
-     i2c_dev->master_bus->ack_check_disable = i2c_dev->ack_check_disable;
--    ESP_GOTO_ON_ERROR(s_i2c_transaction_start(i2c_dev, timeout_ms), err, TAG, "I2C transaction failed");
--    xSemaphoreGive(i2c_dev->master_bus->bus_lock_mux);
--    return ret;
-+    //ESP_GOTO_ON_ERROR(s_i2c_transaction_start(i2c_dev, timeout_ms), err, TAG, "I2C transaction failed");
-+	if((ret = s_i2c_transaction_start(i2c_dev, timeout_ms) != ESP_OK))
-+    	s_i2c_hw_fsm_reset(i2c_dev->master_bus, false);
+@@ -1041,9 +1033,6 @@ esp_err_t i2c_new_master_bus(const i2c_master_bus_config_t *bus_config, i2c_mast
+     i2c_master->base->sda_num = bus_config->sda_io_num;
+     i2c_master->base->pull_up_enable = bus_config->flags.enable_internal_pullup;
  
--err:
--    // When error occurs, reset hardware fsm in case not influence following transactions.
--    s_i2c_hw_fsm_reset(i2c_dev->master_bus, false);
-     xSemaphoreGive(i2c_dev->master_bus->bus_lock_mux);
-     return ret;
- }
-@@ -1397,12 +1394,14 @@ esp_err_t i2c_master_execute_defined_operations(i2c_master_dev_handle_t i2c_dev,
-         }
-     }
- 
--    if (i2c_dev->master_bus->async_trans == false) {
--        ESP_RETURN_ON_ERROR(s_i2c_synchronous_transaction(i2c_dev, i2c_ops, operation_list_num, xfer_timeout_ms), TAG, "I2C transaction failed");
--    } else {
--        ESP_RETURN_ON_ERROR(s_i2c_asynchronous_transaction(i2c_dev, i2c_ops, operation_list_num, xfer_timeout_ms), TAG, "I2C transaction failed");
+-    if (i2c_master->base->pull_up_enable == false) {
+-        ESP_LOGW(TAG, "Please check pull-up resistances whether be connected properly. Otherwise unexpected behavior would happen. For more detailed information, please read docs");
 -    }
--    return ESP_OK;
-+	esp_err_t esp_err;
-+
-+    if (i2c_dev->master_bus->async_trans == false)
-+        esp_err = (s_i2c_synchronous_transaction(i2c_dev, i2c_ops, operation_list_num, xfer_timeout_ms));
-+    else
-+        esp_err = (s_i2c_asynchronous_transaction(i2c_dev, i2c_ops, operation_list_num, xfer_timeout_ms));
-+
-+    return(esp_err);
- }
+     ESP_GOTO_ON_ERROR(i2c_param_master_config(i2c_master->base, bus_config), err, TAG, "i2c configure parameter failed");
  
- esp_err_t i2c_master_register_event_callbacks(i2c_master_dev_handle_t i2c_dev, const i2c_master_event_callbacks_t *cbs, void *user_data)
-diff --git a/components/ulp/ulp_riscv/include/ulp_riscv_i2c.h b/components/ulp/ulp_riscv/include/ulp_riscv_i2c.h
-index 503fa7b20c..70847a4ab4 100644
---- a/components/ulp/ulp_riscv/include/ulp_riscv_i2c.h
-+++ b/components/ulp/ulp_riscv/include/ulp_riscv_i2c.h
-@@ -115,7 +115,7 @@ void ulp_riscv_i2c_master_set_slave_reg_addr(uint8_t slave_reg_addr);
-  * @param data_rd       Buffer to hold data to be read
-  * @param size          Size of data to be read in bytes
-  */
--void ulp_riscv_i2c_master_read_from_device(uint8_t *data_rd, size_t size);
-+esp_err_t ulp_riscv_i2c_master_read_from_device(uint8_t *data_rd, size_t size);
- 
- /**
-  * @brief Write to I2C slave device
-@@ -125,7 +125,7 @@ void ulp_riscv_i2c_master_read_from_device(uint8_t *data_rd, size_t size);
-  * @param data_wr       Buffer which holds the data to be written
-  * @param size          Size of data to be written in bytes
-  */
--void ulp_riscv_i2c_master_write_to_device(uint8_t *data_wr, size_t size);
-+esp_err_t ulp_riscv_i2c_master_write_to_device(const uint8_t *data_wr, size_t size);
- 
- /**
-  * @brief Initialize and configure the RTC I2C for use by ULP RISC-V
+     if (!i2c_master->base->is_lp_i2c) {
 diff --git a/components/ulp/ulp_riscv/ulp_riscv_i2c.c b/components/ulp/ulp_riscv/ulp_riscv_i2c.c
-index 138d479642..26212ec111 100644
+index 12881ae57a..1c808070d4 100644
 --- a/components/ulp/ulp_riscv/ulp_riscv_i2c.c
 +++ b/components/ulp/ulp_riscv/ulp_riscv_i2c.c
-@@ -316,15 +316,15 @@ void ulp_riscv_i2c_master_set_slave_reg_addr(uint8_t slave_reg_addr)
-  * | Slave  |        |         |  ACK   |        |   ACK  |        |         |   ACK  |  DATA  |        |  DATA  |        |        |
-  * |--------|--------|---------|--------|--------|--------|--------|---------|--------|--------|--------|--------|--------|--------|
-  */
--void ulp_riscv_i2c_master_read_from_device(uint8_t *data_rd, size_t size)
-+esp_err_t ulp_riscv_i2c_master_read_from_device(uint8_t *data_rd, size_t size)
- {
-     uint32_t i = 0;
-     uint32_t cmd_idx = 0;
-     esp_err_t ret = ESP_OK;
-+	esp_err_t result = ESP_OK;
+@@ -389,12 +389,6 @@ esp_err_t ulp_riscv_i2c_master_read_from_device(uint8_t *data_rd, size_t size)
  
-     if (size == 0) {
--        // Quietly return
--        return;
-+        return(ESP_ERR_INVALID_ARG);
-     }
+     portEXIT_CRITICAL(&rtc_i2c_lock);
  
-     /* By default, RTC I2C controller is hard wired to use CMD2 register onwards for read operations */
-@@ -379,11 +379,9 @@ void ulp_riscv_i2c_master_read_from_device(uint8_t *data_rd, size_t size)
-             /* Clear the Rx data interrupt bit */
-             SET_PERI_REG_MASK(RTC_I2C_INT_CLR_REG, RTC_I2C_RX_DATA_INT_CLR);
-         } else {
--            ESP_EARLY_LOGE(RTCI2C_TAG, "ulp_riscv_i2c: Read Failed!");
-             uint32_t status = READ_PERI_REG(RTC_I2C_INT_RAW_REG);
--            ESP_EARLY_LOGE(RTCI2C_TAG, "ulp_riscv_i2c: RTC I2C Interrupt Raw Reg 0x%"PRIx32"", status);
--            ESP_EARLY_LOGE(RTCI2C_TAG, "ulp_riscv_i2c: RTC I2C Status Reg 0x%"PRIx32"", READ_PERI_REG(RTC_I2C_STATUS_REG));
-             SET_PERI_REG_MASK(RTC_I2C_INT_CLR_REG, status);
-+			result = ESP_ERR_INVALID_RESPONSE;
-             break;
-         }
-     }
-@@ -393,6 +391,8 @@ void ulp_riscv_i2c_master_read_from_device(uint8_t *data_rd, size_t size)
+-    if (ret != ESP_OK) {
+-        ESP_LOGE(RTCI2C_TAG, "ulp_riscv_i2c: Read Failed!");
+-        ESP_LOGE(RTCI2C_TAG, "ulp_riscv_i2c: RTC I2C Interrupt Raw Reg 0x%"PRIx32"", status);
+-        ESP_LOGE(RTCI2C_TAG, "ulp_riscv_i2c: RTC I2C Status Reg 0x%"PRIx32"", READ_PERI_REG(RTC_I2C_STATUS_REG));
+-    }
+-
      /* Clear the RTC I2C transmission bits */
      CLEAR_PERI_REG_MASK(SENS_SAR_I2C_CTRL_REG, SENS_SAR_I2C_START_FORCE);
      CLEAR_PERI_REG_MASK(SENS_SAR_I2C_CTRL_REG, SENS_SAR_I2C_START);
-+
-+	return(result);
- }
+@@ -472,13 +466,6 @@ esp_err_t ulp_riscv_i2c_master_write_to_device(const uint8_t *data_wr, size_t si
  
- /*
-@@ -412,15 +412,15 @@ void ulp_riscv_i2c_master_read_from_device(uint8_t *data_rd, size_t size)
-  * | Slave  |        |         |  ACK   |        |   ACK  |        |   ACK  |        |   ACK  |        |
-  * |--------|--------|---------|--------|--------|--------|--------|--------|--------|--------|--------|
-  */
--void ulp_riscv_i2c_master_write_to_device(uint8_t *data_wr, size_t size)
-+esp_err_t ulp_riscv_i2c_master_write_to_device(const uint8_t *data_wr, size_t size)
- {
-     uint32_t i = 0;
-     uint32_t cmd_idx = 0;
-     esp_err_t ret = ESP_OK;
-+	esp_err_t result = ESP_OK;
+     portEXIT_CRITICAL(&rtc_i2c_lock);
  
-     if (size == 0) {
--        // Quietly return
--        return;
-+        return(ESP_ERR_INVALID_ARG);
-     }
- 
-     /* By default, RTC I2C controller is hard wired to use CMD0 and CMD1 registers for write operations */
-@@ -455,11 +455,9 @@ void ulp_riscv_i2c_master_write_to_device(uint8_t *data_wr, size_t size)
-             /* Clear the Tx data interrupt bit */
-             SET_PERI_REG_MASK(RTC_I2C_INT_CLR_REG, RTC_I2C_TX_DATA_INT_CLR);
-         } else {
--            ESP_EARLY_LOGE(RTCI2C_TAG, "ulp_riscv_i2c: Write Failed!");
-             uint32_t status = READ_PERI_REG(RTC_I2C_INT_RAW_REG);
--            ESP_EARLY_LOGE(RTCI2C_TAG, "ulp_riscv_i2c: RTC I2C Interrupt Raw Reg 0x%"PRIx32"", status);
--            ESP_EARLY_LOGE(RTCI2C_TAG, "ulp_riscv_i2c: RTC I2C Status Reg 0x%"PRIx32"", READ_PERI_REG(RTC_I2C_STATUS_REG));
-             SET_PERI_REG_MASK(RTC_I2C_INT_CLR_REG, status);
-+			result = ESP_ERR_INVALID_RESPONSE;
-             break;
-         }
-     }
-@@ -469,6 +467,8 @@ void ulp_riscv_i2c_master_write_to_device(uint8_t *data_wr, size_t size)
+-    /* In case of error, print the status after critical section */
+-    if (ret != ESP_OK) {
+-        ESP_LOGE(RTCI2C_TAG, "ulp_riscv_i2c: Write Failed!");
+-        ESP_LOGE(RTCI2C_TAG, "ulp_riscv_i2c: RTC I2C Interrupt Raw Reg 0x%"PRIx32"", status);
+-        ESP_LOGE(RTCI2C_TAG, "ulp_riscv_i2c: RTC I2C Status Reg 0x%"PRIx32"", READ_PERI_REG(RTC_I2C_STATUS_REG));
+-    }
+-
      /* Clear the RTC I2C transmission bits */
      CLEAR_PERI_REG_MASK(SENS_SAR_I2C_CTRL_REG, SENS_SAR_I2C_START_FORCE);
      CLEAR_PERI_REG_MASK(SENS_SAR_I2C_CTRL_REG, SENS_SAR_I2C_START);
-+
-+	return(result);
- }
- 
- esp_err_t ulp_riscv_i2c_master_init(const ulp_riscv_i2c_cfg_t *cfg)
