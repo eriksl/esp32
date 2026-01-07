@@ -5,7 +5,8 @@
 #include <thread>
 #include <esp_pthread.h>
 
-extern "C" {
+extern "C"
+{
 #include "string.h"
 #include "cli.h"
 #include "log.h"
