@@ -8,7 +8,6 @@ extern "C"
 
 #include "string.h"
 #include "cli.h"
-#include "bt.h"
 #include "log.h"
 #include "console.h"
 #include "config.h"
@@ -34,6 +33,7 @@ __attribute__((noreturn)) void app_main(void);
 
 #include "udp.h"
 #include "tcp.h"
+#include "bt.h"
 
 void app_main(void)
 {

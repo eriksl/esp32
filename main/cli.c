@@ -1084,7 +1084,7 @@ static void run_send_queue(void *)
 		{
 			case(cli_source_bt):
 			{
-				bt_send(&cli_buffer);
+				net_bt_send(&cli_buffer);
 				break;
 			}
 

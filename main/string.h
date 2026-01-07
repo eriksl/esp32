@@ -11,7 +11,7 @@ typedef struct string_opaque_t *string_t;
 typedef const struct string_opaque_t *const_string_t;
 
 #define string_auto(_name, _length) \
-	string_t _name = __builtin_alloca_with_align(string_header_length + /* terminator */ 1 + _length, 8 * sizeof(int)); \
+	string_t _name = (string_t)__builtin_alloca_with_align(string_header_length + /* terminator */ 1 + _length, 8 * sizeof(int)); \
 	_string_auto(_name, _length)
 
 #define string_auto_init(_name, _string) \

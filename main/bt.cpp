@@ -4,16 +4,17 @@
 
 #include <esp_log.h>
 
+extern "C"
+{
 #include "string.h"
 #include "cli.h"
-#include "bt.h"
 #include "log.h"
 #include "util.h"
 #include "packet.h"
 #include "config.h"
-#include "bt_pair_pin.h"
 #include "cli-command.h"
 #include "packet_header.h"
+}
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -27,13 +28,16 @@
 #include <services/gatt/ble_svc_gatt.h>
 #include <esp_timer.h>
 
-void ble_store_config_init(void);
+#include "bt_pair_pin.h"
+#include "bt.h"
+
+extern "C" void ble_store_config_init(void);
 
 enum
 {
-	SERVICE_HANDLE = 0xabf0,
-	CHARACTERISTICS_HANDLE = 0xabf1,
-	KEY_HANDLE = 0xabf2,
+	service_handle = 0xabf0,
+	characteristics_handle = 0xabf1,
+	key_handle = 0xabf2,
 	bt_mtu = 512,
 	bt_max_chunk = bt_mtu + sizeof(packet_header_t) + 8 /* HCI metadata */,
 	max_packet_size = 4096 + sizeof(packet_header_t) + 128,
@@ -70,35 +74,6 @@ static unsigned int bt_stats_received_packets;
 static unsigned int bt_stats_received_raw_packets;
 static unsigned int bt_stats_received_packetised_packets;
 static unsigned int bt_stats_received_defragmentation_timeouts;
-
-static const struct ble_gatt_svc_def gatt_definitions[] =
-{
-	{
-		.type = BLE_GATT_SVC_TYPE_PRIMARY,
-		.uuid = BLE_UUID16_DECLARE(SERVICE_HANDLE),
-		.characteristics = (struct ble_gatt_chr_def[])
-		{
-			{
-				.uuid = BLE_UUID16_DECLARE(CHARACTERISTICS_HANDLE),
-				.access_cb = gatt_value_event,
-				.val_handle = &value_attribute_handle,
-				.flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY,
-			},
-			{
-				.uuid = BLE_UUID16_DECLARE(KEY_HANDLE),
-				.access_cb = gatt_key_event,
-				.val_handle = &key_attribute_handle,
-				.flags = BLE_GATT_CHR_F_WRITE,
-			},
-			{
-				0,
-			}
-		},
-	},
-	{
-		0,
-	},
-};
 
 static void nimble_port_task(void *param)
 {
@@ -186,14 +161,68 @@ static int gatt_key_event(uint16_t connection_handle, uint16_t attribute_handle,
 
 static int gatt_init(void)
 {
+	static constexpr ble_uuid_t uuid16 = { .type = BLE_UUID_TYPE_16, };
+	static struct ble_gatt_svc_def gatt_svc_definitions[2];
+	static struct ble_gatt_chr_def gatt_chr_definitions[3];
+	ble_gatt_svc_def *gatt_svc_definition;
+	ble_gatt_chr_def *gatt_chr_definition;
 	int rc = 0;
+
+	static const ble_uuid16_t uuid_service_handle =
+	{
+		.u = uuid16,
+		.value = service_handle,
+	};
+
+	static const ble_uuid16_t uuid_characteristics_handle =
+	{
+		.u = uuid16,
+		.value = characteristics_handle,
+	};
+
+	static const ble_uuid16_t uuid_key_handle =
+	{
+		.u = uuid16,
+		.value = key_handle,
+	};
+
 	ble_svc_gap_init();
 	ble_svc_gatt_init();
 
-	if((rc = ble_gatts_count_cfg(gatt_definitions)) != 0)
+	gatt_svc_definition = &gatt_svc_definitions[0];
+	gatt_svc_definition->type = BLE_GATT_SVC_TYPE_PRIMARY;
+	gatt_svc_definition->uuid = reinterpret_cast<const ble_uuid_t *>(&uuid_service_handle);
+	gatt_svc_definition->includes = nullptr;
+	gatt_svc_definition->characteristics = gatt_chr_definitions;
+
+	gatt_svc_definition = &gatt_svc_definitions[1];
+	gatt_svc_definition->type = 0;
+	gatt_svc_definition->uuid = nullptr;
+	gatt_svc_definition->includes = nullptr;
+	gatt_svc_definition->characteristics = nullptr;
+
+	gatt_chr_definition = &gatt_chr_definitions[0];
+	gatt_chr_definition->uuid = reinterpret_cast<const ble_uuid_t *>(&uuid_characteristics_handle);
+	gatt_chr_definition->access_cb = gatt_value_event,
+	gatt_chr_definition->val_handle = &value_attribute_handle,
+	gatt_chr_definition->flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY,
+
+	gatt_chr_definition = &gatt_chr_definitions[1];
+	gatt_chr_definition->uuid = reinterpret_cast<const ble_uuid_t *>(&uuid_key_handle);
+	gatt_chr_definition->access_cb = gatt_key_event,
+	gatt_chr_definition->val_handle = &key_attribute_handle,
+	gatt_chr_definition->flags = BLE_GATT_CHR_F_WRITE;
+
+	gatt_chr_definition = &gatt_chr_definitions[2];
+	gatt_chr_definition->uuid = nullptr;
+	gatt_chr_definition->access_cb = nullptr;
+	gatt_chr_definition->val_handle = nullptr;
+	gatt_chr_definition->flags = 0;
+
+	if((rc = ble_gatts_count_cfg(gatt_svc_definitions)) != 0)
 		return(rc);
 
-	if((rc = ble_gatts_add_svcs(gatt_definitions)) != 0)
+	if((rc = ble_gatts_add_svcs(gatt_svc_definitions)) != 0)
 		return rc;
 
 	return(0);
@@ -210,7 +239,7 @@ static void server_advertise(void)
 
 	fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
 
-	fields.uuids16 = (ble_uuid16_t[]) { BLE_UUID16_INIT(SERVICE_HANDLE) };
+	fields.uuids16 = (ble_uuid16_t[]) { BLE_UUID16_INIT(service_handle) };
 	fields.num_uuids16 = 1;
 	fields.uuids16_is_complete = 1;
 
@@ -301,7 +330,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
 			 if(event->passkey.params.action == BLE_SM_IOACT_DISP)
 			 {
-				struct ble_sm_io pkey = {0};
+				struct ble_sm_io pkey;
 
 				pkey.action = BLE_SM_IOACT_DISP;
 				pkey.passkey = bt_pair_pin;
@@ -454,7 +483,7 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 	}
 }
 
-void bt_send(const cli_buffer_t *cli_buffer)
+void net_bt_send(const cli_buffer_t *cli_buffer)
 {
 	struct os_mbuf *txom;
 	int offset, chunk_length, rv, attempt;
