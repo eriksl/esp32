@@ -33,6 +33,7 @@ __attribute__((noreturn)) void app_main(void);
 }
 
 #include "udp.h"
+#include "tcp.h"
 
 void app_main(void)
 {
@@ -57,6 +58,7 @@ void app_main(void)
 		bt_init();
 		wlan_init();
 		net_udp_init();
+		net_tcp_init();
 		perftest_init();
 		console_init_2();
 		display_init();

@@ -15,6 +15,7 @@
 #include "alias.h"
 #include "i2c.h"
 #include "udp.h"
+#include "tcp.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
@@ -594,6 +595,10 @@ static const cli_command_t cli_commands[] =
 		{}
 	},
 
+	{ "tcp", "ti", "show information about tcp", net_tcp_command_info,
+		{}
+	},
+
 	{ "udp-info", "ui", "show information about udp", net_udp_command_info,
 		{}
 	},
@@ -608,10 +613,6 @@ static const cli_command_t cli_commands[] =
 	},
 
 	{ "wlan-info", "wi", "show information about wlan", wlan_command_info,
-		{}
-	},
-
-	{ "wlan-ip-info", "wii", "show information about tcp/udp over wlan", wlan_command_ip_info,
 		{}
 	},
 
@@ -1095,7 +1096,7 @@ static void run_send_queue(void *)
 
 			case(cli_source_wlan_tcp):
 			{
-				wlan_tcp_send(&cli_buffer);
+				net_tcp_send(&cli_buffer);
 				break;
 			}
 

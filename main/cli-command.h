@@ -98,7 +98,6 @@ void string_command_info(cli_command_call_t *call);
 
 void wlan_command_client_config(cli_command_call_t *call);
 void wlan_command_info(cli_command_call_t *call);
-void wlan_command_ip_info(cli_command_call_t *call);
 void wlan_command_ipv6_static(cli_command_call_t *call);
 
 void command_display_brightness(cli_command_call_t *call);
@@ -138,3 +137,5 @@ void command_process_list(cli_command_call_t *call);
 void command_process_kill(cli_command_call_t *call);
 
 void net_udp_command_info(cli_command_call_t *call);
+
+void net_tcp_command_info(cli_command_call_t *call);
