@@ -29,7 +29,6 @@ enum
 };
 
 static int tcp_socket_fd = -1;
-static TimerHandle_t tcp_defragmentation_timer;
 
 static unsigned int tcp_send_bytes;
 static unsigned int tcp_send_segments;
@@ -41,25 +40,11 @@ static unsigned int tcp_receive_packets;
 static unsigned int tcp_receive_accepts;
 static unsigned int tcp_receive_accept_errors;
 static unsigned int tcp_receive_errors;
-static unsigned int tcp_receive_defragmentation_timeouts;
-
-static string_t tcp_receive_buffer;
-static bool tcp_defragmentation_incomplete;
-
-static void tcp_defragmentation_callback(TimerHandle_t handle)
-{
-	tcp_receive_defragmentation_timeouts++;
-	log("tcp: defragmentation timed out");
-
-	if(!tcp_defragmentation_incomplete)
-		log("tcp: defragmentation while not active");
-
-	tcp_defragmentation_incomplete = false;
-	string_clear(tcp_receive_buffer);
-}
+static unsigned int tcp_receive_incomplete_packets;
 
 static void run_tcp(void *)
 {
+	string_t tcp_receive_buffer;
 	int accept_fd, rv;
 	struct sockaddr_in6 si6_addr;
 	socklen_t si6_addr_length;
@@ -95,12 +80,7 @@ static void run_tcp(void *)
 			continue;
 		}
 
-		int option = 1;
-		rv = setsockopt(tcp_socket_fd, IPPROTO_TCP, TCP_NODELAY, &option, sizeof(option));
-		assert(rv == 0);
-
 		tcp_receive_accepts++;
-		tcp_defragmentation_incomplete = false;
 		string_clear(tcp_receive_buffer);
 
 		for(;;)
@@ -122,42 +102,23 @@ static void run_tcp(void *)
 
 			tcp_receive_bytes += length;
 
-			if(packet_valid(tcp_receive_buffer))
+			if(packet_valid(tcp_receive_buffer) && !packet_complete(tcp_receive_buffer))
 			{
-				if(packet_complete(tcp_receive_buffer))
-				{
-					tcp_defragmentation_incomplete = false;
-					xTimerStop(tcp_defragmentation_timer, portMAX_DELAY);
-					cli_buffer.packetised = 1;
-				}
-				else
-				{
-					if(!tcp_defragmentation_incomplete)
-					{
-						tcp_defragmentation_incomplete = true;
-						xTimerStart(tcp_defragmentation_timer, portMAX_DELAY);
-					}
-				}
-			}
-			else
-			{
-				tcp_defragmentation_incomplete = false;
-				cli_buffer.packetised = 0;
+				tcp_receive_incomplete_packets++;
+				continue;
 			}
 
-			if(!tcp_defragmentation_incomplete)
-			{
-				tcp_receive_packets++;
+			cli_buffer.packetised = !!packet_valid(tcp_receive_buffer);
 
-				cli_buffer.source = cli_source_wlan_tcp;
-				cli_buffer.mtu = tcp_mtu;
-				cli_buffer.data = string_new(string_length(tcp_receive_buffer));
-				string_assign_string(cli_buffer.data, tcp_receive_buffer);
-				string_clear(tcp_receive_buffer);
-				tcp_defragmentation_incomplete = false;
+			tcp_receive_packets++;
 
-				cli_receive_queue_push(&cli_buffer);
-			}
+			cli_buffer.source = cli_source_wlan_tcp;
+			cli_buffer.mtu = tcp_mtu;
+			cli_buffer.data = string_new(string_length(tcp_receive_buffer));
+			string_assign_string(cli_buffer.data, tcp_receive_buffer);
+			string_clear(tcp_receive_buffer);
+
+			cli_receive_queue_push(&cli_buffer);
 		}
 
 		close(tcp_socket_fd);
@@ -219,10 +180,6 @@ void net_tcp_send(const cli_buffer_t *src)
 
 void net_tcp_init(void)
 {
-	tcp_defragmentation_timer = xTimerCreate("tcp-defrag", pdMS_TO_TICKS(500), pdFALSE, (void *)0, tcp_defragmentation_callback);
-	assert(tcp_defragmentation_timer);
-	tcp_defragmentation_incomplete = false;
-
 	if(xTaskCreatePinnedToCore(run_tcp, "wlan-tcp", 3 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
         util_abort("wlan: xTaskCreatePinnedToNode run_tcp");
 }
@@ -241,7 +198,7 @@ void net_tcp_command_info(cli_command_call_t *call)
 	string_append_cstr(call->result, "\nreceiving");
 	string_format_append(call->result, "\n- received bytes: %u", tcp_receive_bytes);
 	string_format_append(call->result, "\n- received packets: %u", tcp_receive_packets);
-	string_format_append(call->result, "\n- received defragmentation timeouts: %u", tcp_receive_defragmentation_timeouts);
+	string_format_append(call->result, "\n- incomplete packets: %u", tcp_receive_incomplete_packets);
 	string_format_append(call->result, "\n- receive errors: %u", tcp_receive_errors);
 	string_format_append(call->result, "\n- accepted connections: %u", tcp_receive_accepts);
 	string_format_append(call->result, "\n- accept errors: %u", tcp_receive_accept_errors);
