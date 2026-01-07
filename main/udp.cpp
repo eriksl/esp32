@@ -1,6 +1,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <sys/socket.h>
+#include <assert.h>
+#include <thread>
+#include <esp_pthread.h>
 
 extern "C" {
 #include "string.h"
@@ -13,24 +16,13 @@ extern "C" {
 
 #include "udp.h"
 
-#include <assert.h>
-
-class UDP;
-
-extern "C"
-{
-	static void run(UDP *);
-}
-
 class UDP
 {
 	public:
 
 		enum
 		{
-			packet_size = 4096, // FIXME
-			packet_overhead = 128, // FIXME
-			udp_mtu = packet_size + packet_overhead,
+			mtu = 5 * 4096, // emperical derived from LWIP max UDP reassembly (~22k)
 		};
 
 		int socket_fd;
@@ -49,6 +41,8 @@ class UDP
 
 		void send(const cli_buffer_t *src);
 		void command_info(cli_command_call_t *call);
+		static __attribute__((noreturn)) void run_wrapper(void *);
+		__attribute__((noreturn)) void run();
 };
 
 UDP::UDP() :
@@ -63,14 +57,22 @@ UDP::UDP() :
 	receive_incomplete_packets(0),
 	receive_invalid_packets(0)
 {
+	esp_pthread_cfg_t thread_config = esp_pthread_get_default_config();
 
-	if(xTaskCreatePinnedToCore(reinterpret_cast<TaskFunction_t>(&run), "udp", 3 * 1024, static_cast<void *>(this), 1, (TaskHandle_t *)0, 1) != pdPASS)
-        util_abort("udp: xTaskCreatePinnedToCore");
+	thread_config.thread_name = "udp";
+	thread_config.pin_to_core = 1;
+	thread_config.stack_size = 3 * 1024;
+	thread_config.prio = 1;
+	esp_pthread_set_cfg(&thread_config);
+
+	std::thread new_thread(UDP::run_wrapper, this);
+
+	new_thread.detach();
 }
 
-static void run(UDP *_this)
+void UDP::run()
 {
-	string_t udp_receive_buffer;
+	string_t udp_receive_buffer; // FIXME convert to std::string when possible
 	int rv;
 	struct sockaddr_in6 si6_addr;
 	unsigned int si6_addr_length;
@@ -81,17 +83,17 @@ static void run(UDP *_this)
 	static_assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr_in));
 	static_assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr_in6));
 
-	udp_receive_buffer = string_new(UDP::udp_mtu);
+	udp_receive_buffer = string_new(this->mtu);
 	assert(udp_receive_buffer);
 
-	_this->socket_fd = socket(AF_INET6, SOCK_DGRAM, 0);
-	assert(_this->socket_fd >= 0);
+	this->socket_fd = socket(AF_INET6, SOCK_DGRAM, 0);
+	assert(this->socket_fd >= 0);
 
 	memset(&si6_addr, 0, sizeof(si6_addr));
 	si6_addr.sin6_family = AF_INET6;
 	si6_addr.sin6_port = htons(24);
 
-	rv = ::bind(_this->socket_fd, (const struct sockaddr *)&si6_addr, sizeof(si6_addr));
+	rv = ::bind(this->socket_fd, (const struct sockaddr *)&si6_addr, sizeof(si6_addr));
 	assert(rv == 0);
 
 	for(;;)
@@ -99,14 +101,14 @@ static void run(UDP *_this)
 		si6_addr_length = sizeof(si6_addr);
 
 		string_clear(udp_receive_buffer);
-		length = string_recvfrom_fd(udp_receive_buffer, _this->socket_fd, &si6_addr_length, &si6_addr);
+		length = string_recvfrom_fd(udp_receive_buffer, this->socket_fd, &si6_addr_length, &si6_addr);
 
 		util_memcpy(&cli_buffer.ip.address.sin6_addr, &si6_addr, si6_addr_length);
 		cli_buffer.ip.address.sin6_length = si6_addr_length;
 
 		if(length == 0)
 		{
-			_this->receive_errors++;
+			this->receive_errors++;
 			log("udp: zero packet received");
 			util_sleep(100);
 			continue;
@@ -114,40 +116,47 @@ static void run(UDP *_this)
 
 		if(length < 0)
 		{
-			_this->receive_errors++;
+			this->receive_errors++;
 			util_sleep(100);
 			continue;
 		}
 
-		_this->receive_bytes += length;
+		this->receive_bytes += length;
 
 		if(!packet_complete(udp_receive_buffer))
 		{
-			_this->receive_incomplete_packets++;
+			this->receive_incomplete_packets++;
 			continue;
 		}
 
 		if(!packet_valid(udp_receive_buffer))
 		{
-			_this->receive_invalid_packets++;
+			this->receive_invalid_packets++;
 			continue;
 		}
 
-		_this->receive_packets++;
+		this->receive_packets++;
 
 		cli_buffer.source = cli_source_wlan_udp;
 		cli_buffer.packetised = 1;
-		cli_buffer.mtu = UDP::udp_mtu;
+		cli_buffer.mtu = this->mtu;
 		cli_buffer.data = string_new(string_length(udp_receive_buffer));
 		string_assign_string(cli_buffer.data, udp_receive_buffer);
 
 		cli_receive_queue_push(&cli_buffer);
 	}
 
-	close(_this->socket_fd);
-	_this->socket_fd = -1;
+	close(this->socket_fd);
+	this->socket_fd = -1;
 
 	string_free(&udp_receive_buffer);
+}
+
+void UDP::run_wrapper(void *ptr)
+{
+	UDP *_this = static_cast<UDP *>(ptr);
+
+	_this->run();
 }
 
 void UDP::send(const cli_buffer_t *src)

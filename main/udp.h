@@ -9,4 +9,4 @@ void net_udp_send(const cli_buffer_t *cli_buffer);
 }
 #endif
 
-void net_udp_init(void); // CPP
+void net_udp_init(void); // C++
