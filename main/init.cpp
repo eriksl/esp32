@@ -1,13 +1,18 @@
-extern "C"
-{
 #include <stdint.h>
 #include <stdbool.h>
 
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-
+extern "C"
+{
 #include "string.h"
+}
+
+extern "C++"
+{
 #include "cli.h"
+}
+
+extern "C"
+{
 #include "log.h"
 #include "console.h"
 #include "config.h"
@@ -34,6 +39,9 @@ __attribute__((noreturn)) void app_main(void);
 #include "udp.h"
 #include "tcp.h"
 #include "bt.h"
+
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 void app_main(void)
 {

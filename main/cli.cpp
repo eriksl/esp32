@@ -2,18 +2,23 @@
 #include <stdbool.h>
 #include <errno.h>
 
+extern "C"
+{
+#include "string.h"
+#include "cli.h"
 #include "string.h"
 #include "config.h"
 #include "log.h"
 #include "util.h"
-#include "cli.h"
 #include "packet.h"
-#include "bt.h"
 #include "console.h"
 #include "wlan.h"
 #include "cli-command.h"
-#include "alias.h"
 #include "i2c.h"
+}
+
+#include "alias.h"
+#include "bt.h"
 #include "udp.h"
 #include "tcp.h"
 
@@ -181,37 +186,30 @@ static const cli_command_t cli_commands[] =
 	{ "alias", nullptr, "set alias", command_alias,
 		{	2,
 			{
-				{ cli_parameter_string, 0, 0, 0, 0, "alias", {} },
-				{ cli_parameter_string_raw, 0, 0, 0, 0, "substitution text", {} },
+				{ cli_parameter_string, 0, 0, 0, 0, "alias", {}},
+				{ cli_parameter_string_raw, 0, 0, 0, 0, "substitution text", {}},
 			},
 		},
 	},
 
-	{ "bt-info", "bi", "show information about bluetooth", bluetooth_command_info,
-		{}
-	},
-
-	{ "config-dump", "cd", "dump all nvs keys", config_command_dump,
-		{}
-	},
+	{ "bt-info", "bi", "show information about bluetooth", bluetooth_command_info, {}},
+	{ "config-dump", "cd", "dump all nvs keys", config_command_dump, {}},
 
 	{ "config-erase", "ce", "erase a config entry", config_command_erase,
 		{	1,
 			{
-				{ cli_parameter_string, 0, 1, 0, 0, "key", {} },
+				{ cli_parameter_string, 0, 1, 0, 0, "key", {}},
 			},
 		}
 	},
 
-	{ "config-info", "ci", "show information about the configuration", config_command_info,
-		{}
-	},
+	{ "config-info", "ci", "show information about the configuration", config_command_info, {}},
 
 	{ "config-set-int", "csi", "set a signed int config value", config_command_set_int,
 		{	2,
 			{
-				{ cli_parameter_string, 0, 1, 0, 0, "key", {} },
-				{ cli_parameter_signed_int, 0, 1, 0, 0, "value", {} },
+				{ cli_parameter_string, 0, 1, 0, 0, "key", {}},
+				{ cli_parameter_signed_int, 0, 1, 0, 0, "value", {}},
 			},
 		}
 	},
@@ -219,8 +217,8 @@ static const cli_command_t cli_commands[] =
 	{ "config-set-uint", "csu", "set an unsigned int config value", config_command_set_uint,
 		{	2,
 			{
-				{ cli_parameter_string, 0, 1, 0, 0, "key", {} },
-				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "value", {} },
+				{ cli_parameter_string, 0, 1, 0, 0, "key", {}},
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "value", {}},
 			},
 		}
 	},
@@ -228,56 +226,46 @@ static const cli_command_t cli_commands[] =
 	{ "config-set-string", "css", "set a string config value", config_command_set_string,
 		{	2,
 			{
-				{ cli_parameter_string, 0, 1, 0, 0, "key", {} },
-				{ cli_parameter_string, 0, 1, 0, 0, "value", {} },
+				{ cli_parameter_string, 0, 1, 0, 0, "key", {}},
+				{ cli_parameter_string, 0, 1, 0, 0, "value", {}},
 			},
 		}
 	},
 
-	{ "config-show", "cs", "show config", config_command_show,
-		{}
-	},
-
-	{ "console-info", "coni", "show information about the console", console_command_info,
-		{}
-	},
+	{ "config-show", "cs", "show config", config_command_show, {}},
+	{ "console-info", "coni", "show information about the console", console_command_info, {}},
 
 	{ "display-brightness", "db", "display brightness", command_display_brightness,
 		{	1,
 			{
-				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "brightness percentage", .unsigned_int = { 0, 100 }},
-			}
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "brightness percentage", { 0, 100 }},
+			},
 		}
 	},
 
 	{ "display-configure", "dc", "configure display", command_display_configure,
 		{	7,
 			{
-				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "display type", .unsigned_int = { 0, 2 }},
-				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "interface", .unsigned_int = { 0, 1 }},
-				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "x-size", .unsigned_int = { 16, 1024 }},
-				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "y-size", .unsigned_int = { 16, 1024 }},
-				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "flip", .unsigned_int = { 0, 1 }},
-				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "invert", .unsigned_int = { 0, 1 }},
-				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "rotate", .unsigned_int = { 0, 1 }},
+				cli_parameter_unsigned_int, 0, 0, 1, 1, "display type", { .unsigned_int = { 0, 2 }},
+				cli_parameter_unsigned_int, 0, 0, 1, 1, "interface", { .unsigned_int = { 0, 1 }},
+				cli_parameter_unsigned_int, 0, 0, 1, 1, "x-size", { .unsigned_int = { 16, 1024 }},
+				cli_parameter_unsigned_int, 0, 0, 1, 1, "y-size", { .unsigned_int = { 16, 1024 }},
+				cli_parameter_unsigned_int, 0, 0, 1, 1, "flip", { .unsigned_int = { 0, 1 }},
+				cli_parameter_unsigned_int, 0, 0, 1, 1, "invert", { .unsigned_int = { 0, 1 }},
+				cli_parameter_unsigned_int, 0, 0, 1, 1, "rotate", { .unsigned_int = { 0, 1 }},
 			}
 		}
 	},
 
-	{ "display-erase", "de", "erase display configuration", command_display_erase,
-		{},
-	},
-
-	{ "display-info", "di", "display information", command_display_info,
-		{},
-	},
+	{ "display-erase", "de", "erase display configuration", command_display_erase, {}},
+	{ "display-info", "di", "display information", command_display_info, {}},
 
 	{ "display-page-add-text", "dpat", "add text page to display", command_display_page_add_text,
 		{	3,
 			{
-				{ cli_parameter_string, 0, 1, 0, 0, "page name", {} },
-				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "timeout", {} },
-				{ cli_parameter_string_raw, 0, 1, 0, 0, "text", {} },
+				{ cli_parameter_string, 0, 1, 0, 0, "page name", {}},
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "timeout", {}},
+				{ cli_parameter_string_raw, 0, 1, 0, 0, "text", {}},
 			},
 		},
 	},
@@ -286,18 +274,17 @@ static const cli_command_t cli_commands[] =
 		{	4,
 			{
 				{ cli_parameter_string, 0, 1, 0, 0, "page name", {}},
-				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "timeout", {} },
-				{ cli_parameter_string, 0, 1, 0, 0, "filename", {} },
-				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "file length", {} },
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "timeout", {}},
+				{ cli_parameter_string, 0, 1, 0, 0, "filename", {}},
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "file length", {}},
 			},
 		},
 	},
 
 	{ "display-page-remove", "dpr", "remove page from display", command_display_page_remove,
-		{
-			1,
+		{	1,
 			{
-				{ cli_parameter_string, 0, 1, 0, 0, "page name", {} },
+				{ cli_parameter_string, 0, 1, 0, 0, "page name", {}},
 			},
 		}
 	},
@@ -305,9 +292,9 @@ static const cli_command_t cli_commands[] =
 	{ "fs-read", (const char*)0, "read chunk from a file", fs_command_read,
 		{	3,
 			{
-				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length", .unsigned_int = { 0, 4096 }},
-				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "offset", {} },
-				{ cli_parameter_string, 0, 1, 1, 1, "file", .string = { 1, 64 }},
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length",  { .unsigned_int = { 0, 4096 }}},
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "offset", {}},
+				{ cli_parameter_string, 0, 1, 1, 1, "file", { .string = { 1, 64 }}},
 			}
 		}
 	},
@@ -315,7 +302,7 @@ static const cli_command_t cli_commands[] =
 	{ "fs-checksum", (const char*)0, "checksum file on the littlefs filesystem", fs_command_checksum,
 		{	1,
 			{
-				{ cli_parameter_string, 0, 1, 1, 1, "file", .string = { 1, 64 }},
+				{ cli_parameter_string, 0, 1, 1, 1, "file", { .string = { 1, 64 }}},
 			}
 		}
 	},
@@ -323,7 +310,7 @@ static const cli_command_t cli_commands[] =
 	{ "fs-erase", (const char*)0, "erase file on the filesystem", fs_command_erase,
 		{	1,
 			{
-				{ cli_parameter_string, 0, 1, 1, 1, "file", .string = { 1, 64 }},
+				{ cli_parameter_string, 0, 1, 1, 1, "file", { .string = { 1, 64 }}},
 			}
 		}
 	},
@@ -331,20 +318,18 @@ static const cli_command_t cli_commands[] =
 	{ "fs-format", "fsf", "format the littlefs filesystem", fs_command_format,
 		{	1,
 			{
-				{ cli_parameter_string, 0, 1, 0, 0, "partition name of fs to format", {} },
+				{ cli_parameter_string, 0, 1, 0, 0, "partition name of fs to format", {}},
 			},
 		}
 	},
 
-	{ "fs-info", "fsi", "show info about the littlefs filesystem", fs_command_info,
-		{}
-	},
+	{ "fs-info", "fsi", "show info about the littlefs filesystem", fs_command_info, {}},
 
 	{ "fs-list", "ls", "show all files on the littlefs filesystem", fs_command_list,
 		{	2,
 			{
-				{ cli_parameter_string, 0, 1, 0, 0, "directory to list", {} },
-				{ cli_parameter_string, 0, 0, 0, 0, "option [-l]", {} },
+				{ cli_parameter_string, 0, 1, 0, 0, "directory to list", {}},
+				{ cli_parameter_string, 0, 0, 0, 0, "option [-l]", {}},
 			},
 		}
 	},
@@ -352,8 +337,8 @@ static const cli_command_t cli_commands[] =
 	{ "fs-rename", "mv", "rename file on the filesystem", fs_command_rename,
 		{	2,
 			{
-				{ cli_parameter_string, 0, 1, 1, 1, "from file", .string = { 1, 64 }},
-				{ cli_parameter_string, 0, 1, 1, 1, "to file", .string = { 1, 64 }},
+				{ cli_parameter_string, 0, 1, 1, 1, "from file", { .string = { 1, 64 }}},
+				{ cli_parameter_string, 0, 1, 1, 1, "to file", { .string = { 1, 64 }}},
 			}
 		}
 	},
@@ -361,8 +346,8 @@ static const cli_command_t cli_commands[] =
 	{ "fs-truncate", (const char*)0, "truncate a file", fs_command_truncate,
 		{	3,
 			{
-				{ cli_parameter_string,			0, 1, 1, 1, "file", .string = { 1, 64 }},
-				{ cli_parameter_unsigned_int,	0, 1, 0, 0, "length", {} },
+				{ cli_parameter_string,			0, 1, 1, 1, "file", { .string = { 1, 64 }}},
+				{ cli_parameter_unsigned_int,	0, 1, 0, 0, "length", {}},
 			}
 		}
 	},
@@ -370,9 +355,9 @@ static const cli_command_t cli_commands[] =
 	{ "fs-write", (const char*)0, "write to a file on the filesystem", fs_command_write,
 		{	3,
 			{
-				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "mode, 0 = truncate, 1 = append", .unsigned_int = { 0, 1 }},
-				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length", .unsigned_int = { 0, 4096 }},
-				{ cli_parameter_string, 0, 1, 1, 1, "file", .string = { 1, 64 }},
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "mode, 0 = truncate, 1 = append", { .unsigned_int = { 0, 1 }}},
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length", { .unsigned_int = { 0, 4096 }}},
+				{ cli_parameter_string, 0, 1, 1, 1, "file", { .string = { 1, 64 }}},
 			}
 		}
 	},
@@ -380,7 +365,7 @@ static const cli_command_t cli_commands[] =
 	{ "help", "?", "this help", command_help,
 		{	1,
 			{
-				{ cli_parameter_string, 0, 0, 0, 0, "command to show help about", {} },
+				{ cli_parameter_string, 0, 0, 0, 0, "command to show help about", {}},
 			},
 		}
 	},
@@ -388,68 +373,47 @@ static const cli_command_t cli_commands[] =
 	{ "hostname", (const char*)0, "set hostname and description", command_hostname,
 		{	2,
 			{
-				{ cli_parameter_string, 0, 0, 1, 1, "hostname", .string = { 0, 12 }},
-				{ cli_parameter_string, 0, 0, 1, 1, "description", .string = { 0, 32 }},
+				{ cli_parameter_string, 0, 0, 1, 1, "hostname", { .string = { 0, 12 }}},
+				{ cli_parameter_string, 0, 0, 1, 1, "description", { .string = { 0, 32 }}},
 			},
 		}
 	},
 
-	{ "i2c-info", "i2i", "info about the I2C interfaces", command_i2c_info,
-		{},
-	},
+	{ "i2c-info", "i2i", "info about the I2C interfaces", command_i2c_info, {}},
 
 	{ "i2c-speed", "i2s", "set speed of I2C interface", command_i2c_speed,
 		{	2,
 			{
-				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "module", .unsigned_int = { i2c_module_first, i2c_module_last }},
-				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "speed in kHz", .unsigned_int = { 0, 500 }},
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "module", { .unsigned_int = { i2c_module_first, i2c_module_last }}},
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "speed in kHz", { .unsigned_int = { 0, 500 }}},
 			},
 		}
 	},
 
-	{ "info", (const char *)0, "show some generic information", info_command_info,
-		{}
-	},
-
-	{ "info-board", "ib", "BSP info", info_command_info_board,
-		{}
-	},
-
-	{ "info-cli", "ic", "show information about the cli", command_info_cli,
-		{}
-	},
-
-	{ "info-partitions", "ip", "show information about partitions", info_command_info_partitions,
-		{}
-	},
-
-	{ "info-memory", "im", "show information about memory", info_command_info_memory,
-		{}
-	},
-
-	{ "io-dump", "iod", "dump everything known about found IOs", command_io_dump,
-		{}
-	},
+	{ "info", (const char *)0, "show some generic information", info_command_info, {}},
+	{ "info-board", "ib", "BSP info", info_command_info_board, {}},
+	{ "info-cli", "ic", "show information about the cli", command_info_cli, {}},
+	{ "info-partitions", "ip", "show information about partitions", info_command_info_partitions, {}},
+	{ "info-memory", "im", "show information about memory", info_command_info_memory, {}},
+	{ "io-dump", "iod", "dump everything known about found IOs", command_io_dump, {}},
 
 	{ "io-read", "ior", "read from I/O pin", command_io_read,
 		{	2,
 			{
-				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "I/O id", {} },
-				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "pin", {} },
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "I/O id", {}},
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "pin", {}},
 			},
 		}
 	},
 
-	{ "io-stats", "ios", "statistics about IOs", command_io_stats,
-		{}
-	},
+	{ "io-stats", "ios", "statistics about IOs", command_io_stats, {}},
 
 	{ "io-write", "iow", "write to I/O pin", command_io_write,
 		{	3,
 			{
-				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "I/O id", {} },
-				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "pin", {} },
-				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "value", {} },
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "I/O id", {}},
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "pin", {}},
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "value", {}},
 			},
 		}
 	},
@@ -457,67 +421,50 @@ static const cli_command_t cli_commands[] =
 	{ "ipv6-static", "ip6st", "set ipv6 static address", wlan_command_ipv6_static,
 		{	1,
 			{
-				{ cli_parameter_string, 0, 0, 1, 1, "address", .string = { 0, 64 }},
+				{ cli_parameter_string, 0, 0, 1, 1, "address", { .string = { 0, 64 }}},
 			},
 		}
 	},
 
-	{ "ledpixel-info", "lpxi", "info about LEDpixels channels", command_ledpixel_info,
-		{}
-	},
-
-	{ "ledpwm-info", "lpi", "info about LED PWM channels and timers", command_ledpwm_info,
-		{}
-	},
+	{ "ledpixel-info", "lpxi", "info about LEDpixels channels", command_ledpixel_info, {}},
+	{ "ledpwm-info", "lpi", "info about LED PWM channels and timers", command_ledpwm_info, {}},
 
 	{ "log", "l", "show log", log_command_log,
 		{	1,
 			{
-				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "start entry", { .unsigned_int = { 0, 128 }} },
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "start entry", { .unsigned_int = { 0, 128 }}},
 			},
 		}
 	},
 
-	{ "log-clear", "lc", "show log and clear it", log_command_log_clear,
-		{}
-	},
-
-	{ "log-info", "li", "show information about the log", log_command_info,
-		{}
-	},
+	{ "log-clear", "lc", "show log and clear it", log_command_log_clear, {}},
+	{ "log-info", "li", "show information about the log", log_command_info, {}},
 
 	{ "log-monitor", "lm", "enable/disable output log to console", log_command_log_monitor,
 		{	1,
 			{
-				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "activate", { .unsigned_int = { 0, 1 }} },
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "activate", { .unsigned_int = { 0, 1 }}},
 			},
 		},
 	},
 
-	{ "mcpwm-info", "mpi", "info about MCPWM channels and timers", command_mcpwm_info,
-		{}
-	},
+	{ "mcpwm-info", "mpi", "info about MCPWM channels and timers", command_mcpwm_info, {}},
 
 	{ "ota-commit", (const char*)0, "verify and select finished ota session", command_ota_commit,
 		{	1,
 			{
-				{ cli_parameter_string, 0, 1, 1, 1, "checksum", { .string = { 64, 64 }} },
+				{ cli_parameter_string, 0, 1, 1, 1, "checksum", { .string = { 64, 64 }}},
 			},
 		}
 	},
 
-	{ "ota-confirm", (const char*)0, "confirm ota image runs correctly", command_ota_confirm,
-		{}
-	},
-
-	{ "ota-finish", (const char*)0, "finish ota session", command_ota_finish,
-		{}
-	},
+	{ "ota-confirm", (const char*)0, "confirm ota image runs correctly", command_ota_confirm, {}},
+	{ "ota-finish", (const char*)0, "finish ota session", command_ota_finish, {}},
 
 	{ "ota-start", (const char*)0, "start ota session", command_ota_start,
 		{	1,
 			{
-				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "length", {} },
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "length", {}},
 			},
 		}
 	},
@@ -525,20 +472,18 @@ static const cli_command_t cli_commands[] =
 	{ "ota-write", (const char*)0, "write one sector of ota data", command_ota_write,
 		{	2,
 			{
-				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "length", {} },
-				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "checksum flag", .unsigned_int = { 0, 1 }},
+				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "length", {}},
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "checksum flag", { .unsigned_int = { 0, 1 }}},
 			},
 		}
 	},
 
-	{ "pdm-info", "pin", "info about pdm channels", command_pdm_info,
-		{}
-	},
+	{ "pdm-info", "pin", "info about pdm channels", command_pdm_info, {}},
 
 	{ "process-list", "ps", "show information about running processes", command_process_list,
 		{	1,
 			{
-				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "core id", .unsigned_int = { 0, 1 }},
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "core id", { .unsigned_int = { 0, 1 }}},
 			}
 		},
 	},
@@ -546,23 +491,21 @@ static const cli_command_t cli_commands[] =
 	{ "process-stop", "kill", "stop running process", command_process_kill,
 		{	1,
 			{
-				{ cli_parameter_string, 0, 1, 0, 0, "process", {} },
+				{ cli_parameter_string, 0, 1, 0, 0, "process", {}},
 			}
 		},
 	},
 
-	{ "reset", "r", "reset", command_reset,
-		{}
-	},
+	{ "reset", "r", "reset", command_reset, {}},
 
 	{ "run", nullptr, "run a script", command_run,
 		{	5,
 			{
-				{ cli_parameter_string, 0, 1, 0, 0, "script name", {} },
-				{ cli_parameter_string, 0, 0, 0, 0, "parameter 1", {} },
-				{ cli_parameter_string, 0, 0, 0, 0, "parameter 2", {} },
-				{ cli_parameter_string, 0, 0, 0, 0, "parameter 3", {} },
-				{ cli_parameter_string, 0, 0, 0, 0, "parameter 4", {} },
+				{ cli_parameter_string, 0, 1, 0, 0, "script name", {}},
+				{ cli_parameter_string, 0, 0, 0, 0, "parameter 1", {}},
+				{ cli_parameter_string, 0, 0, 0, 0, "parameter 2", {}},
+				{ cli_parameter_string, 0, 0, 0, 0, "parameter 3", {}},
+				{ cli_parameter_string, 0, 0, 0, 0, "parameter 4", {}},
 			},
 		},
 	},
@@ -570,7 +513,7 @@ static const cli_command_t cli_commands[] =
 	{ "sensor-dump", "sd", "dump registered sensors", command_sensor_dump,
 		{	1,
 			{
-				{ cli_parameter_unsigned_int, 0, 0, 1, 0, "sensor index to dump", .unsigned_int = { 0, 0 } },
+				{ cli_parameter_unsigned_int, 0, 0, 1, 0, "sensor index to dump", { .unsigned_int = { 0, 0 }}},
 			},
 		},
 	},
@@ -578,55 +521,36 @@ static const cli_command_t cli_commands[] =
 	{ "sensor-info", "si", "info about registered sensors", command_sensor_info,
 		{	1,
 			{
-				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "include disabled devices", .unsigned_int = { 0, 1 }},
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "include disabled devices", { .unsigned_int = { 0, 1 }}},
 			}
 		},
 	},
 
-	{ "sensor-json", "sj", "sensors values in json layout", command_sensor_json,
-		{},
-	},
-
-	{ "sensor-stats", "ss", "sensors statistics", command_sensor_stats,
-		{},
-	},
-
-	{ "string-info", "sti", "show information about all strings", string_command_info,
-		{}
-	},
-
-	{ "tcp", "ti", "show information about tcp", net_tcp_command_info,
-		{}
-	},
-
-	{ "udp-info", "ui", "show information about udp", net_udp_command_info,
-		{}
-	},
+	{ "sensor-json", "sj", "sensors values in json layout", command_sensor_json, {}},
+	{ "sensor-stats", "ss", "sensors statistics", command_sensor_stats, {}},
+	{ "string-info", "sti", "show information about all strings", string_command_info, {}},
+	{ "tcp", "ti", "show information about tcp", net_tcp_command_info, {}},
+	{ "udp-info", "ui", "show information about udp", net_udp_command_info, {}},
 
 	{ "wlan-client-config", "wcc", "set wireless ssid and password in client mode", wlan_command_client_config,
 		{	2,
 			{
-				{ cli_parameter_string, 0, 0, 1, 1, "ssid", .string = { 0, 63 }},
-				{ cli_parameter_string, 0, 0, 1, 1, "password", .string = { 0, 63 }},
+				{ cli_parameter_string, 0, 0, 1, 1, "ssid", { .string = { 0, 63 }}},
+				{ cli_parameter_string, 0, 0, 1, 1, "password", { .string = { 0, 63 }}},
 			},
 		}
 	},
 
-	{ "wlan-info", "wi", "show information about wlan", wlan_command_info,
-		{}
-	},
+	{ "wlan-info", "wi", "show information about wlan", wlan_command_info, {}},
 
 	{ "write", "w", "write to output", command_write,
 		{	1,
 			{
-				{ cli_parameter_string_raw, 0, 1, 0, 0, "text", {} },
+				{ cli_parameter_string_raw, 0, 1, 0, 0, "text", {}},
 			},
 		},
 	},
-
-	{ (const char *)0, (const char *)0, (const char *)0, (cli_command_function_t *)0,
-		{}
-	},
+	{ nullptr, nullptr, nullptr, nullptr, {} },
 };
 
 static void help(cli_command_call_t *call)
@@ -833,7 +757,7 @@ static void run_receive_queue(void *)
 					case(cli_parameter_none):
 					case(cli_parameter_size):
 					{
-						string_format(error, "ERROR: parameter with invalid type %u", parameter_description->type);
+						string_format(error, "ERROR: parameter with invalid type %d", parameter_description->type);
 						packet_encapsulate(&cli_buffer, error, (string_t)0);
 						send_queue_push(&cli_buffer);
 						goto error;
@@ -1119,7 +1043,7 @@ static void run_send_queue(void *)
 
 			default:
 			{
-				log_format("cli: invalid source type: %u", cli_buffer.source);
+				log_format("cli: invalid source type: %d", cli_buffer.source);
 				break;
 			}
 		}
@@ -1129,7 +1053,7 @@ static void run_send_queue(void *)
 		if(cli_buffer.source == cli_source_script)
 		{
 			assert(cli_buffer.script.task);
-			xTaskNotifyGive(cli_buffer.script.task);
+			xTaskNotifyGive(static_cast<TaskHandle_t>(cli_buffer.script.task));
 			cli_buffer.script.name[0] = '\0';
 			cli_buffer.script.task = nullptr;
 		}
@@ -1152,19 +1076,19 @@ void cli_init(void)
 {
 	assert(!inited);
 
-	cli_buffer_t *queue_data;
+	uint8_t *queue_data;
 	StaticQueue_t *queue;
 
-	queue_data = util_memory_alloc_spiram(receive_queue_size * sizeof(cli_buffer_t));
-	queue = util_memory_alloc_spiram(sizeof(StaticQueue_t));
+	queue_data = static_cast<uint8_t *>(util_memory_alloc_spiram(receive_queue_size * sizeof(cli_buffer_t)));
+	queue = static_cast<StaticQueue_t *>(util_memory_alloc_spiram(sizeof(StaticQueue_t)));
 
-	if(!(receive_queue_handle = xQueueCreateStatic(receive_queue_size, sizeof(cli_buffer_t), (void *)queue_data, queue)))
+	if(!(receive_queue_handle = xQueueCreateStatic(receive_queue_size, sizeof(cli_buffer_t), queue_data, queue)))
 		util_abort("cli: xQueueCreateStatic receive queue init");
 
-	queue_data = util_memory_alloc_spiram(send_queue_size * sizeof(cli_buffer_t));
-	queue = util_memory_alloc_spiram(sizeof(StaticQueue_t));
+	queue_data = static_cast<uint8_t *>(util_memory_alloc_spiram(send_queue_size * sizeof(cli_buffer_t)));
+	queue = static_cast<StaticQueue_t *>(util_memory_alloc_spiram(sizeof(StaticQueue_t)));
 
-	if(!(send_queue_handle = xQueueCreateStatic(send_queue_size, sizeof(cli_buffer_t), (void *)queue_data, queue)))
+	if(!(send_queue_handle = xQueueCreateStatic(send_queue_size, sizeof(cli_buffer_t), queue_data, queue)))
 		util_abort("cli: xQueueCreateStatic send queue init");
 
 	inited = true;

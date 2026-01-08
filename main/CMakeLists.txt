@@ -2,7 +2,7 @@ idf_component_register(
 	SRCS
 		"alias.cpp"
 		"bt.cpp"
-		"cli.c"
+		"cli.cpp"
 		"config.c"
 		"console.c"
 		"display.c"

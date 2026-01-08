@@ -55,5 +55,20 @@ typedef struct
 	unsigned int magic_number_tail;
 } cli_buffer_t;
 
-void cli_init(void);
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 void cli_receive_queue_push(cli_buffer_t *buffer);
+#ifdef __cplusplus
+}
+#endif
+
+#ifdef __cplusplus
+extern "C++"
+{
+#endif
+void cli_init(void);
+#ifdef __cplusplus
+}
+#endif
