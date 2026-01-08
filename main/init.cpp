@@ -14,7 +14,6 @@ extern "C++"
 extern "C"
 {
 #include "log.h"
-#include "console.h"
 #include "util.h"
 #include "fs.h"
 #include "wlan.h"
@@ -39,6 +38,7 @@ __attribute__((noreturn)) void app_main(void);
 #include "tcp.h"
 #include "bt.h"
 #include "config.h"
+#include "console.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>

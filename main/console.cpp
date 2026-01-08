@@ -3,13 +3,17 @@
 #include <errno.h>
 #include <string.h>
 
+extern "C"
+{
 #include "string.h"
 #include "cli.h"
-#include "console.h"
 #include "log.h"
 #include "config.h"
 #include "util.h"
 #include "cli-command.h"
+}
+
+#include "console.h"
 
 #include <freertos/FreeRTOS.h>
 #include <driver/usb_serial_jtag.h>
@@ -358,7 +362,7 @@ void console_init_1(void)
 
 	assert(!inited_1);
 
-	lines = util_memory_alloc_spiram(sizeof(lines_t));
+	lines = static_cast<lines_t *>(util_memory_alloc_spiram(sizeof(lines_t)));
 
 	lines->size = line_amount;
 	lines->current = 0;
