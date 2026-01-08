@@ -3,7 +3,7 @@ idf_component_register(
 		"alias.cpp"
 		"bt.cpp"
 		"cli.cpp"
-		"config.c"
+		"config.cpp"
 		"console.c"
 		"display.c"
 		"display-spi-generic.c"

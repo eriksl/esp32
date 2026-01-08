@@ -2,16 +2,20 @@
 #include <stdint.h>
 #include <string.h>
 
+extern "C"
+{
 #include "string.h"
-#include "config.h"
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
+}
 
 #include <freertos/FreeRTOS.h>
 #include <esp_err.h>
 #include <nvs.h>
 #include <nvs_flash.h>
+
+#include "config.h"
 
 static bool inited = false;
 
@@ -35,14 +39,14 @@ void config_init(void)
 	inited = true;
 }
 
-static bool find_key(const char *namespace, const string_t key, nvs_entry_info_t *info)
+static bool find_key(const char *name_space, const string_t key, nvs_entry_info_t *info)
 {
 	int rv;
 	nvs_iterator_t iterator;
 
 	iterator = (nvs_iterator_t)0;
 
-	if((rv = nvs_entry_find("nvs", namespace, NVS_TYPE_ANY, &iterator)) == ESP_ERR_NVS_NOT_FOUND)
+	if((rv = nvs_entry_find("nvs", name_space, NVS_TYPE_ANY, &iterator)) == ESP_ERR_NVS_NOT_FOUND)
 		return(false);
 
 	util_abort_on_esp_err("nvs_entry_find", rv);
@@ -66,7 +70,7 @@ error:
 	return(false);
 }
 
-static bool get_value_as_integer(const char *namespace, const string_t key, const nvs_entry_info_t *their_info, const char **type, int64_t *value)
+static bool get_value_as_integer(const char *name_space, const string_t key, const nvs_entry_info_t *their_info, const char **type, int64_t *value)
 {
 	esp_err_t rv;
 	nvs_entry_info_t info;
@@ -76,7 +80,7 @@ static bool get_value_as_integer(const char *namespace, const string_t key, cons
 		info = *their_info;
 	else
 	{
-		if(!find_key(namespace, key, &info) && !find_key((const char *)0, key, &info))
+		if(!find_key(name_space, key, &info) && !find_key((const char *)0, key, &info))
 		{
 			if(type)
 				*type = "not found";
@@ -84,7 +88,7 @@ static bool get_value_as_integer(const char *namespace, const string_t key, cons
 		}
 	}
 
-	util_abort_on_esp_err("nvs_open", nvs_open(namespace, NVS_READONLY, &handle));
+	util_abort_on_esp_err("nvs_open", nvs_open(name_space, NVS_READONLY, &handle));
 
 	switch(info.type)
 	{
@@ -215,7 +219,7 @@ static bool get_value_as_integer(const char *namespace, const string_t key, cons
 	return(true);
 }
 
-static bool get_value_as_string(const char *namespace, const string_t key, const nvs_entry_info_t *their_info, const char **type, string_t dst)
+static bool get_value_as_string(const char *name_space, const string_t key, const nvs_entry_info_t *their_info, const char **type, string_t dst)
 {
 	esp_err_t rv;
 	nvs_entry_info_t our_info;
@@ -224,14 +228,14 @@ static bool get_value_as_string(const char *namespace, const string_t key, const
 
 	assert(dst);
 
-	if(!namespace)
-		namespace = "config";
+	if(!name_space)
+		name_space = "config";
 
 	if(their_info)
 		info = their_info;
 	else
 	{
-		if(!find_key(namespace, key, &our_info) && !find_key((const char *)0, key, &our_info))
+		if(!find_key(name_space, key, &our_info) && !find_key((const char *)0, key, &our_info))
 		{
 			if(type)
 				*type = "not found";
@@ -241,7 +245,7 @@ static bool get_value_as_string(const char *namespace, const string_t key, const
 		info = &our_info;
 	}
 
-	util_abort_on_esp_err("nvs_open", nvs_open(namespace, NVS_READONLY, &handle));
+	util_abort_on_esp_err("nvs_open", nvs_open(name_space, NVS_READONLY, &handle));
 
 	switch(info->type)
 	{
@@ -556,7 +560,7 @@ bool config_erase_wildcard_cstr(const char *key)
 	return(config_erase_wildcard(key_string));
 }
 
-static void config_dump(cli_command_call_t *call, const char *namespace)
+static void config_dump(cli_command_call_t *call, const char *name_space)
 {
 	int rv;
 	nvs_iterator_t iterator;
@@ -567,9 +571,9 @@ static void config_dump(cli_command_call_t *call, const char *namespace)
 
 	assert(inited);
 
-	string_format(call->result, "SHOW CONFIG namespace %s", namespace ? namespace : "ALL");
+	string_format(call->result, "SHOW CONFIG namespace %s", name_space ? name_space : "ALL");
 
-	if((rv = nvs_entry_find("nvs", namespace, NVS_TYPE_ANY, &iterator)) == ESP_ERR_NVS_NOT_FOUND)
+	if((rv = nvs_entry_find("nvs", name_space, NVS_TYPE_ANY, &iterator)) == ESP_ERR_NVS_NOT_FOUND)
 		return;
 
 	util_abort_on_esp_err("nvs_entry_find", rv);
@@ -583,7 +587,7 @@ static void config_dump(cli_command_call_t *call, const char *namespace)
 		if(!get_value_as_string(info.namespace_name, key, &info, &type, dst))
 			string_assign_cstr(dst, "<not found>");
 
-		if(namespace)
+		if(name_space)
 			string_format_append(call->result, "\n- %-7s %-20s %s", type, string_cstr(key), string_cstr(dst));
 		else
 			string_format_append(call->result, "\n- %-12s %-7s %-20s %s", info.namespace_name, type, string_cstr(key), string_cstr(dst));

@@ -2,6 +2,11 @@
 
 void config_init(void);
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 bool config_get_uint(const string_t key, uint32_t *value);
 bool config_get_uint_cstr(const char *key, uint32_t *value);
 bool config_get_int(const string_t key, int32_t *value);
@@ -20,3 +25,7 @@ bool config_erase(const string_t key);
 bool config_erase_cstr(const char *key);
 bool config_erase_wildcard(const string_t key);
 bool config_erase_wildcard_cstr(const char *key);
+
+#ifdef __cplusplus
+}
+#endif
