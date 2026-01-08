@@ -6,7 +6,7 @@ idf_component_register(
 		"config.cpp"
 		"console.cpp"
 		"display.cpp"
-		"display-spi-generic.c"
+		"display-spi-generic.cpp"
 		"display-ra8875.cpp"
 		"fs.c"
         "i2c.c"

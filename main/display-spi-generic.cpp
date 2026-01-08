@@ -5,12 +5,16 @@
 #include <driver/spi_master.h>
 #include <driver/gpio.h>
 
+extern "C"
+{
 #include "string.h"
 #include "log.h"
 #include "util.h"
-#include "display-spi-generic.h"
 #include "ledpwm.h"
 #include "sdkconfig.h"
+}
+
+#include "display-spi-generic.h"
 
 enum
 {
@@ -39,13 +43,13 @@ enum
 
 typedef struct
 {
+	unsigned int esp_host;
 	unsigned int cs;
 	unsigned int sck;
 	unsigned int mosi;
 	unsigned int miso;
 	unsigned int dc;
 	ledpwm_t bl;
-	unsigned int esp_host;
 } spi_signal_t;
 
 typedef struct
@@ -168,7 +172,7 @@ static void send_command_data(bool send_cmd, unsigned int cmd, unsigned int leng
 
 static void send_command(unsigned int cmd)
 {
-	send_command_data(true, cmd, 0, 0);
+	send_command_data(true, cmd, 0, nullptr);
 }
 
 static void send_command_data_1(unsigned int cmd, unsigned int data)
@@ -500,7 +504,7 @@ static void pre_callback(spi_transaction_t *transaction)
 
 	const callback_data_t *callback_data = (const callback_data_t *)transaction->user;
 
-	gpio_set_level(callback_data->gpio, callback_data->level);
+	gpio_set_level(static_cast<gpio_num_t>(callback_data->gpio), callback_data->level);
 }
 
 bool display_spi_generic_init(const display_init_parameters_t *parameters)
@@ -567,13 +571,20 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 
 	spi_bus_config_t bus_config =
 	{
-		.sclk_io_num = spi_signal->sck,
-		.mosi_io_num = spi_signal->mosi,
-		.miso_io_num = spi_signal->miso,
+		.mosi_io_num = static_cast<int>(spi_signal->mosi),
+		.miso_io_num = static_cast<int>(spi_signal->miso),
+		.sclk_io_num = static_cast<int>(spi_signal->sck),
 		.quadwp_io_num = -1,
 		.quadhd_io_num = -1,
+		.data4_io_num = -1,
+		.data5_io_num = -1,
+		.data6_io_num = -1,
+		.data7_io_num = -1,
+		.data_io_default_level = false,
 		.max_transfer_sz = 0,
 		.flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_SCLK | SPICOMMON_BUSFLAG_MISO | SPICOMMON_BUSFLAG_MOSI,
+		.isr_cpu_id = static_cast<esp_intr_cpu_affinity_t>(1),
+		.intr_flags = 0,
 	};
 
 	spi_device_interface_config_t device =
@@ -588,7 +599,8 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 		.cs_ena_posttrans = 0,
 		.clock_speed_hz = 40000000,
 		.input_delay_ns = 0,
-		.spics_io_num = spi_signal->cs,
+		.sample_point = static_cast<spi_sampling_point_t>(0),
+		.spics_io_num = static_cast<int>(spi_signal->cs),
 		.flags = 0,
 		.queue_size = 1,
 		.pre_cb = pre_callback,
@@ -601,12 +613,12 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 
 	util_abort_on_esp_err("gpio_config", gpio_config(&gpio_pin_config));
 
-	util_abort_on_esp_err("spi_bus_initialize", spi_bus_initialize(spi_signal->esp_host, &bus_config, SPI_DMA_CH_AUTO));
-	util_abort_on_esp_err("spi_bus_add_device", spi_bus_add_device(spi_signal->esp_host, &device, &spi_device_handle));
+	util_abort_on_esp_err("spi_bus_initialize", spi_bus_initialize(static_cast<spi_host_device_t>(spi_signal->esp_host), &bus_config, SPI_DMA_CH_AUTO));
+	util_abort_on_esp_err("spi_bus_add_device", spi_bus_add_device(static_cast<spi_host_device_t>(spi_signal->esp_host), &device, &spi_device_handle));
 
-	util_abort_on_esp_err("spi_bus_get_max_transaction_len", spi_bus_get_max_transaction_len(spi_signal->esp_host, &max_transaction_length));
+	util_abort_on_esp_err("spi_bus_get_max_transaction_len", spi_bus_get_max_transaction_len(static_cast<spi_host_device_t>(spi_signal->esp_host), &max_transaction_length));
 	pixel_buffer_size = max_transaction_length;
-	pixel_buffer = util_memory_alloc_dma(pixel_buffer_size);
+	pixel_buffer = static_cast<uint8_t *>(util_memory_alloc_dma(pixel_buffer_size));
 	pixel_buffer_rgb = (display_rgb_t *)pixel_buffer;
 	pixel_buffer_rgb_size = pixel_buffer_size / sizeof(display_rgb_t);
 	pixel_buffer_rgb_length = 0;
