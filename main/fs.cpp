@@ -2,13 +2,17 @@
 #include <stdbool.h>
 #include <string.h> // for strerror
 
+extern "C"
+{
 #include "string.h"
-#include "fs.h"
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
 #include "info.h"
 #include "ramdisk.h"
+}
+
+#include "fs.h"
 
 #include <esp_littlefs.h>
 
@@ -29,9 +33,11 @@ void fs_init(void)
 	{
 		.base_path = "/littlefs",
 		.partition_label = "littlefs",
+		.partition = nullptr,
 		.format_if_mount_failed = true,
-		.dont_mount = false,
-		.grow_on_mount = true,
+		.read_only = 0,
+		.dont_mount = 0,
+		.grow_on_mount = 0,
 	};
 
 	assert(!inited);
@@ -43,7 +49,8 @@ void fs_init(void)
 
 void fs_command_info(cli_command_call_t *call)
 {
-	int total, used, avail, usedpct, fd;
+	size_t total, used, avail, usedpct;
+	int fd;
 
 	assert(inited);
 	assert(call->parameter_count == 0);
@@ -55,7 +62,7 @@ void fs_command_info(cli_command_call_t *call)
 	string_assign_cstr(call->result, "LITTLEFS");
 
 	if(esp_littlefs_mounted("littlefs"))
-		string_format_append(call->result, " mounted at /littlefs:\n- total size: %d kB\n- used: %d kB\n- available %d kB, %d%% used", total / 1024, used / 1024, avail / 1024, usedpct);
+		string_format_append(call->result, " mounted at /littlefs:\n- total size: %u kB\n- used: %u kB\n- available %u kB, %u%% used", total / 1024, used / 1024, avail / 1024, usedpct);
 	else
 		string_append_cstr(call->result, " not mounted");
 
@@ -68,7 +75,7 @@ void fs_command_info(cli_command_call_t *call)
 		avail = total - used;
 		usedpct = (100 * used) / total;
 
-		string_format_append(call->result, "\nRAMDISK mounted at /ramdisk:\n- total size: %d kB\n- used: %d kB\n- available %d kB, %d%% used", total / 1024, used / 1024, avail / 1024, usedpct);
+		string_format_append(call->result, "\nRAMDISK mounted at /ramdisk:\n- total size: %u kB\n- used: %u kB\n- available %u kB, %u%% used", total / 1024, used / 1024, avail / 1024, usedpct);
 	}
 }
 

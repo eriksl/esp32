@@ -8,7 +8,7 @@ idf_component_register(
 		"display.cpp"
 		"display-spi-generic.cpp"
 		"display-ra8875.cpp"
-		"fs.c"
+		"fs.cpp"
         "i2c.c"
 		"info.c"
 		"io.c"

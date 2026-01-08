@@ -15,7 +15,6 @@ extern "C"
 {
 #include "log.h"
 #include "util.h"
-#include "fs.h"
 #include "wlan.h"
 #include "info.h"
 #include "perftest.h"
@@ -39,6 +38,7 @@ __attribute__((noreturn)) void app_main(void);
 #include "config.h"
 #include "console.h"
 #include "display.h"
+#include "fs.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
