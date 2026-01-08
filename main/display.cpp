@@ -2,12 +2,16 @@
 #include <stdbool.h>
 #include <string.h>
 
+extern "C"
+{
 #include "string.h"
 #include "log.h"
 #include "util.h"
-#include "display.h"
 #include "config.h"
 #include "cli-command.h"
+}
+
+#include "display.h"
 
 #include <assert.h>
 #include <mbedtls/sha256.h>
@@ -178,14 +182,16 @@ static inline void page_data_mutex_give(void)
 
 static unsigned int utf8_to_unicode(const uint8_t *src, unsigned int dst_size, uint32_t *dst)
 {
-	enum
+	typedef enum
 	{
 		u8p_state_base = 0,
 		u8p_state_utf8_byte_3 = 1,
 		u8p_state_utf8_byte_2 = 2,
 		u8p_state_utf8_byte_1 = 3,
 		u8p_state_done = 4
-	} state;
+	} state_t;
+
+	state_t state;
 
 	unsigned int src_current;
 	unsigned int src_index;
@@ -241,12 +247,14 @@ static unsigned int utf8_to_unicode(const uint8_t *src, unsigned int dst_size, u
 				{
 					unicode = (unicode << 6) | (src_current & 0x3f);
 
-					if(++state != u8p_state_done)
+					state = static_cast<state_t>(state + 1);
+
+					if(state != u8p_state_done)
 						continue;
 				}
 				else
 				{
-					log_format("utf8 parser: invalid utf8, no prefix on following byte, state: %u: %x %c\n", state, src_current, (int)src_current);
+					log_format("utf8 parser: invalid utf8, no prefix on following byte, state: %u: %x %c\n", static_cast<unsigned int>(state), src_current, (int)src_current);
 					unicode = '*';
 				}
 
@@ -255,7 +263,7 @@ static unsigned int utf8_to_unicode(const uint8_t *src, unsigned int dst_size, u
 
 			default:
 			{
-				log_format("utf8 parser: invalid state %u\n", state);
+				log_format("utf8 parser: invalid state %u\n", static_cast<unsigned int>(state));
 				unicode = '*';
 			}
 		}
@@ -450,7 +458,7 @@ static bool load_font(const char *fontname)
 	}
 
 	if(!font)
-		font = util_memory_alloc_spiram(sizeof(font_t));
+		font = static_cast<font_t *>(util_memory_alloc_spiram(sizeof(font_t)));
 
 	if(read(fd, font, sizeof(*font)) != sizeof(*font))
 	{
@@ -651,6 +659,15 @@ static void __attribute__((noreturn)) run_display_info(void *)
 	static bool fastskip = false;
 	static struct stat statb;
 
+	static const png_color_16 default_background =
+	{
+		.index = 255,
+		.red = 0,
+		.green = 0,
+		.blue = 0,
+		.gray = 0,
+	};
+
 	current_layer = 0;
 	current_colour = dc_black;
 
@@ -709,7 +726,7 @@ static void __attribute__((noreturn)) run_display_info(void *)
 
 			assert(display_pages_ptr->type != dpt_unused);
 
-			current_colour = (current_page + dc_black + 1) % dc_size;
+			current_colour = static_cast<display_colour_t>((current_page + dc_black + 1) % dc_size);
 
 			if(current_colour == dc_white)
 				current_colour = dc_black;
@@ -867,16 +884,6 @@ static void __attribute__((noreturn)) run_display_info(void *)
 					png_set_sig_bytes(png_ptr, 8);
 					png_read_info(png_ptr, info_ptr);
 					png_get_IHDR(png_ptr, info_ptr, (png_uint_32 *)0, (png_uint_32 *)0, (int *)0, (int *)0, (int *)0, (int *)0, (int *)0);
-
-					png_color_16 default_background =
-					{
-						.index = 255,
-						.red = 0,
-						.green = 0,
-						.blue = 0,
-						.gray = 0,
-					};
-
 					png_set_background(png_ptr, &default_background, PNG_BACKGROUND_GAMMA_SCREEN, 0, 1);
 					colour_type = png_get_color_type(png_ptr, info_ptr);
 					bit_depth = png_get_bit_depth(png_ptr, info_ptr);
@@ -943,7 +950,7 @@ skip:
 
 				default:
 				{
-					log_format("display: unknown page type: %u", display_pages_ptr->type);
+					log_format("display: unknown page type: %u", static_cast<unsigned int>(display_pages_ptr->type));
 					break;
 				}
 			}
@@ -987,7 +994,7 @@ static void display_info(string_t output)
 
 	string_assign_cstr(output, "DISPLAY configuration:");
 
-	for(dv = dv_start, found = 0; dv < dv_size; dv++)
+	for(dv = dv_start, found = 0; dv < dv_size; dv = static_cast<dv_t>(dv + 1))
 	{
 		if(config_get_uint_cstr(display_variable[dv][1], &value))
 		{
@@ -1105,7 +1112,7 @@ void display_init(void)
 		return;
 	}
 
-	display_type = (display_type_t)type + dt_type_first;
+	display_type = static_cast<display_type_t>(type + dt_type_first);
 
 	if(config_get_uint_cstr(display_variable[dv_if][1], &value))
 		display_init_parameters.interface_index = (int)value;
@@ -1226,7 +1233,7 @@ void command_display_configure(cli_command_call_t *call)
 	{
 		string_assign_cstr(call->result, "display-configure: at least 4 parameters required:");
 
-		for(ix = dv_start; ix < dv_size; ix++)
+		for(ix = dv_start; ix < dv_size; ix = static_cast<dv_t>(ix + 1))
 			string_format_append(call->result, "\n- %u: %s", (unsigned int)ix + 1U, display_variable[ix][2]);
 
 		return;
@@ -1234,7 +1241,7 @@ void command_display_configure(cli_command_call_t *call)
 
 	config_erase_wildcard_cstr("display.");
 
-	for(ix = dv_start; (ix < dv_size) && (ix < call->parameter_count); ix++)
+	for(ix = dv_start; (ix < dv_size) && (ix < call->parameter_count); ix = static_cast<dv_t>(ix + 1))
 		config_set_uint_cstr(display_variable[ix][1], call->parameters[ix].unsigned_int);
 
 	display_info(call->result);

@@ -5,7 +5,7 @@ idf_component_register(
 		"cli.cpp"
 		"config.cpp"
 		"console.cpp"
-		"display.c"
+		"display.cpp"
 		"display-spi-generic.c"
 		"display-ra8875.cpp"
 		"fs.c"

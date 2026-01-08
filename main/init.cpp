@@ -21,7 +21,6 @@ extern "C"
 #include "perftest.h"
 #include "ramdisk.h"
 #include "notify.h"
-#include "display.h"
 #include "ledpwm.h"
 #include "mcpwm.h"
 #include "i2c.h"
@@ -39,6 +38,7 @@ __attribute__((noreturn)) void app_main(void);
 #include "bt.h"
 #include "config.h"
 #include "console.h"
+#include "display.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
