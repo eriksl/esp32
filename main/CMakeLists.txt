@@ -10,7 +10,7 @@ idf_component_register(
 		"display-ra8875.cpp"
 		"fs.cpp"
         "i2c.cpp"
-		"info.c"
+		"info.cpp"
 		"io.c"
 		"init.cpp"
 		"ledpixel.c"
