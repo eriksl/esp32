@@ -2,19 +2,23 @@
 #include <stdbool.h>
 #include <string.h>
 
-#include "i2c.h"
+extern "C"
+{
 #include "string.h"
 #include "info.h"
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
-#include "config.h"
+}
 
 #include <driver/i2c_master.h>
 #include <freertos/FreeRTOS.h>
 
 #include <ulp_riscv.h>
 #include <ulp_riscv_i2c.h>
+
+#include "config.h"
+#include "i2c.h"
 
 enum
 {
@@ -160,8 +164,8 @@ static inline void module_mutex_give(i2c_module_t module)
 	assert(xSemaphoreGive(module_mutex[module]));
 }
 
-_Static_assert(i2c_bus_none == 0);
-_Static_assert(i2c_bus_0 == 1);
+static_assert(i2c_bus_none == 0);
+static_assert(i2c_bus_0 == 1);
 
 static bool slave_check(slave_t *slave) // FIXME
 {
@@ -181,7 +185,7 @@ static bool slave_check(slave_t *slave) // FIXME
 
 	if(slave->module >= i2c_module_size)
 	{
-		log_format("i2c: check slave: module id in slave struct out of bounds: %u", (unsigned int)slave->module);
+		log_format("i2c: check slave: module id in slave struct out of bounds: %d", slave->module);
 		return(false);
 	}
 
@@ -198,37 +202,37 @@ static bool slave_check(slave_t *slave) // FIXME
 
 	if(slave->bus >= data->buses)
 	{
-		log_format("i2c: check slave: bus id in slave struct out of bounds: %u", (unsigned int)slave->bus);
+		log_format("i2c: check slave: bus id in slave struct out of bounds: %d", slave->bus);
 		return(false);
 	}
 
 	if(info->id >= i2c_module_size)
 	{
-		log_format("i2c: check slave: module id out of bounds: %u", (unsigned int)info->id);
+		log_format("i2c: check slave: module id out of bounds: %d", info->id);
 		return(false);
 	}
 
 	if(!(bus = data->bus[slave->bus]))
 	{
-		log_format("i2c: check slave: bus unknown %u", slave->bus);
+		log_format("i2c: check slave: bus unknown %d", slave->bus);
 		goto finish;
 	}
 
 	if(bus->id >= data->buses)
 	{
-		log_format("i2c: check slave: bus id out of bounds: %u", (unsigned int)bus->id);
+		log_format("i2c: check slave: bus id out of bounds: %d", bus->id);
 		return(false);
 	}
 
 	if(bus->id != slave->bus)
 	{
-		log_format("i2c: check slave: bus->bus %u != slave->bus %u", slave->bus, bus->id);
+		log_format("i2c: check slave: bus->bus %d != slave->bus %d", slave->bus, bus->id);
 		goto finish;
 	}
 
 	if(!bus->slaves)
 	{
-		log_format("i2c: check slave: no slaves on this bus: %u", slave->bus);
+		log_format("i2c: check slave: no slaves on this bus: %d", slave->bus);
 		goto finish;
 	}
 
@@ -622,8 +626,8 @@ void i2c_init(void)
 		[i2c_module_0] =
 		{
 			.i2c_port = 0,
-			.sda_io_num = CONFIG_BSP_I2C0_SDA,
-			.scl_io_num = CONFIG_BSP_I2C0_SCL,
+			.sda_io_num = static_cast<gpio_num_t>(CONFIG_BSP_I2C0_SDA),
+			.scl_io_num = static_cast<gpio_num_t>(CONFIG_BSP_I2C0_SCL),
 			.clk_source = I2C_CLK_SRC_DEFAULT,
 			.glitch_ignore_cnt = 7,
 			.intr_priority = 0,
@@ -631,13 +635,14 @@ void i2c_init(void)
 			.flags =
 			{
 				.enable_internal_pullup = 0,
+				.allow_pd = 0,
 			},
 		},
 		[i2c_module_1] =
 		{
 			.i2c_port = 1,
-			.sda_io_num = CONFIG_BSP_I2C1_SDA,
-			.scl_io_num = CONFIG_BSP_I2C1_SCL,
+			.sda_io_num = static_cast<gpio_num_t>(CONFIG_BSP_I2C1_SDA),
+			.scl_io_num = static_cast<gpio_num_t>(CONFIG_BSP_I2C1_SCL),
 			.clk_source = I2C_CLK_SRC_DEFAULT,
 			.glitch_ignore_cnt = 7,
 			.intr_priority = 0,
@@ -645,6 +650,7 @@ void i2c_init(void)
 			.flags =
 			{
 				.enable_internal_pullup = 0,
+				.allow_pd = 0,
 			},
 		},
 	};
@@ -664,16 +670,16 @@ void i2c_init(void)
 	data_mutex = xSemaphoreCreateMutex();
 	assert(data_mutex);
 
-	for(module = i2c_module_first; module < i2c_module_size; module++)
+	for(module = i2c_module_first; module < i2c_module_size; module = static_cast<i2c_module_t>(module + 1))
 	{
 		module_mutex[module] = xSemaphoreCreateMutex();
 		assert(module_mutex[module]);
 	}
 
-	module_data = util_memory_alloc_spiram(sizeof(*data) * i2c_module_size);
+	module_data = static_cast<module_data_t *>(util_memory_alloc_spiram(sizeof(*data) * i2c_module_size));
 	assert(module_data);
 
-	for(module = i2c_module_first; module < i2c_module_size; module++)
+	for(module = i2c_module_first; module < i2c_module_size; module = static_cast<i2c_module_t>(module + 1))
 	{
 		info = &module_info[module];
 
@@ -684,7 +690,7 @@ void i2c_init(void)
 
 		data = &module_data[module];
 
-		string_format(config_name, "i2c.%u.speed", module);
+		string_format(config_name, "i2c.%d.speed", module);
 
 		if(config_get_uint(config_name, &config_value))
 			data->speed_khz = config_value;
@@ -704,8 +710,8 @@ void i2c_init(void)
 				},
 				.i2c_timing_cfg =
 				{
-					.scl_high_period = 5.0f,
 					.scl_low_period = 5.0f,
+					.scl_high_period = 5.0f,
 					.sda_duty_period = 2.0f,
 					.scl_start_period = 3.0f,
 					.scl_stop_period = 6.0f,
@@ -724,8 +730,8 @@ void i2c_init(void)
 				},
 				.i2c_timing_cfg =
 				{
-					.scl_high_period = 0.5f,
 					.scl_low_period = 1.3f,
+					.scl_high_period = 0.5f,
 					.sda_duty_period = 1.0f,
 					.scl_start_period = 2.0f,
 					.scl_stop_period = 1.3f,
@@ -756,9 +762,12 @@ void i2c_init(void)
 			{
 				.dev_addr_length = I2C_ADDR_BIT_LEN_7,
 				.device_address = I2C_DEVICE_ADDRESS_NOT_USED,
-				.scl_wait_us = 0,
 				.scl_speed_hz = data->speed_khz * 1000,
-				.flags.disable_ack_check = 0,
+				.scl_wait_us = 0,
+				.flags =
+				{
+					.disable_ack_check = 0,
+				}
 			};
 
 			util_abort_on_esp_err("i2c new master bus", i2c_new_master_bus(&main_i2c_module_config[module], &data->bus_handle));
@@ -783,12 +792,12 @@ void i2c_init(void)
 		data->selected_bus = i2c_bus_invalid;
 		data->buses = data->has_mux ? i2c_bus_size : 1;
 
-		for(bus = i2c_bus_first; bus < i2c_bus_size; bus++)
+		for(bus = i2c_bus_first; bus < i2c_bus_size; bus = static_cast<i2c_bus_t>(bus + 1))
 			data->bus[bus] = nullptr;
 
-		for(bus = i2c_bus_first; bus < data->buses; bus++)
+		for(bus = i2c_bus_first; bus < data->buses; bus = static_cast<i2c_bus_t>(bus + 1))
 		{
-			bus_ptr = util_memory_alloc_spiram(sizeof(*bus_ptr));
+			bus_ptr = static_cast<bus_t *>(util_memory_alloc_spiram(sizeof(*bus_ptr)));
 			assert(bus_ptr);
 			bus_ptr->id = bus;
 			bus_ptr->slaves = nullptr;
@@ -823,7 +832,7 @@ i2c_slave_t i2c_register_slave(const char *name, i2c_module_t module, i2c_bus_t 
 	assert(bus < data->buses);
 	assert(info->available);
 
-	new_slave = util_memory_alloc_spiram(sizeof(*new_slave));
+	new_slave = static_cast<slave_t *>(util_memory_alloc_spiram(sizeof(*new_slave)));
 	new_slave->name = name;
 	new_slave->module = module;
 	new_slave->bus = bus;
@@ -832,7 +841,7 @@ i2c_slave_t i2c_register_slave(const char *name, i2c_module_t module, i2c_bus_t 
 
 	if(!(bus_ptr = data->bus[bus]))
 	{
-		log_format("i2c register slave: bus %u doesn't exist", bus);
+		log_format("i2c register slave: bus %d doesn't exist", bus);
 		goto error;
 	}
 
@@ -853,7 +862,7 @@ i2c_slave_t i2c_register_slave(const char *name, i2c_module_t module, i2c_bus_t 
 
 	if(!slave_check(new_slave))
 	{
-		log_format("failed to register slave %u/%u/%#x:%s", new_slave->module, new_slave->bus, new_slave->address, new_slave->name);
+		log_format("failed to register slave %d/%d/%#x:%s", new_slave->module, new_slave->bus, new_slave->address, new_slave->name);
 		i2c_unregister_slave((i2c_slave_t *)&new_slave);
 		goto finish;
 	}
@@ -896,19 +905,19 @@ bool i2c_unregister_slave(i2c_slave_t *slave)
 
 	if(!(bus = data->bus[(**_slave).bus]))
 	{
-		log_format("i2c unregister slave: bus unknown %u", (**_slave).bus);
+		log_format("i2c unregister slave: bus unknown %d", (**_slave).bus);
 		goto finish;
 	}
 
 	if(bus->id != (**_slave).bus)
 	{
-		log_format("i2c unregister slave: bus->bus %u != slave->bus %u", (**_slave).bus, bus->id);
+		log_format("i2c unregister slave: bus->bus %d != slave->bus %d", (**_slave).bus, bus->id);
 		goto finish;
 	}
 
 	if(!bus->slaves)
 	{
-		log_format("i2c: unregister slave: no slaves on this bus: %u", (**_slave).bus);
+		log_format("i2c: unregister slave: no slaves on this bus: %d", (**_slave).bus);
 		goto finish;
 	}
 
@@ -1142,7 +1151,7 @@ i2c_slave_t i2c_find_slave(i2c_module_t module, i2c_bus_t bus, unsigned int addr
 	data = &module_data[module];
 	assert(data);
 
-	for(bus_index = i2c_bus_first; bus_index < data->buses; bus_index++) // FIXME check
+	for(bus_index = i2c_bus_first; bus_index < data->buses; bus_index = static_cast<i2c_bus_t>(bus_index + 1)) // FIXME check
 	{
 		if(!(busptr = data->bus[bus_index]))
 			continue;
@@ -1209,7 +1218,7 @@ void command_i2c_info(cli_command_call_t *call)
 
 	string_format(call->result, "I2C info");
 
-	for(module_index = i2c_module_first; module_index < i2c_module_size; module_index++)
+	for(module_index = i2c_module_first; module_index < i2c_module_size; module_index = static_cast<i2c_module_t>(module_index + 1))
 	{
 		info = &module_info[module_index];
 
@@ -1217,22 +1226,22 @@ void command_i2c_info(cli_command_call_t *call)
 		{
 			data = &module_data[module_index];
 
-			string_format_append(call->result, "\n- module [%u]: \"%s\", sda: %u, scl: %u, speed: %u khz", info->id, info->name, info->sda, info->scl, data->speed_khz);
+			string_format_append(call->result, "\n- module [%d]: \"%s\", sda: %u, scl: %u, speed: %u khz", info->id, info->name, info->sda, info->scl, data->speed_khz);
 
-			for(bus_index = i2c_bus_first; bus_index < data->buses; bus_index++)
+			for(bus_index = i2c_bus_first; bus_index < data->buses; bus_index = static_cast<i2c_bus_t>(bus_index + 1))
 			{
 				if((bus = data->bus[bus_index]))
 				{
-					string_format_append(call->result, "\n-  i2c bus %u: %s", bus->id, bus_name[bus->id]);
+					string_format_append(call->result, "\n-  i2c bus %d: %s", bus->id, bus_name[bus->id]);
 
 					for(slave = bus->slaves; slave; slave = slave->next)
-						string_format_append(call->result, "\n-   slave [0x%x]: name: %s, module: %u, bus: %u",
+						string_format_append(call->result, "\n-   slave [0x%x]: name: %s, module: %d, bus: %d",
 								slave->address, slave->name, slave->module, slave->bus);
 				}
 			}
 		}
 		else
-			string_format_append(call->result, "\n- module [%u]: unavailable", info->id);
+			string_format_append(call->result, "\n- module [%d]: unavailable", info->id);
 	}
 
 	data_mutex_give();
@@ -1276,7 +1285,7 @@ void command_i2c_speed(cli_command_call_t *call)
 		data = &module_data[module_index];
 		data->speed_khz = config_value = speed;
 
-		string_format(config_name, "i2c.%u.speed", module_index);
+		string_format(config_name, "i2c.%d.speed", module_index);
 
 		config_set_uint(config_name, config_value);
 
@@ -1287,7 +1296,7 @@ void command_i2c_speed(cli_command_call_t *call)
 
 	string_format(call->result, "I2C speed");
 
-	for(module_index = i2c_module_first; module_index < i2c_module_size; module_index++)
+	for(module_index = i2c_module_first; module_index < i2c_module_size; module_index = static_cast<i2c_module_t>(module_index + 1))
 	{
 		info = &module_info[module_index];
 
@@ -1295,10 +1304,10 @@ void command_i2c_speed(cli_command_call_t *call)
 		{
 			data = &module_data[module_index];
 
-			string_format_append(call->result, "\n- module [%u]: \"%s\", speed: %u khz", info->id, info->name, data->speed_khz);
+			string_format_append(call->result, "\n- module [%d]: \"%s\", speed: %u khz", info->id, info->name, data->speed_khz);
 		}
 		else
-			string_format_append(call->result, "\n- module [%u]: unavailable", info->id);
+			string_format_append(call->result, "\n- module [%d]: unavailable", info->id);
 	}
 
 	data_mutex_give();

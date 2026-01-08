@@ -1,5 +1,10 @@
 #pragma once
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 typedef enum
 {
 	i2c_module_0 = 0,
@@ -34,7 +39,6 @@ struct i2c_opaque_t {} __attribute__((aligned(sizeof(int))));
 typedef struct i2c_opaque_t *i2c_slave_t;
 typedef const struct i2c_opaque_t *const_i2c_slave_t;
 
-void i2c_init(void);
 bool i2c_module_available(i2c_module_t module);
 unsigned int i2c_buses(i2c_module_t module);
 bool i2c_ulp(i2c_module_t module);
@@ -51,3 +55,8 @@ bool i2c_send_3(i2c_slave_t slave, unsigned int byte_1, unsigned int byte_2, uns
 bool i2c_receive(i2c_slave_t slave, unsigned int read_buffer_size, uint8_t *read_buffer);
 bool i2c_send_receive(i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t *send_buffer, unsigned int receive_buffer_size, uint8_t *receive_buffer);
 bool i2c_send_1_receive(i2c_slave_t slave, unsigned int byte, unsigned int receive_buffer_size, uint8_t *receive_buffer);
+#ifdef __cplusplus
+}
+#endif
+
+void i2c_init(void);

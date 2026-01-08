@@ -22,7 +22,6 @@ extern "C"
 #include "notify.h"
 #include "ledpwm.h"
 #include "mcpwm.h"
-#include "i2c.h"
 #include "sensor.h"
 #include "io.h"
 #include "pdm.h"
@@ -32,13 +31,15 @@ extern "C"
 __attribute__((noreturn)) void app_main(void);
 }
 
-#include "udp.h"
-#include "tcp.h"
 #include "bt.h"
 #include "config.h"
 #include "console.h"
 #include "display.h"
 #include "fs.h"
+#include "i2c.h"
+
+#include "tcp.h"
+#include "udp.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
