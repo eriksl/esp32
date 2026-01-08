@@ -1,9 +1,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "i2c.h"
+extern "C"
+{
 #include "string.h"
-#include "info.h"
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
@@ -11,7 +11,11 @@
 #include "ledpwm.h"
 #include "pdm.h"
 #include "ledpixel.h"
+}
+
 #include "io.h"
+#include "info.h"
+#include "i2c.h"
 
 #include <assert.h>
 #include <freertos/FreeRTOS.h>
@@ -43,10 +47,10 @@ typedef struct io_info_T
 {
 	io_id_t id;
 	const char *name;
-	io_bus_t bus;
 	io_capabilities_t caps;
 	unsigned int pins;
 	unsigned int max_value;
+	io_bus_t bus;
 	union
 	{
 		struct
@@ -57,7 +61,7 @@ typedef struct io_info_T
 		{
 			lp_t instance;
 		} ledpixel;
-	};
+	} instance;
 	void (*info_fn)(const struct io_data_T *data, string_t result);
 	bool (*detect_fn)(const struct io_info_T *info, unsigned int module, unsigned int bus, unsigned int address);
 	bool (*init_fn)(struct io_data_T *data);
@@ -113,11 +117,11 @@ enum
 	esp32_mcpwm_pin_size
 };
 
-_Static_assert((unsigned int)esp32_mcpwm_pin_size <= (unsigned int)io_int_value_size);
-_Static_assert((unsigned int)esp32_mcpwm_pin_0 == (unsigned int)mpt_16bit_150hz_0);
-_Static_assert((unsigned int)esp32_mcpwm_pin_1 == (unsigned int)mpt_16bit_150hz_1);
-_Static_assert((unsigned int)esp32_mcpwm_pin_2 == (unsigned int)mpt_16bit_2400hz_0);
-_Static_assert((unsigned int)esp32_mcpwm_pin_3 == (unsigned int)mpt_16bit_2400hz_1);
+static_assert((unsigned int)esp32_mcpwm_pin_size <= (unsigned int)io_int_value_size);
+static_assert((unsigned int)esp32_mcpwm_pin_0 == (unsigned int)mpt_16bit_150hz_0);
+static_assert((unsigned int)esp32_mcpwm_pin_1 == (unsigned int)mpt_16bit_150hz_1);
+static_assert((unsigned int)esp32_mcpwm_pin_2 == (unsigned int)mpt_16bit_2400hz_0);
+static_assert((unsigned int)esp32_mcpwm_pin_3 == (unsigned int)mpt_16bit_2400hz_1);
 
 static void esp32_mcpwm_info(const io_data_t *dataptr, string_t result)
 {
@@ -133,7 +137,7 @@ static bool esp32_mcpwm_init(io_data_t *dataptr)
 	assert(inited);
 	assert(dataptr);
 
-	for(handle = mpt_first; handle < mpt_size; handle++)
+	for(handle = mpt_first; handle < mpt_size; handle = static_cast<mcpwm_t>(handle + 1))
 		if((dataptr->int_value[handle] = mcpwm_open(handle, "I/O MC-PWM")))
 			rv = true;
 
@@ -165,7 +169,7 @@ static void esp32_mcpwm_pin_info(const io_data_t *dataptr, unsigned int pin, str
 	assert(pin < mpt_size);
 
 	if(dataptr->int_value[pin])
-		string_format_append(result, "MC-PWM channel %u duty: %u", pin, mcpwm_get(pin));
+		string_format_append(result, "MC-PWM channel %u duty: %u", pin, mcpwm_get(static_cast<mcpwm_t>(pin)));
 	else
 		string_append_cstr(result, "pin unvailable on this board");
 }
@@ -179,11 +183,11 @@ enum
 	esp32_ledpwm_pin_size
 };
 
-_Static_assert((unsigned int)esp32_ledpwm_pin_size <= (unsigned int)io_int_value_size);
-_Static_assert((unsigned int)esp32_ledpwm_pin_0 == (unsigned int)lpt_14bit_5khz_notify);
-_Static_assert((unsigned int)esp32_ledpwm_pin_1 == (unsigned int)lpt_14bit_5khz_lcd_spi_2);
-_Static_assert((unsigned int)esp32_ledpwm_pin_2 == (unsigned int)lpt_14bit_5khz_lcd_spi_3);
-_Static_assert((unsigned int)esp32_ledpwm_pin_3 == (unsigned int)lpt_14bit_120hz);
+static_assert((unsigned int)esp32_ledpwm_pin_size <= (unsigned int)io_int_value_size);
+static_assert((unsigned int)esp32_ledpwm_pin_0 == (unsigned int)lpt_14bit_5khz_notify);
+static_assert((unsigned int)esp32_ledpwm_pin_1 == (unsigned int)lpt_14bit_5khz_lcd_spi_2);
+static_assert((unsigned int)esp32_ledpwm_pin_2 == (unsigned int)lpt_14bit_5khz_lcd_spi_3);
+static_assert((unsigned int)esp32_ledpwm_pin_3 == (unsigned int)lpt_14bit_120hz);
 
 static void esp32_ledpwm_info(const io_data_t *dataptr, string_t result)
 {
@@ -199,7 +203,7 @@ static bool esp32_ledpwm_init(io_data_t *dataptr)
 	assert(inited);
 	assert(dataptr);
 
-	for(handle = lpt_first; handle < lpt_size; handle++)
+	for(handle = lpt_first; handle < lpt_size; handle = static_cast<ledpwm_t>(handle + 1))
 		if((dataptr->int_value[handle] = ledpwm_open(handle, "I/O LED-PWM")))
 			rv = true;
 
@@ -231,7 +235,7 @@ static void esp32_ledpwm_pin_info(const io_data_t *dataptr, unsigned int pin, st
 	assert(pin < lp_size);
 
 	if(dataptr->int_value[pin])
-		string_format_append(result, "LED-PWM channel %u duty: %u", pin, ledpwm_get(pin));
+		string_format_append(result, "LED-PWM channel %u duty: %u", pin, ledpwm_get(static_cast<ledpwm_t>(pin)));
 	else
 		string_append_cstr(result, "pin unvailable on this board");
 }
@@ -245,11 +249,11 @@ enum
 	esp32_pdm_pin_size
 };
 
-_Static_assert((unsigned int)esp32_pdm_pin_size <= (unsigned int)io_int_value_size);
-_Static_assert((unsigned int)esp32_pdm_pin_0 == pdm_8bit_150khz_0);
-_Static_assert((unsigned int)esp32_pdm_pin_1 == pdm_8bit_150khz_1);
-_Static_assert((unsigned int)esp32_pdm_pin_2 == pdm_8bit_150khz_2);
-_Static_assert((unsigned int)esp32_pdm_pin_3 == pdm_8bit_150khz_3);
+static_assert((unsigned int)esp32_pdm_pin_size <= (unsigned int)io_int_value_size);
+static_assert((unsigned int)esp32_pdm_pin_0 == pdm_8bit_150khz_0);
+static_assert((unsigned int)esp32_pdm_pin_1 == pdm_8bit_150khz_1);
+static_assert((unsigned int)esp32_pdm_pin_2 == pdm_8bit_150khz_2);
+static_assert((unsigned int)esp32_pdm_pin_3 == pdm_8bit_150khz_3);
 
 static void esp32_pdm_info(const io_data_t *dataptr, string_t result)
 {
@@ -265,7 +269,7 @@ static bool esp32_pdm_init(io_data_t *dataptr)
 	assert(inited);
 	assert(dataptr);
 
-	for(handle = pdm_first; handle < pdm_size; handle++)
+	for(handle = pdm_first; handle < pdm_size; handle = static_cast<pdm_t>(handle + 1))
 		if((dataptr->int_value[handle] = pdm_channel_open(handle, "I/O PDM")))
 			rv = true;
 
@@ -297,7 +301,7 @@ static void esp32_pdm_pin_info(const io_data_t *dataptr, unsigned int pin, strin
 	assert(pin < pdm_size);
 
 	if(dataptr->int_value[pin])
-		string_format_append(result, "PDM channel %u density: %u", pin, pdm_channel_get(pin));
+		string_format_append(result, "PDM channel %u density: %u", pin, pdm_channel_get(static_cast<pdm_t>(pin)));
 	else
 		string_append_cstr(result, "pin unvailable on this board");
 }
@@ -307,7 +311,7 @@ enum
 	esp32_ledpixel_int_value_open = 0,
 };
 
-_Static_assert((unsigned int)esp32_ledpixel_int_value_open < (unsigned int)io_int_value_size);
+static_assert((unsigned int)esp32_ledpixel_int_value_open < (unsigned int)io_int_value_size);
 
 static void esp32_ledpixel_info(const io_data_t *dataptr, string_t result)
 {
@@ -322,7 +326,7 @@ static bool esp32_ledpixel_init(io_data_t *dataptr)
 	assert(inited);
 	assert(dataptr);
 
-	rv = ledpixel_open(dataptr->info->ledpixel.instance, "I/O ledpixel");
+	rv = ledpixel_open(dataptr->info->instance.ledpixel.instance, "I/O ledpixel");
 
 	dataptr->int_value[esp32_ledpixel_int_value_open] = rv ? 1 : 0;
 
@@ -339,8 +343,8 @@ static bool esp32_ledpixel_write(io_data_t *dataptr, unsigned int pin, unsigned 
 	if(!dataptr->int_value[esp32_ledpixel_int_value_open])
 		return(false);
 
-	ledpixel_set(dataptr->info->ledpixel.instance, pin, (value & 0x00ff0000) >> 16, (value & 0x0000ff00) >> 8, (value & 0x000000ff) >> 0);
-	ledpixel_flush(dataptr->info->ledpixel.instance);
+	ledpixel_set(dataptr->info->instance.ledpixel.instance, pin, (value & 0x00ff0000) >> 16, (value & 0x0000ff00) >> 8, (value & 0x000000ff) >> 0);
+	ledpixel_flush(dataptr->info->instance.ledpixel.instance);
 
 	return(true);
 }
@@ -353,7 +357,7 @@ static void esp32_ledpixel_pin_info(const io_data_t *dataptr, unsigned int pin, 
 	assert(pin < dataptr->info->pins);
 
 	if(dataptr->int_value[esp32_ledpixel_int_value_open])
-		string_format_append(result, "LEDpixel instance %u", dataptr->info->ledpixel.instance);
+		string_format_append(result, "LEDpixel instance %d", dataptr->info->instance.ledpixel.instance);
 	else
 		string_append_cstr(result, "pin unvailable on this board");
 }
@@ -365,7 +369,7 @@ enum
 	pcf8574_int_value_size,
 };
 
-_Static_assert((unsigned int)pcf8574_int_value_size <= (unsigned int)io_int_value_size);
+static_assert((unsigned int)pcf8574_int_value_size <= (unsigned int)io_int_value_size);
 
 static void pcf8574_info(const io_data_t *dataptr, string_t result)
 {
@@ -378,7 +382,7 @@ static bool pcf8574_detect(const io_info_t *info, unsigned int module, unsigned 
 {
 	assert(inited);
 
-	return(i2c_probe_slave(module, bus, address));
+	return(i2c_probe_slave(static_cast<i2c_module_t>(module), static_cast<i2c_bus_t>(bus), address));
 }
 
 static bool pcf8574_init(io_data_t *dataptr)
@@ -447,14 +451,15 @@ static const io_info_t info[io_id_size] =
 	{
 		.id = io_id_esp32_mcpwm,
 		.name = "ESP32 MC-PWM 16 bits",
-		.caps = (1 << io_cap_output),
+		.caps = static_cast<io_capabilities_t>((1 << io_cap_output)),
 		.pins = esp32_mcpwm_pin_size,
 		.max_value = 65535,
 		.bus = io_bus_apb,
+		.instance = {},
 		.info_fn = esp32_mcpwm_info,
 		.detect_fn = nullptr,
 		.init_fn = esp32_mcpwm_init,
-		.read_fn = (void *)0,
+		.read_fn = nullptr,
 		.write_fn = esp32_mcpwm_write,
 		.pin_info_fn = esp32_mcpwm_pin_info,
 	},
@@ -462,14 +467,15 @@ static const io_info_t info[io_id_size] =
 	{
 		.id = io_id_esp32_ledpwm,
 		.name = "ESP32 LED-PWM 14 bits",
-		.caps = (1 << io_cap_output),
+		.caps = static_cast<io_capabilities_t>((1 << io_cap_output)),
 		.pins = esp32_ledpwm_pin_size,
 		.max_value = 16383,
 		.bus = io_bus_apb,
+		.instance = {},
 		.info_fn = esp32_ledpwm_info,
 		.detect_fn = nullptr,
 		.init_fn = esp32_ledpwm_init,
-		.read_fn = (void *)0,
+		.read_fn = nullptr,
 		.write_fn = esp32_ledpwm_write,
 		.pin_info_fn = esp32_ledpwm_pin_info,
 	},
@@ -477,14 +483,15 @@ static const io_info_t info[io_id_size] =
 	{
 		.id = io_id_esp32_pdm,
 		.name = "ESP32 PDM 8 bits",
-		.caps = (1 << io_cap_output),
+		.caps = static_cast<io_capabilities_t>((1 << io_cap_output)),
 		.pins = esp32_pdm_pin_size,
 		.max_value = 255,
 		.bus = io_bus_apb,
+		.instance = {},
 		.info_fn = esp32_pdm_info,
 		.detect_fn = nullptr,
 		.init_fn = esp32_pdm_init,
-		.read_fn = (void *)0,
+		.read_fn = nullptr,
 		.write_fn = esp32_pdm_write,
 		.pin_info_fn = esp32_pdm_pin_info,
 	},
@@ -492,15 +499,21 @@ static const io_info_t info[io_id_size] =
 	{
 		.id = io_id_esp32_ledpixel_0,
 		.name = "ESP32 LEDpixel 0",
-		.caps = (1 << io_cap_output),
+		.caps = static_cast<io_capabilities_t>((1 << io_cap_output)),
 		.pins = ledpixel_leds_size,
 		.max_value = 0x00ffffff,
 		.bus = io_bus_apb,
-		.ledpixel.instance = lp_0_notify,
+		.instance
+		{
+			.ledpixel =
+			{
+				.instance = lp_0_notify,
+			},
+		},
 		.info_fn = esp32_ledpixel_info,
 		.detect_fn = nullptr,
 		.init_fn = esp32_ledpixel_init,
-		.read_fn = (void *)0,
+		.read_fn = nullptr,
 		.write_fn = esp32_ledpixel_write,
 		.pin_info_fn = esp32_ledpixel_pin_info,
 	},
@@ -508,15 +521,21 @@ static const io_info_t info[io_id_size] =
 	{
 		.id = io_id_esp32_ledpixel_1,
 		.name = "ESP32 LEDpixel 1",
-		.caps = (1 << io_cap_output),
+		.caps = static_cast<io_capabilities_t>((1 << io_cap_output)),
 		.pins = ledpixel_leds_size,
 		.max_value = 0x00ffffff,
 		.bus = io_bus_apb,
-		.ledpixel.instance = lp_1,
+		.instance
+		{
+			.ledpixel
+			{
+				.instance = lp_1,
+			},
+		},
 		.info_fn = esp32_ledpixel_info,
 		.detect_fn = nullptr,
 		.init_fn = esp32_ledpixel_init,
-		.read_fn = (void *)0,
+		.read_fn = nullptr,
 		.write_fn = esp32_ledpixel_write,
 		.pin_info_fn = esp32_ledpixel_pin_info,
 	},
@@ -524,15 +543,21 @@ static const io_info_t info[io_id_size] =
 	{
 		.id = io_id_esp32_ledpixel_2,
 		.name = "ESP32 LEDpixel 2",
-		.caps = (1 << io_cap_output),
+		.caps = static_cast<io_capabilities_t>((1 << io_cap_output)),
 		.pins = ledpixel_leds_size,
 		.max_value = 0x00ffffff,
 		.bus = io_bus_apb,
-		.ledpixel.instance = lp_2,
+		.instance
+		{
+			.ledpixel
+			{
+				.instance = lp_2,
+			},
+		},
 		.info_fn = esp32_ledpixel_info,
 		.detect_fn = nullptr,
 		.init_fn = esp32_ledpixel_init,
-		.read_fn = (void *)0,
+		.read_fn = nullptr,
 		.write_fn = esp32_ledpixel_write,
 		.pin_info_fn = esp32_ledpixel_pin_info,
 	},
@@ -540,15 +565,21 @@ static const io_info_t info[io_id_size] =
 	{
 		.id = io_id_esp32_ledpixel_3,
 		.name = "ESP32 LEDpixel 3",
-		.caps = (1 << io_cap_output),
+		.caps = static_cast<io_capabilities_t>((1 << io_cap_output)),
 		.pins = ledpixel_leds_size,
 		.max_value = 0x00ffffff,
 		.bus = io_bus_apb,
-		.ledpixel.instance = lp_3,
+		.instance
+		{
+			.ledpixel
+			{
+				.instance = lp_3,
+			},
+		},
 		.info_fn = esp32_ledpixel_info,
 		.detect_fn = nullptr,
 		.init_fn = esp32_ledpixel_init,
-		.read_fn = (void *)0,
+		.read_fn = nullptr,
 		.write_fn = esp32_ledpixel_write,
 		.pin_info_fn = esp32_ledpixel_pin_info,
 	},
@@ -556,11 +587,17 @@ static const io_info_t info[io_id_size] =
 	{
 		.id = io_id_pcf8574_26,
 		.name = "PCF8574 8-bit I/O expander",
-		.caps = (1 << io_cap_input) | (1 << io_cap_output),
+		.caps = static_cast<io_capabilities_t>((1 << io_cap_input) | (1 << io_cap_output)),
 		.pins = 8,
 		.max_value = 1,
 		.bus = io_bus_i2c,
-		.i2c.address = 0x26,
+		.instance
+		{
+			.i2c
+			{
+				.address = 0x26,
+			},
+		},
 		.info_fn = pcf8574_info,
 		.detect_fn = pcf8574_detect,
 		.init_fn = pcf8574_init,
@@ -572,11 +609,17 @@ static const io_info_t info[io_id_size] =
 	{
 		.id = io_id_pcf8574_3a,
 		.name = "PCF8574 8-bit I/O expander",
-		.caps = (1 << io_cap_input) | (1 << io_cap_output),
+		.caps = static_cast<io_capabilities_t>((1 << io_cap_input) | (1 << io_cap_output)),
 		.pins = 8,
 		.max_value = 1,
 		.bus = io_bus_i2c,
-		.i2c.address = 0x3a,
+		.instance
+		{
+			.i2c
+			{
+				.address = 0x3a,
+			},
+		},
 		.info_fn = pcf8574_info,
 		.detect_fn = pcf8574_detect,
 		.init_fn = pcf8574_init,
@@ -634,7 +677,7 @@ static io_data_t *find_io(io_bus_t bus, unsigned int parameter_1, unsigned int p
 
 			default:
 			{
-				log_format("io: find_io: bus %u unknown", dataptr->info->bus);
+				log_format("io: find_io: bus %d unknown", dataptr->info->bus);
 				break;
 			}
 		}
@@ -662,7 +705,7 @@ void io_init(void)
 
 	inited = true;
 
-	for(id = io_id_first; id < io_id_size; id++)
+	for(id = io_id_first; id < io_id_size; id = static_cast<io_id_t>(id + 1))
 	{
 		infoptr = &info[id];
 
@@ -704,16 +747,16 @@ void io_init(void)
 
 			case(io_bus_i2c):
 			{
-				for(module = i2c_module_first; module < i2c_module_size; module++)
+				for(module = i2c_module_first; module < i2c_module_size; module = static_cast<i2c_module_t>(module + 1))
 				{
 					if(!i2c_module_available(module))
 						continue;
 
 					buses = i2c_buses(module);
 
-					for(bus = 0; bus < buses; bus++)
+					for(bus = i2c_bus_first; bus < buses; bus = static_cast<i2c_bus_t>(bus + 1))
 					{
-						if(find_io(infoptr->bus, (unsigned int)module, (unsigned int)bus, infoptr->i2c.address))
+						if(find_io(infoptr->bus, (unsigned int)module, (unsigned int)bus, infoptr->instance.i2c.address))
 						{
 							stat_i2c_detect_skipped++;
 							continue;
@@ -721,10 +764,10 @@ void io_init(void)
 
 						stat_i2c_detect_tried++;
 
-						if(infoptr->detect_fn && !infoptr->detect_fn(infoptr, module, bus, infoptr->i2c.address))
+						if(infoptr->detect_fn && !infoptr->detect_fn(infoptr, module, bus, infoptr->instance.i2c.address))
 							continue;
 
-						if(!(slave = i2c_register_slave(infoptr->name, module, bus, infoptr->i2c.address)))
+						if(!(slave = i2c_register_slave(infoptr->name, module, bus, infoptr->instance.i2c.address)))
 						{
 							log_format("io: warning: cannot register io %s", infoptr->name);
 							continue;
@@ -808,7 +851,7 @@ static void io_info_x(string_t result, const io_data_t *dataptr)
 	string_format_append(result, "\n- max value per pin: %u", dataptr->info->max_value);
 	string_append_cstr(result, "\n- capabilities:");
 
-	for(cap = io_cap_first; cap < io_cap_size; cap++)
+	for(cap = io_cap_first; cap < io_cap_size; cap = static_cast<io_capabilities_t>(cap + 1))
 		if(dataptr->info->caps & (1 << cap))
 			string_format_append(result, " %s", cap_to_string[cap]);
 
@@ -1002,14 +1045,14 @@ void command_io_dump(cli_command_call_t *call)
 			case(io_bus_i2c):
 			{
 				i2c_get_slave_info(dataptr->i2c.slave, &module, &bus, &address, &name);
-				string_format_append(call->result, "\nbus info\n- I2C device %s at %u/%u/%#x", name, module, bus, address);
+				string_format_append(call->result, "\nbus info\n- I2C device %s at %d/%d/%#x", name, module, bus, address);
 
 				break;
 			}
 
 			default:
 			{
-				string_format_append(call->result, " unknown IO type %u: %s", dataptr->info->bus, dataptr->info->name);
+				string_format_append(call->result, " unknown IO type %d: %s", dataptr->info->bus, dataptr->info->name);
 			}
 		}
 		string_append_cstr(call->result, "\npins:");

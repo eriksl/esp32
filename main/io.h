@@ -1,5 +1,10 @@
 #pragma once
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 typedef enum
 {
 	io_id_esp32_mcpwm = 0,
@@ -25,10 +30,15 @@ typedef enum
 	io_cap_error = io_cap_size,
 } io_capabilities_t;
 
-_Static_assert(io_cap_size < 32, "io_cap_size < 32"); // bitmap
+static_assert(io_cap_size < 32, "io_cap_size < 32"); // bitmap
 
-void io_init(void);
 bool io_info(string_t result, unsigned int io);
 bool io_read(string_t result, unsigned int io, unsigned int pin, unsigned int *value);
 bool io_write(string_t result, unsigned int io, unsigned int pin, unsigned int value);
 bool io_pin_info(string_t result, unsigned int io, unsigned int pin);
+
+#ifdef __cplusplus
+}
+#endif
+
+void io_init(void);

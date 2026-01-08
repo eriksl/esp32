@@ -6,10 +6,7 @@ extern "C"
 #include "string.h"
 }
 
-extern "C++"
-{
 #include "cli.h"
-}
 
 extern "C"
 {
@@ -22,7 +19,6 @@ extern "C"
 #include "ledpwm.h"
 #include "mcpwm.h"
 #include "sensor.h"
-#include "io.h"
 #include "pdm.h"
 #include "ledpixel.h"
 #include "process.h"
@@ -37,6 +33,7 @@ __attribute__((noreturn)) void app_main(void);
 #include "fs.h"
 #include "i2c.h"
 #include "info.h"
+#include "io.h"
 
 #include "tcp.h"
 #include "udp.h"
