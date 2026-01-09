@@ -6,12 +6,17 @@
 #include <esp_timer.h>
 #include <esp_random.h>
 
-#include "string.h"
-#include "cli.h"
 #include "log.h"
-#include "console.h"
+
+extern "C"
+{
+#include "string.h"
 #include "util.h"
 #include "cli-command.h"
+}
+
+#include "console.h"
+#include "cli.h"
 
 #include <errno.h>
 

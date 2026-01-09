@@ -7,10 +7,10 @@ extern "C"
 }
 
 #include "cli.h"
+#include "log.h"
 
 extern "C"
 {
-#include "log.h"
 #include "util.h"
 #include "wlan.h"
 #include "perftest.h"
