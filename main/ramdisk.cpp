@@ -1,18 +1,19 @@
 #include <string>
 #include <map>
-
 #include <stdexcept>
 
-extern "C" {
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
 
+extern "C" {
 #include "string.h"
+}
+
 #include "log.h"
 #include "util.h"
-#include "ramdisk.h"
 #include "info.h"
+#include "ramdisk.h"
 
 #include <freertos/FreeRTOS.h>
 #include <esp_vfs.h>
@@ -22,7 +23,6 @@ extern "C" {
 #include <fcntl.h>
 #include <time.h>
 #include <sys/ioctl.h>
-}
 
 class File
 {
