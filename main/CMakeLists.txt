@@ -18,7 +18,7 @@ idf_component_register(
 		"log.cpp"
 		"mcpwm.cpp"
 		"notify.cpp"
-		"ota.c"
+		"ota.cpp"
 		"packet.c"
 		"perftest.c"
 		"pdm.c"
