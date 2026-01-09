@@ -1,5 +1,10 @@
 #pragma once
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 enum
 {
 	ledpixel_leds_size = 4
@@ -16,8 +21,12 @@ typedef enum
 	lp_error = lp_size,
 } lp_t;
 
-void ledpixel_init(void);
 bool ledpixel_open(lp_t handle, const char *owner);
 void ledpixel_set(lp_t handle, unsigned int index, unsigned int red, unsigned int green, unsigned int blue);
 void ledpixel_get(lp_t handle, unsigned int index, unsigned int *red, unsigned int *green, unsigned int *blue);
 void ledpixel_flush(lp_t handle);
+#ifdef __cplusplus
+}
+#endif
+
+void ledpixel_init(void);

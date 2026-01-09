@@ -20,7 +20,6 @@ extern "C"
 #include "mcpwm.h"
 #include "sensor.h"
 #include "pdm.h"
-#include "ledpixel.h"
 #include "process.h"
 
 __attribute__((noreturn)) void app_main(void);
@@ -34,6 +33,7 @@ __attribute__((noreturn)) void app_main(void);
 #include "i2c.h"
 #include "info.h"
 #include "io.h"
+#include "ledpixel.h"
 
 #include "tcp.h"
 #include "udp.h"

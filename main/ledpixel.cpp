@@ -2,11 +2,15 @@
 #include <stdbool.h>
 #include <sdkconfig.h>
 
-#include "ledpixel.h"
+extern "C"
+{
 #include "string.h"
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
+}
+
+#include "ledpixel.h"
 
 #include <led_strip.h>
 #include <led_strip_types.h>
@@ -54,8 +58,8 @@ void ledpixel_init(void)
 	{
 		.strip_gpio_num = -1,
 		.max_leds = ledpixel_leds_size,
-		.color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB,
 		.led_model = LED_MODEL_WS2812,
+		.color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB,
 		.flags =
 		{
 			.invert_out = 0,
@@ -81,7 +85,7 @@ void ledpixel_init(void)
 	channels = (channel_t *)util_memory_alloc_spiram(sizeof(channel_t[lp_size]));
 	assert(channels);
 
-	for(handle = lp_first; handle < lp_size; handle++)
+	for(handle = lp_first; handle < lp_size; handle = static_cast<lp_t>(handle + 1))
 	{
 		handle_to_gpio_ptr = &handle_to_gpio[handle];
 		assert(handle_to_gpio_ptr->handle == handle);
@@ -212,7 +216,7 @@ void command_ledpixel_info(cli_command_call_t *call)
 	string_format_append(call->result, "\n- channels available: %u", (unsigned int)lp_size);
 	string_append_cstr(call->result, "\nchannels:");
 
-	for(handle = lp_first; handle < lp_size; handle++)
+	for(handle = lp_first; handle < lp_size; handle = static_cast<lp_t>(handle + 1))
 	{
 		channel = &channels[handle];
 
@@ -232,7 +236,7 @@ void command_ledpixel_info(cli_command_call_t *call)
 			}
 		}
 		else
-			string_format_append(call->result, "\n- channel %u is unavailable", handle);
+			string_format_append(call->result, "\n- channel %d is unavailable", handle);
 
 	}
 }
