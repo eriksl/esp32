@@ -2,10 +2,15 @@
 #include <stdbool.h>
 #include <string.h>
 
-#include "string.h"
 #include "log.h"
+
+extern "C"
+{
+#include "string.h"
 #include "util.h"
 #include "cli-command.h"
+}
+
 #include "pdm.h"
 
 #include "driver/sdm.h"
@@ -75,7 +80,7 @@ void pdm_init(void)
 	channels = (channel_t *)util_memory_alloc_spiram(sizeof(channel_t[pdm_size]));
 	assert(channels);
 
-	for(handle = pdm_first; handle < pdm_size; handle++)
+	for(handle = pdm_first; handle < pdm_size; handle = static_cast<pdm_t>(handle + 1))
 	{
 		handle_to_gpio_ptr = &handle_to_gpio[handle];
 		channel = &channels[handle];
@@ -89,7 +94,7 @@ void pdm_init(void)
 		if(handle_to_gpio_ptr->gpio >= 0)
 		{
 			gpio_pin_config.pin_bit_mask = (1ULL << handle_to_gpio_ptr->gpio);
-			util_abort_on_esp_err("gpio_reset_pin", gpio_reset_pin(handle_to_gpio_ptr->gpio));
+			util_abort_on_esp_err("gpio_reset_pin", gpio_reset_pin(static_cast<gpio_num_t>(handle_to_gpio_ptr->gpio)));
 			util_abort_on_esp_err("gpio_config", gpio_config(&gpio_pin_config));
 
 			sdm_config.gpio_num = handle_to_gpio_ptr->gpio;
@@ -169,7 +174,7 @@ void command_pdm_info(cli_command_call_t *call)
 	string_format_append(call->result, "\n- channels available: %u", (unsigned int)pdm_size);
 	string_append_cstr(call->result, "\nchannels:");
 
-	for(handle = pdm_first; handle < pdm_size; handle++)
+	for(handle = pdm_first; handle < pdm_size; handle = static_cast<pdm_t>(handle + 1))
 	{
 		channel = &channels[handle];
 

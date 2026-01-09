@@ -21,7 +21,7 @@ idf_component_register(
 		"ota.cpp"
 		"packet.cpp"
 		"perftest.cpp"
-		"pdm.c"
+		"pdm.cpp"
 		"process.cpp"
 		"ramdisk.cpp"
 		"script.cpp"

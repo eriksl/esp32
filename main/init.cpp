@@ -15,7 +15,6 @@ extern "C"
 #include "wlan.h"
 #include "ramdisk.h"
 #include "sensor.h"
-#include "pdm.h"
 #include "process.h"
 
 __attribute__((noreturn)) void app_main(void);
@@ -34,6 +33,7 @@ __attribute__((noreturn)) void app_main(void);
 #include "mcpwm.h"
 #include "notify.h"
 #include "perftest.h"
+#include "pdm.h"
 
 #include "tcp.h"
 #include "udp.h"
