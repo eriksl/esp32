@@ -11,7 +11,6 @@ extern "C"
 
 extern "C"
 {
-#include "util.h"
 #include "ramdisk.h"
 #include "sensor.h"
 #include "process.h"
@@ -36,6 +35,7 @@ __attribute__((noreturn)) void app_main(void);
 
 #include "tcp.h"
 #include "udp.h"
+#include "util.h"
 #include "wlan.h"
 
 #include <freertos/FreeRTOS.h>

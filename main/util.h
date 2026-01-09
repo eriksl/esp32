@@ -6,6 +6,12 @@
 #include <esp_ota_ops.h>
 #include <esp_netif_ip_addr.h>
 
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #pragma GCC poison strcpy
 #pragma GCC poison strcat
 #pragma GCC poison strncpy
@@ -31,7 +37,6 @@ typedef enum
 #define util_memory_alloc_dma(amount) _util_memory_alloc_dma(amount, __FILE__, __LINE__)
 #define util_memcpy(to, from, length) do { _util_memcpy(to, from, length, __FILE__, __LINE__); } while(0)
 
-void util_init(void);
 void util_sleep(unsigned int msec);
 uint32_t util_md5_32(unsigned int length, const uint8_t *data);
 unsigned int util_partition_to_slot(const esp_partition_t *partition);
@@ -74,3 +79,9 @@ static inline void util_abort(const char *what)
 	log_format("abort: %s", what);
 	abort();
 }
+
+#ifdef __cplusplus
+}
+#endif
+
+void util_init(void);

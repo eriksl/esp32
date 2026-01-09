@@ -3,7 +3,11 @@
 #include <string.h>
 #include <lwip/ip_addr.h>
 
+extern "C"
+{
 #include "string.h"
+}
+
 #include "log.h"
 #include "util.h"
 
@@ -95,7 +99,7 @@ bool util_sin6_addr_is_ipv4(const void *in)
 {
 	const struct sockaddr_in6 *sockaddr_in6 = (const struct sockaddr_in6 *)in;
 	const struct in6_addr *addr_in6;
-	const char *addr;
+	const uint8_t *addr;
 
 	if(sockaddr_in6->sin6_family == AF_INET)
 		return(true);
@@ -455,7 +459,7 @@ static const uint32_t crc32_table_byte[] =
 
 uint32_t util_crc32cksum_byte(uint32_t crc, void const *mem, size_t len)
 {
-	const uint8_t *data = mem;
+	const uint8_t *data = static_cast<const uint8_t *>(mem);
 
 	if(!data)
 		return(0xffffffffUL);
