@@ -17,7 +17,7 @@ idf_component_register(
 		"ledpwm.cpp"
 		"log.cpp"
 		"mcpwm.cpp"
-		"notify.c"
+		"notify.cpp"
 		"ota.c"
 		"packet.c"
 		"perftest.c"
