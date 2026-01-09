@@ -3,15 +3,29 @@
 
 #include <lwip/netif.h>
 
+extern "C"
+{
 #include "string.h"
+}
+
 #include "cli.h"
-#include "wlan.h"
 #include "config.h"
 #include "log.h"
+
+extern "C"
+{
 #include "util.h"
+}
+
 #include "packet.h"
+
+extern "C"
+{
 #include "cli-command.h"
+}
+
 #include "notify.h"
+#include "wlan.h"
 
 #include <esp_event.h>
 #include <esp_wifi.h>
@@ -110,7 +124,7 @@ static void set_state(wlan_state_t state_new)
 	if((state_new == ws_associating) || (!(state_info[state].valid_transitions & (1 << state_new))))
 	{
 		if(!(state_info[state].valid_transitions & (1 << state_new)))
-			log_format("wlan: invalid state transition from %s (%u) to %s (%u), %x, reassociating", state_string, state, state_new_string, state_new, (unsigned int)state_info[state].valid_transitions);
+			log_format("wlan: invalid state transition from %s (%d) to %s (%d), %x, reassociating", state_string, state, state_new_string, state_new, (unsigned int)state_info[state].valid_transitions);
 		else
 			if((state != ws_init) && (state != ws_associating))
 				log_format("wlan: reassociate, switch from %s to %s", state_string, state_new_string);
@@ -152,10 +166,16 @@ static void state_callback(TimerHandle_t handle)
 	{
 		.ap =
 		{
+			.ssid = {},
+			.password = {},
+			.ssid_len = 0,
 			.channel = 11,
 			.authmode = WIFI_AUTH_WPA2_PSK,
+			.ssid_hidden = 0,
 			.max_connection = 1,
 			.beacon_interval = 100,
+			.csa_count = 3,
+			.dtim_period = 1,
 			.pairwise_cipher = WIFI_CIPHER_TYPE_CCMP,
 			.ftm_responder = 0,
 			.pmf_cfg =
@@ -163,6 +183,11 @@ static void state_callback(TimerHandle_t handle)
 				.capable = false,
 				.required = false,
 			},
+			.sae_pwe_h2e = {},
+			.transition_disable = 0,
+			.sae_ext = 0,
+			.bss_max_idle_cfg = {},
+			.gtk_rekey_interval = 0,
 		},
 	};
 
@@ -407,13 +432,43 @@ void wlan_command_client_config(cli_command_call_t *call)
 		{
 			.sta =
 			{
+				.ssid = {},
+				.password = {},
 				.scan_method = WIFI_ALL_CHANNEL_SCAN,
 				.bssid_set = 0,
+				.bssid = {},
 				.channel = 0,
 				.listen_interval = 3,
 				.sort_method = WIFI_CONNECT_AP_BY_SIGNAL,
-				.pmf_cfg.capable = false,
-				.pmf_cfg.required = false,
+				.threshold = {},
+				.pmf_cfg =
+				{
+					.capable = false,
+					.required = false,
+				},
+				.rm_enabled = 0,
+				.btm_enabled = 0,
+				.mbo_enabled = 0,
+				.ft_enabled = 0,
+				.owe_enabled = 0,
+				.transition_disable = 0,
+				.reserved1 = 0,
+				.sae_pwe_h2e = {},
+				.sae_pk_mode = {},
+				.failure_retry_cnt = 1,
+  				.he_dcm_set = 0,
+    			.he_dcm_max_constellation_tx = 0,
+    			.he_dcm_max_constellation_rx = 0,
+    			.he_mcs9_enabled = 0,
+    			.he_su_beamformee_disabled = 0,
+    			.he_trig_su_bmforming_feedback_disabled = 0,
+    			.he_trig_mu_bmforming_partial_feedback_disabled = 0,
+    			.he_trig_cqi_feedback_disabled = 0,
+    			.vht_su_beamformee_disabled = 0,
+    			.vht_mu_beamformee_disabled = 0,
+    			.vht_mcs8_enabled = 0,
+    			.reserved2 = 0,
+    			.sae_h2e_identifier = {},
 			},
 		};
 

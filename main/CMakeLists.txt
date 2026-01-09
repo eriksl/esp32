@@ -30,7 +30,7 @@ idf_component_register(
 		"tcp.cpp"
 		"udp.cpp"
 		"util.c"
-		"wlan.c"
+		"wlan.cpp"
 	INCLUDE_DIRS
 		"")
 
