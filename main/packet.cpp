@@ -3,12 +3,21 @@
 #include <stddef.h>
 #include <string.h>
 
+extern "C"
+{
 #include "string.h"
+}
+
 #include "cli.h"
-#include "packet.h"
 #include "log.h"
+
+extern "C"
+{
 #include "util.h"
+}
+
 #include "packet_header.h"
+#include "packet.h"
 
 #include <freertos/FreeRTOS.h>
 
@@ -160,7 +169,7 @@ void packet_decapsulate(const cli_buffer_t *src, string_t *data, string_t *oob_d
 		unsigned int oob_length, oob_offset;
 		const uint8_t *oob_offset_ptr;
 
-		if((oob_offset_ptr = memchr(string_data(src->data), 0, string_length(src->data))))
+		if((oob_offset_ptr = static_cast<const uint8_t *>(memchr(string_data(src->data), 0, string_length(src->data)))))
 		{
 			oob_offset = oob_offset_ptr - string_data(src->data) + 1;
 			oob_length = string_length(src->data) - oob_offset;
