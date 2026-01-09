@@ -1,10 +1,15 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "string.h"
 #include "log.h"
+
+extern "C"
+{
+#include "string.h"
 #include "util.h"
 #include "cli-command.h"
+}
+
 #include "mcpwm.h"
 
 #include "driver/mcpwm_timer.h"
@@ -23,7 +28,7 @@ enum
 	timer_ticks = (1U << timer_resolution) - 1,
 };
 
-_Static_assert(mpt_size <= (SOC_MCPWM_GROUPS * SOC_MCPWM_TIMERS_PER_GROUP));
+static_assert(mpt_size <= (SOC_MCPWM_GROUPS * SOC_MCPWM_TIMERS_PER_GROUP));
 
 typedef struct
 {
@@ -45,7 +50,7 @@ typedef struct
 typedef struct
 {
 	mcpwm_timer_handle_t handle;
-	tree_operator_t operator;
+	tree_operator_t operator_;
 } tree_timer_t;
 
 typedef struct
@@ -99,7 +104,7 @@ static const tree_comparator_t *setup(const handle_to_group_timer_t *mpt_ptr)
 {
 	const mcpwm_timer_config_t timer_config =
 	{
-		.group_id = mpt_ptr->group,
+		.group_id = static_cast<int>(mpt_ptr->group),
 		.clk_src = MCPWM_TIMER_CLK_SRC_DEFAULT,
 		.resolution_hz = mpt_ptr->timer_frequency,
 		.count_mode = MCPWM_TIMER_COUNT_MODE_UP,
@@ -109,12 +114,14 @@ static const tree_comparator_t *setup(const handle_to_group_timer_t *mpt_ptr)
 		{
 			.update_period_on_empty = 0,
 			.update_period_on_sync = 0,
+			.allow_pd = 0,
 		},
 	};
 	const mcpwm_operator_config_t operator_config =
 	{
-		.group_id = mpt_ptr->group,
+		.group_id = static_cast<int>(mpt_ptr->group),
 		.intr_priority = 0,
+		.flags = {},
 	};
 	const mcpwm_generator_config_t generator_config =
 	{
@@ -141,12 +148,12 @@ static const tree_comparator_t *setup(const handle_to_group_timer_t *mpt_ptr)
 
 	tree_group_t *group = &tree->group[mpt_ptr->group];
 	tree_timer_t *timer = &group->timer[mpt_ptr->timer];
-	tree_operator_t *operator = &timer->operator;
-	tree_comparator_t *comparator = &operator->comparator;
-	tree_generator_t *generator = &operator->generator;
+	tree_operator_t *operator_ = &timer->operator_;
+	tree_comparator_t *comparator = &operator_->comparator;
+	tree_generator_t *generator = &operator_->generator;
 
 	timer->handle = (mcpwm_timer_handle_t)0;
-	operator->handle = (mcpwm_oper_handle_t)0;
+	operator_->handle = (mcpwm_oper_handle_t)0;
 	comparator->handle = (mcpwm_cmpr_handle_t)0;
 	generator->handle = (mcpwm_gen_handle_t)0;
 
@@ -154,10 +161,10 @@ static const tree_comparator_t *setup(const handle_to_group_timer_t *mpt_ptr)
 		return((const tree_comparator_t *)0);
 
 	util_abort_on_esp_err("mcpwm_new_timer", mcpwm_new_timer(&timer_config, &timer->handle));
-	util_abort_on_esp_err("mcpwm_new_operator", mcpwm_new_operator(&operator_config, &operator->handle));
-	util_abort_on_esp_err("mcpwm_operator_connect_timer", mcpwm_operator_connect_timer(operator->handle, timer->handle));
-	util_abort_on_esp_err("mcpwm_new_comparator", mcpwm_new_comparator(operator->handle, &comparator_config, &comparator->handle));
-	util_abort_on_esp_err("mcpwm_new_generator", mcpwm_new_generator(operator->handle, &generator_config, &generator->handle));
+	util_abort_on_esp_err("mcpwm_new_operator", mcpwm_new_operator(&operator_config, &operator_->handle));
+	util_abort_on_esp_err("mcpwm_operator_connect_timer", mcpwm_operator_connect_timer(operator_->handle, timer->handle));
+	util_abort_on_esp_err("mcpwm_new_comparator", mcpwm_new_comparator(operator_->handle, &comparator_config, &comparator->handle));
+	util_abort_on_esp_err("mcpwm_new_generator", mcpwm_new_generator(operator_->handle, &generator_config, &generator->handle));
 
 	util_abort_on_esp_err("mcpwm_generator_set_action_on_timer_event",
 			mcpwm_generator_set_action_on_timer_event(generator->handle, MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
@@ -186,7 +193,7 @@ void mcpwm_init(void)
 	channels = (channel_t *)util_memory_alloc_spiram(sizeof(channel_t[mpt_size]));
 	assert(channels);
 
-	for(handle = mpt_first; handle < mpt_size; handle++)
+	for(handle = mpt_first; handle < mpt_size; handle = static_cast<mcpwm_t>(handle + 1))
 	{
 		handle_to_group_timer_ptr = &handle_to_group_timer[handle];
 		channel = &channels[handle];
@@ -242,7 +249,7 @@ void mcpwm_set(mcpwm_t handle, unsigned int duty)
 	assert(channel->open);
 	assert(channel->comparator);
 
-	channel->duty = duty <= timer_ticks ? duty : timer_ticks;
+	channel->duty = duty <= static_cast<unsigned int>(timer_ticks) ? duty : static_cast<unsigned int>(timer_ticks);
 
 	util_abort_on_esp_err("mcpwm_comparator_set_compare_value", mcpwm_comparator_set_compare_value(channel->comparator->handle, channel->duty));
 }
@@ -272,7 +279,7 @@ void command_mcpwm_info(cli_command_call_t *call)
 	string_format_append(call->result, "\n- channels available: %u", (unsigned int)mpt_size);
 	string_append_cstr(call->result, "\nchannels:");
 
-	for(handle = 0; handle < mpt_size; handle++)
+	for(handle = mpt_first; handle < mpt_size; handle = static_cast<mcpwm_t>(handle + 1))
 	{
 		channel = &channels[handle];
 
@@ -287,6 +294,6 @@ void command_mcpwm_info(cli_command_call_t *call)
 					channel->duty,
 					channel->owner);
 		else
-			string_format_append(call->result, "\n- channel %u is unavailable", handle);
+			string_format_append(call->result, "\n- channel %d is unavailable", handle);
 	}
 }
