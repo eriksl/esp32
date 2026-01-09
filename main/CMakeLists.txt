@@ -20,7 +20,7 @@ idf_component_register(
 		"notify.cpp"
 		"ota.cpp"
 		"packet.cpp"
-		"perftest.c"
+		"perftest.cpp"
 		"pdm.c"
 		"process.cpp"
 		"ramdisk.cpp"

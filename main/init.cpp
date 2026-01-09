@@ -13,7 +13,6 @@ extern "C"
 {
 #include "util.h"
 #include "wlan.h"
-#include "perftest.h"
 #include "ramdisk.h"
 #include "sensor.h"
 #include "pdm.h"
@@ -34,6 +33,7 @@ __attribute__((noreturn)) void app_main(void);
 #include "ledpwm.h"
 #include "mcpwm.h"
 #include "notify.h"
+#include "perftest.h"
 
 #include "tcp.h"
 #include "udp.h"
