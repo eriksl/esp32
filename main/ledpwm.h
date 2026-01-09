@@ -1,5 +1,10 @@
 #pragma once
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 typedef enum
 {
 	lpt_14bit_5khz_notify = 0,
@@ -11,7 +16,12 @@ typedef enum
 	lpt_error = lpt_size,
 } ledpwm_t;
 
-void ledpwm_init(void);
 bool ledpwm_open(ledpwm_t handle, const char *owner);
 void ledpwm_set(ledpwm_t handle, unsigned int duty);
 unsigned int ledpwm_get(ledpwm_t handle);
+
+#ifdef __cplusplus
+}
+#endif
+
+void ledpwm_init(void);
