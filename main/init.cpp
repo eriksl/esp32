@@ -12,7 +12,6 @@ extern "C"
 extern "C"
 {
 #include "sensor.h"
-#include "process.h"
 
 __attribute__((noreturn)) void app_main(void);
 }
@@ -31,6 +30,7 @@ __attribute__((noreturn)) void app_main(void);
 #include "notify.h"
 #include "perftest.h"
 #include "pdm.h"
+#include "process.h"
 #include "ramdisk.h"
 #include "tcp.h"
 #include "udp.h"

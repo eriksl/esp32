@@ -14,8 +14,9 @@ extern "C"
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
-#include "process.h"
 }
+
+#include "process.h"
 
 enum
 {
