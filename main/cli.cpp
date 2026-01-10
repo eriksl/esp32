@@ -18,6 +18,8 @@
 #include "udp.h"
 #include "tcp.h"
 
+#include <algorithm>
+
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 
@@ -125,29 +127,28 @@ static void command_help(cli_command_call_t *call)
 
 static void command_hostname(cli_command_call_t *call)
 {
-	string_auto(hostname, 64);
-	string_auto(description, 64);
-	string_auto_init(key_hostname, "hostname");
-	string_auto_init(key_description, "hostname_desc");
+	std::string hostname;
+	std::string description;
 
 	assert(call->parameter_count < 3);
 
 	if(call->parameter_count > 1)
 	{
-		string_replace(call->parameters[1].string, 0, ~0, '_', ' ');
-		config_set_string(key_description, call->parameters[1].string);
+		description = call->parameters[1].str;
+		std::replace(description.begin(), description.end(), '_', ' ');
+		config_set_string("hostname_desc", description);
 	}
 
 	if(call->parameter_count > 0)
-		config_set_string(key_hostname, call->parameters[0].string);
+		config_set_string("hostname", call->parameters[0].str);
 
-	if(!config_get_string(key_hostname, hostname))
-		string_assign_cstr(hostname, "<unset>");
+	if(!config_get_string("hostname", hostname))
+		hostname = "<unset>";
 
-	if(!config_get_string(key_description, description))
-		string_assign_cstr(description, "<unset>");
+	if(!config_get_string("hostname_desc", description))
+		description = "<unset>";
 
-	string_format(call->result, "hostname: %s (%s)", string_cstr(hostname), string_cstr(description));
+	string_format(call->result, "hostname: %s (%s)", hostname.c_str(), description.c_str());
 }
 
 static void command_reset(cli_command_call_t *call)
@@ -160,7 +161,7 @@ static void command_reset(cli_command_call_t *call)
 static void command_write(cli_command_call_t *call)
 {
 	if(call->parameter_count == 1)
-		string_assign_string(call->result, call->parameters[0].string);
+		string_assign_cstr(call->result, call->parameters[0].str.c_str());
 }
 
 static void command_info_cli(cli_command_call_t *call)
@@ -555,28 +556,27 @@ static void help(cli_command_call_t *call)
 	const cli_command_t *command;
 	const cli_parameter_description_t *parameter;
 	const char *delimiter[2];
-	string_t command_name;
+	std::string command_name;
 
 	string_format(call->result, "HELP");
 
 	if(call->parameter_count == 0)
-		command_name = (string_t)0;
+		command_name = "";
 	else
-		command_name = call->parameters[0].string;
+		command_name = call->parameters[0].str;
 
 	for(command_index = 0; cli_commands[command_index].name; command_index++)
 	{
 		command = &cli_commands[command_index];
 
-		if(command_name && !string_equal_cstr(command_name, command->name) && (!command->alias || !string_equal_cstr(command_name, command->alias)))
+		if(command_name.length() && (command_name != command->name) && (!command->alias || (command_name != command->alias)))
 			continue;
 
 		string_format_append(call->result, "\n  %-18s %-4s %s", command->name,
 				command->alias ? command->alias : "",
 				command->help ? command->help : "");
 
-
-		if(command_name)
+		if(command_name.length())
 		{
 			for(parameter_index = 0; parameter_index < command->parameters_description.count; parameter_index++)
 			{
@@ -746,7 +746,7 @@ static void run_receive_queue(void *)
 			{
 				parameter_count++;
 
-				parameter->string = token;
+				parameter->str = string_cstr(token);
 
 				switch(parameter_description->type)
 				{
@@ -763,10 +763,14 @@ static void run_receive_queue(void *)
 					{
 						unsigned int value;
 
-						if(!string_uint(parameter->string, parameter_description->base, &value))
+						try
 						{
-							string_format(error, "ERROR: invalid unsigned integer value: %s", string_cstr(parameter->string));
-							packet_encapsulate(&cli_buffer, error, (string_t)0);
+							value = std::stoul(parameter->str, nullptr, parameter_description->base);
+						}
+						catch(...)
+						{
+							string_format(error, "ERROR: invalid unsigned integer value: %s", parameter->str.c_str());
+							packet_encapsulate(&cli_buffer, error, nullptr);
 							send_queue_push(&cli_buffer);
 							goto error;
 						}
@@ -798,10 +802,14 @@ static void run_receive_queue(void *)
 					{
 						int value;
 
-						if(!string_int(parameter->string, parameter_description->base, &value))
+						try
 						{
-							string_format(error, "ERROR: invalid signed integer value: %s", string_cstr(parameter->string));
-							packet_encapsulate(&cli_buffer, error, (string_t)0);
+							value = std::stol(parameter->str, nullptr, parameter_description->base);
+						}
+						catch(...)
+						{
+							string_format(error, "ERROR: invalid signed integer value: %s", parameter->str.c_str());
+							packet_encapsulate(&cli_buffer, error, nullptr);
 							send_queue_push(&cli_buffer);
 							goto error;
 						}
@@ -833,10 +841,14 @@ static void run_receive_queue(void *)
 					{
 						float value;
 
-						if(!string_float(parameter->string, &value))
+						try
 						{
-							string_format(error, "ERROR: invalid float value: %s", string_cstr(parameter->string));
-							packet_encapsulate(&cli_buffer, error, (string_t)0);
+							value = std::stod(parameter->str, nullptr);
+						}
+						catch(...)
+						{
+							string_format(error, "ERROR: invalid float value: %s", parameter->str.c_str());
+							packet_encapsulate(&cli_buffer, error, nullptr);
 							send_queue_push(&cli_buffer);
 							goto error;
 						}
@@ -868,12 +880,12 @@ static void run_receive_queue(void *)
 					{
 						unsigned int length;
 
-						length = string_length(parameter->string);
+						length = parameter->str.length();
 
 						if((parameter_description->lower_bound_required) && (length < parameter_description->string.lower_length_bound))
 						{
 							string_format(error, "ERROR: invalid string length: %u, smaller than lower bound: %u", length, parameter_description->string.lower_length_bound);
-							packet_encapsulate(&cli_buffer, error, (string_t)0);
+							packet_encapsulate(&cli_buffer, error, nullptr);
 							send_queue_push(&cli_buffer);
 							goto error;
 						}
@@ -881,7 +893,7 @@ static void run_receive_queue(void *)
 						if((parameter_description->upper_bound_required) && (length > parameter_description->string.upper_length_bound))
 						{
 							string_format(error, "ERROR: invalid string length: %u, larger than upper bound: %u", length, parameter_description->string.upper_length_bound);
-							packet_encapsulate(&cli_buffer, error, (string_t)0);
+							packet_encapsulate(&cli_buffer, error, nullptr);
 							send_queue_push(&cli_buffer);
 							goto error;
 						}
@@ -896,21 +908,22 @@ static void run_receive_queue(void *)
 					{
 						unsigned int length;
 
-						string_free(&parameter->string);
-						parameter->string = string_new(string_length(data));
+						parameter->str.clear();
 
 						while((previous_string_parse_offset < string_length(data)) && (string_at(data, previous_string_parse_offset) == ' '))
 							previous_string_parse_offset++;
 
-						string_cut(parameter->string, data, previous_string_parse_offset, ~0);
+						//string_cut(parameter->str, data, previous_string_parse_offset, ~0);
+						parameter->str.assign(string_cstr(data) + previous_string_parse_offset);
+
 						string_parse_offset = string_length(data);
 
-						length = string_length(parameter->string);
+						length = parameter->str.length();
 
 						if((parameter_description->lower_bound_required) && (length < parameter_description->string.lower_length_bound))
 						{
 							string_format(error, "ERROR: invalid raw string length: %u, smaller than lower bound: %u", length, parameter_description->string.lower_length_bound);
-							packet_encapsulate(&cli_buffer, error, (string_t)0);
+							packet_encapsulate(&cli_buffer, error, nullptr);
 							send_queue_push(&cli_buffer);
 							goto error;
 						}
@@ -918,7 +931,7 @@ static void run_receive_queue(void *)
 						if((parameter_description->upper_bound_required) && (length > parameter_description->string.upper_length_bound))
 						{
 							string_format(error, "ERROR: invalid raw string length: %u, larger than upper bound: %u", length, parameter_description->string.upper_length_bound);
-							packet_encapsulate(&cli_buffer, error, (string_t)0);
+							packet_encapsulate(&cli_buffer, error, nullptr);
 							send_queue_push(&cli_buffer);
 							goto error;
 						}
@@ -975,12 +988,7 @@ error:
 		string_free(&command);
 error1:
 		for(ix = 0; ix < call.parameter_count; ix++)
-		{
-			parameter = &call.parameters[ix];
-
-			if(parameter->string)
-				string_free(&parameter->string);
-		}
+			call.parameters[ix].str.clear();
 
 		cli_buffer.source = cli_source_none;
 		string_free(&data);

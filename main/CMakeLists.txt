@@ -102,9 +102,10 @@ set(CFLAGS
 )
 
 set(CXXFLAGS
-		-Wctor-dtor-privacy
-		-Wzero-as-null-pointer-constant
 )
+
+#		-Wctor-dtor-privacy // breaks boost::format
+#		-Wzero-as-null-pointer-constant // breaks boost::format
 
 string(JOIN " " ALLCFLAGS ${ALLFLAGS} ${CFLAGS})
 string(JOIN " " ALLCXXFLAGS ${ALLFLAGS} ${CXXFLAGS})

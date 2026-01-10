@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include <exception>
+
 extern "C"
 {
 __attribute__((noreturn)) void app_main(void);
@@ -68,10 +70,20 @@ void app_main(void)
 		vTaskSuspend(NULL);
 		throw("vTaskSuspend returned");
 	}
+	catch(const std::exception &e)
+	{
+		std::string text;
+
+		text = std::string("init: exception caught: ") + e.what();
+		util_abort(text.c_str());
+		for(;;);
+	}
 	catch(const char *e)
 	{
-		log_format("exception: %s", e);
-		util_abort("init: exception caught");
+		std::string text;
+
+		text = std::string("init: exception caught: ") + e;
+		util_abort(text.c_str());
 		for(;;);
 	}
 	catch(...)

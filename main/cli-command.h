@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "cli.h"
 
 enum
@@ -30,10 +32,8 @@ typedef struct
 		float			fp;
 	};
 
-	string_t string;
+	std::string str;
 } cli_parameter_t;
-
-static_assert(sizeof(cli_parameter_t) == 12);
 
 typedef struct
 {
@@ -45,8 +45,6 @@ typedef struct
 	string_t			result;
 	string_t			result_oob;
 } cli_command_call_t;
-
-static_assert(sizeof(cli_command_call_t) == 216);
 
 typedef void(cli_command_function_t)(cli_command_call_t *);
 

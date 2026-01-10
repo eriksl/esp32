@@ -282,12 +282,12 @@ void command_run(cli_command_call_t *call)
 	thread_state->repeat.active = false;
 	thread_state->repeat.target = 0;
 	thread_state->repeat.current = 0;
-	thread_state->script = string_cstr(call->parameters[0].string);
+	thread_state->script = call->parameters[0].str.c_str();
 
 	for(ix = 0; (ix + 1) < call->parameter_count; ix++)
-		thread_state->parameter[ix] = string_cstr(call->parameters[ix + 1].string);
+		thread_state->parameter[ix] = call->parameters[ix + 1].str.c_str();
 
-	thread_config.thread_name = string_cstr(call->parameters[0].string);
+	thread_config.thread_name = call->parameters[0].str.c_str();
 	thread_config.pin_to_core = 1;
 	thread_config.stack_size = 3 * 1024;
 	thread_config.prio = 1;

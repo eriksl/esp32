@@ -183,8 +183,14 @@ void command_process_kill(cli_command_call_t *call)
 	assert(inited);
 	assert(call->parameter_count == 1);
 
-	if(!string_uint(call->parameters[0].string, 10, &target_task_id))
+	try
+	{
+		target_task_id = std::stoul(call->parameters[0].str);
+	}
+	catch(...)
+	{
 		target_task_id = ~0UL;
+	}
 
 	processes = uxTaskGetNumberOfTasks();
 	process_info = (TaskStatus_t *)util_memory_alloc_spiram(sizeof(*process_info) * processes);
@@ -197,7 +203,7 @@ void command_process_kill(cli_command_call_t *call)
 
 		if(target_task_id == ~0UL)
 		{
-			if(string_equal_cstr(call->parameters[0].string, pip->pcTaskName))
+			if(call->parameters[0].str == pip->pcTaskName)
 			{
 				found = true;
 				break;
@@ -224,7 +230,7 @@ void command_process_kill(cli_command_call_t *call)
 	else
 	{
 		if(target_task_id == ~0UL)
-			log_format("process \"%s\" not found", string_cstr(call->parameters[0].string));
+			log_format("process \"%s\" not found", call->parameters[0].str.c_str());
 		else
 			log_format("process #%u not found", target_task_id);
 	}

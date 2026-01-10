@@ -299,7 +299,7 @@ static unsigned int page_count(void)
 	return(count);
 }
 
-static int page_find(const const_string_t name)
+static int page_find(const std::string &name)
 {
 	unsigned int page_index;
 	const display_page_t *page_ptr;
@@ -313,7 +313,7 @@ static int page_find(const const_string_t name)
 		if(page_ptr->type == dpt_unused)
 			continue;
 
-		if(string_equal_string(page_ptr->name, name))
+		if(string_equal_cstr(page_ptr->name, name.c_str()))
 			return(page_index);
 	}
 
@@ -333,7 +333,7 @@ static int page_new(void)
 	return(-1);
 }
 
-static bool page_add_text(const const_string_t name, unsigned int lifetime, const const_string_t contents)
+static bool page_add_text(const std::string &name, unsigned int lifetime, const std::string &contents)
 {
 	int page;
 	unsigned int ix, line;
@@ -348,30 +348,30 @@ static bool page_add_text(const const_string_t name, unsigned int lifetime, cons
 
 	if(page < 0)
 	{
-		log_format("display: out of slots for %s", string_cstr(name));
+		log_format("display: out of slots for %s", name.c_str());
 		return(false);
 	}
 
 	page_ptr = &display_pages[page];
 
-	string_assign_string(page_ptr->name, name);
+	string_assign_cstr(page_ptr->name, name.c_str());
 	page_ptr->type = dpt_text;
 	page_ptr->expiry = (lifetime > 0) ? time((time_t *)0) + lifetime : 0;
 
 	line = 0;
 	string_clear(page_ptr->text.line[line]);
 
-	content_length = string_length(contents);
+	content_length = contents.length();
 
 	for(ix = 0; (ix < content_length) && (line < display_page_text_lines_size); ix++)
 	{
-		current = string_at(contents, ix);
+		current = contents.at(ix);
 
 		switch(current)
 		{
 			case('\\'):
 			{
-				if(((ix + 1) >= content_length) || (string_at(contents, ix + 1) != 'n'))
+				if(((ix + 1) >= content_length) || (contents.at(ix + 1) != 'n'))
 				{
 					string_append(page_ptr->text.line[line], current);
 					continue;
@@ -410,7 +410,7 @@ static bool page_add_text(const const_string_t name, unsigned int lifetime, cons
 	return(true);
 }
 
-static bool page_add_image(const const_string_t name, unsigned int lifetime, const const_string_t filename, unsigned int length)
+static bool page_add_image(const std::string &name, unsigned int lifetime, const std::string &filename, unsigned int length)
 {
 	int page;
 	display_page_t *page_ptr;
@@ -422,15 +422,15 @@ static bool page_add_image(const const_string_t name, unsigned int lifetime, con
 
 	if(page < 0)
 	{
-		log_format("display: out of slots for %s", string_cstr(name));
+		log_format("display: out of slots for %s", name.c_str());
 		return(false);
 	}
 
 	page_ptr = &display_pages[page];
-	string_assign_string(page_ptr->name, name);
+	string_assign_cstr(page_ptr->name, name.c_str());
 	page_ptr->type = dpt_image;
 	page_ptr->expiry = (lifetime > 0) ? time((time_t *)0) + lifetime : 0;
-	string_assign_string(page_ptr->image.filename, filename);
+	string_assign_cstr(page_ptr->image.filename, filename.c_str());
 	page_ptr->image.length = length;
 
 	return(true);
@@ -992,7 +992,7 @@ static void display_info(string_t output)
 
 	for(dv = dv_start, found = 0; dv < dv_size; dv = static_cast<dv_t>(dv + 1))
 	{
-		if(config_get_uint_cstr(display_variable[dv][1], &value))
+		if(config_get_uint(display_variable[dv][1], value))
 		{
 			found++;
 			string_format_append(output, "\n- %s: %u", display_variable[dv][0], (unsigned int)value);
@@ -1099,7 +1099,7 @@ void display_init(void)
 		.rotate = -1,
 	};
 
-	if(!config_get_uint_cstr(display_variable[dv_type][1], &type))
+	if(!config_get_uint(display_variable[dv_type][1], type))
 		return;
 
 	if((type + dt_type_first) >= dt_size)
@@ -1110,22 +1110,22 @@ void display_init(void)
 
 	display_type = static_cast<display_type_t>(type + dt_type_first);
 
-	if(config_get_uint_cstr(display_variable[dv_if][1], &value))
+	if(config_get_uint(display_variable[dv_if][1], value))
 		display_init_parameters.interface_index = (int)value;
 
-	if(config_get_uint_cstr(display_variable[dv_x_size][1], &value))
+	if(config_get_uint(display_variable[dv_x_size][1], value))
 		display_init_parameters.x_size = x_size = (int)value;
 
-	if(config_get_uint_cstr(display_variable[dv_y_size][1], &value))
+	if(config_get_uint(display_variable[dv_y_size][1], value))
 		display_init_parameters.y_size = y_size = (int)value;
 
-	if(config_get_uint_cstr(display_variable[dv_flip][1], &value))
+	if(config_get_uint(display_variable[dv_flip][1], value))
 		display_init_parameters.flip = (int)value;
 
-	if(config_get_uint_cstr(display_variable[dv_invert][1], &value))
+	if(config_get_uint(display_variable[dv_invert][1], value))
 		display_init_parameters.invert = (int)value;
 
-	if(config_get_uint_cstr(display_variable[dv_rotate][1], &value))
+	if(config_get_uint(display_variable[dv_rotate][1], value))
 		display_init_parameters.rotate = (int)value;
 
 	assert(info[display_type].init_fn);
@@ -1235,17 +1235,17 @@ void command_display_configure(cli_command_call_t *call)
 		return;
 	}
 
-	config_erase_wildcard_cstr("display.");
+	config_erase_wildcard("display.");
 
 	for(ix = dv_start; (ix < dv_size) && (ix < call->parameter_count); ix = static_cast<dv_t>(ix + 1))
-		config_set_uint_cstr(display_variable[ix][1], call->parameters[ix].unsigned_int);
+		config_set_uint(display_variable[ix][1], call->parameters[ix].unsigned_int);
 
 	display_info(call->result);
 }
 
 void command_display_erase(cli_command_call_t *call)
 {
-	config_erase_wildcard_cstr("display.");
+	config_erase_wildcard("display.");
 
 	assert(call->parameter_count == 0);
 
@@ -1268,10 +1268,10 @@ void command_display_page_add_text(cli_command_call_t *call)
 	assert(call->parameter_count == 3);
 
 	page_data_mutex_take();
-	rv = page_add_text(call->parameters[0].string, call->parameters[1].unsigned_int, call->parameters[2].string);
+	rv = page_add_text(call->parameters[0].str, call->parameters[1].unsigned_int, call->parameters[2].str);
 	page_data_mutex_give();
 
-	string_format(call->result, "display-page-add-text%sadded \"%s\"", rv ? " " : " not ", string_cstr(call->parameters[0].string));
+	string_format(call->result, "display-page-add-text%sadded \"%s\"", rv ? " " : " not ", call->parameters[0].str.c_str());
 }
 
 void command_display_page_add_image(cli_command_call_t *call)
@@ -1281,10 +1281,10 @@ void command_display_page_add_image(cli_command_call_t *call)
 	assert(call->parameter_count == 4);
 
 	page_data_mutex_take();
-	rv = page_add_image(call->parameters[0].string, call->parameters[1].unsigned_int, call->parameters[2].string, call->parameters[3].unsigned_int);
+	rv = page_add_image(call->parameters[0].str, call->parameters[1].unsigned_int, call->parameters[2].str, call->parameters[3].unsigned_int);
 	page_data_mutex_give();
 
-	string_format(call->result, "display-page-add-image%sadded \"%s\"", rv ? " " : " not ", string_cstr(call->parameters[0].string));
+	string_format(call->result, "display-page-add-image%sadded \"%s\"", rv ? " " : " not ", call->parameters[0].str.c_str());
 }
 
 void command_display_page_remove(cli_command_call_t *call)
@@ -1294,17 +1294,17 @@ void command_display_page_remove(cli_command_call_t *call)
 	assert(call->parameter_count == 1);
 
 	page_data_mutex_take();
-	page = page_find(call->parameters[0].string);
+	page = page_find(call->parameters[0].str);
 
 	if(page < 0)
 	{
 		page_data_mutex_give();
-		string_format(call->result, "display-page-remove not found \"%s\"", string_cstr(call->parameters[0].string));
+		string_format(call->result, "display-page-remove not found \"%s\"", call->parameters[0].str.c_str());
 		return;
 	}
 
 	page_erase(&display_pages[page]);
 	page_data_mutex_give();
 
-	string_format(call->result, "display-page-remove removed \"%s\"", string_cstr(call->parameters[0].string));
+	string_format(call->result, "display-page-remove removed \"%s\"", call->parameters[0].str.c_str());
 }

@@ -22,6 +22,8 @@
 
 #include <assert.h>
 
+#include <string>
+
 typedef enum
 {
 	ws_invalid,
@@ -385,30 +387,28 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 
 void wlan_command_client_config(cli_command_call_t *call)
 {
-	string_auto(value, 64);
-	string_auto_init(key_ssid, "wlan-ssid");
-	string_auto_init(key_passwd, "wlan-passwd");
+	std::string value;
 
 	assert(inited);
 	assert(call->parameter_count  < 3);
 
 	if(call->parameter_count > 1)
-		config_set_string(key_passwd, call->parameters[1].string);
+		config_set_string("wlan-passwd", call->parameters[1].str);
 
 	if(call->parameter_count > 0)
-		config_set_string(key_ssid, call->parameters[0].string);
+		config_set_string("wlan-ssid", call->parameters[0].str);
 
 	string_append_cstr(call->result, "client ssid: ");
 
-	if(config_get_string(key_ssid, value))
-		string_append_string(call->result, value);
+	if(config_get_string("wlan-ssid", value))
+		string_append_cstr(call->result, value.c_str());
 	else
 		string_append_cstr(call->result, "<unset>");
 
 	string_append_cstr(call->result, "\nclient password: ");
 
-	if(config_get_string(key_passwd, value))
-		string_append_string(call->result, value);
+	if(config_get_string("wlan-passwd", value))
+		string_append_cstr(call->result, value.c_str());
 	else
 		string_append_cstr(call->result, "<unset>");
 
@@ -472,8 +472,8 @@ void wlan_command_client_config(cli_command_call_t *call)
 			util_warn_on_esp_err("esp_wifi_start", esp_wifi_start());
 		}
 
-		string_to_cstr(call->parameters[0].string, sizeof(config_sta.sta.ssid), (char *)config_sta.sta.ssid);
-		string_to_cstr(call->parameters[1].string, sizeof(config_sta.sta.password), (char *)config_sta.sta.password);
+		call->parameters[0].str.copy(reinterpret_cast<char *>(config_sta.sta.ssid), sizeof(config_sta.sta.ssid));
+		call->parameters[1].str.copy(reinterpret_cast<char *>(config_sta.sta.password), sizeof(config_sta.sta.password));
 
 		rv = esp_wifi_set_config(WIFI_IF_STA, &config_sta);
 
@@ -491,7 +491,7 @@ void wlan_command_client_config(cli_command_call_t *call)
 
 void wlan_command_ipv6_static(cli_command_call_t *call)
 {
-	string_auto(ipv6_address_string, 64);
+	std::string ipv6_address_string;
 	esp_ip6_addr_t ipv6_address;
 
 	assert(inited);
@@ -499,15 +499,18 @@ void wlan_command_ipv6_static(cli_command_call_t *call)
 
 	if(call->parameter_count > 0)
 	{
-		if(esp_netif_str_to_ip6(string_cstr(call->parameters[0].string), &ipv6_address))
+		if(esp_netif_str_to_ip6(call->parameters[0].str.c_str(), &ipv6_address))
 		{
 			string_assign_cstr(call->result, "invalid ipv6 address");
 			return;
 		}
 
-		string_assign_cstr(ipv6_address_string, ip6addr_ntoa((const ip6_addr_t *)&ipv6_address));
-		string_tolower(ipv6_address_string);
-		config_set_string_cstr(key_ipv6_static_address, ipv6_address_string);
+		ipv6_address_string = ip6addr_ntoa((const ip6_addr_t *)&ipv6_address);
+
+		for(auto &c : ipv6_address_string)
+			c = std::tolower(c);
+
+		config_set_string(key_ipv6_static_address, ipv6_address_string);
 
 		static_ipv6_address = ipv6_address;
 		static_ipv6_address_set = true;
@@ -515,17 +518,16 @@ void wlan_command_ipv6_static(cli_command_call_t *call)
 
 	string_assign_cstr(call->result, "ipv6 static address: ");
 
-	if(config_get_string_cstr(key_ipv6_static_address, ipv6_address_string))
-		string_append_string(call->result, ipv6_address_string);
+	if(config_get_string(key_ipv6_static_address, ipv6_address_string))
+		string_append_cstr(call->result, ipv6_address_string.c_str());
 	else
 		string_append_cstr(call->result, "<unset>");
 }
 
 void wlan_init(void)
 {
-	string_auto_init(hostname_key, "hostname");
-	string_auto(hostname, 16);
-	string_auto(ipv6_address_string, 64);
+	std::string hostname;
+	std::string ipv6_address_string;
 	wifi_init_config_t init_config = WIFI_INIT_CONFIG_DEFAULT();
 	static esp_sntp_config_t sntp_config = ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(0, {});
 
@@ -537,8 +539,8 @@ void wlan_init(void)
 	init_config.nvs_enable = 1;
 	init_config.wifi_task_core_id = 0;
 
-	if(!config_get_string(hostname_key, hostname))
-		string_assign_cstr(hostname, "esp32s3");
+	if(!config_get_string("hostname", hostname))
+		hostname = "esp32s3";
 
 	sntp_config.start = false;
 	sntp_config.server_from_dhcp = true;
@@ -548,7 +550,7 @@ void wlan_init(void)
 
 	set_state(ws_init);
 
-	if(config_get_string_cstr(key_ipv6_static_address, ipv6_address_string) && !esp_netif_str_to_ip6(string_cstr(ipv6_address_string), &static_ipv6_address))
+	if(config_get_string(key_ipv6_static_address, ipv6_address_string) && !esp_netif_str_to_ip6(ipv6_address_string.c_str(), &static_ipv6_address))
 		static_ipv6_address_set = true;
 	else
 		static_ipv6_address_set = false;
@@ -573,8 +575,8 @@ void wlan_init(void)
 	util_abort_on_esp_err("esp_wifi_config_11b_rate", esp_wifi_config_11b_rate(WIFI_IF_AP, true)); // FIXME
 	util_abort_on_esp_err("esp_wifi_start", esp_wifi_start());
 
-	util_abort_on_esp_err("esp_netif_set_hostname", esp_netif_set_hostname(netif_sta, string_cstr(hostname)));
-	util_abort_on_esp_err("esp_netif_set_hostname", esp_netif_set_hostname(netif_ap, string_cstr(hostname)));
+	util_abort_on_esp_err("esp_netif_set_hostname", esp_netif_set_hostname(netif_sta, hostname.c_str()));
+	util_abort_on_esp_err("esp_netif_set_hostname", esp_netif_set_hostname(netif_ap, hostname.c_str()));
 
 	xTimerStart(state_timer, portMAX_DELAY);
 }

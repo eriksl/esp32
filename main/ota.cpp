@@ -177,14 +177,14 @@ void command_ota_commit(cli_command_call_t *call)
 	unsigned int rv;
 	unsigned char local_sha256_hash[32];
 	string_auto(local_sha256_hash_text, (sizeof(local_sha256_hash) * 2) + 1);
-	string_t remote_sha256_hash_text;
+	std::string remote_sha256_hash_text;
 	const esp_partition_t *boot_partition;
 	esp_partition_pos_t partition_pos;
 	esp_image_metadata_t image_metadata;
 
 	assert(call->parameter_count == 1);
 
-	remote_sha256_hash_text = call->parameters[0].string;
+	remote_sha256_hash_text = call->parameters[0].str;
 
 	if(!ota_partition)
 	{
@@ -200,9 +200,9 @@ void command_ota_commit(cli_command_call_t *call)
 
 	util_hash_to_string(local_sha256_hash_text, sizeof(local_sha256_hash), local_sha256_hash);
 
-	if(!string_equal_string(remote_sha256_hash_text, local_sha256_hash_text))
+	if(remote_sha256_hash_text != string_cstr(local_sha256_hash_text))
 	{
-		string_format(call->result, "ERROR: checksum mismatch: %s vs. %s", string_cstr(remote_sha256_hash_text), string_cstr(local_sha256_hash_text));
+		string_format(call->result, "ERROR: checksum mismatch: %s vs. %s", remote_sha256_hash_text.c_str(), string_cstr(local_sha256_hash_text));
 		return;
 	}
 

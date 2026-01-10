@@ -31,7 +31,7 @@ void Alias::command(cli_command_call_t *call)
 
 		case(1):
 		{
-			auto it = aliases.find(string_cstr(call->parameters[0].string));
+			auto it = aliases.find(call->parameters[0].str);
 
 			if(it != aliases.end())
 				aliases.erase(it);
@@ -41,7 +41,7 @@ void Alias::command(cli_command_call_t *call)
 
 		case(2):
 		{
-			aliases[string_cstr(call->parameters[0].string)] = string_cstr(call->parameters[1].string);
+			aliases[call->parameters[0].str.c_str()] = call->parameters[1].str.c_str(); // FIXME
 			break;
 		}
 

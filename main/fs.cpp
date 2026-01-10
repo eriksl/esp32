@@ -89,30 +89,30 @@ void fs_command_list(cli_command_call_t *call)
 	assert(inited);
 	assert((call->parameter_count > 0) && (call->parameter_count < 3));
 
-	if(!(dir = opendir(string_cstr(call->parameters[0].string))))
+	if(!(dir = opendir(call->parameters[0].str.c_str())))
 	{
-		string_format(call->result, "opendir of %s failed", string_cstr(call->parameters[0].string));
+		string_format(call->result, "opendir of %s failed", call->parameters[0].str.c_str());
 		return;
 	}
 
 	if(call->parameter_count == 2)
 	{
-		if(string_equal_cstr(call->parameters[1].string, "-l"))
+		if(call->parameters[1].str == "-l")
 			option_long = true;
 		else
 		{
-			string_format_append(call->result, "fs-list: unknown option: %s\n", string_cstr(call->parameters[1].string));
+			string_format_append(call->result, "fs-list: unknown option: %s\n", call->parameters[1].str.c_str());
 			return;
 		}
 	}
 	else
 		option_long = false;
 
-	string_format(call->result, "DIRECTORY %s", string_cstr(call->parameters[0].string));
+	string_format(call->result, "DIRECTORY %s", call->parameters[0].str.c_str());
 
 	while((dirent = readdir(dir)))
 	{
-		string_format(filename, "%s/%s", string_cstr(call->parameters[0].string), dirent->d_name);
+		string_format(filename, "%s/%s", call->parameters[0].str.c_str(), dirent->d_name);
 
 		if(stat(string_cstr(filename), &statb))
 		{
@@ -147,9 +147,9 @@ void fs_command_format(cli_command_call_t *call)
 	assert(inited);
 	assert(call->parameter_count == 1);
 
-	if(esp_littlefs_format(string_cstr(call->parameters[0].string)))
+	if(esp_littlefs_format(call->parameters[0].str.c_str()))
 	{
-		string_format(call->result, "format of %s failed", string_cstr(call->parameters[0].string));
+		string_format(call->result, "format of %s failed", call->parameters[0].str.c_str());
 		return;
 	}
 
@@ -169,9 +169,9 @@ void fs_command_read(cli_command_call_t *call)
 		return;
 	}
 
-	if((fd = open(string_cstr(call->parameters[2].string), O_RDONLY, 0)) < 0)
+	if((fd = open(call->parameters[2].str.c_str(), O_RDONLY, 0)) < 0)
 	{
-		string_format(call->result, "ERROR: cannot open file %s: %s", string_cstr(call->parameters[2].string), strerror(errno));
+		string_format(call->result, "ERROR: cannot open file %s: %s", call->parameters[2].str.c_str(), strerror(errno));
 		return;
 	}
 
@@ -209,9 +209,9 @@ void fs_command_write(cli_command_call_t *call)
 		return;
 	}
 
-	if((fd = open(string_cstr(call->parameters[2].string), open_mode, 0)) < 0)
+	if((fd = open(call->parameters[2].str.c_str(), open_mode, 0)) < 0)
 	{
-		string_format(call->result, "ERROR: cannot open file %s: %s", string_cstr(call->parameters[2].string), strerror(errno));
+		string_format(call->result, "ERROR: cannot open file %s: %s", call->parameters[2].str.c_str(), strerror(errno));
 		return;
 	}
 
@@ -224,7 +224,7 @@ void fs_command_write(cli_command_call_t *call)
 
 	close(fd);
 
-	if(stat(string_cstr(call->parameters[2].string), &statb))
+	if(stat(call->parameters[2].str.c_str(), &statb))
 		length = -1;
 	else
 		length = statb.st_size;
@@ -237,7 +237,7 @@ void fs_command_erase(cli_command_call_t *call)
 	assert(inited);
 	assert(call->parameter_count == 1);
 
-	if(unlink(string_cstr(call->parameters[0].string)))
+	if(unlink(call->parameters[0].str.c_str()))
 		string_assign_cstr(call->result, "file erase failed");
 	else
 		string_assign_cstr(call->result, "OK file erased");
@@ -248,7 +248,7 @@ void fs_command_rename(cli_command_call_t *call)
 	assert(inited);
 	assert(call->parameter_count == 2);
 
-	if(rename(string_cstr(call->parameters[0].string), string_cstr(call->parameters[1].string)))
+	if(rename(call->parameters[0].str.c_str(), call->parameters[1].str.c_str()))
 		string_assign_cstr(call->result, "file rename failed");
 	else
 		string_assign_cstr(call->result, "OK file renamed");
@@ -267,7 +267,7 @@ void fs_command_checksum(cli_command_call_t *call)
 	mbedtls_sha256_init(&hash_context);
 	mbedtls_sha256_starts(&hash_context, /* no SHA-224 */ 0);
 
-	if((fd = open(string_cstr(call->parameters[0].string), O_RDONLY, 0)) < 0)
+	if((fd = open(call->parameters[0].str.c_str(), O_RDONLY, 0)) < 0)
 	{
 		string_assign_cstr(call->result, "ERROR: cannot open file: ");
 		string_append_cstr(call->result, strerror(errno));
@@ -293,7 +293,7 @@ void fs_command_truncate(cli_command_call_t *call)
 {
 	assert(call->parameter_count == 2);
 
-	if(truncate(string_cstr(call->parameters[0].string), call->parameters[1].unsigned_int))
+	if(truncate(call->parameters[0].str.c_str(), call->parameters[1].unsigned_int))
 	{
 		string_assign_cstr(call->result, "ERROR: cannot truncate file: ");
 		string_append_cstr(call->result, strerror(errno));
