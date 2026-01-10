@@ -1,5 +1,12 @@
 #pragma once
 
+#pragma once
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 enum
 {
 	string_header_length = 20,
@@ -35,7 +42,7 @@ void _string_free(string_t *string, const char *file, unsigned int line);
 #define string_const(s) _string_const(s, __FILE__, __LINE__)
 string_t _string_const(const char *const_string, const char *file, unsigned int line);
 
-const_string_t string_empty_string(void);
+const_string_t string_empty_string();
 
 void string_clear(string_t dst);
 unsigned int string_length(const const_string_t src);
@@ -76,4 +83,10 @@ void string_tolower(string_t dst);
 int string_read_fd(string_t dst, unsigned int fd, unsigned int length);
 int string_recvfrom_fd(string_t dst, unsigned int fd, unsigned int *sockaddr_len, void *sockaddr);
 
-void string_module_init(void);
+#pragma once
+
+#ifdef __cplusplus
+}
+#endif
+
+void string_module_init();

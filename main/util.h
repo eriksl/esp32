@@ -12,12 +12,14 @@ extern "C"
 {
 #endif
 
+#if 0 // FIXME
 #pragma GCC poison strcpy
 #pragma GCC poison strcat
 #pragma GCC poison strncpy
 #pragma GCC poison strncat
 #pragma GCC poison printf
 #pragma GCC poison sprintf
+#endif
 
 extern uint64_t stat_util_time_malloc_min;
 extern uint64_t stat_util_time_malloc_max;

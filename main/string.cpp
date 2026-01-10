@@ -4,10 +4,14 @@
 #include <errno.h>
 #include <sys/socket.h>
 
-#include "string.h"
 #include "log.h"
+#include "string.h"
 #include "util.h"
+
+extern "C"
+{
 #include "cli-command.h"
+}
 
 #include <freertos/FreeRTOS.h>
 
@@ -18,6 +22,7 @@
 typedef enum
 {
 	string_magic_word = 0x4afb0001,
+	string_invalid = 0xffffffff,
 } string_magic_word_t;
 
 typedef struct
@@ -90,7 +95,7 @@ void string_module_init(void)
 
 const_string_t string_empty_string(void)
 {
-	return((const const_string_t)&empty_string);
+	return(reinterpret_cast<const_string_t>(&empty_string));
 }
 
 static void _string_init_header(_string_t *_dst, unsigned int size, bool header_const, bool header_from_malloc, bool data_const, bool data_from_malloc)
@@ -131,7 +136,7 @@ string_t _string_new(unsigned int size, const char *file, unsigned int line)
 
 	assert(inited);
 
-	_dst = util_memory_alloc_spiram(sizeof(_string_t) + size + 1); // NOTE: length < size and [length + 1] must be able to contain \0
+	_dst = static_cast<_string_t *>(util_memory_alloc_spiram(sizeof(_string_t) + size + 1)); // NOTE: length < size and [length + 1] must be able to contain \0
 
 	assert(_dst);
 	assert((((unsigned int)(void *)_dst) & 0x3) == 0);
@@ -183,7 +188,7 @@ string_t _string_const(const char *const_string, const char *file, unsigned int 
 
 	length = strlen(const_string);
 
-	_dst = util_memory_alloc_spiram(sizeof(_string_t));
+	_dst = static_cast<_string_t*>(util_memory_alloc_spiram(sizeof(_string_t)));
 
 	assert(_dst);
 	assert((((unsigned int)(void *)_dst) & 0x3) == 0);
@@ -219,7 +224,7 @@ void _string_free(string_t *string, const char *file, unsigned int line)
 	if(_dst->header_const)
 		return;
 
-	_dst->magic_word = 0xffffffff;
+	_dst->magic_word = string_invalid;
 	_dst->size = 0;
 	_dst->length = 0;
 

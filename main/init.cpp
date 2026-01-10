@@ -3,19 +3,12 @@
 
 extern "C"
 {
-#include "string.h"
-}
-
-#include "cli.h"
-#include "log.h"
-
-extern "C"
-{
-#include "sensor.h"
-
 __attribute__((noreturn)) void app_main(void);
 }
 
+#include "string.h"
+#include "cli.h"
+#include "log.h"
 #include "bt.h"
 #include "config.h"
 #include "console.h"
@@ -32,6 +25,7 @@ __attribute__((noreturn)) void app_main(void);
 #include "pdm.h"
 #include "process.h"
 #include "ramdisk.h"
+#include "sensor.h"
 #include "tcp.h"
 #include "udp.h"
 #include "util.h"

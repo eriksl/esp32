@@ -2,16 +2,24 @@
 #include <stdbool.h>
 #include <time.h>
 #include <math.h>
+#include <assert.h>
 
+extern "C"
+{
 #include "string.h"
+}
+
 #include "info.h"
 #include "log.h"
 #include "util.h"
-#include "cli-command.h"
-#include "sensor.h"
 #include "i2c.h"
 
-#include <assert.h>
+extern "C"
+{
+#include "cli-command.h"
+}
+
+#include "sensor.h"
 
 typedef struct
 {
@@ -47,8 +55,8 @@ typedef struct info_T
 	const char *name;
 	sensor_t id;
 	unsigned int address;
-	sensor_flags_t flags;
 	sensor_type_t type; // bitmask!
+	sensor_flags_t flags;
 	unsigned int precision;
 	size_t private_data_size;
 	sensor_detect_t (*const detect_fn)(i2c_slave_t);
@@ -130,27 +138,27 @@ typedef struct
 	float factor;
 } device_autoranging_data_t;
 
-[[nodiscard]] static unsigned int unsigned_20_top_be(const uint8_t ptr[const static 3])
+[[nodiscard]] static unsigned int unsigned_20_top_be(const uint8_t ptr[])
 {
 	return((((ptr[0] & 0xff) >> 0) << 12) | (((ptr[1] & 0xff) >> 0) << 4) | (((ptr[2] & 0xf0) >> 4) << 0));
 }
 
-[[nodiscard]] static unsigned int unsigned_20_bottom_be(const uint8_t ptr[const static 3])
+[[nodiscard]] static unsigned int unsigned_20_bottom_be(const uint8_t ptr[])
 {
 	return((((ptr[0] & 0x0f) >> 0) << 16) | (((ptr[1] & 0xff) >> 0) << 8) | (((ptr[2] & 0xff) >> 0) << 0));
 }
 
-[[nodiscard]] static unsigned int unsigned_16_be(const uint8_t ptr[const static 2])
+[[nodiscard]] static unsigned int unsigned_16_be(const uint8_t ptr[])
 {
 	return(((ptr[0] & 0xff) << 8) | (ptr[1] & 0xff));
 }
 
-[[nodiscard]] static unsigned int unsigned_16_le(const uint8_t ptr[const static 2])
+[[nodiscard]] static unsigned int unsigned_16_le(const uint8_t ptr[])
 {
 	return(((ptr[1] & 0xff) << 8) | (ptr[0] & 0xff));
 }
 
-[[nodiscard]] static int signed_16_le(const uint8_t ptr[const static 2])
+[[nodiscard]] static int signed_16_le(const uint8_t ptr[])
 {
 	int rv = ((ptr[1] & 0xff) << 8) | (ptr[0] & 0xff);
 
@@ -160,22 +168,22 @@ typedef struct
 	return(rv);
 }
 
-[[nodiscard]] static unsigned int unsigned_12_top_be(const uint8_t ptr[const static 2])
+[[nodiscard]] static unsigned int unsigned_12_top_be(const uint8_t ptr[])
 {
 	return((((ptr[0] & 0xff) >> 0) << 4) | (((ptr[1] & 0xf0) >> 4) << 0));
 }
 
-[[nodiscard]] static unsigned int unsigned_12_bottom_le(const uint8_t ptr[const static 2])
+[[nodiscard]] static unsigned int unsigned_12_bottom_le(const uint8_t ptr[])
 {
 	return((((ptr[0] & 0x0f) >> 0) << 0) | (((ptr[1] & 0xff) >> 0) << 4));
 }
 
-[[nodiscard]] static unsigned int unsigned_8(const uint8_t ptr[const static 1])
+[[nodiscard]] static unsigned int unsigned_8(const uint8_t ptr[])
 {
 	return((unsigned int)(*ptr & 0xff));
 }
 
-[[nodiscard]] static int signed_8(const uint8_t ptr[const static 1])
+[[nodiscard]] static int signed_8(const uint8_t ptr[])
 {
 	int rv = (unsigned int)(*ptr & 0xff);
 
@@ -244,7 +252,7 @@ static sensor_detect_t bh1750_detect(i2c_slave_t slave)
 
 static bool bh1750_init(data_t *data)
 {
-	bh1750_private_data_t *pdata = data->private_data;
+	bh1750_private_data_t *pdata = static_cast<bh1750_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -266,7 +274,7 @@ static bool bh1750_init(data_t *data)
 
 static bool bh1750_poll(data_t *data)
 {
-	bh1750_private_data_t *pdata = data->private_data;
+	bh1750_private_data_t *pdata = static_cast<bh1750_private_data_t *>(data->private_data);
 	uint8_t buffer[2];
 
 	assert(pdata);
@@ -356,7 +364,7 @@ static bool bh1750_poll(data_t *data)
 
 static void bh1750_dump(const data_t *data, string_t output)
 {
-	bh1750_private_data_t *pdata = data->private_data;
+	bh1750_private_data_t *pdata = static_cast<bh1750_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -393,7 +401,7 @@ static sensor_detect_t tmp75_detect(i2c_slave_t slave)
 
 static bool tmp75_init(data_t *data)
 {
-	tmp75_private_data_t *pdata = data->private_data;
+	tmp75_private_data_t *pdata = static_cast<tmp75_private_data_t *>(data->private_data);
 	uint8_t buffer[2];
 
 	assert(pdata);
@@ -418,7 +426,7 @@ static bool tmp75_init(data_t *data)
 
 static bool tmp75_poll(data_t *data)
 {
-	tmp75_private_data_t *pdata = data->private_data;
+	tmp75_private_data_t *pdata = static_cast<tmp75_private_data_t *>(data->private_data);
 	uint8_t buffer[2];
 	unsigned int raw_temperature;
 
@@ -441,7 +449,7 @@ static bool tmp75_poll(data_t *data)
 
 static void tmp75_dump(const data_t *data, string_t output)
 {
-	tmp75_private_data_t *pdata = data->private_data;
+	tmp75_private_data_t *pdata = static_cast<tmp75_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -542,7 +550,7 @@ static sensor_detect_t opt3001_detect(i2c_slave_t slave)
 
 static bool opt3001_init(data_t *data)
 {
-	opt3001_private_data_t *pdata = data->private_data;
+	opt3001_private_data_t *pdata = static_cast<opt3001_private_data_t *>(data->private_data);
 	uint8_t buffer[2];
 	unsigned int read_config;
 
@@ -575,7 +583,7 @@ static bool opt3001_init(data_t *data)
 
 static bool opt3001_poll(data_t *data)
 {
-	opt3001_private_data_t *pdata = data->private_data;
+	opt3001_private_data_t *pdata = static_cast<opt3001_private_data_t *>(data->private_data);
 	uint8_t buffer[2];
 	unsigned int config;
 
@@ -639,7 +647,7 @@ static bool opt3001_poll(data_t *data)
 
 static void opt3001_dump(const data_t *data, string_t output)
 {
-	opt3001_private_data_t *pdata = data->private_data;
+	opt3001_private_data_t *pdata = static_cast<opt3001_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -713,7 +721,7 @@ static sensor_detect_t max44009_detect(i2c_slave_t slave)
 		return(sensor_not_found);
 
 	if((buffer[0] != max44009_probe_thresh_lsb) || (buffer[1] != max44009_probe_thresh_lsb))
-		return(false);
+		return(sensor_not_found);
 
 	if(!i2c_send_1_receive(slave, max44009_reg_thresh_timer, sizeof(buffer), buffer))
 		return(sensor_not_found);
@@ -726,7 +734,7 @@ static sensor_detect_t max44009_detect(i2c_slave_t slave)
 
 static bool max44009_init(data_t *data)
 {
-	max44009_private_data_t *pdata = data->private_data;
+	max44009_private_data_t *pdata = static_cast<max44009_private_data_t *>(data->private_data);
 	uint8_t buffer[2];
 
 	assert(pdata);
@@ -758,7 +766,7 @@ static bool max44009_init(data_t *data)
 
 static bool max44009_poll(data_t *data)
 {
-	max44009_private_data_t *pdata = data->private_data;
+	max44009_private_data_t *pdata = static_cast<max44009_private_data_t *>(data->private_data);
 	uint8_t buffer[2];
 
 	assert(pdata);
@@ -786,7 +794,7 @@ static bool max44009_poll(data_t *data)
 
 static void max44009_dump(const data_t *data, string_t output)
 {
-	max44009_private_data_t *pdata = data->private_data;
+	max44009_private_data_t *pdata = static_cast<max44009_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -849,7 +857,7 @@ static bool asair_ready(data_t *data)
 
 static bool asair_init_chip(data_t *data)
 {
-	asair_private_data_t *pdata = data->private_data;
+	asair_private_data_t *pdata = static_cast<asair_private_data_t *>(data->private_data);
 
 	if(i2c_send_3(data->slave, asair_cmd_aht10_init_1, asair_cmd_aht10_init_2, asair_cmd_aht10_init_3))
 	{
@@ -884,7 +892,7 @@ static sensor_detect_t asair_detect(i2c_slave_t slave)
 
 static bool asair_init(data_t *data)
 {
-	asair_private_data_t *pdata = data->private_data;
+	asair_private_data_t *pdata = static_cast<asair_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -910,7 +918,7 @@ static bool asair_init(data_t *data)
 
 static bool asair_poll(data_t *data)
 {
-	asair_private_data_t *pdata = data->private_data;
+	asair_private_data_t *pdata = static_cast<asair_private_data_t *>(data->private_data);
 	uint8_t	buffer[8];
 
 	assert(pdata);
@@ -1024,7 +1032,7 @@ static bool asair_poll(data_t *data)
 
 static void asair_dump(const data_t *data, string_t output)
 {
-	asair_private_data_t *pdata = data->private_data;
+	asair_private_data_t *pdata = static_cast<asair_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -1105,14 +1113,14 @@ static const device_autoranging_data_t tsl2561_autoranging_data[tsl2561_autorang
 
 static bool tsl2561_write_byte(i2c_slave_t slave, tsl2561_reg_t reg, unsigned int value)
 {
-	return(i2c_send_2(slave, tsl2561_cmd_cmd | tsl2561_cmd_clear | (reg & tsl2561_cmd_address), value));
+	return(i2c_send_2(slave, tsl2561_cmd_cmd | tsl2561_cmd_clear | (static_cast<unsigned int>(reg) & tsl2561_cmd_address), value));
 }
 
 static bool tsl2561_read_byte(i2c_slave_t slave, tsl2561_reg_t reg, unsigned int *value)
 {
 	uint8_t buffer[1];
 
-	if(!i2c_send_1_receive(slave, tsl2561_cmd_cmd | (reg & tsl2561_cmd_address), sizeof(buffer), buffer))
+	if(!i2c_send_1_receive(slave, tsl2561_cmd_cmd | (static_cast<unsigned int>(reg) & tsl2561_cmd_address), sizeof(buffer), buffer))
 		return(false);
 
 	*value = buffer[0];
@@ -1124,7 +1132,7 @@ static bool tsl2561_read_word(i2c_slave_t slave, tsl2561_reg_t reg, unsigned int
 {
 	uint8_t buffer[2];
 
-	if(!i2c_send_1_receive(slave, tsl2561_cmd_cmd | (reg & tsl2561_cmd_address), sizeof(buffer), buffer))
+	if(!i2c_send_1_receive(slave, tsl2561_cmd_cmd | (static_cast<unsigned int>(reg) & tsl2561_cmd_address), sizeof(buffer), buffer))
 		return(false);
 
 	*value = unsigned_16_le(buffer);
@@ -1181,7 +1189,7 @@ static sensor_detect_t tsl2561_detect(i2c_slave_t slave)
 
 static bool tsl2561_init(data_t *data)
 {
-	tsl2561_private_data_t *pdata = data->private_data;
+	tsl2561_private_data_t *pdata = static_cast<tsl2561_private_data_t *>(data->private_data);
 	unsigned int regval;
 
 	assert(pdata);
@@ -1223,7 +1231,7 @@ static bool tsl2561_init(data_t *data)
 
 static bool tsl2561_poll(data_t *data)
 {
-	tsl2561_private_data_t *pdata = data->private_data;
+	tsl2561_private_data_t *pdata = static_cast<tsl2561_private_data_t *>(data->private_data);
 	unsigned int overflow, scale_down_threshold, scale_up_threshold;
 	float value, ratio;
 
@@ -1324,7 +1332,7 @@ static bool tsl2561_poll(data_t *data)
 
 static void tsl2561_dump(const data_t *data, string_t output)
 {
-	tsl2561_private_data_t *pdata = data->private_data;
+	tsl2561_private_data_t *pdata = static_cast<tsl2561_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -1414,7 +1422,7 @@ static sensor_detect_t hdc1080_detect(i2c_slave_t slave)
 
 static bool hdc1080_init(data_t *data)
 {
-	hdc1080_private_data_t *pdata = data->private_data;
+	hdc1080_private_data_t *pdata = static_cast<hdc1080_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -1437,7 +1445,7 @@ static bool hdc1080_init(data_t *data)
 
 static bool hdc1080_poll(data_t *data)
 {
-	hdc1080_private_data_t *pdata = data->private_data;
+	hdc1080_private_data_t *pdata = static_cast<hdc1080_private_data_t *>(data->private_data);
 	static constexpr unsigned int conf = hdc1080_conf_tres_14 | hdc1080_conf_hres_14 | hdc1080_conf_mode_two;
 	uint8_t buffer[4];
 
@@ -1523,7 +1531,7 @@ static bool hdc1080_poll(data_t *data)
 
 static void hdc1080_dump(const data_t *data, string_t output)
 {
-	hdc1080_private_data_t *pdata = data->private_data;
+	hdc1080_private_data_t *pdata = static_cast<hdc1080_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -1721,7 +1729,7 @@ static sensor_detect_t sht3x_detect(i2c_slave_t slave)
 
 static bool sht3x_init(data_t *data)
 {
-	sht3x_private_data_t *pdata = data->private_data;
+	sht3x_private_data_t *pdata = static_cast<sht3x_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -1735,7 +1743,7 @@ static bool sht3x_init(data_t *data)
 
 static bool sht3x_poll(data_t *data)
 {
-	sht3x_private_data_t *pdata = data->private_data;
+	sht3x_private_data_t *pdata = static_cast<sht3x_private_data_t *>(data->private_data);
 	unsigned int result, results[2];
 
 	assert(pdata);
@@ -1843,7 +1851,7 @@ static bool sht3x_poll(data_t *data)
 
 static void sht3x_dump(const data_t *data, string_t output)
 {
-	sht3x_private_data_t *pdata = data->private_data;
+	sht3x_private_data_t *pdata = static_cast<sht3x_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -1982,7 +1990,7 @@ typedef struct
 
 static bool bmx280_read_otp(data_t *data)
 {
-	bmx280_private_data_t *pdata = data->private_data;
+	bmx280_private_data_t *pdata = static_cast<bmx280_private_data_t *>(data->private_data);
 	uint8_t cal_data[bmx280_cal_size];
 	uint8_t buffer[1];
 	unsigned int e4, e5, e6;
@@ -2047,7 +2055,7 @@ static sensor_detect_t bmx280_detect(i2c_slave_t slave)
 
 static bool bmx280_init(data_t *data)
 {
-	bmx280_private_data_t *pdata = data->private_data;
+	bmx280_private_data_t *pdata = static_cast<bmx280_private_data_t *>(data->private_data);
 	uint8_t	buffer[1];
 
 	assert(pdata);
@@ -2085,7 +2093,7 @@ static bool bmx280_init(data_t *data)
 
 static bool bmx280_poll(data_t *data)
 {
-	bmx280_private_data_t *pdata = data->private_data;
+	bmx280_private_data_t *pdata = static_cast<bmx280_private_data_t *>(data->private_data);
 	uint8_t buffer[8];
 	float var1, var2, airpressure, humidity;
 
@@ -2231,7 +2239,7 @@ static bool bmx280_poll(data_t *data)
 
 static void bmx280_dump(const data_t *data, string_t output)
 {
-	bmx280_private_data_t *pdata = data->private_data;
+	bmx280_private_data_t *pdata = static_cast<bmx280_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -2366,7 +2374,7 @@ static sensor_detect_t htu21_detect(i2c_slave_t slave)
 
 static bool htu21_init(data_t *data)
 {
-	htu21_private_data_t *pdata = data->private_data;
+	htu21_private_data_t *pdata = static_cast<htu21_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -2380,7 +2388,7 @@ static bool htu21_init(data_t *data)
 
 static bool htu21_poll(data_t *data)
 {
-	htu21_private_data_t *pdata = data->private_data;
+	htu21_private_data_t *pdata = static_cast<htu21_private_data_t *>(data->private_data);
 	unsigned int result;
 	float temperature, humidity;
 	uint8_t cmd[2];
@@ -2513,7 +2521,7 @@ static bool htu21_poll(data_t *data)
 
 static void htu21_dump(const data_t *data, string_t output)
 {
-	htu21_private_data_t *pdata = data->private_data;
+	htu21_private_data_t *pdata = static_cast<htu21_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -2607,7 +2615,7 @@ static sensor_detect_t veml7700_detect(i2c_slave_t slave)
 
 static bool veml7700_init(data_t *data)
 {
-	veml7700_private_data_t *pdata = data->private_data;
+	veml7700_private_data_t *pdata = static_cast<veml7700_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -2623,7 +2631,7 @@ static bool veml7700_init(data_t *data)
 
 static bool veml7700_poll(data_t *data)
 {
-	veml7700_private_data_t *pdata = data->private_data;
+	veml7700_private_data_t *pdata = static_cast<veml7700_private_data_t *>(data->private_data);
 	uint8_t buffer[3];
 	unsigned int scale_down_threshold, scale_up_threshold;
 	float raw_lux;
@@ -2709,7 +2717,7 @@ static bool veml7700_poll(data_t *data)
 
 static void veml7700_dump(const data_t *data, string_t output)
 {
-	veml7700_private_data_t *pdata = data->private_data;
+	veml7700_private_data_t *pdata = static_cast<veml7700_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -2852,7 +2860,7 @@ typedef struct
 
 static bool bme680_read_otp(data_t *data)
 {
-	bme680_private_data_t *pdata = data->private_data;
+	bme680_private_data_t *pdata = static_cast<bme680_private_data_t *>(data->private_data);
 	uint8_t calibration[bme680_calibration_1_size + bme680_calibration_2_size];
 
 	assert(pdata);
@@ -2904,7 +2912,7 @@ static sensor_detect_t bme680_detect(i2c_slave_t slave)
 
 static bool bme680_init(data_t *data)
 {
-	bme680_private_data_t *pdata = data->private_data;
+	bme680_private_data_t *pdata = static_cast<bme680_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -2922,7 +2930,7 @@ static bool bme680_poll(data_t *data)
 	float temperature, humidity, airpressure, airpressure_256;
 	float var1, var2, var3, var4;
 	float t1_scaled;
-	bme680_private_data_t *pdata = data->private_data;
+	bme680_private_data_t *pdata = static_cast<bme680_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -3066,7 +3074,7 @@ static bool bme680_poll(data_t *data)
 
 static void bme680_dump(const data_t *data, string_t output)
 {
-	bme680_private_data_t *pdata = data->private_data;
+	bme680_private_data_t *pdata = static_cast<bme680_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -3175,11 +3183,11 @@ static const device_autoranging_data_t apds9930_tmd2771_autoranging_data[apds993
 
 static const device_autoranging_data_t apds9930_apds9930_autoranging_data[apds9930_apds9930_autoranging_data_size] =
 {
-	{{	apds9930_atime_699,	apds9930_ctrl_again_120	| apds9930_autoranging_disable_agl	},	{ 0,	65000	}, 0, 	699 *	120		},
-	{{	apds9930_atime_699,	apds9930_ctrl_again_16	| apds9930_autoranging_disable_agl	},	{ 100,	65000	}, 0, 	699 *	16		},
-	{{	apds9930_atime_175,	apds9930_ctrl_again_16	| apds9930_autoranging_disable_agl	},	{ 100,	65000	}, 0, 	175 *	16		},
-	{{	apds9930_atime_175,	apds9930_ctrl_again_1	| apds9930_autoranging_disable_agl	},	{ 100,	65000	}, 0, 	175 *	1		},
-	{{	apds9930_atime_175,	apds9930_ctrl_again_1	| apds9930_autoranging_enable_agl	},	{ 100,	65536	}, 0,	175 *	0.1667	},
+	{{	apds9930_atime_699,	static_cast<unsigned int>(apds9930_ctrl_again_120)	| apds9930_autoranging_disable_agl	},	{ 0,	65000	}, 0, 	699 *	120		},
+	{{	apds9930_atime_699,	static_cast<unsigned int>(apds9930_ctrl_again_16)	| apds9930_autoranging_disable_agl	},	{ 100,	65000	}, 0, 	699 *	16		},
+	{{	apds9930_atime_175,	static_cast<unsigned int>(apds9930_ctrl_again_16)	| apds9930_autoranging_disable_agl	},	{ 100,	65000	}, 0, 	175 *	16		},
+	{{	apds9930_atime_175,	static_cast<unsigned int>(apds9930_ctrl_again_1)	| apds9930_autoranging_disable_agl	},	{ 100,	65000	}, 0, 	175 *	1		},
+	{{	apds9930_atime_175,	static_cast<unsigned int>(apds9930_ctrl_again_1)	| apds9930_autoranging_enable_agl	},	{ 100,	65536	}, 0,	175 *	0.1667	},
 };
 
 typedef enum
@@ -3233,7 +3241,7 @@ static bool apds9930_read_register(i2c_slave_t slave, unsigned int reg, unsigned
 	return(true);
 }
 
-static bool apds9930_read_register_2x2(i2c_slave_t slave, unsigned int reg, unsigned int value[static 2])
+static bool apds9930_read_register_2x2(i2c_slave_t slave, unsigned int reg, unsigned int value[])
 {
 	uint8_t buffer_in[1];
 	uint8_t buffer_out[4];
@@ -3264,7 +3272,7 @@ static sensor_detect_t apds9930_detect(i2c_slave_t slave)
 
 static bool apds9930_init(data_t *data)
 {
-	apds9930_private_data_t *pdata = data->private_data;
+	apds9930_private_data_t *pdata = static_cast<apds9930_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -3324,7 +3332,7 @@ static bool apds9930_poll(data_t *data)
 	static constexpr float apds9930_factor_c = 0.746f;
 	static constexpr float apds9930_factor_d = 1.291f;
 
-	apds9930_private_data_t *pdata = data->private_data;
+	apds9930_private_data_t *pdata = static_cast<apds9930_private_data_t *>(data->private_data);
 	unsigned int value;
 	float ch0, ch1;
 	unsigned int atime, again, reg_config;
@@ -3446,10 +3454,10 @@ static bool apds9930_poll(data_t *data)
 
 static void apds9930_dump(const data_t *data, string_t output)
 {
-	apds9930_private_data_t *pdata = data->private_data;
+	apds9930_private_data_t *pdata = static_cast<apds9930_private_data_t *>(data->private_data);
 
 	string_format_append(output, "type: 0x%02x, ", pdata->type);
-	string_format_append(output, "state: %u, ", pdata->state);
+	string_format_append(output, "state: %d, ", pdata->state);
 	string_format_append(output, "scaling: %u, ", pdata->scaling);
 	string_format_append(output, "not readys: %u, ", pdata->not_readys);
 	string_format_append(output, "overflows: %u, ", pdata->overflows);
@@ -3631,7 +3639,7 @@ static sensor_detect_t apds9960_detect(i2c_slave_t slave)
 
 static bool apds9960_init(data_t *data)
 {
-	apds9960_private_data_t *pdata = (apds9960_private_data_t *)data->private_data;
+	apds9960_private_data_t *pdata = static_cast<apds9960_private_data_t *>(data->private_data);
 	unsigned int id;
 
 	assert(pdata);
@@ -3673,7 +3681,7 @@ static bool apds9960_poll(data_t *data)
 {
 	uint8_t buffer[8];
 	unsigned int value, r, g, b, again, atime;
-	apds9960_private_data_t *pdata = (apds9960_private_data_t *)data->private_data;
+	apds9960_private_data_t *pdata = static_cast<apds9960_private_data_t *>(data->private_data);
 	unsigned int scale_down_threshold, scale_up_threshold;
 
 	assert(pdata);
@@ -3788,7 +3796,7 @@ static bool apds9960_poll(data_t *data)
 
 static void apds9960_dump(const data_t *data, string_t output)
 {
-	apds9960_private_data_t *pdata = data->private_data;
+	apds9960_private_data_t *pdata = static_cast<apds9960_private_data_t *>(data->private_data);
 
 	string_format_append(output, "type: 0x%02x, ", pdata->type);
 	string_format_append(output, "state: %u, ", pdata->state);
@@ -3932,14 +3940,14 @@ typedef struct
 
 static bool tsl2591_write(i2c_slave_t slave, tsl2591_reg_t reg, unsigned int value)
 {
-	return(i2c_send_2(slave, tsl2591_cmd_cmd | reg, value));
+	return(i2c_send_2(slave, tsl2591_cmd_cmd | static_cast<unsigned int>(reg), value));
 }
 
 static bool tsl2591_read_byte(i2c_slave_t slave, tsl2591_reg_t reg, unsigned int *value)
 {
 	uint8_t buffer_out[1];
 
-	if(!i2c_send_1_receive(slave, tsl2591_cmd_cmd | reg, sizeof(buffer_out), buffer_out))
+	if(!i2c_send_1_receive(slave, tsl2591_cmd_cmd | static_cast<unsigned int>(reg), sizeof(buffer_out), buffer_out))
 		return(false);
 
 	*value = buffer_out[0];
@@ -3987,7 +3995,7 @@ static sensor_detect_t tsl2591_detect(i2c_slave_t slave)
 
 static bool tsl2591_init(data_t *data)
 {
-	tsl2591_private_data_t *pdata = data->private_data;
+	tsl2591_private_data_t *pdata = static_cast<tsl2591_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
@@ -4008,7 +4016,7 @@ static bool tsl2591_init(data_t *data)
 
 static bool tsl2591_poll(data_t *data)
 {
-	tsl2591_private_data_t *pdata = data->private_data;
+	tsl2591_private_data_t *pdata = static_cast<tsl2591_private_data_t *>(data->private_data);
 	uint8_t buffer[4];
 	unsigned int overflow, scale_down_threshold, scale_up_threshold;
 	unsigned int control_opcode;
@@ -4062,7 +4070,7 @@ static bool tsl2591_poll(data_t *data)
 			scale_up_threshold =	tsl2591_autoranging_data[pdata->scaling].threshold.up;
 			overflow =				tsl2591_autoranging_data[pdata->scaling].overflow;
 
-			if(!i2c_send_1_receive(data->slave, tsl2591_cmd_cmd | tsl2591_reg_c0datal, sizeof(buffer), buffer))
+			if(!i2c_send_1_receive(data->slave, tsl2591_cmd_cmd | static_cast<unsigned int>(tsl2591_reg_c0datal), sizeof(buffer), buffer))
 			{
 				log("tsl2591: poll: error 3");
 				break;
@@ -4125,7 +4133,7 @@ static bool tsl2591_poll(data_t *data)
 
 static void tsl2591_dump(const data_t *data, string_t output)
 {
-	tsl2591_private_data_t *pdata = data->private_data;
+	tsl2591_private_data_t *pdata = static_cast<tsl2591_private_data_t *>(data->private_data);
 
 	string_format_append(output, "state: %u, ", pdata->state);
 	string_format_append(output, "scaling: %u, ", pdata->scaling);
@@ -4211,7 +4219,9 @@ static sensor_detect_t am2320_detect(i2c_slave_t slave)
 {
 	unsigned int crc1, crc2;
 	uint8_t buffer[am2320_register_id_length + 4];
-	unsigned int module, bus, address;
+	i2c_module_t module;
+	i2c_bus_t bus;
+	unsigned int address;
 	const char *name;
 
 	if(!i2c_get_slave_info(slave, &module, &bus, &address, &name))
@@ -4247,7 +4257,7 @@ static sensor_detect_t am2320_detect(i2c_slave_t slave)
 
 static bool am2320_init(data_t *data)
 {
-	am2320_private_data_t *pdata = data->private_data;
+	am2320_private_data_t *pdata = static_cast<am2320_private_data_t *>(data->private_data);
 
 	pdata->state = am2320_state_init;
 	pdata->raw_temperature_data = 0;
@@ -4258,11 +4268,13 @@ static bool am2320_init(data_t *data)
 
 static bool am2320_poll(data_t *data)
 {
-	am2320_private_data_t *pdata = data->private_data;
+	am2320_private_data_t *pdata = static_cast<am2320_private_data_t *>(data->private_data);
 	uint8_t buffer[am2320_register_values_length + 4];
 	unsigned int crc1, crc2;
 	int humidity, temperature;
-	unsigned int module, bus, address;
+	i2c_module_t module;
+	i2c_bus_t bus;
+	unsigned int address;
 	const char *name;
 
 	if(!i2c_get_slave_info(data->slave, &module, &bus, &address, &name))
@@ -4343,11 +4355,11 @@ static bool am2320_poll(data_t *data)
 
 static void am2320_dump(const data_t *data, string_t output)
 {
-	am2320_private_data_t *pdata = data->private_data;
+	am2320_private_data_t *pdata = static_cast<am2320_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
-	string_format_append(output, "state: %u, ", pdata->state);
+	string_format_append(output, "state: %d, ", pdata->state);
 	string_format_append(output, "raw temperature data: %lu, ", pdata->raw_temperature_data);
 	string_format_append(output, "raw humidity data: %lu", pdata->raw_humidity_data);
 }
@@ -4359,8 +4371,12 @@ static const info_t info[sensor_size] =
 		.name = "bh1750",
 		.id = sensor_bh1750,
 		.address = 0x23,
-		.type = (1 << sensor_type_visible_light),
-		.flags.no_constrained = 1,
+		.type = static_cast<sensor_type_t>(1 << sensor_type_visible_light),
+		.flags
+		{
+			.force_detect = 0,
+			.no_constrained = 1,
+		},
 		.precision = 0,
 		.private_data_size = sizeof(bh1750_private_data_t),
 		.detect_fn = bh1750_detect,
@@ -4373,7 +4389,8 @@ static const info_t info[sensor_size] =
 		.name = "tmp75",
 		.id = sensor_tmp75,
 		.address = 0x48,
-		.type = (1 << sensor_type_temperature),
+		.type = static_cast<sensor_type_t>(1 << sensor_type_temperature),
+		.flags = {},
 		.precision = 1,
 		.private_data_size = sizeof(tmp75_private_data_t),
 		.detect_fn = tmp75_detect,
@@ -4386,7 +4403,8 @@ static const info_t info[sensor_size] =
 		.name = "opt3001",
 		.id = sensor_opt3001,
 		.address = 0x45,
-		.type = (1 << sensor_type_visible_light),
+		.type = static_cast<sensor_type_t>(1 << sensor_type_visible_light),
+		.flags = {},
 		.precision = 2,
 		.private_data_size = sizeof(opt3001_private_data_t),
 		.detect_fn = opt3001_detect,
@@ -4399,7 +4417,8 @@ static const info_t info[sensor_size] =
 		.name = "max44009",
 		.id = sensor_max44009,
 		.address = 0x4a,
-		.type = (1 << sensor_type_visible_light),
+		.type = static_cast<sensor_type_t>(1 << sensor_type_visible_light),
+		.flags = {},
 		.precision = 2,
 		.private_data_size = sizeof(max44009_private_data_t),
 		.detect_fn = max44009_detect,
@@ -4412,7 +4431,8 @@ static const info_t info[sensor_size] =
 		.name = "asair",
 		.id = sensor_asair,
 		.address = 0x38,
-		.type = (1 << sensor_type_temperature) | (1 << sensor_type_humidity),
+		.type = static_cast<sensor_type_t>((1 << sensor_type_temperature) | (1 << sensor_type_humidity)),
+		.flags = {},
 		.precision = 1,
 		.private_data_size = sizeof(asair_private_data_t),
 		.detect_fn = asair_detect,
@@ -4425,7 +4445,8 @@ static const info_t info[sensor_size] =
 		.name = "apds9930",
 		.id = sensor_apds9930,
 		.address = 0x39,
-		.type = (1 << sensor_type_visible_light),
+		.type = static_cast<sensor_type_t>(1 << sensor_type_visible_light),
+		.flags = {},
 		.precision = 2,
 		.private_data_size = sizeof(apds9930_private_data_t),
 		.detect_fn = apds9930_detect,
@@ -4438,7 +4459,8 @@ static const info_t info[sensor_size] =
 		.name = "tsl2561",
 		.id = sensor_tsl2561,
 		.address = 0x39,
-		.type = (1 << sensor_type_visible_light),
+		.type = static_cast<sensor_type_t>(1 << sensor_type_visible_light),
+		.flags = {},
 		.precision = 2,
 		.private_data_size = sizeof(tsl2561_private_data_t),
 		.detect_fn = tsl2561_detect,
@@ -4451,8 +4473,12 @@ static const info_t info[sensor_size] =
 		.name = "hdc1080",
 		.id = sensor_hdc1080,
 		.address = 0x40,
-		.type = (1 << sensor_type_temperature) | (1 << sensor_type_humidity),
-		.flags.no_constrained = 1,
+		.type = static_cast<sensor_type_t>((1 << sensor_type_temperature) | (1 << sensor_type_humidity)),
+		.flags
+		{
+			.force_detect = 0,
+			.no_constrained = 1,
+		},
 		.precision = 1,
 		.private_data_size = sizeof(hdc1080_private_data_t),
 		.detect_fn = hdc1080_detect,
@@ -4465,8 +4491,12 @@ static const info_t info[sensor_size] =
 		.name = "sht3x",
 		.id = sensor_sht3x,
 		.address = 0x44,
-		.type = (1 << sensor_type_temperature) | (1 << sensor_type_humidity),
-		.flags.no_constrained = 1,
+		.type = static_cast<sensor_type_t>((1 << sensor_type_temperature) | (1 << sensor_type_humidity)),
+		.flags
+		{
+			.force_detect = 0,
+			.no_constrained = 1,
+		},
 		.precision = 1,
 		.private_data_size = sizeof(sht3x_private_data_t),
 		.detect_fn = sht3x_detect,
@@ -4479,7 +4509,8 @@ static const info_t info[sensor_size] =
 		.name = "bmx280",
 		.id = sensor_bmx280,
 		.address = 0x76,
-		.type = (1 << sensor_type_temperature) | (1 << sensor_type_humidity) | (1 << sensor_type_airpressure),
+		.type = static_cast<sensor_type_t>((1 << sensor_type_temperature) | (1 << sensor_type_humidity) | (1 << sensor_type_airpressure)),
+		.flags = {},
 		.precision = 1,
 		.private_data_size = sizeof(bmx280_private_data_t),
 		.detect_fn = bmx280_detect,
@@ -4492,8 +4523,12 @@ static const info_t info[sensor_size] =
 		.name = "htu21",
 		.id = sensor_htu21,
 		.address = 0x40,
-		.type = (1 << sensor_type_temperature) | (1 << sensor_type_humidity),
-		.flags.no_constrained = 1,
+		.type = static_cast<sensor_type_t>((1 << sensor_type_temperature) | (1 << sensor_type_humidity)),
+		.flags
+		{
+			.force_detect = 0,
+			.no_constrained = 1,
+		},
 		.precision = 1,
 		.private_data_size = sizeof(htu21_private_data_t),
 		.detect_fn = htu21_detect,
@@ -4506,7 +4541,8 @@ static const info_t info[sensor_size] =
 		.name = "veml7700",
 		.id = sensor_veml7700,
 		.address = 0x10,
-		.type = (1 << sensor_type_visible_light),
+		.type = static_cast<sensor_type_t>(1 << sensor_type_visible_light),
+		.flags = {},
 		.precision = 2,
 		.private_data_size = sizeof(veml7700_private_data_t),
 		.detect_fn = veml7700_detect,
@@ -4519,7 +4555,8 @@ static const info_t info[sensor_size] =
 		.name = "bme680",
 		.id = sensor_bme680,
 		.address = 0x76,
-		.type = (1 << sensor_type_temperature) | (1 << sensor_type_humidity) | (1 << sensor_type_airpressure),
+		.type = static_cast<sensor_type_t>((1 << sensor_type_temperature) | (1 << sensor_type_humidity) | (1 << sensor_type_airpressure)),
+		.flags = {},
 		.precision = 1,
 		.private_data_size = sizeof(bme680_private_data_t),
 		.detect_fn = bme680_detect,
@@ -4532,7 +4569,8 @@ static const info_t info[sensor_size] =
 		.name = "apds9960",
 		.id = sensor_apds9960,
 		.address = 0x39,
-		.type = (1 << sensor_type_visible_light),
+		.type = static_cast<sensor_type_t>(1 << sensor_type_visible_light),
+		.flags = {},
 		.precision = 2,
 		.private_data_size = sizeof(apds9960_private_data_t),
 		.detect_fn = apds9960_detect,
@@ -4545,7 +4583,8 @@ static const info_t info[sensor_size] =
 		.name = "tsl2591",
 		.id = sensor_tsl2591,
 		.address = 0x29,
-		.type = (1 << sensor_type_visible_light),
+		.type = static_cast<sensor_type_t>(1 << sensor_type_visible_light),
+		.flags = {},
 		.precision = 2,
 		.private_data_size = sizeof(tsl2591_private_data_t),
 		.detect_fn = tsl2591_detect,
@@ -4558,7 +4597,8 @@ static const info_t info[sensor_size] =
 		.name = "tsl2591-dummy",
 		.id = sensor_tsl2591_28,
 		.address = 0x28,
-		.type = (1 << sensor_type_visible_light),
+		.type = static_cast<sensor_type_t>(1 << sensor_type_visible_light),
+		.flags = {},
 		.precision = 2,
 		.private_data_size = 0,
 		.detect_fn = tsl2591_28_detect,
@@ -4571,9 +4611,12 @@ static const info_t info[sensor_size] =
 		.name = "am2320",
 		.id = sensor_am2320,
 		.address = 0x5c,
-		.type = (1 << sensor_type_temperature) | (1 << sensor_type_humidity),
-		.flags.force_detect = 1,
-		.flags.no_constrained = 1,
+		.type = static_cast<sensor_type_t>((1 << sensor_type_temperature) | (1 << sensor_type_humidity)),
+		.flags
+		{
+			.force_detect = 1,
+			.no_constrained = 1,
+		},
 		.precision = 1,
 		.private_data_size = sizeof(am2320_private_data_t),
 		.detect_fn = am2320_detect,
@@ -4599,9 +4642,9 @@ static void run_sensors(void *parameters)
 	module = run->module;
 	buses = i2c_buses(module);
 
-	for(bus = i2c_bus_first; bus < buses; bus++)
+	for(bus = i2c_bus_first; bus < buses; bus = static_cast<i2c_bus_t>(bus + 1))
 	{
-		for(sensor = sensor_first; sensor < sensor_size; sensor++)
+		for(sensor = sensor_first; sensor < sensor_size; sensor = static_cast<sensor_t>(sensor + 1))
 		{
 			infoptr = &info[sensor];
 
@@ -4642,10 +4685,10 @@ static void run_sensors(void *parameters)
 
 			stat_sensors_found[module]++;
 
-			new_data = util_memory_alloc_spiram(sizeof(*new_data));
+			new_data = static_cast<data_t*>(util_memory_alloc_spiram(sizeof(*new_data)));
 			assert(new_data);
 
-			for(type = sensor_type_first; type < sensor_type_size; type++)
+			for(type = sensor_type_first; type < sensor_type_size; type = static_cast<sensor_type_t>(type + 1))
 			{
 				new_data->values[type].value = 0;
 				new_data->values[type].stamp = (time_t)0;
@@ -4669,7 +4712,7 @@ static void run_sensors(void *parameters)
 
 				if(!infoptr->init_fn(new_data))
 				{
-					log_format("sensor: warning: failed to init sensor %s on bus %u", infoptr->name, bus);
+					log_format("sensor: warning: failed to init sensor %s on bus %d", infoptr->name, bus);
 					i2c_unregister_slave(&slave);
 					if(new_data->private_data)
 						free(new_data->private_data);
@@ -4699,7 +4742,7 @@ static void run_sensors(void *parameters)
 	}
 
 	if(stat_sensors_confirmed[module] == 0)
-		vTaskDelete(0);
+		vTaskDelete(nullptr);
 
 	for(;;)
 	{
@@ -4750,13 +4793,13 @@ void sensor_init(void)
 
 	inited = true;
 
-	for(thread = i2c_module_first; thread < i2c_module_size; thread++)
+	for(thread = i2c_module_first; thread < i2c_module_size; thread = static_cast<i2c_module_t>(thread + 1))
 	{
 		if(i2c_module_available(thread))
 		{
 			util_sleep(100);
 
-			snprintf(name, sizeof(name), "sensors %u", thread);
+			snprintf(name, sizeof(name), "sensors %d", thread);
 
 			if(xTaskCreatePinnedToCore(run_sensors, name, 3 * 1024, &run[thread], 1, nullptr, 1) != pdPASS)
 				util_abort("sensor: xTaskCreatePinnedToNode sensors thread");
@@ -4807,12 +4850,12 @@ void command_sensor_info(cli_command_call_t *call)
 			string_append_cstr(call->result, "\n- unknown slave");
 		else
 		{
-			string_format_append(call->result, "\n- %s@%u/%u/%x:", name, module, bus, address);
+			string_format_append(call->result, "\n- %s@%d/%d/%x:", name, module, bus, address);
 
 			if(dataptr->state == sensor_disabled)
 				string_append_cstr(call->result, " [disabled]");
 			else
-				for(type = sensor_type_first; type < sensor_type_size; type++)
+				for(type = sensor_type_first; type < sensor_type_size; type = static_cast<sensor_type_t>(type + 1))
 					if(dataptr->info->type & (1 << type))
 						string_format_append(call->result, " %s: %.*f %s", sensor_type_info[type].type,
 								(int)dataptr->info->precision, (double)dataptr->values[type].value, sensor_type_info[type].unity);
@@ -4863,14 +4906,14 @@ void command_sensor_json(cli_command_call_t *call)
 			string_append_cstr(call->result,	"\n\"values\":");
 			string_append_cstr(call->result,	"\n[");
 
-			for(type = sensor_type_first, first_value = true; type < sensor_type_size; type++)
+			for(type = sensor_type_first, first_value = true; type < sensor_type_size; type = static_cast<sensor_type_t>(type + 1))
 			{
 				if(dataptr->info->type & (1 << type))
 				{
 					string_append_cstr(call->result, first_value ? "" : ",");
 					string_append_cstr(call->result,	"\n{");
 					string_format_append(call->result,	"\n\"type\": \"%s\",", sensor_type_info[type].type);
-					string_format_append(call->result,	"\n\"id\": %u,", dataptr->info->id);
+					string_format_append(call->result,	"\n\"id\": %d,", dataptr->info->id);
 					string_format_append(call->result,	"\n\"address\": %u,", address);
 					string_format_append(call->result,	"\n\"unity\": \"%s\",", sensor_type_info[type].unity);
 					string_format_append(call->result,	"\n\"value\": %f,", (double)dataptr->values[type].value);
@@ -4943,7 +4986,7 @@ void command_sensor_dump(cli_command_call_t *call)
 			{
 				string_append_cstr(call->result, "\n  values:");
 
-				for(type = sensor_type_first; type < sensor_type_size; type++)
+				for(type = sensor_type_first; type < sensor_type_size; type = static_cast<sensor_type_t>(type + 1))
 				{
 					if(dataptr->info->type & (1 << type))
 					{
@@ -4973,7 +5016,7 @@ void command_sensor_stats(cli_command_call_t *call)
 
 	string_assign_cstr(call->result, "SENSOR statistics");
 
-	for(module = i2c_module_first; module < i2c_module_size; module++)
+	for(module = i2c_module_first; module < i2c_module_size; module = static_cast<i2c_module_t>(module + 1))
 	{
 		string_format_append(call->result, "\n- module %u", (unsigned int)module);
 		string_format_append(call->result, "\n-  sensors not considered: %u", stat_sensors_not_considered[module]);
