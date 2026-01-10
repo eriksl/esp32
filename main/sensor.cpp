@@ -4,21 +4,12 @@
 #include <math.h>
 #include <assert.h>
 
-extern "C"
-{
 #include "string.h"
-}
-
 #include "info.h"
 #include "log.h"
 #include "util.h"
 #include "i2c.h"
-
-extern "C"
-{
 #include "cli-command.h"
-}
-
 #include "sensor.h"
 
 typedef struct

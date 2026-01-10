@@ -3,14 +3,9 @@
 #include <string.h>
 
 #include "log.h"
-
-extern "C"
-{
 #include "string.h"
 #include "util.h"
 #include "cli-command.h"
-}
-
 #include "pdm.h"
 
 #include "driver/sdm.h"

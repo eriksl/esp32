@@ -5,21 +5,13 @@
 #include <fstream>
 #include <thread>
 
-extern "C"
-{
 #include "string.h"
 #include "cli-command.h"
 #include "log.h"
 #include "script.h"
-}
-
 #include <stdint.h>
 #include <string.h>
-
-extern "C"
-{
 #include "util.h"
-}
 
 #include <esp_pthread.h>
 

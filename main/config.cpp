@@ -2,20 +2,16 @@
 #include <stdint.h>
 #include <string.h>
 
-extern "C"
-{
 #include "string.h"
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
-}
+#include "config.h"
 
 #include <freertos/FreeRTOS.h>
 #include <esp_err.h>
 #include <nvs.h>
 #include <nvs_flash.h>
-
-#include "config.h"
 
 static bool inited = false;
 

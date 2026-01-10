@@ -1,10 +1,5 @@
 #pragma once
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-
 typedef enum
 {
 	pdm_8bit_150khz_0 = 0,
@@ -19,9 +14,5 @@ typedef enum
 bool pdm_channel_open(pdm_t handle, const char *owner);
 void pdm_channel_set(pdm_t handle, unsigned int density);
 unsigned int pdm_channel_get(pdm_t handle);
-
-#ifdef __cplusplus
-}
-#endif
 
 void pdm_init(void);

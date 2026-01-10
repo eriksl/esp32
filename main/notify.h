@@ -1,10 +1,5 @@
 #pragma once
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-
 typedef enum
 {
 	notify_none = 0,
@@ -24,9 +19,4 @@ typedef enum
 } notify_t;
 
 void notify(notify_t);
-
-#ifdef __cplusplus
-}
-#endif
-
 void notify_init(void);

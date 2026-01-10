@@ -2,11 +2,6 @@
 
 #include "string.h"
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-
 typedef enum
 {
 	dt_no_display = 0,
@@ -127,8 +122,5 @@ void display_ra8875_box(display_colour_t, unsigned int from_x, unsigned int from
 void display_ra8875_plot_line(unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int rgb_pixels_length, const display_rgb_t *pixels);
 void display_ra8875_set_layer(unsigned int layer);
 void display_ra8875_show_layer(unsigned int layer);
-#ifdef __cplusplus
-}
-#endif
 
 void display_init(void);

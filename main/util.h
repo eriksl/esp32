@@ -7,11 +7,6 @@
 #include <esp_netif_ip_addr.h>
 
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-
 #if 0 // FIXME
 #pragma GCC poison strcpy
 #pragma GCC poison strcat
@@ -81,9 +76,5 @@ static inline void util_abort(const char *what)
 	log_format("abort: %s", what);
 	abort();
 }
-
-#ifdef __cplusplus
-}
-#endif
 
 void util_init(void);

@@ -6,10 +6,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-extern "C" {
 #include "string.h"
-}
-
 #include "log.h"
 #include "util.h"
 #include "info.h"

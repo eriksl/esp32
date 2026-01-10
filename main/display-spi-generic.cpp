@@ -5,14 +5,11 @@
 #include <driver/spi_master.h>
 #include <driver/gpio.h>
 
-extern "C"
-{
 #include "string.h"
 #include "log.h"
 #include "util.h"
 #include "ledpwm.h"
 #include "sdkconfig.h"
-}
 
 #include "display-spi-generic.h"
 

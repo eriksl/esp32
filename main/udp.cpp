@@ -5,16 +5,12 @@
 #include <thread>
 #include <esp_pthread.h>
 
-extern "C"
-{
 #include "string.h"
 #include "cli.h"
 #include "log.h"
 #include "util.h"
 #include "packet.h"
 #include "cli-command.h"
-}
-
 #include "udp.h"
 
 class UDP

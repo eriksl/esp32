@@ -4,8 +4,6 @@
 
 #include <esp_log.h>
 
-extern "C"
-{
 #include "string.h"
 #include "cli.h"
 #include "log.h"
@@ -14,7 +12,6 @@ extern "C"
 #include "config.h"
 #include "cli-command.h"
 #include "packet_header.h"
-}
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>

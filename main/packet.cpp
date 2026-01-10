@@ -3,18 +3,10 @@
 #include <stddef.h>
 #include <string.h>
 
-extern "C"
-{
 #include "string.h"
-}
-
 #include "cli.h"
 #include "log.h"
-
-extern "C"
-{
 #include "util.h"
-}
 
 #include "packet_header.h"
 #include "packet.h"

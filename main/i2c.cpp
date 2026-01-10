@@ -2,23 +2,19 @@
 #include <stdbool.h>
 #include <string.h>
 
-extern "C"
-{
 #include "string.h"
 #include "info.h"
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
-}
+#include "config.h"
+#include "i2c.h"
 
 #include <driver/i2c_master.h>
 #include <freertos/FreeRTOS.h>
 
 #include <ulp_riscv.h>
 #include <ulp_riscv_i2c.h>
-
-#include "config.h"
-#include "i2c.h"
 
 enum
 {

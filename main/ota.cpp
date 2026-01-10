@@ -1,18 +1,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-extern "C"
-{
 #include "string.h"
-}
-
 #include "log.h"
-
-extern "C"
-{
 #include "util.h"
 #include "cli-command.h"
-}
 
 #include <mbedtls/sha256.h>
 

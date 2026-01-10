@@ -7,11 +7,7 @@
 #include "log.h"
 #include "string.h"
 #include "util.h"
-
-extern "C"
-{
 #include "cli-command.h"
-}
 
 #include <freertos/FreeRTOS.h>
 

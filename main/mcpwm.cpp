@@ -3,13 +3,9 @@
 
 #include "log.h"
 
-extern "C"
-{
 #include "string.h"
 #include "util.h"
 #include "cli-command.h"
-}
-
 #include "mcpwm.h"
 
 #include "driver/mcpwm_timer.h"

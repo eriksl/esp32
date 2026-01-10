@@ -5,14 +5,10 @@
 #include <driver/ledc.h>
 #include <soc/soc.h>
 
-extern "C"
-{
 #include "string.h"
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
-}
-
 #include "ledpwm.h"
 
 enum

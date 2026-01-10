@@ -3,27 +3,13 @@
 
 #include <lwip/netif.h>
 
-extern "C"
-{
 #include "string.h"
-}
-
 #include "cli.h"
 #include "config.h"
 #include "log.h"
-
-extern "C"
-{
 #include "util.h"
-}
-
 #include "packet.h"
-
-extern "C"
-{
 #include "cli-command.h"
-}
-
 #include "notify.h"
 #include "wlan.h"
 

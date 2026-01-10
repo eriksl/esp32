@@ -2,16 +2,12 @@
 #include <stdbool.h>
 #include <string.h> // for strerror
 
-extern "C"
-{
 #include "string.h"
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
 #include "info.h"
 #include "ramdisk.h"
-}
-
 #include "fs.h"
 
 #include <esp_littlefs.h>

@@ -1,13 +1,10 @@
 #include <string>
 #include <map>
 
-extern "C"
-{
 #include "string.h"
 #include "cli-command.h"
 #include "log.h"
 #include "alias.h"
-}
 
 class Alias
 {

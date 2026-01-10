@@ -3,11 +3,7 @@
 #include <string.h>
 #include <lwip/ip_addr.h>
 
-extern "C"
-{
 #include "string.h"
-}
-
 #include "log.h"
 #include "util.h"
 

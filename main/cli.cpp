@@ -2,8 +2,6 @@
 #include <stdbool.h>
 #include <errno.h>
 
-extern "C"
-{
 #include "string.h"
 #include "cli.h"
 #include "string.h"
@@ -15,8 +13,6 @@ extern "C"
 #include "wlan.h"
 #include "cli-command.h"
 #include "i2c.h"
-}
-
 #include "alias.h"
 #include "bt.h"
 #include "udp.h"

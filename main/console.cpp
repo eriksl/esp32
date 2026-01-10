@@ -3,16 +3,12 @@
 #include <errno.h>
 #include <string.h>
 
-extern "C"
-{
 #include "string.h"
 #include "cli.h"
 #include "log.h"
 #include "config.h"
 #include "util.h"
 #include "cli-command.h"
-}
-
 #include "console.h"
 
 #include <freertos/FreeRTOS.h>

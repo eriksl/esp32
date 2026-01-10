@@ -1,8 +1,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-extern "C"
-{
 #include "string.h"
 #include "log.h"
 #include "util.h"
@@ -11,8 +9,6 @@ extern "C"
 #include "ledpwm.h"
 #include "pdm.h"
 #include "ledpixel.h"
-}
-
 #include "io.h"
 #include "info.h"
 #include "i2c.h"

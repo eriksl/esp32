@@ -1,10 +1,5 @@
 #pragma once
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-
 typedef enum
 {
 	mpt_16bit_150hz_0 = 0,
@@ -19,9 +14,5 @@ typedef enum
 bool mcpwm_open(mcpwm_t handle, const char *owner);
 void mcpwm_set(mcpwm_t handle, unsigned int duty);
 unsigned int mcpwm_get(mcpwm_t handle);
-
-#ifdef __cplusplus
-}
-#endif
 
 void mcpwm_init(void);

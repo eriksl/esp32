@@ -2,14 +2,10 @@
 #include <stdbool.h>
 #include <sdkconfig.h>
 
-extern "C"
-{
 #include "string.h"
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
-}
-
 #include "ledpixel.h"
 
 #include <led_strip.h>
