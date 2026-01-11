@@ -11,6 +11,7 @@ __attribute__((noreturn)) void app_main(void);
 #include "string.h"
 #include "cli.h"
 #include "log.h"
+#include "alias.h"
 #include "bt.h"
 #include "config.h"
 #include "console.h"
@@ -55,6 +56,7 @@ void app_main(void)
 		mcpwm_init();
 		fs_init();
 		ramdisk_init(initial_free_spiram / 2);
+		alias_init();
 		cli_init();
 		bt_init();
 		wlan_init();

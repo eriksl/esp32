@@ -681,7 +681,9 @@ static void run_receive_queue(void *)
 		else
 			cli_stats_commands_received_raw++;
 
-		alias_expand(&data);
+		std::string data_ = string_cstr(data); // FIXME
+		alias_expand(data_); // FIXME
+		string_assign_cstr(data, data_.c_str()); // FIXME
 
 		string_parse_offset = 0;
 		previous_string_parse_offset = 0;

@@ -1,3 +1,6 @@
 #pragma once
 
-void alias_expand(string_t *data);
+#include <string>
+
+void alias_expand(std::string &data);
+void alias_init();

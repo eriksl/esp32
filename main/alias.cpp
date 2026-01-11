@@ -10,18 +10,19 @@ class Alias
 {
 	private:
 
-		std::map<std::string, std::string> aliases;
+		typedef std::map<std::string, std::string> string_string_map;
+		string_string_map aliases;
 
 	public:
 
 		void command(cli_command_call_t *call);
-		void expand(string_t *data) const;
+		void expand(std::string &data) const;
 };
-
-static Alias alias;
 
 void Alias::command(cli_command_call_t *call)
 {
+	string_string_map::const_iterator it;
+
 	switch(call->parameter_count)
 	{
 		case(0):
@@ -31,9 +32,7 @@ void Alias::command(cli_command_call_t *call)
 
 		case(1):
 		{
-			auto it = aliases.find(call->parameters[0].str);
-
-			if(it != aliases.end())
+			if((it = aliases.find(call->parameters[0].str)) != aliases.end())
 				aliases.erase(it);
 
 			break;
@@ -41,7 +40,8 @@ void Alias::command(cli_command_call_t *call)
 
 		case(2):
 		{
-			aliases[call->parameters[0].str.c_str()] = call->parameters[1].str.c_str(); // FIXME
+			aliases.insert_or_assign(call->parameters[0].str, call->parameters[1].str);
+			break;
 			break;
 		}
 
@@ -54,54 +54,60 @@ void Alias::command(cli_command_call_t *call)
 
 	string_assign_cstr(call->result, "ALIASES");
 
-	for(auto ref : aliases)
+	for(const auto &ref : aliases)
 		string_format_append(call->result, "\n  %s: %s", ref.first.c_str(), ref.second.c_str());
 
 }
 
-void Alias::expand(string_t *data) const
+void Alias::expand(std::string &data) const
 {
-	string_t command;
-	string_t new_data;
-	unsigned int offset;
+	std::string command;
+	std::string parameters;
+	unsigned int delimiter;
+	string_string_map::const_iterator it;
 
-	offset = 0;
-
-	if(string_length(*data) == 0)
+	if(data.length() == 0)
 		return;
 
-	if(!(command = string_parse(*data, &offset)))
+	for(delimiter = 0; delimiter < data.length(); delimiter++)
+		if(data.at(delimiter) <= ' ')
+			break;
+
+	if(delimiter == 0)
 		return;
 
-	if((offset == 0) || (string_length(command) == 0))
-	{
-		string_free(&command);
+	if(delimiter >= data.length())
+		command = data;
+	else
+		command = data.substr(0, delimiter);
+
+	log_format("command: \"%s\"", command.c_str());
+
+	if((it = aliases.find(command)) == aliases.end())
 		return;
-	}
 
-	auto current_alias = aliases.find(string_cstr(command));
+	parameters = data.substr(delimiter);
 
-	if(current_alias == aliases.end())
-	{
-		string_free(&command);
-		return;
-	}
+	data = it->second + parameters;
+}
 
-	new_data = string_new(string_length(*data) - offset + ' ' + current_alias->first.length());
+static Alias *alias_singleton = nullptr;
 
-	string_format(new_data, "%s%s", current_alias->second.c_str(), string_data(*data) + offset);
-
-	string_free(data);
-	string_free(&command);
-	*data = new_data;
+void alias_init()
+{
+	assert(!alias_singleton);
+	alias_singleton = new Alias;
+	assert(alias_singleton);
 }
 
 void command_alias(cli_command_call_t *call)
 {
-	alias.command(call);
+	assert(alias_singleton);
+	alias_singleton->command(call);
 }
 
-void alias_expand(string_t *data)
+void alias_expand(std::string &data)
 {
-	alias.expand(data);
+	assert(alias_singleton);
+	alias_singleton->expand(data);
 }
