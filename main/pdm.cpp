@@ -8,6 +8,9 @@
 #include "cli-command.h"
 #include "pdm.h"
 
+#include <string>
+#include <boost/format.hpp>
+
 #include "driver/sdm.h"
 #include "driver/gpio.h"
 
@@ -165,9 +168,9 @@ void command_pdm_info(cli_command_call_t *call)
 	assert(call);
 	assert(call->parameter_count == 0);
 
-	string_assign_cstr(call->result, "PDM INFO:");
-	string_format_append(call->result, "\n- channels available: %u", (unsigned int)pdm_size);
-	string_append_cstr(call->result, "\nchannels:");
+	call->result = "PDM INFO:";
+	call->result += (boost::format("\n- channels available: %u") % pdm_size).str();
+	call->result += "\nchannels:";
 
 	for(handle = pdm_first; handle < pdm_size; handle = static_cast<pdm_t>(handle + 1))
 	{
@@ -177,12 +180,12 @@ void command_pdm_info(cli_command_call_t *call)
 		{
 			assert(!channel->open || channel->owner);
 
-			string_format_append(call->result, "\n- channel %u: 8 bits @ 150 kHz, gpio %2d is %s density: %3u, owned by: %s",
-					(unsigned int)handle,
-					handle_to_gpio[handle].gpio,
-					channel->open ? "open" : "not open",
-					channel->density,
-					channel->open ? channel->owner : "<none>");
+			call->result += (boost::format("\n- channel %u: 8 bits @ 150 kHz, gpio %2d is %s density: %3u, owned by: %s") %
+					handle %
+					handle_to_gpio[handle].gpio %
+					(channel->open ? "open" : "not open") %
+					channel->density %
+					(channel->open ? channel->owner : "<none>")).str();
 		}
 	}
 }

@@ -11,6 +11,9 @@
 #include "cli-command.h"
 #include "ledpwm.h"
 
+#include <string>
+#include <boost/format.hpp>
+
 enum
 {
 	ledpwm_resolution = 14,
@@ -194,9 +197,9 @@ void command_ledpwm_info(cli_command_call_t *call)
 	assert(call);
 	assert(call->parameter_count == 0);
 
-	string_assign_cstr(call->result, "LED-PWM INFO:");
-	string_format_append(call->result, "\n- channels available: %u", (unsigned int)lpt_size);
-	string_append_cstr(call->result, "\nchannels:");
+	call->result = "LED-PWM INFO:";
+	call->result += (boost::format("\n- channels available: %u") % lpt_size).str();
+	call->result += "\nchannels:";
 
 	for(handle = lpt_first; handle < lpt_size; handle = static_cast<ledpwm_t>(handle + 1))
 	{
@@ -206,17 +209,17 @@ void command_ledpwm_info(cli_command_call_t *call)
 		{
 			assert(!channel->open || channel->owner);
 
-			string_format_append(call->result, "\n- channel %u: 14 bits @ %4u Hz, timer %u, gpio %2d is %s duty: %5u, owned by: %s",
-					(unsigned int)handle,
-					channel->frequency,
-					(unsigned int)channel->timer,
-					channel->gpio,
-					channel->open ? "open" : "not open",
-					(unsigned int)ledc_get_duty(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(handle)),
-					channel->open ? channel->owner : "<none>");
+			call->result += (boost::format("\n- channel %u: 14 bits @ %4u Hz, timer %u, gpio %2d is %s duty: %5u, owned by: %s") %
+					handle %
+					channel->frequency %
+					channel->timer %
+					channel->gpio %
+					(channel->open ? "open" : "not open") %
+					ledc_get_duty(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(handle)) %
+					(channel->open ? channel->owner : "<none>")).str();
 		}
 		else
-			string_format_append(call->result, "\n- channel %d is unavailable", handle);
+			call->result = (boost::format("\n- channel %d is unavailable") % handle).str();
 
 	}
 }

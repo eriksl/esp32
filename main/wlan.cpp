@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 
 #include <lwip/netif.h>
 
@@ -20,9 +21,8 @@
 #include <esp_netif_sntp.h>
 #include <esp_timer.h>
 
-#include <assert.h>
-
 #include <string>
+#include <boost/format.hpp>
 
 typedef enum
 {
@@ -398,19 +398,19 @@ void wlan_command_client_config(cli_command_call_t *call)
 	if(call->parameter_count > 0)
 		config_set_string("wlan-ssid", call->parameters[0].str);
 
-	string_append_cstr(call->result, "client ssid: ");
+	call->result = "client ssid: ";
 
 	if(config_get_string("wlan-ssid", value))
-		string_append_cstr(call->result, value.c_str());
+		call->result += value;
 	else
-		string_append_cstr(call->result, "<unset>");
+		call->result = "<unset>";
 
-	string_append_cstr(call->result, "\nclient password: ");
+	call->result += "\nclient password: ";
 
 	if(config_get_string("wlan-passwd", value))
-		string_append_cstr(call->result, value.c_str());
+		call->result += value;
 	else
-		string_append_cstr(call->result, "<unset>");
+		call->result = "<unset>";
 
 	if(call->parameter_count > 1)
 	{
@@ -481,7 +481,7 @@ void wlan_command_client_config(cli_command_call_t *call)
 
 		if(rv)
 		{
-			string_append_cstr(call->result, "\nesp_wifi_set_config returns error");
+			call->result = "\nesp_wifi_set_config returns error";
 			return;
 		}
 
@@ -501,7 +501,7 @@ void wlan_command_ipv6_static(cli_command_call_t *call)
 	{
 		if(esp_netif_str_to_ip6(call->parameters[0].str.c_str(), &ipv6_address))
 		{
-			string_assign_cstr(call->result, "invalid ipv6 address");
+			call->result = "invalid ipv6 address";
 			return;
 		}
 
@@ -516,12 +516,12 @@ void wlan_command_ipv6_static(cli_command_call_t *call)
 		static_ipv6_address_set = true;
 	}
 
-	string_assign_cstr(call->result, "ipv6 static address: ");
+	call->result = "ipv6 static address: ";
 
 	if(config_get_string(key_ipv6_static_address, ipv6_address_string))
-		string_append_cstr(call->result, ipv6_address_string.c_str());
+		call->result += ipv6_address_string;
 	else
-		string_append_cstr(call->result, "<unset>");
+		call->result += "<unset>";
 }
 
 void wlan_init(void)
@@ -601,123 +601,120 @@ void wlan_command_info(cli_command_call_t *call)
 	assert(inited);
 	assert(call->parameter_count == 0);
 
-	string_assign_cstr(call->result, "WLAN INFO");
-
-	string_format_append(call->result, "\ncurrent state: %s, since %u seconds ago",
-			wlan_state_to_cstr(state), state_time);
+	call->result = "WLAN INFO";
+	call->result += (boost::format("\ncurrent state: %s, since %u seconds ago") % wlan_state_to_cstr(state) % state_time).str();
 
 	if((rv = esp_wifi_get_mode(&wlan_mode)))
 	{
 		util_warn_on_esp_err("esp_wifi_get_mode", rv);
-		string_append_cstr(call->result, "no information");
+		call->result += "no information";
 		return;
 	}
 
-	string_append_cstr(call->result, "\noperating mode: ");
+	call->result += "\noperating mode: ";
 
 	if(wlan_mode == WIFI_MODE_AP)
 	{
-		string_append_cstr(call->result, "access point");
+		call->result += "access point";
 		netif = netif_ap;
 	}
 	else
 	{
-		string_append_cstr(call->result, "station");
+		call->result += "station";
 		netif = netif_sta;
 	}
 
-	string_append_cstr(call->result, "\ninterface:");
-	string_format_append(call->result, "\n- number of interfaces: %u", esp_netif_get_nr_of_ifs());
-	string_format_append(call->result, "\n- index: %d", esp_netif_get_netif_impl_index(netif));
+	call->result += "\ninterface:";
+	call->result += (boost::format("\n- number of interfaces: %u") % esp_netif_get_nr_of_ifs()).str();
+	call->result += (boost::format("\n- index: %d") % esp_netif_get_netif_impl_index(netif)).str();
 
 	util_abort_on_esp_err("esp_netif_get_netif_impl_name", esp_netif_get_netif_impl_name(netif, ifname));
 
-	string_format_append(call->result, "\n- name: %s", ifname);
+	call->result += (boost::format("\n- name: %s") % ifname).str();
 
 	key = esp_netif_get_ifkey(netif);
 
-	string_format_append(call->result, "\n- key: %s", key ? key : "<invalid>");
+	call->result += (boost::format("\n- key: %s") % (key ? key : "<invalid>")).str();
 
 	key = esp_netif_get_desc(netif);
 
-	string_format_append(call->result, "\n- description: %s", key ? key : "<invalid>");
-
-	string_append_cstr(call->result, "\n- flags:");
+	call->result += (boost::format("\n- description: %s") % (key ? key : "<invalid>")).str();
+	call->result += "\n- flags:";
 
 	if_flags = esp_netif_get_flags(netif);
 
 	if(if_flags & ESP_NETIF_DHCP_CLIENT)
-		string_append_cstr(call->result, " dhcp-client");
+		call->result += " dhcp-client";
 
 	if(if_flags & ESP_NETIF_DHCP_SERVER)
-		string_append_cstr(call->result, " dhcp-server");
+		call->result += " dhcp-server";
 
 	if(if_flags & ESP_NETIF_FLAG_AUTOUP)
-		string_append_cstr(call->result, " auto-up");
+		call->result += " auto-up";
 
 	if(if_flags & ESP_NETIF_FLAG_GARP)
-		string_append_cstr(call->result, " garp");
+		call->result += " garp";
 
 	if(if_flags & ESP_NETIF_FLAG_EVENT_IP_MODIFIED)
-		string_append_cstr(call->result, " event-ip-modified");
+		call->result += " event-ip-modified";
 
 	if(if_flags & ESP_NETIF_FLAG_MLDV6_REPORT)
-		string_append_cstr(call->result, " mldv6-report");
+		call->result += " mldv6-report";
 
-	string_append_cstr(call->result, "\nmac:\n- address:");
+	call->result += "\nmac:\n- address:";
 
 	if((rv = esp_netif_get_mac(netif, mac)))
 	{
 		util_warn_on_esp_err("esp_netif_get_mac", rv);
-		string_append_cstr(call->result, "<unknown>");
+		call->result += "<unknown>";
 	}
 	else
 	{
 		util_mac_addr_to_string(mac_str, mac, false);
-		string_append_string(call->result, mac_str);
+		call->result += string_cstr(mac_str);
 	}
 
-	string_append_cstr(call->result, "\nipv4:");
+	call->result += "\nipv4:";
 
 	if((rv = esp_netif_get_ip_info(netif, &ip_info)))
 	{
 		util_warn_on_esp_err("esp_netif_get_ip_info", rv);
-		string_append_cstr(call->result, "\n- interface address: <unknown>");
-		string_append_cstr(call->result, "\n- gateway address: <unknown>");
-		string_append_cstr(call->result, "\n- netmask: <unknown>");
+		call->result += "\n- interface address: <unknown>";
+		call->result += "\n- gateway address: <unknown>";
+		call->result += "\n- netmask: <unknown>";
 	}
 	else
 	{
 		util_esp_ipv4_addr_to_string(ipv4_str, &ip_info.ip);
-		string_append_cstr(call->result, "\n- interface address: ");
-		string_append_string(call->result, ipv4_str);
-		string_append_cstr(call->result, "\n- gateway address: ");
+		call->result += "\n- interface address: ";
+		call->result += string_cstr(ipv4_str);
+		call->result += "\n- gateway address: ";
 		util_esp_ipv4_addr_to_string(ipv4_str, &ip_info.gw);
-		string_append_string(call->result, ipv4_str);
-		string_append_cstr(call->result, "\n- netmask: ");
+		call->result += string_cstr(ipv4_str);
+		call->result += "\n- netmask: ";
 		util_esp_ipv4_addr_to_string(ipv4_str, &ip_info.netmask);
-		string_append_string(call->result, ipv4_str);
+		call->result += string_cstr(ipv4_str);
 	}
 
-	string_append_cstr(call->result, "\nipv6:");
+	call->result += "\nipv6:";
 
 	rv = esp_netif_get_all_ip6(netif, esp_ip6_addr);
 
 	for(ix = 0; ix < rv; ix++)
 	{
 		util_esp_ipv6_addr_to_string(ipv6_str, &esp_ip6_addr[ix]);
-		string_format_append(call->result, "\n- address %u: %s (%s)", ix, string_cstr(ipv6_str), util_ipv6_address_type_string(&esp_ip6_addr[ix]));
+		call->result += (boost::format("\n- address %u: %s (%s)") % ix % string_cstr(ipv6_str) % util_ipv6_address_type_string(&esp_ip6_addr[ix])).str();
 	}
 
-	string_append_cstr(call->result, "\nhostname: ");
+	call->result += "\nhostname: ";
 
 	if((rv = esp_netif_get_hostname(netif, &hostname)))
 	{
 		util_warn_on_esp_err("esp_netif_get_hostname", rv);
-		string_append_cstr(call->result, "<unknown>");
+		call->result =+ "<unknown>";
 	}
 	else
-		string_append_cstr(call->result, hostname);
+		call->result += hostname;
 
 	if((rv = esp_wifi_get_ps(&ps_type)))
 	{
@@ -735,7 +732,7 @@ void wlan_command_info(cli_command_call_t *call)
 		}
 	}
 
-	string_format_append(call->result, "\n- power saving: %s", key);
+	call->result += (boost::format("\n- power saving: %s") % key).str();
 
 	if(wlan_mode == WIFI_MODE_STA)
 	{
@@ -744,29 +741,29 @@ void wlan_command_info(cli_command_call_t *call)
 		wifi_bandwidth_t wbw;
 		wifi_phy_mode_t mode;
 
-		string_append_cstr(call->result, "\nwlan STA status:");
+		call->result += "\nwlan STA status:";
 
 		if((rv = esp_wifi_sta_get_ap_info(&ap_info)))
 		{
 			util_warn_on_esp_err("esp_wifi_sta_get_ap_info", rv);
-			string_append_cstr(call->result, " <no info>");
+			call->result += " <no info>";
 		}
 		else
 		{
 			util_mac_addr_to_string(mac_str, ap_info.bssid, false);
-			string_format_append(call->result, "\n- access point: %s", string_cstr(mac_str));
-			string_format_append(call->result, "\n- SSID: %s", ap_info.ssid);
-			string_append_cstr(call->result, "\n- channel: ");
+			call->result += (boost::format("\n- access point: %s") % string_cstr(mac_str)).str();
+			call->result += (boost::format("\n- SSID: %s") % ap_info.ssid).str();
+			call->result += "\n- ";
 
 			if(ap_info.second == WIFI_SECOND_CHAN_ABOVE)
-				string_format_append(call->result, "%u+%u", ap_info.primary, ap_info.primary + 1U);
+				call->result += (boost::format("channels: %u+%u") % static_cast<unsigned int>(ap_info.primary) % static_cast<unsigned int>(ap_info.primary + 1)).str();
 			else
 				if(ap_info.second == WIFI_SECOND_CHAN_BELOW)
-					string_format_append(call->result, "%u+%u", ap_info.primary, ap_info.primary - 1U);
+					call->result += (boost::format("channels: %u+%u") % static_cast<unsigned int>(ap_info.primary) % static_cast<unsigned int>(ap_info.primary - 1)).str();
 				else
-					string_format_append(call->result, "%u", ap_info.primary);
+					call->result += (boost::format("channel: %u") % static_cast<unsigned int>(ap_info.primary)).str();
 
-			string_format_append(call->result, "\n- rssi: %d", ap_info.rssi);
+			call->result += (boost::format("\n- rssi: %d") % static_cast<int>(ap_info.rssi)).str();
 
 			switch(ap_info.authmode)
 			{
@@ -786,7 +783,7 @@ void wlan_command_info(cli_command_call_t *call)
 				default: key = "<invalid>"; break;
 			}
 
-			string_format_append(call->result, "\n- authentication mode: %s", key);
+			call->result += (boost::format("\n- authentication mode: %s") % key).str();
 
 			switch(ap_info.pairwise_cipher)
 			{
@@ -805,7 +802,7 @@ void wlan_command_info(cli_command_call_t *call)
 				default: key = "<invalid>"; break;
 			}
 
-			string_format_append(call->result, "\n- pairwise cipher: %s", key);
+			call->result += (boost::format("\n- pairwise cipher: %s") % key).str();
 
 			switch(ap_info.group_cipher)
 			{
@@ -824,42 +821,45 @@ void wlan_command_info(cli_command_call_t *call)
 				default: key = "<invalid>"; break;
 			}
 
-			string_format_append(call->result, "\n- group cipher: %s", key);
-			string_format_append(call->result, "\n- country: %.2s [%u-%u], max power: %d dB",
-					ap_info.country.cc, ap_info.country.schan, ap_info.country.nchan - ap_info.country.schan + 1U, ap_info.country.max_tx_power);
+			call->result += (boost::format( "\n- group cipher: %s") % key).str();
+			call->result += (boost::format( "\n- country: %.2s [%u-%u], max power: %d dB") %
+					ap_info.country.cc %
+					ap_info.country.schan %
+					(ap_info.country.nchan - ap_info.country.schan + 1) %
+					ap_info.country.max_tx_power).str();
 		}
 
-		string_append_cstr(call->result, "\n- protocols:");
+		call->result += "\n- protocols:";
 
 		if((rv = esp_wifi_get_protocol(WIFI_IF_STA, &protocol_bitmap)))
 		{
 			util_warn_on_esp_err("esp_wifi_get_protocol", rv);
-			string_append_cstr(call->result, " <invalid>");
+			call->result += " <invalid>";
 		}
 		else
 		{
 			if(protocol_bitmap & WIFI_PROTOCOL_11B)
-				string_append_cstr(call->result, " 802.11b");
+				call->result += " 802.11b";
 
 			if(protocol_bitmap & WIFI_PROTOCOL_11G)
-				string_append_cstr(call->result, " 802.11g");
+				call->result += " 802.11g";
 
 			if(protocol_bitmap & WIFI_PROTOCOL_11N)
-				string_append_cstr(call->result, " 802.11n");
+				call->result += " 802.11n";
 
 			if(protocol_bitmap & WIFI_PROTOCOL_11AX)
-				string_append_cstr(call->result, " 802.11ax");
+				call->result += " 802.11ax";
 		}
 
-		string_append_cstr(call->result, ", bandwidth: ");
+		call->result += ", bandwidth: ";
 
 		if((rv = esp_wifi_get_bandwidth(WIFI_IF_STA, &wbw)))
 		{
 			util_warn_on_esp_err("esp_wifi_get_bandwidth", rv);
-			string_append_cstr(call->result, "<invalid>");
+			call->result += "<invalid>";
 		}
 		else
-			string_append_cstr(call->result, (wbw == WIFI_BW_HT40) ? "ht40" : "ht20");
+			call->result += (wbw == WIFI_BW_HT40) ? "ht40" : "ht20";
 
 		if((rv = esp_wifi_sta_get_negotiated_phymode(&mode)))
 		{
@@ -880,17 +880,17 @@ void wlan_command_info(cli_command_call_t *call)
 			}
 		}
 
-		string_format_append(call->result, "\n- phy mode: %s", key);
-		string_format_append(call->result, "\n- TSF timestamp: %llu", (unsigned long long int)esp_wifi_get_tsf_time(WIFI_IF_STA));
-		string_append_cstr(call->result, "\n- configured inactive time: ");
+		call->result += (boost::format("\n- phy mode: %s") % key).str();
+		call->result += (boost::format( "\n- TSF timestamp: %llu") % esp_wifi_get_tsf_time(WIFI_IF_STA)).str();
+		call->result += "\n- configured inactive time: ";
 
 		if((rv = esp_wifi_get_inactive_time(WIFI_IF_STA, &timeout)))
 		{
 			util_warn_on_esp_err("esp_wifi_get_inactive_time", rv);
-			string_append_cstr(call->result, "<invalid>");
+			call->result += "<invalid>";
 		}
 		else
-			string_format_append(call->result, "%u", timeout);
+			call->result += (boost::format("%u") % timeout).str();
 	}
 	else
 	{
@@ -898,7 +898,7 @@ void wlan_command_info(cli_command_call_t *call)
 		wifi_second_chan_t secondary;
 		wifi_country_t country;
 
-		string_append_cstr(call->result, "\nwlan AP status:");
+		call->result += "\nwlan AP status:";
 
 		if((rv = esp_wifi_get_channel(&channel, &secondary)))
 		{
@@ -906,15 +906,15 @@ void wlan_command_info(cli_command_call_t *call)
 			channel = 0;
 		}
 
-		string_format_append(call->result, "\n- channel: %u", channel);
-		string_append_cstr(call->result, "\n- country: ");
+		call->result += (boost::format("\n- channel: %u") % channel).str();
+		call->result += "\n- country: ";
 
 		if((rv = esp_wifi_get_country(&country)))
 		{
 			util_warn_on_esp_err("esp_wifi_get_country", rv);
-			string_append_cstr(call->result, "<invalid>");
+			call->result += "<invalid>";
 		}
 		else
-			string_format_append(call->result, "%.2s", country.cc);
+			call->result += (boost::format("%.2s") % country.cc).str();
 	}
 }

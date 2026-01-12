@@ -28,6 +28,9 @@
 #include "bt_pair_pin.h"
 #include "bt.h"
 
+#include <string>
+#include <boost/format.hpp>
+
 extern "C" void ble_store_config_init(void);
 
 enum
@@ -576,24 +579,22 @@ void bluetooth_command_info(cli_command_call_t *call)
 
 	util_mac_addr_to_string(string_addr, bt_host_address, true);
 
-	string_format(call->result, "bluetooth information");
+	call->result = "bluetooth information";
 
-	string_format_append(call->result, "\n  address: %s", string_cstr(string_addr));
-	string_format_append(call->result, "\n  authorised: %s", authorised ? "yes" : "no");
-	string_format_append(call->result, "\n  authentication attempts: %u", bt_stats_authentication_attempts);
-	string_format_append(call->result, "\n  unauthorised access: %u", bt_stats_unauthorised_access);
-	string_format_append(call->result, "\n  data sent:");
-	string_format_append(call->result, "\n  - packets: %u", bt_stats_sent_packets);
-	string_format_append(call->result, "\n  - bytes: %u", bt_stats_sent_bytes);
-
-	string_format_append(call->result, "\n  data received:");
-	string_format_append(call->result, "\n  - packets: %u", bt_stats_received_packets);
-	string_format_append(call->result, "\n  - bytes: %u", bt_stats_received_bytes);
-	string_format_append(call->result, "\n  - defragmentation timeouts: %u", bt_stats_received_defragmentation_timeouts);
-	string_format_append(call->result, "\n  - packetised packets: %u", bt_stats_received_packetised_packets);
-	string_format_append(call->result, "\n  - raw packets: %u", bt_stats_received_raw_packets);
-
-	string_format_append(call->result, "\n  indication:");
-	string_format_append(call->result, "\n  - errors: %u", bt_stats_indication_error);
-	string_format_append(call->result, "\n  - timeouts: %u", bt_stats_indication_timeout);
+	call->result += (boost::format("\n  address: %s") % string_cstr(string_addr)).str();
+	call->result += (boost::format("\n  authorised: %s") % (authorised ? "yes" : "no")).str();
+	call->result += (boost::format("\n  authentication attempts: %u") % bt_stats_authentication_attempts).str();
+	call->result += (boost::format("\n  unauthorised access: %u") % bt_stats_unauthorised_access).str();
+	call->result += "\n  data sent:";
+	call->result += (boost::format("\n  - packets: %u") % bt_stats_sent_packets).str();
+	call->result += (boost::format("\n  - bytes: %u") % bt_stats_sent_bytes).str();
+	call->result += "\n  data received:";
+	call->result += (boost::format("\n  - packets: %u") % bt_stats_received_packets).str();
+	call->result += (boost::format("\n  - bytes: %u") % bt_stats_received_bytes).str();
+	call->result += (boost::format("\n  - defragmentation timeouts: %u") % bt_stats_received_defragmentation_timeouts).str();
+	call->result += (boost::format("\n  - packetised packets: %u") % bt_stats_received_packetised_packets).str();
+	call->result += (boost::format("\n  - raw packets: %u") % bt_stats_received_raw_packets).str();
+	call->result += "\n  indications:";
+	call->result += (boost::format("\n  - errors: %u") % bt_stats_indication_error).str();
+	call->result += (boost::format("\n  - timeouts: %u") % bt_stats_indication_timeout).str();
 }

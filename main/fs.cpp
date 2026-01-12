@@ -21,6 +21,9 @@
 #include <sys/stat.h>
 #include <mbedtls/sha256.h>
 
+#include <string>
+#include <boost/format.hpp>
+
 static bool inited = false;
 
 void fs_init(void)
@@ -55,12 +58,12 @@ void fs_command_info(cli_command_call_t *call)
 	avail = total - used;
 	usedpct = (100 * used) / total;
 
-	string_assign_cstr(call->result, "LITTLEFS");
+	call->result = "LITTLEFS";
 
 	if(esp_littlefs_mounted("littlefs"))
-		string_format_append(call->result, " mounted at /littlefs:\n- total size: %u kB\n- used: %u kB\n- available %u kB, %u%% used", total / 1024, used / 1024, avail / 1024, usedpct);
+		call->result += (boost::format(" mounted at /littlefs:\n- total size: %u kB\n- used: %u kB\n- available %u kB, %u%% used") % (total / 1024) % (used / 1024) % (avail / 1024) % usedpct).str();
 	else
-		string_append_cstr(call->result, " not mounted");
+		call->result += " not mounted";
 
 	if((fd = open("/ramdisk", O_RDONLY | O_DIRECTORY)) >= 0)
 	{
@@ -71,7 +74,7 @@ void fs_command_info(cli_command_call_t *call)
 		avail = total - used;
 		usedpct = (100 * used) / total;
 
-		string_format_append(call->result, "\nRAMDISK mounted at /ramdisk:\n- total size: %u kB\n- used: %u kB\n- available %u kB, %u%% used", total / 1024, used / 1024, avail / 1024, usedpct);
+		call->result += (boost::format("\nRAMDISK mounted at /ramdisk:\n- total size: %u kB\n- used: %u kB\n- available %u kB, %u%% used") % (total / 1024) % (used / 1024) % (avail / 1024) % usedpct).str();
 	}
 }
 
@@ -91,7 +94,7 @@ void fs_command_list(cli_command_call_t *call)
 
 	if(!(dir = opendir(call->parameters[0].str.c_str())))
 	{
-		string_format(call->result, "opendir of %s failed", call->parameters[0].str.c_str());
+		call->result = (boost::format("opendir of %s failed") % call->parameters[0].str).str();
 		return;
 	}
 
@@ -101,14 +104,14 @@ void fs_command_list(cli_command_call_t *call)
 			option_long = true;
 		else
 		{
-			string_format_append(call->result, "fs-list: unknown option: %s\n", call->parameters[1].str.c_str());
+			call->result = (boost::format("fs-list: unknown option: %s\n") % call->parameters[1].str).str();
 			return;
 		}
 	}
 	else
 		option_long = false;
 
-	string_format(call->result, "DIRECTORY %s", call->parameters[0].str.c_str());
+	call->result = (boost::format("DIRECTORY %s") % call->parameters[0].str).str();
 
 	while((dirent = readdir(dir)))
 	{
@@ -132,11 +135,10 @@ void fs_command_list(cli_command_call_t *call)
 		}
 
 		if(option_long)
-			string_format_append(call->result, "\n%-20s %7d %4dk %19s %19s %11d",
-					dirent->d_name, length, allocated, string_cstr(ctime), string_cstr(mtime), inode);
+			call->result += (boost::format("\n%-20s %7d %4dk %19s %19s %11d") %
+					dirent->d_name % length % allocated % string_cstr(ctime) % string_cstr(mtime) % inode).str();
 		else
-			string_format_append(call->result, "\n%3luk %-20s",
-					length / 1024UL, dirent->d_name);
+			call->result += (boost::format("\n%3luk %-20s") % (length / 1024UL) % dirent->d_name).str();
 	}
 
 	closedir(dir);
@@ -149,11 +151,11 @@ void fs_command_format(cli_command_call_t *call)
 
 	if(esp_littlefs_format(call->parameters[0].str.c_str()))
 	{
-		string_format(call->result, "format of %s failed", call->parameters[0].str.c_str());
+		call->result = (boost::format("format of %s failed") % call->parameters[0].str).str();
 		return;
 	}
 
-	string_assign_cstr(call->result, "format complete");
+	call->result = "format complete";
 }
 
 void fs_command_read(cli_command_call_t *call)
@@ -163,15 +165,9 @@ void fs_command_read(cli_command_call_t *call)
 	assert(inited);
 	assert(call->parameter_count == 3);
 
-	if(call->parameters[0].unsigned_int > (string_size(call->result_oob) - 1))
-	{
-		string_format(call->result, "ERROR: length [%u] too large for buffer length [%u]", call->parameters[0].unsigned_int, string_size(call->result_oob) - 1);
-		return;
-	}
-
 	if((fd = open(call->parameters[2].str.c_str(), O_RDONLY, 0)) < 0)
 	{
-		string_format(call->result, "ERROR: cannot open file %s: %s", call->parameters[2].str.c_str(), strerror(errno));
+		call->result = (boost::format("ERROR: cannot open file %s: %s") % call->parameters[2].str % strerror(errno)).str();
 		return;
 	}
 
@@ -179,17 +175,21 @@ void fs_command_read(cli_command_call_t *call)
 		length = 0;
 	else
 	{
-		if((length = string_read_fd(call->result_oob, fd, call->parameters[0].unsigned_int)) < 0)
+		call->result_oob.reserve(call->parameters[0].unsigned_int);
+
+		if((length = ::read(fd, call->result_oob.data(), call->parameters[0].unsigned_int)) == 0)
 		{
-			string_assign_cstr(call->result, "ERROR: read failed");
+			call->result = "ERROR: read failed";
 			close(fd);
 			return;
 		}
+
+		call->result_oob.resize(length);
 	}
 
 	close(fd);
 
-	string_format(call->result, "OK chunk read: %d", length);
+	call->result = (boost::format("OK chunk read: %d") % length).str();
 }
 
 void fs_command_write(cli_command_call_t *call)
@@ -203,21 +203,21 @@ void fs_command_write(cli_command_call_t *call)
 
 	open_mode = O_WRONLY | O_CREAT | (call->parameters[0].unsigned_int ? O_APPEND : O_TRUNC);
 
-	if(call->parameters[1].unsigned_int != string_length(call->oob))
+	if(call->parameters[1].unsigned_int != call->oob.length())
 	{
-		string_format(call->result, "ERROR: length [%u] != oob data length [%u]", call->parameters[1].unsigned_int, string_length(call->oob));
+		call->result = (boost::format("ERROR: length [%u] != oob data length [%u]") % call->parameters[1].unsigned_int % call->oob.length()).str();
 		return;
 	}
 
 	if((fd = open(call->parameters[2].str.c_str(), open_mode, 0)) < 0)
 	{
-		string_format(call->result, "ERROR: cannot open file %s: %s", call->parameters[2].str.c_str(), strerror(errno));
+		call->result = (boost::format("ERROR: cannot open file %s: %s") % call->parameters[2].str % strerror(errno)).str();
 		return;
 	}
 
-	if((length = write(fd, string_data(call->oob), string_length(call->oob))) != call->parameters[1].unsigned_int)
+	if((length = write(fd, call->oob.data(), call->oob.length())) != call->parameters[1].unsigned_int)
 	{
-		string_assign_cstr(call->result, "ERROR: write failed");
+		call->result = "ERROR: write failed";
 		close(fd);
 		return;
 	}
@@ -229,7 +229,7 @@ void fs_command_write(cli_command_call_t *call)
 	else
 		length = statb.st_size;
 
-	string_format(call->result, "OK file length: %d", length);
+	call->result = (boost::format("OK file length: %d") % length).str();
 }
 
 void fs_command_erase(cli_command_call_t *call)
@@ -238,9 +238,9 @@ void fs_command_erase(cli_command_call_t *call)
 	assert(call->parameter_count == 1);
 
 	if(unlink(call->parameters[0].str.c_str()))
-		string_assign_cstr(call->result, "file erase failed");
+		call->result = "file erase failed";
 	else
-		string_assign_cstr(call->result, "OK file erased");
+		call->result = "OK file erased";
 }
 
 void fs_command_rename(cli_command_call_t *call)
@@ -249,44 +249,44 @@ void fs_command_rename(cli_command_call_t *call)
 	assert(call->parameter_count == 2);
 
 	if(rename(call->parameters[0].str.c_str(), call->parameters[1].str.c_str()))
-		string_assign_cstr(call->result, "file rename failed");
+		call->result = "file rename failed";
 	else
-		string_assign_cstr(call->result, "OK file renamed");
+		call->result = "OK file renamed";
 }
 
 void fs_command_checksum(cli_command_call_t *call)
 {
-	int fd;
+	int length, fd;
 	mbedtls_sha256_context hash_context;
 	unsigned char hash[32];
 	string_auto(hash_text, (sizeof(hash) * 2) + 1);
 
 	assert(call->parameter_count == 1);
-	assert(string_size(call->result_oob) > 4096);
 
 	mbedtls_sha256_init(&hash_context);
 	mbedtls_sha256_starts(&hash_context, /* no SHA-224 */ 0);
 
 	if((fd = open(call->parameters[0].str.c_str(), O_RDONLY, 0)) < 0)
 	{
-		string_assign_cstr(call->result, "ERROR: cannot open file: ");
-		string_append_cstr(call->result, strerror(errno));
+		call->result = (boost::format("ERROR: cannot open file: %s") %strerror(errno)).str();
 		return;
 	}
 
-	while(string_read_fd(call->result_oob, fd, 4096) > 0)
-		mbedtls_sha256_update(&hash_context, string_data(call->result_oob), string_length(call->result_oob));
+	call->result_oob.reserve(4096);
+
+	while((length = ::read(fd, call->result_oob.data(), 4096)) > 0)
+		mbedtls_sha256_update(&hash_context, reinterpret_cast<const unsigned char *>(call->result_oob.data()), length);
 
 	close(fd);
 
-	string_clear(call->result_oob);
+	call->result_oob.clear();
 
 	mbedtls_sha256_finish(&hash_context, hash);
 	mbedtls_sha256_free(&hash_context);
 
 	util_hash_to_string(hash_text, sizeof(hash), hash);
 
-	string_format(call->result, "OK checksum: %s", string_cstr(hash_text));
+	call->result = (boost::format("OK checksum: %s") % string_cstr(hash_text)).str();
 }
 
 void fs_command_truncate(cli_command_call_t *call)
@@ -295,10 +295,9 @@ void fs_command_truncate(cli_command_call_t *call)
 
 	if(truncate(call->parameters[0].str.c_str(), call->parameters[1].unsigned_int))
 	{
-		string_assign_cstr(call->result, "ERROR: cannot truncate file: ");
-		string_append_cstr(call->result, strerror(errno));
+		call->result = (boost::format("ERROR: cannot truncate file: %s") % strerror(errno)).str();
 		return;
 	}
 
-	string_assign_cstr(call->result, "OK truncated");
+	call->result = "OK truncated";
 }

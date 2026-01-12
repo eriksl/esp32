@@ -16,6 +16,9 @@
 #include <ulp_riscv.h>
 #include <ulp_riscv_i2c.h>
 
+#include <string>
+#include <boost/format.hpp>
+
 enum
 {
 	i2c_address_shift = 1,
@@ -1203,13 +1206,13 @@ void command_i2c_info(cli_command_call_t *call)
 
 	if(!inited)
 	{
-		string_assign_cstr(call->result, "I2C init not complete, come back later");
+		call->result = "I2C init not complete, come back later";
 		return;
 	}
 
 	data_mutex_take();
 
-	string_format(call->result, "I2C info");
+	call->result = "I2C info";
 
 	for(module_index = i2c_module_first; module_index < i2c_module_size; module_index = static_cast<i2c_module_t>(module_index + 1))
 	{
@@ -1219,22 +1222,21 @@ void command_i2c_info(cli_command_call_t *call)
 		{
 			data = &module_data[module_index];
 
-			string_format_append(call->result, "\n- module [%d]: \"%s\", sda: %u, scl: %u, speed: %u khz", info->id, info->name, info->sda, info->scl, data->speed_khz);
+			call->result += (boost::format("\n- module [%d]: \"%s\", sda: %u, scl: %u, speed: %u khz") % info->id % info->name % info->sda % info->scl % data->speed_khz).str();;
 
 			for(bus_index = i2c_bus_first; bus_index < data->buses; bus_index = static_cast<i2c_bus_t>(bus_index + 1))
 			{
 				if((bus = data->bus[bus_index]))
 				{
-					string_format_append(call->result, "\n-  i2c bus %d: %s", bus->id, bus_name[bus->id]);
+					call->result += (boost::format("\n-  i2c bus %d: %s") % bus->id % bus_name[bus->id]).str();
 
 					for(slave = bus->slaves; slave; slave = slave->next)
-						string_format_append(call->result, "\n-   slave [0x%x]: name: %s, module: %d, bus: %d",
-								slave->address, slave->name, slave->module, slave->bus);
+						call->result += (boost::format("\n-   slave [0x%x]: name: %s, module: %d, bus: %d") % slave->address % slave->name % slave->module % slave->bus).str();
 				}
 			}
 		}
 		else
-			string_format_append(call->result, "\n- module [%d]: unavailable", info->id);
+			call->result += (boost::format("\n- module [%d]: unavailable") % info->id).str();
 	}
 
 	data_mutex_give();
@@ -1249,7 +1251,7 @@ void command_i2c_speed(cli_command_call_t *call)
 
 	if(!inited)
 	{
-		string_assign_cstr(call->result, "I2C init not complete, come back later");
+		call->result = "I2C init not complete, come back later";
 		return;
 	};
 
@@ -1270,7 +1272,7 @@ void command_i2c_speed(cli_command_call_t *call)
 		if(!info->available)
 		{
 			data_mutex_give();
-			string_format(call->result, "I2C module #%u unavailable", (unsigned int)module_index);
+			call->result = (boost::format("I2C module #%u unavailable") % module_index).str();
 			return;
 		}
 
@@ -1284,7 +1286,7 @@ void command_i2c_speed(cli_command_call_t *call)
 
 	data_mutex_take();
 
-	string_format(call->result, "I2C speed");
+	call->result = "I2C speed";
 
 	for(module_index = i2c_module_first; module_index < i2c_module_size; module_index = static_cast<i2c_module_t>(module_index + 1))
 	{
@@ -1294,10 +1296,10 @@ void command_i2c_speed(cli_command_call_t *call)
 		{
 			data = &module_data[module_index];
 
-			string_format_append(call->result, "\n- module [%d]: \"%s\", speed: %u khz", info->id, info->name, data->speed_khz);
+			call->result += (boost::format("\n- module [%d]: \"%s\", speed: %u khz") % info->id % info->name % data->speed_khz).str();
 		}
 		else
-			string_format_append(call->result, "\n- module [%d]: unavailable", info->id);
+			call->result += (boost::format("\n- module [%d]: unavailable") % info->id).str();
 	}
 
 	data_mutex_give();

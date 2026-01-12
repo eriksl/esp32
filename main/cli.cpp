@@ -19,6 +19,8 @@
 #include "tcp.h"
 
 #include <algorithm>
+#include <string>
+#include <boost/format.hpp>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
@@ -27,8 +29,6 @@ enum
 {
 	receive_queue_size = 8,
 	send_queue_size = 8,
-	result_size = 4096,
-	result_oob_size = 4096 + 16,
 };
 
 typedef struct
@@ -148,7 +148,7 @@ static void command_hostname(cli_command_call_t *call)
 	if(!config_get_string("hostname_desc", description))
 		description = "<unset>";
 
-	string_format(call->result, "hostname: %s (%s)", hostname.c_str(), description.c_str());
+	call->result = (boost::format("hostname: %s (%s)") % hostname.c_str() % description.c_str()).str();
 }
 
 static void command_reset(cli_command_call_t *call)
@@ -161,21 +161,21 @@ static void command_reset(cli_command_call_t *call)
 static void command_write(cli_command_call_t *call)
 {
 	if(call->parameter_count == 1)
-		string_assign_cstr(call->result, call->parameters[0].str.c_str());
+		call->result = call->parameters[0].str;
 }
 
 static void command_info_cli(cli_command_call_t *call)
 {
 	assert(call->parameter_count == 0);
 
-	string_format(call->result, "commands received:");
-	string_format_append(call->result, "\n- total: %u", cli_stats_commands_received);
-	string_format_append(call->result, "\n- packetised: %u", cli_stats_commands_received_packet);
-	string_format_append(call->result, "\n- raw: %u", cli_stats_commands_received_raw);
-	string_format_append(call->result, "\nreplies sent:");
-	string_format_append(call->result, "\n- total: %u", cli_stats_replies_sent);
-	string_format_append(call->result, "\n- packetised: %u", cli_stats_replies_sent_packet);
-	string_format_append(call->result, "\n- raw: %u", cli_stats_replies_sent_raw);
+	call->result = "commands received:";
+	call->result += (boost::format("\n- total: %u") % cli_stats_commands_received).str();
+	call->result += (boost::format("\n- packetised: %u") % cli_stats_commands_received_packet).str();
+	call->result += (boost::format("\n- raw: %u") % cli_stats_commands_received_raw).str();
+	call->result += "\nreplies sent:";
+	call->result += (boost::format("\n- total: %u") % cli_stats_replies_sent).str();
+	call->result += (boost::format("\n- packetised: %u") % cli_stats_replies_sent_packet).str();
+	call->result += (boost::format("\n- raw: %u") % cli_stats_replies_sent_raw).str();
 }
 
 static const cli_command_t cli_commands[] =
@@ -526,7 +526,7 @@ static const cli_command_t cli_commands[] =
 	{ "sensor-json", "sj", "sensors values in json layout", command_sensor_json, {}},
 	{ "sensor-stats", "ss", "sensors statistics", command_sensor_stats, {}},
 	{ "string-info", "sti", "show information about all strings", string_command_info, {}},
-	{ "tcp", "ti", "show information about tcp", net_tcp_command_info, {}},
+	{ "tcp-info", "ti", "show information about tcp", net_tcp_command_info, {}},
 	{ "udp-info", "ui", "show information about udp", net_udp_command_info, {}},
 
 	{ "wlan-client-config", "wcc", "set wireless ssid and password in client mode", wlan_command_client_config,
@@ -558,7 +558,7 @@ static void help(cli_command_call_t *call)
 	const char *delimiter[2];
 	std::string command_name;
 
-	string_format(call->result, "HELP");
+	call->result = "HELP";
 
 	if(call->parameter_count == 0)
 		command_name = "";
@@ -572,9 +572,10 @@ static void help(cli_command_call_t *call)
 		if(command_name.length() && (command_name != command->name) && (!command->alias || (command_name != command->alias)))
 			continue;
 
-		string_format_append(call->result, "\n  %-18s %-4s %s", command->name,
-				command->alias ? command->alias : "",
-				command->help ? command->help : "");
+		call->result += (boost::format("\n  %-18s %-4s %s") %
+				command->name %
+				(command->alias ? command->alias : "") %
+				(command->help ? command->help : "")).str();
 
 		if(command_name.length())
 		{
@@ -593,11 +594,11 @@ static void help(cli_command_call_t *call)
 					delimiter[1] = ")";
 				}
 
-				string_format_append(call->result, " %s%s %s%s",
-						delimiter[0],
-						parameter_type_to_string(parameter->type),
-						parameter->description ? parameter->description : "",
-						delimiter[1]);
+				call->result += (boost::format(" %s%s %s%s") %
+						delimiter[0] %
+						parameter_type_to_string(parameter->type) %
+						(parameter->description ? parameter->description : "") %
+						delimiter[1]).str();
 			}
 		}
 	}
@@ -661,10 +662,10 @@ static void run_receive_queue(void *)
 	cli_parameter_t						*parameter;
 	string_auto(error, 128);
 
-	call.parameter_count =		0;
-	call.oob =					(string_t)0;
-	call.result =				string_new(result_size);
-	call.result_oob =			string_new(result_oob_size);
+	call.parameter_count = 0;
+	call.oob.clear();
+	call.result.clear();
+	call.result_oob.clear();
 
 	assert(inited);
 
@@ -975,16 +976,26 @@ static void run_receive_queue(void *)
 		call.source =			cli_buffer.source;
 		call.mtu =				cli_buffer.mtu;
 		call.parameter_count =	parameter_count;
-		call.oob =				oob_data;
-
-		string_clear(call.result);
-		string_clear(call.result_oob);
+		call.oob =				oob_data ? string_cstr(oob_data) : ""; // FIXME
+		call.result.clear();
+		call.result_oob.clear();
 
 		cli_command->function(&call);
 
-		packet_encapsulate(&cli_buffer, call.result, call.result_oob);
+		{ // FIXME: workaround goto issue
+			string_t tmp_result = string_new(call.result.length()); // FIXME
+			string_t tmp_result_oob = string_new(call.result_oob.length()); // FIXME
 
-		send_queue_push(&cli_buffer);
+			string_assign_cstr(tmp_result, call.result.c_str()); // FIXME
+			string_assign_cstr(tmp_result_oob, call.result_oob.c_str()); // FIXME
+
+			packet_encapsulate(&cli_buffer, tmp_result, tmp_result_oob); // FIXME
+
+			string_clear(tmp_result); // FIXME
+			string_clear(tmp_result_oob); // FIXME
+
+			send_queue_push(&cli_buffer);
+		}
 
 error:
 		string_free(&command);
@@ -1099,9 +1110,9 @@ void cli_init(void)
 
 	inited = true;
 
-	if(xTaskCreatePinnedToCore(run_receive_queue, "cli-recv", 4096, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
+	if(xTaskCreatePinnedToCore(run_receive_queue, "cli-recv", 5 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
 		util_abort("cli: xTaskCreatePinnedToNode run_receive_queue");
 
-	if(xTaskCreatePinnedToCore(run_send_queue, "cli-send", 4096, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
+	if(xTaskCreatePinnedToCore(run_send_queue, "cli-send", 4 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
 		util_abort("cli: xTaskCreatePinnedToNode run_send_queue");
 }

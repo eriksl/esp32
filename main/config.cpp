@@ -541,7 +541,7 @@ static void config_dump(cli_command_call_t *call, const char *name_space)
 
 	assert(inited);
 
-	string_format(call->result, "SHOW CONFIG namespace %s", name_space ? name_space : "ALL");
+	call->result = (boost::format("SHOW CONFIG namespace %s") % (name_space ? name_space : "ALL")).str();
 
 	if((rv = nvs_entry_find("nvs", name_space, NVS_TYPE_ANY, &iterator)) == ESP_ERR_NVS_NOT_FOUND)
 		return;
@@ -558,9 +558,9 @@ static void config_dump(cli_command_call_t *call, const char *name_space)
 			dst = "<not found>";
 
 		if(name_space)
-			string_format_append(call->result, "\n- %-7s %-20s %s", type.c_str(), key.c_str(), dst.c_str());
+			call->result = (boost::format("\n- %-7s %-20s %s") % type % key % dst).str();
 		else
-			string_format_append(call->result, "\n- %-12s %-7s %-20s %s", info.namespace_name, type.c_str(), key.c_str(), dst.c_str());
+			call->result = (boost::format("\n- %-12s %-7s %-20s %s") % info.namespace_name % type % key % dst).str();
 
 		if((rv = nvs_entry_next(&iterator)) == ESP_ERR_NVS_NOT_FOUND)
 			break;
@@ -580,13 +580,13 @@ void config_command_info(cli_command_call_t *call)
 
 	util_abort_on_esp_err("nvs_get_stats", nvs_get_stats(nullptr, &stats));
 
-	string_format(call->result, "CONFIG INFO");
-	string_format_append(call->result, "\nentries:");
-	string_format_append(call->result, "\n- used: %u", stats.used_entries);
-	string_format_append(call->result, "\n- free: %u", stats.free_entries);
-	string_format_append(call->result, "\n- available: %u", stats.available_entries);
-	string_format_append(call->result, "\n- total: %u", stats.total_entries);
-	string_format_append(call->result, "\n- namespaces: %u", stats.namespace_count);
+	call->result = "CONFIG INFO";
+	call->result += "\nentries:";
+	call->result += (boost::format("\n- used: %u") % stats.used_entries).str();
+	call->result += (boost::format("\n- free: %u") % stats.free_entries).str();
+	call->result += (boost::format("\n- available: %u") % stats.available_entries).str();
+	call->result += (boost::format("\n- total: %u") % stats.total_entries).str();
+	call->result += (boost::format("\n- namespaces: %u") % stats.namespace_count).str();
 }
 
 void config_command_set_uint(cli_command_call_t *call)
@@ -600,9 +600,9 @@ void config_command_set_uint(cli_command_call_t *call)
 	config_set_uint(call->parameters[0].str, call->parameters[1].unsigned_int);
 
 	if(get_value_as_integer("config", call->parameters[0].str, nullptr, type, value))
-		string_format(call->result, "%s[%s]=%lld", call->parameters[0].str.c_str(), type.c_str(), value);
+		call->result = (boost::format("%s[%s]=%lld") % call->parameters[0].str % type % value).str();
 	else
-		string_format(call->result, "ERROR: %s not found", call->parameters[0].str.c_str());
+		call->result = (boost::format("ERROR: %s not found") % call->parameters[0].str).str();
 }
 
 void config_command_set_int(cli_command_call_t *call)
@@ -616,9 +616,9 @@ void config_command_set_int(cli_command_call_t *call)
 	config_set_int(call->parameters[0].str, call->parameters[1].signed_int);
 
 	if(get_value_as_integer("config", call->parameters[0].str, nullptr, type, value))
-		string_format(call->result, "%s[%s]=%lld", call->parameters[0].str.c_str(), type.c_str(), value);
+		call->result = (boost::format("%s[%s]=%lld") % call->parameters[0].str % type % value).str();
 	else
-		string_format(call->result, "ERROR: %s not found", call->parameters[0].str.c_str());
+		call->result = (boost::format("ERROR: %s not found") % call->parameters[0].str).str();
 }
 
 void config_command_set_string(cli_command_call_t *call)
@@ -632,9 +632,9 @@ void config_command_set_string(cli_command_call_t *call)
 	config_set_string(call->parameters[0].str, call->parameters[1].str);
 
 	if(get_value_as_string("", call->parameters[0].str, (nvs_entry_info_t *)0, type, dst))
-		string_format(call->result, "%s[%s]=%s", call->parameters[0].str.c_str(), type.c_str(), dst.c_str());
+		call->result = (boost::format("%s[%s]=%s") % call->parameters[0].str % type % dst).str();
 	else
-		string_format(call->result, "ERROR: %s not found", call->parameters[0].str.c_str());
+		call->result = (boost::format("ERROR: %s not found") % call->parameters[0].str).str();
 }
 
 void config_command_erase(cli_command_call_t *call)
@@ -643,9 +643,9 @@ void config_command_erase(cli_command_call_t *call)
 	assert(call->parameter_count == 1);
 
 	if(config_erase(std::string(call->parameters[0].str.c_str())))
-		string_format(call->result, "erase %s OK", call->parameters[0].str.c_str());
+		call->result = (boost::format("erase %s OK") % call->parameters[0].str).str();
 	else
-		string_format(call->result, "erase %s not found", call->parameters[0].str.c_str());
+		call->result = (boost::format("erase %s not found") % call->parameters[0].str).str();
 }
 
 void config_command_dump(cli_command_call_t *call)

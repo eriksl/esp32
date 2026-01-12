@@ -11,6 +11,9 @@
 #include <led_strip.h>
 #include <led_strip_types.h>
 
+#include <string>
+#include <boost/format.hpp>
+
 typedef struct
 {
 	unsigned int r;
@@ -208,9 +211,9 @@ void command_ledpixel_info(cli_command_call_t *call)
 	assert(call);
 	assert(call->parameter_count == 0);
 
-	string_assign_cstr(call->result, "LEDPIXEL INFO:");
-	string_format_append(call->result, "\n- channels available: %u", (unsigned int)lp_size);
-	string_append_cstr(call->result, "\nchannels:");
+	call->result = "LEDPIXEL INFO:";
+	call->result += (boost::format("\n- channels available: %u") % lp_size).str();
+	call->result += "\nchannels:";
 
 	for(handle = lp_first; handle < lp_size; handle = static_cast<lp_t>(handle + 1))
 	{
@@ -220,19 +223,20 @@ void command_ledpixel_info(cli_command_call_t *call)
 		{
 			assert(!channel->open || channel->owner);
 
-			string_format_append(call->result, "\n- channel %u: gpio %2d is %s, owned by: %s\n   rgbvalue:",
-					(unsigned int)handle, channel->gpio,
-					channel->open ? "open" : "not open",
-					channel->open ? channel->owner : "<none>");
+			call->result += (boost::format("\n- channel %u: gpio %2d is %s, owned by: %s\n   rgbvalue:") %
+					handle %
+					channel->gpio %
+					(channel->open ? "open" : "not open") %
+					(channel->open ? channel->owner : "<none>")).str();
 
 			for(ix = 0; ix < ledpixel_leds_size; ix++)
 			{
 				rgb = &channel->rgbvalue[ix];
-				string_format_append(call->result, " (R:0x%02x,G:0x%02x,B:0x%02x)", rgb->r, rgb->g, rgb->b);
+				call->result += (boost::format(" (R:0x%02x,G:0x%02x,B:0x%02x)") % rgb->r % rgb->g % rgb->b).str();
 			}
 		}
 		else
-			string_format_append(call->result, "\n- channel %d is unavailable", handle);
+			call->result += (boost::format("\n- channel %d is unavailable") % handle).str();
 
 	}
 }

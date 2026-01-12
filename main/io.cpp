@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 
 #include "string.h"
 #include "log.h"
@@ -13,7 +14,9 @@
 #include "info.h"
 #include "i2c.h"
 
-#include <assert.h>
+#include <string>
+#include <boost/format.hpp>
+
 #include <freertos/FreeRTOS.h>
 
 typedef enum
@@ -1014,11 +1017,12 @@ void command_io_dump(cli_command_call_t *call)
 	unsigned int address, sequence;
 	const char *name;
 	unsigned int pin;
+	string_auto(result_, 64); // FIXME
 
 	assert(inited);
 	assert(call->parameter_count == 0);
 
-	string_assign_cstr(call->result, "I/O DUMP");
+	call->result = "I/O DUMP";
 
 	sequence = 0;
 
@@ -1026,37 +1030,41 @@ void command_io_dump(cli_command_call_t *call)
 
 	for(dataptr = data_root; dataptr; dataptr = dataptr->next)
 	{
-		string_format_append(call->result, "\n[%u]: ", sequence++);
+		call->result += (boost::format("\n[%u]: ") % sequence).str();
 
-		io_info_x(call->result, dataptr);
+		sequence++;
+
+		io_info_x(result_, dataptr);
+		call->result = string_cstr(result_);
 
 		switch(dataptr->info->bus)
 		{
 			case(io_bus_apb):
 			{
-				string_append_cstr(call->result, "\nbus info\n- APB device");
+				call->result += "\nbus info\n- APB device";
 				break;
 			}
 
 			case(io_bus_i2c):
 			{
 				i2c_get_slave_info(dataptr->i2c.slave, &module, &bus, &address, &name);
-				string_format_append(call->result, "\nbus info\n- I2C device %s at %d/%d/%#x", name, module, bus, address);
+				call->result += (boost::format("\nbus info\n- I2C device %s at %d/%d/%#x") % name % module % bus % address).str();
 
 				break;
 			}
 
 			default:
 			{
-				string_format_append(call->result, " unknown IO type %d: %s", dataptr->info->bus, dataptr->info->name);
+				call->result += (boost::format(" unknown IO type %d: %s") % dataptr->info->bus % dataptr->info->name).str();
 			}
 		}
-		string_append_cstr(call->result, "\npins:");
+		call->result += "\npins:";
 
 		for(pin = 0; pin < dataptr->info->pins; pin++)
 		{
-			string_format_append(call->result, "\n- pin %u: ", pin);
-			io_pin_info_x(call->result, dataptr, pin);
+			call->result += (boost::format("\n- pin %u: ") % pin).str();
+			io_pin_info_x(result_, dataptr, pin);
+			call->result += string_cstr(result_); // FIXME
 		}
 	}
 
@@ -1068,33 +1076,36 @@ void command_io_stats(cli_command_call_t *call)
 	assert(inited);
 	assert(call->parameter_count == 0);
 
-	string_assign_cstr(call->result, "IO STATS");
-	string_assign_cstr(call->result, "\n- detecting");
-	string_format_append(call->result, "\n-  skipped: %u", stat_i2c_detect_skipped);
-	string_format_append(call->result, "\n-  tried: %u", stat_i2c_detect_tried);
-	string_format_append(call->result, "\n-  found: %u", stat_i2c_detect_found);
+	call->result = "IO STATS";
+	call->result += "\n- detecting";
+	call->result += (boost::format("\n-  skipped: %u") % stat_i2c_detect_skipped).str();
+	call->result += (boost::format("\n-  tried: %u") % stat_i2c_detect_tried).str();
+	call->result += (boost::format("\n-  found: %u") % stat_i2c_detect_found).str();
 }
 
 void command_io_read(cli_command_call_t *call)
 {
 	unsigned int value;
+	string_auto(result_, 64); // FIXME
 
 	assert(inited);
 	assert(call->parameter_count == 2);
 
-	string_assign_cstr(call->result, "io-read: ");
-
-	if(io_read(call->result, call->parameters[0].unsigned_int, call->parameters[1].unsigned_int, &value))
-		string_format(call->result, "io-read %u/%u: %u OK", call->parameters[0].unsigned_int, call->parameters[1].unsigned_int, value);
+	if(io_read(result_, call->parameters[0].unsigned_int, call->parameters[1].unsigned_int, &value))
+		call->result = (boost::format("io-read %u/%u: %u OK") % call->parameters[0].unsigned_int % call->parameters[1].unsigned_int % value).str();
+	else
+		call->result = (boost::format("io-read %u/%u: %u: %s") % call->parameters[0].unsigned_int % call->parameters[1].unsigned_int % value % string_cstr(result_)).str();
 }
 
 void command_io_write(cli_command_call_t *call)
 {
+	string_auto(result_, 64); // FIXME
+
 	assert(inited);
 	assert(call->parameter_count == 3);
 
-	string_assign_cstr(call->result, "io-write: ");
-
-	if(io_write(call->result, call->parameters[0].unsigned_int, call->parameters[1].unsigned_int, call->parameters[2].unsigned_int))
-		string_format(call->result, "io-write %u/%u: %u OK", call->parameters[0].unsigned_int, call->parameters[1].unsigned_int, call->parameters[2].unsigned_int);
+	if(io_write(result_, call->parameters[0].unsigned_int, call->parameters[1].unsigned_int, call->parameters[2].unsigned_int))
+		call->result = (boost::format("io-write %u/%u: %u OK") % call->parameters[0].unsigned_int % call->parameters[1].unsigned_int % call->parameters[2].unsigned_int).str();
+	else
+		call->result = (boost::format("io-write %u/%u: %u: %s") % call->parameters[0].unsigned_int % call->parameters[1].unsigned_int % call->parameters[2].unsigned_int % string_cstr(result_)).str();
 }

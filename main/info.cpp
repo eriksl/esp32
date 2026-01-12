@@ -20,6 +20,9 @@
 #include "display.h"
 #include "info.h"
 
+#include <string>
+#include <boost/format.hpp>
+
 static bool inited = false;
 
 unsigned int initial_free_heap;
@@ -41,51 +44,52 @@ void info_command_info(cli_command_call_t *call)
 
 	if(!(desc = esp_app_get_description()))
 	{
-		string_format(call->result, "ERROR: esp_app_get_description failed");
+		call->result = "ERROR: esp_app_get_description failed";
 		return;
 	}
 
 	esp_chip_info(&chip_info);
 
-	string_format(call->result, "SoC: %s with %d cores\nRF: %s%s%s%s",
-		CONFIG_IDF_TARGET,
-		chip_info.cores,
-		(chip_info.features & CHIP_FEATURE_WIFI_BGN) ? "WiFi/" : "",
-		(chip_info.features & CHIP_FEATURE_BT) ? "BT" : "",
-		(chip_info.features & CHIP_FEATURE_BLE) ? "BLE" : "",
-		(chip_info.features & CHIP_FEATURE_IEEE802154) ? ", 802.15.4 (Zigbee/Thread)" : "");
+	call->result = (boost::format("SoC: %s with %d cores\nRF: %s%s%s%s") %
+		CONFIG_IDF_TARGET %
+		chip_info.cores %
+		((chip_info.features & CHIP_FEATURE_WIFI_BGN) ? "WiFi/" : "") %
+		((chip_info.features & CHIP_FEATURE_BT) ? "BT" : "") %
+		((chip_info.features & CHIP_FEATURE_BLE) ? "BLE" : "") %
+		((chip_info.features & CHIP_FEATURE_IEEE802154) ? ", 802.15.4 (Zigbee/Thread)" : "")).str();
 
 	unsigned major_rev = chip_info.revision / 100;
 	unsigned minor_rev = chip_info.revision % 100;
-	string_format_append(call->result, "\nRevision: %u.%u", major_rev, minor_rev);
+	call->result += (boost::format("\nRevision: %u.%u") % major_rev % minor_rev).str();
 
 	esp_flash_get_size(NULL, &flash_size);
 
-	string_format_append(call->result, "\nFlash: %lu MB %s", flash_size / (1024 * 1024),
-		(chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
+	call->result += (boost::format("\nFlash: %lu MB %s") %
+		(flash_size / (1024 * 1024)) %
+		((chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external")).str();
 
-	string_format_append(call->result, "\nBSP:\n- board name: %s\n- flash size: %d MB\n- SPI RAM size: %d MB",
-			CONFIG_BSP_BOARD_TYPE_NAME,
-			CONFIG_BSP_FLASH_SIZE / 1024,
-			CONFIG_BSP_SPIRAM_SIZE / 1024);
+	call->result += (boost::format("\nBSP:\n- board name: %s\n- flash size: %d MB\n- SPI RAM size: %d MB") %
+			CONFIG_BSP_BOARD_TYPE_NAME %
+			(CONFIG_BSP_FLASH_SIZE / 1024) %
+			(CONFIG_BSP_SPIRAM_SIZE / 1024)).str();
 #if (CONFIG_BSP_LEDPIXEL0 >= 0)
-	string_format_append(call->result, "\n- LEDpixel at GPIO %d", CONFIG_BSP_LEDPIXEL0);
+	call->result += (boost::format("\n- LEDpixel at GPIO %d") % CONFIG_BSP_LEDPIXEL0).str();
 #else
-	string_append_cstr(call->result, "\n- no LEDpixel");
+	call->result += "\n- no LEDpixel";
 #endif
 #if (CONFIG_BSP_LEDPWM0 >= 0)
-	string_format_append(call->result, "\n- status LED at GPIO %d", CONFIG_BSP_LEDPWM0);
+	call->result += (boost::format("\n- status LED at GPIO %d") % CONFIG_BSP_LEDPWM0).str();
 #else
-	string_append_cstr(call->result, "\n- no status LED");
+	call->result += "\n- no status LED";
 #endif
 
-	string_format_append(call->result,
-			"\nfirmware\n"
-			"- date: %s %s\n"
-			"- build start: %s %s\n",
-			__DATE__, __TIME__, desc->date, desc->time);
+	call->result += (boost::format("\nfirmware\n- date: %s %s\n- build start: %s %s\n") %
+			__DATE__ %
+			__TIME__ %
+			desc->date %
+			desc->time).str();
 
-	string_format_append(call->result, "stats:\n- notify timer failed: %u", stat_notify_timer_failed);
+	call->result += (boost::format("stats:\n- notify timer failed: %u") % stat_notify_timer_failed).str();
 }
 
 void info_command_info_board(cli_command_call_t *call)
@@ -93,9 +97,9 @@ void info_command_info_board(cli_command_call_t *call)
 	assert(inited);
 	assert(call->parameter_count == 0);
 
-	string_format(call->result, "firmware date: %s %s, ", __DATE__, __TIME__);
-	string_format_append(call->result, "transport mtu: %u, ", call->mtu);
-    string_format_append(call->result, "display area: %ux%u\n", display_image_x_size(), display_image_y_size());
+	call->result = (boost::format("firmware date: %s %s, ") % __DATE__ % __TIME__).str();
+	call->result += (boost::format("transport mtu: %u, ") % call->mtu).str();
+    call->result += (boost::format("display area: %ux%u\n") % display_image_x_size() % display_image_y_size()).str();
 }
 
 void info_command_info_partitions(cli_command_call_t *call)
@@ -116,29 +120,29 @@ void info_command_info_partitions(cli_command_call_t *call)
 
 	if(!(boot_partition = esp_ota_get_boot_partition()))
 	{
-		string_format(call->result, "ERROR: esp_ota_get_boot_partition failed");
+		call->result = "ERROR: esp_ota_get_boot_partition failed";
 		return;
 	}
 
 	if(!(running_partition = esp_ota_get_running_partition()))
 	{
-		string_format(call->result, "ERROR: esp_ota_get_running_partition failed");
+		call->result = "ERROR: esp_ota_get_running_partition failed";
 		return;
 	}
 
 	if(!(partition_iterator = esp_partition_find(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, (const char *)0)))
 	{
-		string_format(call->result, "ERROR: esp_partition_find failed");
+		call->result = "ERROR: esp_partition_find failed";
 		return;
 	}
 
-	string_format(call->result, "Partitions:\n");
+	call->result = "Partitions:\n";
 
 	for(index = 0; partition_iterator; index++, partition_iterator = esp_partition_next(partition_iterator))
 	{
 		if(!(partition = esp_partition_get(partition_iterator)))
 		{
-			string_format(call->result, "ERROR: esp_partition_get failed");
+			call->result = "ERROR: esp_partition_get failed";
 			return;
 		}
 
@@ -228,13 +232,18 @@ void info_command_info_partitions(cli_command_call_t *call)
 		else
 			util_hash_to_string(sha256_hash_text, sizeof(sha256_hash), sha256_hash);
 
-		string_format_append(call->result, "%s  %2u %1s%1s%1s %-8s %06lx %4lu %-7s %-8s %-64s",
-				(index > 0) ? "\n" : "",
-				index,
-				ota_state_text,
-				(partition->address == boot_partition->address) ? "b" : " ",
-				(partition->address == running_partition->address) ? "r" : " ",
-				partition->label, partition->address, partition->size / 1024, type, subtype, string_cstr(sha256_hash_text));
+		call->result += (boost::format("%s  %2u %1s%1s%1s %-8s %06lx %4lu %-7s %-8s %-64s") %
+				((index > 0) ? "\n" : "") %
+				index %
+				ota_state_text %
+				((partition->address == boot_partition->address) ? "b" : " ") %
+				((partition->address == running_partition->address) ? "r" : " ") %
+				partition->label %
+				partition->address %
+				(partition->size / 1024) %
+				type %
+				subtype %
+				string_cstr(sha256_hash_text)).str();
 	}
 
 	esp_partition_iterator_release(partition_iterator);
@@ -248,30 +257,30 @@ void info_command_info_memory(cli_command_call_t *call)
 
 	free_total = heap_caps_get_free_size(MALLOC_CAP_DEFAULT);
 
-	string_format(call->result, "MEMORY");
-	string_format_append(call->result, "\n%s", "amount kB:");
-	string_format_append(call->result, "\n- %-29s %5lu / %5u kB",	"free heap total",				esp_get_free_heap_size() / 1024, initial_free_heap  / 1024);
-	string_format_append(call->result, "\n- %-29s %5lu kB",			"minimum free heap",			esp_get_minimum_free_heap_size() / 1024);
-	string_format_append(call->result, "\n- %-29s %5u kB",  		"heap executable",				heap_caps_get_free_size(MALLOC_CAP_EXEC) / 1024);
-	string_format_append(call->result, "\n- %-29s %5u kB",  		"heap 32 bit addressable",		heap_caps_get_free_size(MALLOC_CAP_32BIT) / 1024);
-	string_format_append(call->result, "\n- %-29s %5u kB",  		"heap 8 bit addressable",		heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024);
-	string_format_append(call->result, "\n- %-29s %5u kB",  		"heap DMA adressable",			heap_caps_get_free_size(MALLOC_CAP_DMA) / 1024);
-	string_format_append(call->result, "\n- %-29s %5u / %5u kB",	"heap SPI RAM",					heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024, initial_free_spiram / 1024);
-	string_format_append(call->result, "\n- %-29s %5u / %5u kB",	"heap internal RAM",			heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024, initial_free_internal / 1024);
-	string_format_append(call->result, "\n- %-29s %5u / %5u kB",	"heap default",					free_total / 1024, initial_free_total / 1024);
-	string_format_append(call->result, "\n- %-29s %5u kB",  		"heap IRAM 8 bit adressable",	heap_caps_get_free_size(MALLOC_CAP_IRAM_8BIT) / 1024);
-	string_format_append(call->result, "\n- %-29s %5u kB",  		"heap retention",				heap_caps_get_free_size(MALLOC_CAP_RETENTION) / 1024);
-	string_format_append(call->result, "\n- %-29s %5u / %5u kB",	"heap RTC RAM",					heap_caps_get_free_size(MALLOC_CAP_RTCRAM) / 1024, initial_free_rtcram / 1024);
-	string_format_append(call->result, "\n- %-29s %5u kB",			"heap TCM",						heap_caps_get_free_size(MALLOC_CAP_TCM) / 1024);
-	string_format_append(call->result, "\nusage:");
-	string_format_append(call->result, "\n- total: %6.3f MB",			initial_free_total / (1024.0 * 1024.0));
-	string_format_append(call->result, "\n- used:  %6.3f MB %4.1f%%",	(initial_free_total - free_total) / (1024.0 * 1024.0), (100.0 * (initial_free_total - free_total)) / initial_free_total);
-	string_format_append(call->result, "\n- free:  %6.3f MB %4.1f%%",	free_total / (1024.0 * 1024.0), (100.0 * free_total) / initial_free_total);
-	string_append_cstr(call->result, "\ntimings:");
-	string_format_append(call->result, "\n- malloc min time: %llu microseconds", stat_util_time_malloc_min);
-	string_format_append(call->result, "\n- malloc max time: %llu microseconds", stat_util_time_malloc_max);
-	string_format_append(call->result, "\n- memcpy min time: %llu microseconds", stat_util_time_memcpy_min);
-	string_format_append(call->result, "\n- memcpy max time: %llu microseconds", stat_util_time_memcpy_max);
+	call->result = "MEMORY";
+	call->result += "\namount kB:";
+	call->result += (boost::format("\n- %-29s %5lu / %5u kB")	% "free heap total"				% (esp_get_free_heap_size() / 1024)	% (initial_free_heap / 1024)).str();
+	call->result += (boost::format("\n- %-29s %5lu kB")			% "minimum free heap"			% (esp_get_minimum_free_heap_size() / 1024)).str();
+	call->result += (boost::format("\n- %-29s %5u kB")			% "heap executable"				% (heap_caps_get_free_size(MALLOC_CAP_EXEC) / 1024)).str();
+	call->result += (boost::format("\n- %-29s %5u kB")			% "heap 32 bit addressable"		% (heap_caps_get_free_size(MALLOC_CAP_32BIT) / 1024)).str();
+	call->result += (boost::format("\n- %-29s %5u kB")			% "heap 8 bit addressable"		% (heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024)).str();
+	call->result += (boost::format("\n- %-29s %5u kB")			% "heap DMA adressable"			% (heap_caps_get_free_size(MALLOC_CAP_DMA) / 1024)).str();
+	call->result += (boost::format("\n- %-29s %5u / %5u kB")	% "heap SPI RAM"				% (heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024)	% (initial_free_spiram / 1024)).str();
+	call->result += (boost::format("\n- %-29s %5u / %5u kB")	% "heap internal RAM"			% (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024)	% (initial_free_internal / 1024)).str();
+	call->result += (boost::format("\n- %-29s %5u / %5u kB")	% "heap default"				% (free_total / 1024)									% (initial_free_total / 1024)).str();
+	call->result += (boost::format("\n- %-29s %5u kB")			% "heap IRAM 8 bit adressable"	% (heap_caps_get_free_size(MALLOC_CAP_IRAM_8BIT) / 1024)).str();
+	call->result += (boost::format("\n- %-29s %5u kB")			% "heap retention"				% (heap_caps_get_free_size(MALLOC_CAP_RETENTION) / 1024)).str();
+	call->result += (boost::format("\n- %-29s %5u / %5u kB")	% "heap RTC RAM"				% (heap_caps_get_free_size(MALLOC_CAP_RTCRAM) / 1024)	% (initial_free_rtcram / 1024)).str();
+	call->result += (boost::format("\n- %-29s %5u kB")			% "heap TCM"					% (heap_caps_get_free_size(MALLOC_CAP_TCM) / 1024)).str();
+	call->result += "\nusage:";
+	call->result += (boost::format("\n- total: %6.3f MB")			% (initial_free_total / (1024.0 * 1024.0))).str();
+	call->result += (boost::format("\n- used:  %6.3f MB %4.1f%%")	% ((initial_free_total - free_total) / (1024.0 * 1024.0)) % ((100.0 * (initial_free_total - free_total)) / initial_free_total)).str();
+	call->result += (boost::format("\n- free:  %6.3f MB %4.1f%%")	% (free_total / (1024.0 * 1024.0)) % ((100.0 * free_total) / initial_free_total)).str();
+	call->result += "\ntimings:";
+	call->result += (boost::format("\n- malloc min time: %llu microseconds")	% stat_util_time_malloc_min).str();
+	call->result += (boost::format("\n- malloc max time: %llu microseconds")	% stat_util_time_malloc_max).str();
+	call->result += (boost::format("\n- memcpy min time: %llu microseconds")	% stat_util_time_memcpy_min).str();
+	call->result += (boost::format("\n- memcpy max time: %llu microseconds")	% stat_util_time_memcpy_max).str();
 }
 
 void info_init(void)

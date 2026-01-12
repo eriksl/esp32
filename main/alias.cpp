@@ -6,6 +6,9 @@
 #include "log.h"
 #include "alias.h"
 
+#include <string>
+#include <boost/format.hpp>
+
 class Alias
 {
 	private:
@@ -52,10 +55,10 @@ void Alias::command(cli_command_call_t *call)
 		}
 	}
 
-	string_assign_cstr(call->result, "ALIASES");
+	call->result = "ALIASES";
 
 	for(const auto &ref : aliases)
-		string_format_append(call->result, "\n  %s: %s", ref.first.c_str(), ref.second.c_str());
+		call->result += (boost::format("\n  %s: %s") % ref.first % ref.second).str();
 
 }
 
@@ -80,8 +83,6 @@ void Alias::expand(std::string &data) const
 		command = data;
 	else
 		command = data.substr(0, delimiter);
-
-	log_format("command: \"%s\"", command.c_str());
 
 	if((it = aliases.find(command)) == aliases.end())
 		return;

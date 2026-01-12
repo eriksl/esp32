@@ -12,6 +12,9 @@
 #include "cli-command.h"
 #include "sensor.h"
 
+#include <string>
+#include <boost/format.hpp>
+
 typedef struct
 {
 	float value;
@@ -53,7 +56,7 @@ typedef struct info_T
 	sensor_detect_t (*const detect_fn)(i2c_slave_t);
 	bool (*const init_fn)(data_t *);
 	bool (*const poll_fn)(data_t *);
-	void (*const dump_fn)(const data_t *, string_t);
+	void (*const dump_fn)(const data_t *, std::string &);
 } info_t;
 
 typedef struct
@@ -353,18 +356,18 @@ static bool bh1750_poll(data_t *data)
 	return(true);
 }
 
-static void bh1750_dump(const data_t *data, string_t output)
+static void bh1750_dump(const data_t *data, std::string &output)
 {
 	bh1750_private_data_t *pdata = static_cast<bh1750_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
-	string_format_append(output, "state: %u, ", pdata->state);
-	string_format_append(output, "scaling: %u, ", pdata->scaling);
-	string_format_append(output, "scaling_up: %u, ", pdata->scaling_up);
-	string_format_append(output, "scaling_down: %u, ", pdata->scaling_down);
-	string_format_append(output, "overflows: %u, ", pdata->overflows);
-	string_format_append(output, "raw: %u", pdata->raw_value);
+	output += (boost::format("state: %u, ") % pdata->state).str();
+	output += (boost::format("scaling: %u, ") % pdata->scaling).str();
+	output += (boost::format("scaling_up: %u, ") % pdata->scaling_up).str();
+	output += (boost::format("scaling_down: %u, ") % pdata->scaling_down).str();
+	output += (boost::format("overflows: %u, ") % pdata->overflows).str();
+	output += (boost::format("raw: %u") % pdata->raw_value).str();
 };
 
 enum : unsigned int
@@ -438,14 +441,14 @@ static bool tmp75_poll(data_t *data)
 	return(true);
 }
 
-static void tmp75_dump(const data_t *data, string_t output)
+static void tmp75_dump(const data_t *data, std::string &output)
 {
 	tmp75_private_data_t *pdata = static_cast<tmp75_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
-	string_format_append(output, "raw value 0: %u, ", pdata->raw_value[0]);
-	string_format_append(output, "raw value 1: %u", pdata->raw_value[1]);
+	output += (boost::format("raw value 0: %u, ") % pdata->raw_value[0]).str();
+	output += (boost::format("raw value 1: %u") % pdata->raw_value[1]).str();
 };
 
 enum : unsigned int
@@ -636,15 +639,15 @@ static bool opt3001_poll(data_t *data)
 	return(true);
 }
 
-static void opt3001_dump(const data_t *data, string_t output)
+static void opt3001_dump(const data_t *data, std::string &output)
 {
 	opt3001_private_data_t *pdata = static_cast<opt3001_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
-	string_format_append(output, "overflows: %u, ", pdata->overflows);
-	string_format_append(output, "mantissa: %u, ", pdata->mantissa);
-	string_format_append(output, "exponent: %u", pdata->exponent);
+	output += (boost::format("overflows: %u, ") % pdata->overflows).str();
+	output += (boost::format("mantissa: %u, ") % pdata->mantissa).str();
+	output += (boost::format("exponent: %u") % pdata->exponent).str();
 }
 
 enum : unsigned int
@@ -783,15 +786,15 @@ static bool max44009_poll(data_t *data)
 	return(true);
 }
 
-static void max44009_dump(const data_t *data, string_t output)
+static void max44009_dump(const data_t *data, std::string &output)
 {
 	max44009_private_data_t *pdata = static_cast<max44009_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
-	string_format_append(output, "overflows: %u, ", pdata->overflows);
-	string_format_append(output, "mantissa: %u, ", pdata->mantissa);
-	string_format_append(output, "exponent: %u", pdata->exponent);
+	output += (boost::format("overflows: %u, ") % pdata->overflows).str();
+	output += (boost::format("mantissa: %u, ") % pdata->mantissa).str();
+	output += (boost::format("exponent: %u") % pdata->exponent).str();
 };
 
 enum : unsigned int
@@ -1021,17 +1024,17 @@ static bool asair_poll(data_t *data)
 	return(true);
 }
 
-static void asair_dump(const data_t *data, string_t output)
+static void asair_dump(const data_t *data, std::string &output)
 {
 	asair_private_data_t *pdata = static_cast<asair_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
-	string_format_append(output, "state: %u, ", pdata->state);
-	string_format_append(output, "type: %u, ", pdata->type);
-	string_format_append(output, "valid: %u, ", (unsigned int)pdata->valid);
-	string_format_append(output, "raw temperature: %u, ", pdata->raw_temperature);
-	string_format_append(output, "raw humidity: %u", pdata->raw_temperature);
+	output += (boost::format("state: %u, ") % pdata->state).str();
+	output += (boost::format("type: %u, ") % pdata->type).str();
+	output += (boost::format("valid: %u, ") % (unsigned int)pdata->valid).str();
+	output += (boost::format("raw temperature: %u, ") % pdata->raw_temperature).str();
+	output += (boost::format("raw humidity: %u") % pdata->raw_temperature).str();
 };
 
 typedef enum : unsigned int
@@ -1321,19 +1324,19 @@ static bool tsl2561_poll(data_t *data)
 	return(true);
 }
 
-static void tsl2561_dump(const data_t *data, string_t output)
+static void tsl2561_dump(const data_t *data, std::string &output)
 {
 	tsl2561_private_data_t *pdata = static_cast<tsl2561_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
-	string_format_append(output, "state 0: %u, ", (unsigned int)pdata->state);
-	string_format_append(output, "scaling: %u, ", pdata->scaling);
-	string_format_append(output, "scaling up: %u, ", pdata->scaling_up);
-	string_format_append(output, "scaling down: %u, ", pdata->scaling_down);
-	string_format_append(output, "overflows: %u, ", pdata->overflows);
-	string_format_append(output, "channel 0: %u, ", pdata->channel[0]);
-	string_format_append(output, "channel 1: %u", pdata->channel[1]);
+	output += (boost::format("state 0: %u, ") % pdata->state).str();
+	output += (boost::format("scaling: %u, ") % pdata->scaling).str();
+	output += (boost::format("scaling up: %u, ") % pdata->scaling_up).str();
+	output += (boost::format("scaling down: %u, ") % pdata->scaling_down).str();
+	output += (boost::format("overflows: %u, ") % pdata->overflows).str();
+	output += (boost::format("channel 0: %u, ") % pdata->channel[0]).str();
+	output += (boost::format("channel 1: %u") % pdata->channel[1]).str();
 }
 
 enum : unsigned int
@@ -1520,16 +1523,16 @@ static bool hdc1080_poll(data_t *data)
 	return(true);
 }
 
-static void hdc1080_dump(const data_t *data, string_t output)
+static void hdc1080_dump(const data_t *data, std::string &output)
 {
 	hdc1080_private_data_t *pdata = static_cast<hdc1080_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
-	string_format_append(output, "state: %u, ", pdata->state);
-	string_format_append(output, "valid: %u, ", (unsigned int)pdata->valid);
-	string_format_append(output, "raw temperature: %u, ", pdata->raw_temperature);
-	string_format_append(output, "raw humidity: %u", pdata->raw_humidity);
+	output += (boost::format("state: %u, ") % pdata->state).str();
+	output += (boost::format("valid: %u, ") % (unsigned int)pdata->valid).str();
+	output += (boost::format("raw temperature: %u, ") % pdata->raw_temperature).str();
+	output += (boost::format("raw humidity: %u") % pdata->raw_humidity).str();
 }
 
 typedef enum : unsigned int
@@ -1840,16 +1843,16 @@ static bool sht3x_poll(data_t *data)
 	return(true);
 }
 
-static void sht3x_dump(const data_t *data, string_t output)
+static void sht3x_dump(const data_t *data, std::string &output)
 {
 	sht3x_private_data_t *pdata = static_cast<sht3x_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
-	string_format_append(output, "state: %u, ", pdata->state);
-	string_format_append(output, "valid: %u, ", (unsigned int)pdata->valid);
-	string_format_append(output, "raw temperature: %u, ", pdata->raw_temperature);
-	string_format_append(output, "raw humidity: %u", pdata->raw_humidity);
+	output += (boost::format("state: %u, ") % pdata->state).str();
+	output += (boost::format("valid: %u, ") % (unsigned int)pdata->valid).str();
+	output += (boost::format("raw temperature: %u, ") % pdata->raw_temperature).str();
+	output += (boost::format("raw humidity: %u") % pdata->raw_humidity).str();
 }
 
 enum : unsigned int
@@ -2228,37 +2231,37 @@ static bool bmx280_poll(data_t *data)
 	return(true);
 }
 
-static void bmx280_dump(const data_t *data, string_t output)
+static void bmx280_dump(const data_t *data, std::string &output)
 {
 	bmx280_private_data_t *pdata = static_cast<bmx280_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
-	string_format_append(output, "type: %02x, ", pdata->type);
-	string_format_append(output, "state: %u, ", pdata->state);
-	string_format_append(output, "adc temp: %u, ", pdata->adc_temperature);
-	string_format_append(output, "adc pressure: %u, ", pdata->adc_airpressure);
-	string_format_append(output, "adc humidity: %u, ", pdata->adc_humidity);
-	string_format_append(output, "t_fine: %f, ", (double)pdata->t_fine);
-	string_format_append(output, "t_fine_2: %f, ", (double)pdata->t_fine_2);
-	string_format_append(output, "t1: %u, ", pdata->t1);
-	string_format_append(output, "t2: %d, ", pdata->t2);
-	string_format_append(output, "t3: %d, ", pdata->t3);
-	string_format_append(output, "p1: %u, ", pdata->p1);
-	string_format_append(output, "p2: %d, ", pdata->p2);
-	string_format_append(output, "p3: %d, ", pdata->p3);
-	string_format_append(output, "p4: %d, ", pdata->p4);
-	string_format_append(output, "p5: %d, ", pdata->p5);
-	string_format_append(output, "p6: %d, ", pdata->p6);
-	string_format_append(output, "p7: %d, ", pdata->p7);
-	string_format_append(output, "p8: %d, ", pdata->p8);
-	string_format_append(output, "p9: %d, ", pdata->p9);
-	string_format_append(output, "h1: %u, ", pdata->h1);
-	string_format_append(output, "h2: %d, ", pdata->h2);
-	string_format_append(output, "h3: %u, ", pdata->h3);
-	string_format_append(output, "h4: %d, ", pdata->h4);
-	string_format_append(output, "h5: %d, ", pdata->h5);
-	string_format_append(output, "h6: %u", pdata->h6);
+	output += (boost::format("type: %02x, ") % pdata->type).str();
+	output += (boost::format("state: %u, ") % pdata->state).str();
+	output += (boost::format("adc temp: %u, ") % pdata->adc_temperature).str();
+	output += (boost::format("adc pressure: %u, ") % pdata->adc_airpressure).str();
+	output += (boost::format("adc humidity: %u, ") % pdata->adc_humidity).str();
+	output += (boost::format("t_fine: %f, ") % (double)pdata->t_fine).str();
+	output += (boost::format("t_fine_2: %f, ") % (double)pdata->t_fine_2).str();
+	output += (boost::format("t1: %u, ") % pdata->t1).str();
+	output += (boost::format("t2: %d, ") % pdata->t2).str();
+	output += (boost::format("t3: %d, ") % pdata->t3).str();
+	output += (boost::format("p1: %u, ") % pdata->p1).str();
+	output += (boost::format("p2: %d, ") % pdata->p2).str();
+	output += (boost::format("p3: %d, ") % pdata->p3).str();
+	output += (boost::format("p4: %d, ") % pdata->p4).str();
+	output += (boost::format("p5: %d, ") % pdata->p5).str();
+	output += (boost::format("p6: %d, ") % pdata->p6).str();
+	output += (boost::format("p7: %d, ") % pdata->p7).str();
+	output += (boost::format("p8: %d, ") % pdata->p8).str();
+	output += (boost::format("p9: %d, ") % pdata->p9).str();
+	output += (boost::format("h1: %u, ") % pdata->h1).str();
+	output += (boost::format("h2: %d, ") % pdata->h2).str();
+	output += (boost::format("h3: %u, ") % pdata->h3).str();
+	output += (boost::format("h4: %d, ") % pdata->h4).str();
+	output += (boost::format("h5: %d, ") % pdata->h5).str();
+	output += (boost::format("h6: %u") % pdata->h6).str();
 };
 
 enum : unsigned int
@@ -2510,15 +2513,15 @@ static bool htu21_poll(data_t *data)
 	return(true);
 }
 
-static void htu21_dump(const data_t *data, string_t output)
+static void htu21_dump(const data_t *data, std::string &output)
 {
 	htu21_private_data_t *pdata = static_cast<htu21_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
-	string_format_append(output, "state: %u, ", pdata->state);
-	string_format_append(output, "raw temperature: %u, ", pdata->raw_temperature);
-	string_format_append(output, "raw humidity: %u", pdata->raw_humidity);
+	output += (boost::format("state: %u, ") % pdata->state).str();
+	output += (boost::format("raw temperature: %u, ") % pdata->raw_temperature).str();
+	output += (boost::format("raw humidity: %u") % pdata->raw_humidity).str();
 }
 
 enum : unsigned int
@@ -2706,18 +2709,18 @@ static bool veml7700_poll(data_t *data)
 	return(true);
 }
 
-static void veml7700_dump(const data_t *data, string_t output)
+static void veml7700_dump(const data_t *data, std::string &output)
 {
 	veml7700_private_data_t *pdata = static_cast<veml7700_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
-	string_format_append(output, "state: %u, ", pdata->state);
-	string_format_append(output, "scaling: %u, ", pdata->scaling);
-	string_format_append(output, "scaling up: %u, ", pdata->scaling_up);
-	string_format_append(output, "scaling down: %u, ", pdata->scaling_down);
-	string_format_append(output, "raw als: %u, ", pdata->raw_als);
-	string_format_append(output, "raw als: %u, ", pdata->raw_white);
+	output += (boost::format("state: %u, ") % pdata->state).str();
+	output += (boost::format("scaling: %u, ") % pdata->scaling).str();
+	output += (boost::format("scaling up: %u, ") % pdata->scaling_up).str();
+	output += (boost::format("scaling down: %u, ") % pdata->scaling_down).str();
+	output += (boost::format("raw als: %u, ") % pdata->raw_als).str();
+	output += (boost::format("raw als: %u, ") % pdata->raw_white).str();
 }
 
 enum : unsigned int
@@ -3063,37 +3066,37 @@ static bool bme680_poll(data_t *data)
 	return(true);
 }
 
-static void bme680_dump(const data_t *data, string_t output)
+static void bme680_dump(const data_t *data, std::string &output)
 {
 	bme680_private_data_t *pdata = static_cast<bme680_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
-	string_format_append(output, "state: %u, ", pdata->state);
-	string_format_append(output, "t_fine: %f, ", (double)pdata->t_fine);
-	string_format_append(output, "adc temp: %u, ", pdata->adc_temperature);
-	string_format_append(output, "adc pressure: %u, ", pdata->adc_airpressure);
-	string_format_append(output, "adc humidity: %u, ", pdata->adc_humidity);
-	string_format_append(output, "t1: %u, ", pdata->t1);
-	string_format_append(output, "t2: %d, ", pdata->t2);
-	string_format_append(output, "t3: %d, ", pdata->t3);
-	string_format_append(output, "p1: %u, ", pdata->p1);
-	string_format_append(output, "p2: %d, ", pdata->p2);
-	string_format_append(output, "p3: %d, ", pdata->p3);
-	string_format_append(output, "p4: %d, ", pdata->p4);
-	string_format_append(output, "p5: %d, ", pdata->p5);
-	string_format_append(output, "p6: %d, ", pdata->p6);
-	string_format_append(output, "p7: %d, ", pdata->p7);
-	string_format_append(output, "p8: %d, ", pdata->p8);
-	string_format_append(output, "p9: %d, ", pdata->p9);
-	string_format_append(output, "p10: %u, ", pdata->p10);
-	string_format_append(output, "h1: %u, ", pdata->h1);
-	string_format_append(output, "h2: %u, ", pdata->h2);
-	string_format_append(output, "h3: %d, ", pdata->h3);
-	string_format_append(output, "h4: %d, ", pdata->h4);
-	string_format_append(output, "h5: %d, ", pdata->h5);
-	string_format_append(output, "h6: %u, ", pdata->h6);
-	string_format_append(output, "h7: %d", pdata->h7);
+	output += (boost::format("state: %u, ") % pdata->state).str();
+	output += (boost::format("t_fine: %f, ") % (double)pdata->t_fine).str();
+	output += (boost::format("adc temp: %u, ") % pdata->adc_temperature).str();
+	output += (boost::format("adc pressure: %u, ") % pdata->adc_airpressure).str();
+	output += (boost::format("adc humidity: %u, ") % pdata->adc_humidity).str();
+	output += (boost::format("t1: %u, ") % pdata->t1).str();
+	output += (boost::format("t2: %d, ") % pdata->t2).str();
+	output += (boost::format("t3: %d, ") % pdata->t3).str();
+	output += (boost::format("p1: %u, ") % pdata->p1).str();
+	output += (boost::format("p2: %d, ") % pdata->p2).str();
+	output += (boost::format("p3: %d, ") % pdata->p3).str();
+	output += (boost::format("p4: %d, ") % pdata->p4).str();
+	output += (boost::format("p5: %d, ") % pdata->p5).str();
+	output += (boost::format("p6: %d, ") % pdata->p6).str();
+	output += (boost::format("p7: %d, ") % pdata->p7).str();
+	output += (boost::format("p8: %d, ") % pdata->p8).str();
+	output += (boost::format("p9: %d, ") % pdata->p9).str();
+	output += (boost::format("p10: %u, ") % pdata->p10).str();
+	output += (boost::format("h1: %u, ") % pdata->h1).str();
+	output += (boost::format("h2: %u, ") % pdata->h2).str();
+	output += (boost::format("h3: %d, ") % pdata->h3).str();
+	output += (boost::format("h4: %d, ") % pdata->h4).str();
+	output += (boost::format("h5: %d, ") % pdata->h5).str();
+	output += (boost::format("h6: %u, ") % pdata->h6).str();
+	output += (boost::format("h7: %d") % pdata->h7).str();
 };
 
 enum : unsigned int
@@ -3443,22 +3446,22 @@ static bool apds9930_poll(data_t *data)
 	return(true);
 }
 
-static void apds9930_dump(const data_t *data, string_t output)
+static void apds9930_dump(const data_t *data, std::string &output)
 {
 	apds9930_private_data_t *pdata = static_cast<apds9930_private_data_t *>(data->private_data);
 
-	string_format_append(output, "type: 0x%02x, ", pdata->type);
-	string_format_append(output, "state: %d, ", pdata->state);
-	string_format_append(output, "scaling: %u, ", pdata->scaling);
-	string_format_append(output, "not readys: %u, ", pdata->not_readys);
-	string_format_append(output, "overflows: %u, ", pdata->overflows);
-	string_format_append(output, "scales up: %u, ", pdata->scales_up);
-	string_format_append(output, "scales down: %u, ", pdata->scales_down);
-	string_format_append(output, "raw correction: %.3f/%.3f, ", (double)pdata->raw_channel_correction[0], (double)pdata->raw_channel_correction[1]);
-	string_format_append(output, "raw values: %u/%u, ", pdata->raw_channel[0], pdata->raw_channel[1]);
-	string_format_append(output, "lpc: %f, ", (double)pdata->lpc);
-	string_format_append(output, "iac: %f/%f/%f, ", (double)pdata->iac1, (double)pdata->iac2, (double)pdata->iac);
-	string_format_append(output, "autoranging data size: %u", pdata->autoranging_data_size);
+	output += (boost::format("type: 0x%02x, ") % pdata->type).str();
+	output += (boost::format("state: %d, ") % pdata->state).str();
+	output += (boost::format("scaling: %u, ") % pdata->scaling).str();
+	output += (boost::format("not readys: %u, ") % pdata->not_readys).str();
+	output += (boost::format("overflows: %u, ") % pdata->overflows).str();
+	output += (boost::format("scales up: %u, ") % pdata->scales_up).str();
+	output += (boost::format("scales down: %u, ") % pdata->scales_down).str();
+	output += (boost::format("raw correction: %.3f/%.3f, ") % (double)pdata->raw_channel_correction[0] % (double)pdata->raw_channel_correction[1]).str();
+	output += (boost::format("raw values: %u/%u, ") % pdata->raw_channel[0] % pdata->raw_channel[1]).str();
+	output += (boost::format("lpc: %f, ") % (double)pdata->lpc).str();
+	output += (boost::format("iac: %f/%f/%f, ") % (double)pdata->iac1 % (double)pdata->iac2 % (double)pdata->iac).str();
+	output += (boost::format("autoranging data size: %u") % pdata->autoranging_data_size).str();
 }
 
 enum : unsigned int
@@ -3785,21 +3788,21 @@ static bool apds9960_poll(data_t *data)
 	return(true);
 }
 
-static void apds9960_dump(const data_t *data, string_t output)
+static void apds9960_dump(const data_t *data, std::string &output)
 {
 	apds9960_private_data_t *pdata = static_cast<apds9960_private_data_t *>(data->private_data);
 
-	string_format_append(output, "type: 0x%02x, ", pdata->type);
-	string_format_append(output, "state: %u, ", pdata->state);
-	string_format_append(output, "scaling: %u, ", pdata->scaling);
-	string_format_append(output, "not readys: %u, ", pdata->not_readys);
-	string_format_append(output, "overflows: %u, ", pdata->overflows);
-	string_format_append(output, "scales up: %u, ", pdata->scales_up);
-	string_format_append(output, "scales down: %u, ", pdata->scales_down);
-	string_format_append(output, "data clear: %u, ", pdata->data.clear);
-	string_format_append(output, "data r: %u%%, ", pdata->data.r);
-	string_format_append(output, "data g: %u%%, ", pdata->data.g);
-	string_format_append(output, "data b: %u%%", pdata->data.b);
+	output += (boost::format("type: 0x%02x, ") % pdata->type).str();
+	output += (boost::format("state: %u, ") % pdata->state).str();
+	output += (boost::format("scaling: %u, ") % pdata->scaling).str();
+	output += (boost::format("not readys: %u, ") % pdata->not_readys).str();
+	output += (boost::format("overflows: %u, ") % pdata->overflows).str();
+	output += (boost::format("scales up: %u, ") % pdata->scales_up).str();
+	output += (boost::format("scales down: %u, ") % pdata->scales_down).str();
+	output += (boost::format("data clear: %u, ") % pdata->data.clear).str();
+	output += (boost::format("data r: %u%%, ") % pdata->data.r).str();
+	output += (boost::format("data g: %u%%, ") % pdata->data.g).str();
+	output += (boost::format("data b: %u%%") % pdata->data.b).str();
 }
 
 typedef enum : unsigned int
@@ -4122,21 +4125,21 @@ static bool tsl2591_poll(data_t *data)
 	return(true);
 }
 
-static void tsl2591_dump(const data_t *data, string_t output)
+static void tsl2591_dump(const data_t *data, std::string &output)
 {
 	tsl2591_private_data_t *pdata = static_cast<tsl2591_private_data_t *>(data->private_data);
 
-	string_format_append(output, "state: %u, ", pdata->state);
-	string_format_append(output, "scaling: %u, ", pdata->scaling);
-	string_format_append(output, "scales up: %u, ", pdata->scales_up);
-	string_format_append(output, "scales down: %u, ", pdata->scales_down);
-	string_format_append(output, "overflows: %u, ", pdata->overflows);
-	string_format_append(output, "data channel 0: %u, ", pdata->channel[0]);
-	string_format_append(output, "data channel 1: %u, ", pdata->channel[1]);
-	string_format_append(output, "ratio: %f, ", (double)pdata->ratio);
-	string_format_append(output, "ratio index: %u, ", pdata->ratio_index);
-	string_format_append(output, "factor 0: %f, ", (double)pdata->factor[0]);
-	string_format_append(output, "factor 1: %f", (double)pdata->factor[1]);
+	output += (boost::format("state: %u, ") % pdata->state).str();
+	output += (boost::format("scaling: %u, ") % pdata->scaling).str();
+	output += (boost::format("scales up: %u, ") % pdata->scales_up).str();
+	output += (boost::format("scales down: %u, ") % pdata->scales_down).str();
+	output += (boost::format("overflows: %u, ") % pdata->overflows).str();
+	output += (boost::format("data channel 0: %u, ") % pdata->channel[0]).str();
+	output += (boost::format("data channel 1: %u, ") % pdata->channel[1]).str();
+	output += (boost::format("ratio: %f, ") % (double)pdata->ratio).str();
+	output += (boost::format("ratio index: %u, ") % pdata->ratio_index).str();
+	output += (boost::format("factor 0: %f, ") % (double)pdata->factor[0]).str();
+	output += (boost::format("factor 1: %f") % (double)pdata->factor[1]).str();
 }
 
 static sensor_detect_t tsl2591_28_detect(i2c_slave_t slave)
@@ -4344,15 +4347,15 @@ static bool am2320_poll(data_t *data)
 	return(true);
 }
 
-static void am2320_dump(const data_t *data, string_t output)
+static void am2320_dump(const data_t *data, std::string &output)
 {
 	am2320_private_data_t *pdata = static_cast<am2320_private_data_t *>(data->private_data);
 
 	assert(pdata);
 
-	string_format_append(output, "state: %d, ", pdata->state);
-	string_format_append(output, "raw temperature data: %lu, ", pdata->raw_temperature_data);
-	string_format_append(output, "raw humidity data: %lu", pdata->raw_humidity_data);
+	output += (boost::format("state: %d, ") % pdata->state).str();
+	output += (boost::format("raw temperature data: %lu, ") % pdata->raw_temperature_data).str();
+	output += (boost::format("raw humidity data: %lu") % pdata->raw_humidity_data).str();
 }
 
 static const info_t info[sensor_size] =
@@ -4814,11 +4817,11 @@ void command_sensor_info(cli_command_call_t *call)
 	if((call->parameter_count > 0) && (call->parameters[0].unsigned_int > 0))
 		include_disabled = true;
 
-	string_assign_cstr(call->result, "SENSOR info");
+	call->result = "SENSOR info";
 
 	if(!inited)
 	{
-		string_append_cstr(call->result, "\n--");
+		call->result += "\n--";
 		return;
 	}
 
@@ -4833,23 +4836,29 @@ void command_sensor_info(cli_command_call_t *call)
 
 		if(!slave)
 		{
-			string_append_cstr(call->result, "\nslave = NULL");
+			call->result += "\nslave = NULL";
 			continue;
 		}
 
 		if(!i2c_get_slave_info(slave, &module, &bus, &address, &name))
-			string_append_cstr(call->result, "\n- unknown slave");
+			call->result += "\n- unknown slave";
 		else
 		{
-			string_format_append(call->result, "\n- %s@%d/%d/%x:", name, module, bus, address);
+			call->result += (boost::format("\n- %s@%d/%d/%x:") % name % module % bus % address).str();
 
 			if(dataptr->state == sensor_disabled)
-				string_append_cstr(call->result, " [disabled]");
+				call->result += " [disabled]";
 			else
 				for(type = sensor_type_first; type < sensor_type_size; type = static_cast<sensor_type_t>(type + 1))
 					if(dataptr->info->type & (1 << type))
-						string_format_append(call->result, " %s: %.*f %s", sensor_type_info[type].type,
-								(int)dataptr->info->precision, (double)dataptr->values[type].value, sensor_type_info[type].unity);
+					{
+						std::string format_string = (boost::format(" %%s: %%.%uf %%s") % dataptr->info->precision).str();
+
+						call->result += (boost::format(format_string) %
+								sensor_type_info[type].type %
+								dataptr->values[type].value %
+								sensor_type_info[type].unity).str();
+					}
 		}
 	}
 
@@ -4874,7 +4883,7 @@ void command_sensor_json(cli_command_call_t *call)
 	if(!inited)
 		return;
 
-	string_assign_cstr(call->result, "{");
+	call->result = "{";
 
 	data_mutex_take();
 
@@ -4887,43 +4896,43 @@ void command_sensor_json(cli_command_call_t *call)
 
 		if(slave && i2c_get_slave_info(slave, &module, &bus, &address, &name))
 		{
-			string_append_cstr(call->result, first_sensor ? "" : ",");
-			string_format_append(call->result,	"\n\"%u-%u-%x\":", (unsigned int)module, (unsigned int)bus, address);
-			string_append_cstr(call->result,	"\n[");
-			string_append_cstr(call->result,	"\n{");
-			string_format_append(call->result,	"\n\"module\": %u,", (unsigned int)module);
-			string_format_append(call->result,	"\n\"bus\": %u,", (unsigned int)bus);
-			string_format_append(call->result,	"\n\"name\": \"%s\",", name);
-			string_append_cstr(call->result,	"\n\"values\":");
-			string_append_cstr(call->result,	"\n[");
+			call->result += first_sensor ? "" : ",";
+			call->result += (boost::format("\n\"%u-%u-%x\":") % module % bus % address).str();
+			call->result +=	"\n[";
+			call->result +=	"\n{";
+			call->result += (boost::format("\n\"module\": %u,") % module).str();
+			call->result += (boost::format("\n\"bus\": %u,") % bus).str();
+			call->result += (boost::format("\n\"name\": \"%s\",") % name).str();
+			call->result +=	"\n\"values\":";
+			call->result +=	"\n[";
 
 			for(type = sensor_type_first, first_value = true; type < sensor_type_size; type = static_cast<sensor_type_t>(type + 1))
 			{
 				if(dataptr->info->type & (1 << type))
 				{
-					string_append_cstr(call->result, first_value ? "" : ",");
-					string_append_cstr(call->result,	"\n{");
-					string_format_append(call->result,	"\n\"type\": \"%s\",", sensor_type_info[type].type);
-					string_format_append(call->result,	"\n\"id\": %d,", dataptr->info->id);
-					string_format_append(call->result,	"\n\"address\": %u,", address);
-					string_format_append(call->result,	"\n\"unity\": \"%s\",", sensor_type_info[type].unity);
-					string_format_append(call->result,	"\n\"value\": %f,", (double)dataptr->values[type].value);
-					string_format_append(call->result,	"\n\"time\": %lld", dataptr->values[type].stamp);
-					string_append_cstr(call->result,	"\n}");
+					call->result += first_value ? "" : ",";
+					call->result +=	"\n{";
+					call->result += (boost::format("\n\"type\": \"%s\",") % sensor_type_info[type].type).str();
+					call->result += (boost::format("\n\"id\": %d,") % dataptr->info->id).str();
+					call->result += (boost::format("\n\"address\": %u,") % address).str();
+					call->result += (boost::format("\n\"unity\": \"%s\",") % sensor_type_info[type].unity).str();
+					call->result += (boost::format("\n\"value\": %f,") % (double)dataptr->values[type].value).str();
+					call->result += (boost::format("\n\"time\": %lld") % dataptr->values[type].stamp).str();
+					call->result +=	"\n}";
 
 					first_value = false;
 				}
 			}
 
-			string_append_cstr(call->result, "\n]");
-			string_append_cstr(call->result, "\n}");
-			string_append_cstr(call->result, "\n]");
+			call->result += "\n]";
+			call->result += "\n}";
+			call->result += "\n]";
 
 			first_sensor = false;
 		}
 	}
 
-	string_append_cstr(call->result, "\n}");
+	call->result += "\n}";
 
 	data_mutex_give();
 }
@@ -4942,11 +4951,11 @@ void command_sensor_dump(cli_command_call_t *call)
 
 	assert(call->parameter_count < 2);
 
-	string_assign_cstr(call->result, "SENSOR dump");
+	call->result = "SENSOR dump";
 
 	if(!inited)
 	{
-		string_append_cstr(call->result, "\n--");
+		call->result += "\n--";
 		return;
 	}
 
@@ -4961,35 +4970,36 @@ void command_sensor_dump(cli_command_call_t *call)
 
 		if(!slave)
 		{
-			string_append_cstr(call->result, "\nslave = NULL");
+			call->result += "\nslave = NULL";
 			continue;
 		}
 
 		if(!i2c_get_slave_info(slave, &module, &bus, &address, &name))
-			string_append_cstr(call->result, "\n- unknown slave");
+			call->result += "\n- unknown slave";
 		else
 		{
-			string_format_append(call->result, "\n- sensor %s at module %u, bus %u, address 0x%x", name, (unsigned int)module, (unsigned int)bus, address);
+			call->result += (boost::format("\n- sensor %s at module %u, bus %u, address 0x%x") % name % module % bus % address).str();
 
 			if(dataptr->state == sensor_disabled)
-				string_append_cstr(call->result, ": [disabled]");
+				call->result += ": [disabled]";
 			else
 			{
-				string_append_cstr(call->result, "\n  values:");
+				call->result += "\n  values:";
 
 				for(type = sensor_type_first; type < sensor_type_size; type = static_cast<sensor_type_t>(type + 1))
 				{
 					if(dataptr->info->type & (1 << type))
 					{
+						std::string format_string = (boost::format(" %%s=%%.%uf [%%s]") % dataptr->info->precision).str();
+
 						util_time_to_string(time_string, &dataptr->values[type].stamp);
-						string_format_append(call->result, " %s=%.*f [%s]", sensor_type_info[type].type, (int)dataptr->info->precision, (double)dataptr->values[type].value,
-							string_cstr(time_string));
+						call->result += (boost::format(format_string) % sensor_type_info[type].type % dataptr->values[type].value % string_cstr(time_string)).str();
 					}
 				}
 
 				if(dataptr->info->dump_fn)
 				{
-					string_append_cstr(call->result, "\n  private data: ");
+					call->result += "\n  private data: ";
 					dataptr->info->dump_fn(dataptr, call->result);
 				}
 			}
@@ -5005,21 +5015,21 @@ void command_sensor_stats(cli_command_call_t *call)
 
 	assert(call->parameter_count == 0);
 
-	string_assign_cstr(call->result, "SENSOR statistics");
+	call->result = "SENSOR statistics";
 
 	for(module = i2c_module_first; module < i2c_module_size; module = static_cast<i2c_module_t>(module + 1))
 	{
-		string_format_append(call->result, "\n- module %u", (unsigned int)module);
-		string_format_append(call->result, "\n-  sensors not considered: %u", stat_sensors_not_considered[module]);
-		string_format_append(call->result, "\n-  sensors skipped: %u", stat_sensors_skipped[module]);
-		string_format_append(call->result, "\n-  sensors not skipped: %u", stat_sensors_not_skipped[module]);
-		string_format_append(call->result, "\n-  sensors probed: %u", stat_sensors_probed[module]);
-		string_format_append(call->result, "\n-  sensors found: %u", stat_sensors_found[module]);
-		string_format_append(call->result, "\n-  sensors confirmed: %u", stat_sensors_confirmed[module]);
-		string_format_append(call->result, "\n-  sensors disabled: %u", stat_sensors_disabled[module]);
-		string_format_append(call->result, "\n-  complete poll runs: %u", stat_poll_run[module]);
-		string_format_append(call->result, "\n-  sensor poll succeeded: %u", stat_poll_ok[module]);
-		string_format_append(call->result, "\n-  sensor poll skipped: %u", stat_poll_skipped[module]);
-		string_format_append(call->result, "\n-  sensor poll failed: %u", stat_poll_error[module]);
+		call->result += (boost::format("\n- module %u") % module).str();
+		call->result += (boost::format("\n-  sensors not considered: %u") % stat_sensors_not_considered[module]).str();
+		call->result += (boost::format("\n-  sensors skipped: %u") % stat_sensors_skipped[module]).str();
+		call->result += (boost::format("\n-  sensors not skipped: %u") % stat_sensors_not_skipped[module]).str();
+		call->result += (boost::format("\n-  sensors probed: %u") % stat_sensors_probed[module]).str();
+		call->result += (boost::format("\n-  sensors found: %u") % stat_sensors_found[module]).str();
+		call->result += (boost::format("\n-  sensors confirmed: %u") % stat_sensors_confirmed[module]).str();
+		call->result += (boost::format("\n-  sensors disabled: %u") % stat_sensors_disabled[module]).str();
+		call->result += (boost::format("\n-  complete poll runs: %u") % stat_poll_run[module]).str();
+		call->result += (boost::format("\n-  sensor poll succeeded: %u") % stat_poll_ok[module]).str();
+		call->result += (boost::format("\n-  sensor poll skipped: %u") % stat_poll_skipped[module]).str();
+		call->result += (boost::format("\n-  sensor poll failed: %u") % stat_poll_error[module]).str();
 	}
 }

@@ -15,6 +15,9 @@
 #include "driver/mcpwm_types.h"
 #include "soc/soc.h"
 
+#include <string>
+#include <boost/format.hpp>
+
 enum
 {
 	base_clock = 160000000,
@@ -271,25 +274,25 @@ void command_mcpwm_info(cli_command_call_t *call)
 	assert(call);
 	assert(call->parameter_count == 0);
 
-	string_assign_cstr(call->result, "MC-PWM INFO:");
-	string_format_append(call->result, "\n- channels available: %u", (unsigned int)mpt_size);
-	string_append_cstr(call->result, "\nchannels:");
+	call->result = "MC-PWM INFO:";
+	call->result += (boost::format("\n- channels available: %u") % mpt_size).str();
+	call->result += "\nchannels:";
 
 	for(handle = mpt_first; handle < mpt_size; handle = static_cast<mcpwm_t>(handle + 1))
 	{
 		channel = &channels[handle];
 
 		if(channel->available)
-			string_format_append(call->result, "\n- channel %u: 16 bits @ %4u Hz, group %u, timer %u, gpio %2d is %s duty: %5u, owned by %s",
-					(unsigned int)handle,
-					channel->frequency,
-					channel->group,
-					channel->timer,
-					channel->gpio,
-					channel->open ? "open" : "not open",
-					channel->duty,
-					channel->owner);
+			call->result += (boost::format("\n- channel %u: 16 bits @ %4u Hz, group %u, timer %u, gpio %2d is %s duty: %5u, owned by %s") %
+					handle %
+					channel->frequency %
+					channel->group %
+					channel->timer %
+					channel->gpio %
+					(channel->open ? "open" : "not open") %
+					channel->duty %
+					channel->owner).str();
 		else
-			string_format_append(call->result, "\n- channel %d is unavailable", handle);
+			call->result += (boost::format("\n- channel %d is unavailable") % handle).str();
 	}
 }

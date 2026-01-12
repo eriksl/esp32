@@ -13,6 +13,9 @@
 #include "cli-command.h"
 #include "udp.h"
 
+#include <string>
+#include <boost/format.hpp>
+
 class UDP
 {
 	public:
@@ -182,18 +185,18 @@ void UDP::command_info(cli_command_call_t *call)
 {
 	assert(call->parameter_count == 0);
 
-	string_assign_cstr(call->result, "UDP INFO");
-	string_append_cstr(call->result, "\nsending");
-	string_format_append(call->result, "\n- sent bytes %u", this->send_bytes);
-	string_format_append(call->result, "\n- sent packets: %u", this->send_packets);
-	string_format_append(call->result, "\n- send errors: %u", this->send_errors);
-	string_format_append(call->result, "\n- disconnected socket events: %u", this->send_no_connection);
-	string_append_cstr(call->result, "\nreceiving");
-	string_format_append(call->result, "\n- received bytes: %u", this->receive_bytes);
-	string_format_append(call->result, "\n- received packets: %u", this->receive_packets);
-	string_format_append(call->result, "\n- received incomplete packets: %u", this->receive_incomplete_packets);
-	string_format_append(call->result, "\n- received invalid packets: %u", this->receive_invalid_packets);
-	string_format_append(call->result, "\n- receive errors: %u", this->receive_errors);
+	call->result = "UDP INFO";
+	call->result += "\nsending";
+	call->result += (boost::format("\n- sent bytes %u") % this->send_bytes).str();
+	call->result += (boost::format("\n- sent packets: %u") % this->send_packets).str();
+	call->result += (boost::format("\n- send errors: %u") % this->send_errors).str();
+	call->result += (boost::format("\n- disconnected socket events: %u") % this->send_no_connection).str();
+	call->result = "\nreceiving";
+	call->result += (boost::format("\n- received bytes: %u") % this->receive_bytes).str();
+	call->result += (boost::format("\n- received packets: %u") % this->receive_packets).str();
+	call->result += (boost::format("\n- received incomplete packets: %u") % this->receive_incomplete_packets).str();
+	call->result += (boost::format("\n- received invalid packets: %u") % this->receive_invalid_packets).str();
+	call->result += (boost::format("\n- receive errors: %u") % this->receive_errors).str();
 }
 
 static UDP *UDP_singleton = nullptr;

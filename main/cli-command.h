@@ -41,9 +41,9 @@ typedef struct
 	unsigned int		mtu;
 	unsigned int		parameter_count;
 	cli_parameter_t		parameters[parameters_size];
-	string_t			oob;
-	string_t			result;
-	string_t			result_oob;
+	std::string			oob;
+	std::string			result;
+	std::string			result_oob;
 } cli_command_call_t;
 
 typedef void(cli_command_function_t)(cli_command_call_t *);

@@ -11,6 +11,9 @@
 #include <esp_ota_ops.h>
 #include <esp_image_format.h>
 
+#include <string>
+#include <boost/format.hpp>
+
 static bool ota_handle_active = false;
 static const esp_partition_t *ota_partition = (const esp_partition_t *)0;
 static esp_ota_handle_t ota_handle;
@@ -50,19 +53,19 @@ void command_ota_start(cli_command_call_t *call)
 
 	if(!(partition = esp_ota_get_next_update_partition((const esp_partition_t *)0)))
 	{
-		string_format(call->result, "ERROR: no valid OTA partition");
+		call->result = "ERROR: no valid OTA partition";
 		return;
 	}
 
 	if(partition->type != ESP_PARTITION_TYPE_APP)
 	{
-		string_format(call->result, "ERROR: partition %s is not APP", partition->label);
+		call->result = (boost::format("ERROR: partition %s is not APP") % partition->label).str();
 		return;
 	}
 
 	if(length > partition->size)
 	{
-		string_format(call->result, "ERROR: ota partition too small for image: %u vs. %lu", length, partition->size);
+		call->result = (boost::format("ERROR: ota partition too small for image: %u vs. %lu") % length % partition->size).str();
 		return;
 	}
 
@@ -74,7 +77,7 @@ void command_ota_start(cli_command_call_t *call)
 
 	if((rv = esp_ota_begin(partition, length, &ota_handle)))
 	{
-		string_format(call->result, "ERROR: esp_ota_begin: %s (0x%x)", esp_err_to_name(rv), rv);
+		call->result = (boost::format("ERROR: esp_ota_begin: %s (0x%x)") % esp_err_to_name(rv) % rv).str();
 		return(ota_abort());
 	}
 
@@ -87,7 +90,7 @@ void command_ota_start(cli_command_call_t *call)
 
 	ota_length = length;
 
-	string_format(call->result, "OK start write ota to partition %u/%s", util_partition_to_slot(partition), partition->label);
+	call->result = (boost::format("OK start write ota to partition %u/%s") % util_partition_to_slot(partition) % partition->label).str();
 }
 
 void command_ota_write(cli_command_call_t *call)
@@ -102,38 +105,38 @@ void command_ota_write(cli_command_call_t *call)
 
 	if(!ota_sha256_ctx_active)
 	{
-		string_format(call->result, "ERROR: sha256 context not active");
+		call->result = "ERROR: sha256 context not active";
 		return(ota_abort());
 	}
 
 	if(!ota_handle_active)
 	{
-		string_format(call->result, "ERROR: ota write context not active");
+		call->result = "ERROR: ota write context not active";
 		return(ota_abort());
 	}
 
-	if(string_length(call->oob) != length)
+	if(call->oob.length() != length)
 	{
-		string_format(call->result, "ERROR: lengths do not match (%u vs. %u)", length, string_length(call->oob));
+		call->result = (boost::format("ERROR: lengths do not match (%u vs. %u)") % length % call->oob.length()).str();
 		return(ota_abort());
 	}
 
 	if(checksum_chunk && (length != 32))
 	{
-		string_format(call->result, "ERROR: invalid checksum chunk length (%u vs. %u)", length, 32U);
+		call->result = (boost::format("ERROR: invalid checksum chunk length (%u vs. %u)") % length % 32).str();
 		return(ota_abort());
 	}
 
-	if((rv = esp_ota_write(ota_handle, string_data(call->oob), string_length(call->oob))))
+	if((rv = esp_ota_write(ota_handle, call->oob.data(), call->oob.length())))
 	{
-		string_format(call->result, "ERROR: esp_ota_write returned error %d", rv);
+		call->result = (boost::format("ERROR: esp_ota_write returned error %d") % rv).str();
 		return(ota_abort());
 	}
 
 	if(!checksum_chunk)
-		mbedtls_sha256_update(&ota_sha256_ctx, string_data(call->oob), string_length(call->oob));
+		mbedtls_sha256_update(&ota_sha256_ctx, reinterpret_cast<const uint8_t *>(call->oob.data()), call->oob.length());
 
-	string_format(call->result, "OK write ota");
+	call->result = "OK write ota";
 }
 
 void command_ota_finish(cli_command_call_t *call)
@@ -146,13 +149,13 @@ void command_ota_finish(cli_command_call_t *call)
 
 	if(!ota_sha256_ctx_active)
 	{
-		string_format(call->result, "ERROR: sha256 context not active");
+		call->result = "ERROR: sha256 context not active";
 		return(ota_abort());
 	}
 
 	if(!ota_handle_active)
 	{
-		string_format(call->result, "ERROR: ota write context not active");
+		call->result = "ERROR: ota write context not active";
 		return(ota_abort());
 	}
 
@@ -163,13 +166,13 @@ void command_ota_finish(cli_command_call_t *call)
 
 	if((rv = esp_ota_end(ota_handle)))
 	{
-		string_format(call->result, "ERROR: esp_ota_end failed: %s (0x%x)", esp_err_to_name(rv), rv);
+		call->result = (boost::format("ERROR: esp_ota_end failed: %s (0x%x)") % esp_err_to_name(rv) % rv).str();
 		return(ota_abort());
 	}
 
 	ota_handle_active = false;
 
-	string_format(call->result, "OK finish ota, checksum: %s", string_cstr(ota_sha256_hash_text));
+	call->result = (boost::format("OK finish ota, checksum: %s") % string_cstr(ota_sha256_hash_text)).str();
 }
 
 void command_ota_commit(cli_command_call_t *call)
@@ -188,13 +191,13 @@ void command_ota_commit(cli_command_call_t *call)
 
 	if(!ota_partition)
 	{
-		string_format(call->result, "ERROR: commit: no active OTA partition");
+		call->result = "ERROR: commit: no active OTA partition";
 		return;
 	}
 
 	if((rv = esp_partition_get_sha256(ota_partition, local_sha256_hash)))
 	{
-		string_format(call->result, "ERROR: esp_partition_get_sha256 failed: %u", rv);
+		call->result = (boost::format("ERROR: esp_partition_get_sha256 failed: %u") % rv).str();
 		return;
 	}
 
@@ -202,13 +205,13 @@ void command_ota_commit(cli_command_call_t *call)
 
 	if(remote_sha256_hash_text != string_cstr(local_sha256_hash_text))
 	{
-		string_format(call->result, "ERROR: checksum mismatch: %s vs. %s", remote_sha256_hash_text.c_str(), string_cstr(local_sha256_hash_text));
+		call->result = (boost::format("ERROR: checksum mismatch: %s vs. %s") % remote_sha256_hash_text.c_str() % string_cstr(local_sha256_hash_text)).str();
 		return;
 	}
 
 	if((rv = esp_ota_set_boot_partition(ota_partition)))
 	{
-		string_format(call->result, "ERROR: esp_ota_set_boot_partition failed: %u", rv);
+		call->result = (boost::format("ERROR: esp_ota_set_boot_partition failed: %u") % rv).str();
 		return;
 	}
 
@@ -216,7 +219,7 @@ void command_ota_commit(cli_command_call_t *call)
 
 	if(!(boot_partition = esp_ota_get_boot_partition()))
 	{
-		string_format(call->result, "ERROR: esp_ota_get_boot_partition");
+		call->result = "ERROR: esp_ota_get_boot_partition";
 		return;
 	}
 
@@ -225,11 +228,11 @@ void command_ota_commit(cli_command_call_t *call)
 
 	if((rv = esp_image_verify(ESP_IMAGE_VERIFY, &partition_pos, &image_metadata)))
 	{
-		string_format(call->result, "ERROR: esp_image_verify failed: %u", rv);
+		call->result = (boost::format("ERROR: esp_image_verify failed: %u") % rv).str();
 		return;
 	}
 
-	string_format(call->result, "OK commit ota");
+	call->result = "OK commit ota";
 }
 
 void command_ota_confirm(cli_command_call_t *call)
@@ -240,9 +243,9 @@ void command_ota_confirm(cli_command_call_t *call)
 
 	if((rv = esp_ota_mark_app_valid_cancel_rollback()))
 	{
-		string_format(call->result, "ERROR: esp_ota_mark_app_valid_cancel_rollback failed: %u", rv);
+		call->result = (boost::format("ERROR: esp_ota_mark_app_valid_cancel_rollback failed: %u") % rv).str();
 		return;
 	}
 
-	string_format(call->result, "OK confirm ota");
+	call->result = "OK confirm ota";
 }

@@ -15,6 +15,9 @@
 #include <host/ble_hs_mbuf.h>
 #include <os/os_mbuf.h>
 
+#include <string>
+#include <boost/format.hpp>
+
 typedef enum
 {
 	string_magic_word = 0x4afb0001,
@@ -814,8 +817,8 @@ void string_command_info(cli_command_call_t *call)
 {
 	assert(call->parameter_count == 0);
 
-	string_format(call->result, "STRING");
-	string_format_append(call->result, "\nstats:\n- allocate events: %u\n- free events: %u\n- active: %u", allocated, freed, allocated - freed);
-	string_format_append(call->result, "\nmethods called:\n- auto: %u\n- new: %u\n- init: %u\n- const: %u", auto_called, new_called, init_called, const_called);
-	string_format_append(call->result, "\ntimings:\n- string_parse min: %llu microseconds\n- string_parse max: %llu microseconds", string_parse_time_min, string_parse_time_max);
+	call->result = "STRING";
+	call->result += (boost::format("\nstats:\n- allocate events: %u\n- free events: %u\n- active: %u") % allocated % freed % (allocated - freed)).str();
+	call->result += (boost::format("\nmethods called:\n- auto: %u\n- new: %u\n- init: %u\n- const: %u") % auto_called % new_called % init_called % const_called).str();
+	call->result += (boost::format("\ntimings:\n- string_parse min: %llu microseconds\n- string_parse max: %llu microseconds") % string_parse_time_min % string_parse_time_max).str();
 }

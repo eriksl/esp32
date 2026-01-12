@@ -19,6 +19,9 @@
 #include <esp_timer.h>
 #include <errno.h>
 
+#include <string>
+#include <boost/format.hpp>
+
 static_assert(sizeof(font_glyph_t) == 68);
 static_assert(offsetof(font_t, basic_glyph) == 56);
 static_assert(offsetof(font_t, extra_glyph) == 17464);
@@ -53,10 +56,10 @@ typedef enum
 {
 	dpt_unused,
 	dpt_text,
-	dpt_first = dpt_text,
 	dpt_image,
 	dpt_size,
 	dpt_error = dpt_size,
+	dpt_first = dpt_text,
 } display_page_type_t;
 
 typedef struct display_page_T
@@ -973,7 +976,7 @@ next2:
 	util_abort("run_display_info returns");
 }
 
-static void display_info(string_t output)
+static void display_info(std::string &output)
 {
 	uint32_t value;
 	unsigned int found;
@@ -984,45 +987,45 @@ static void display_info(string_t output)
 
 	if(!inited)
 	{
-		string_assign_cstr(output, "No displays configured");
+		output = "No displays configured";
 		return;
 	}
 
-	string_assign_cstr(output, "DISPLAY configuration:");
+	output = "DISPLAY configuration:";
 
 	for(dv = dv_start, found = 0; dv < dv_size; dv = static_cast<dv_t>(dv + 1))
 	{
 		if(config_get_uint(display_variable[dv][1], value))
 		{
 			found++;
-			string_format_append(output, "\n- %s: %u", display_variable[dv][0], (unsigned int)value);
+			output += (boost::format("\n- %s: %u") % display_variable[dv][0] % value).str();
 		}
 	}
 
 	if(found == 0)
 	{
-		string_assign_cstr(output, "\n- no display configuration found");
+		output += "\n- no display configuration found";
 		return;
 	}
 
-	string_format_append(output, "\nDISPLAY current type %s, ", info[display_type].name);
+	output += (boost::format("\nDISPLAY current type %s, ") % info[display_type].name).str();
 
 	if(!font_valid)
-		string_append_cstr(output, "no display font loaded");
+		output += "no display font loaded";
 	else
 	{
-		string_append_cstr(output, "font info: ");
-		string_format_append(output, "\n- magic word: %08x", font->magic_word);
-		string_format_append(output, "\n- raw width: %u", (unsigned int)font->raw.width);
-		string_format_append(output, "\n- raw height: %u", (unsigned int)font->raw.height);
-		string_format_append(output, "\n- net width: %u", (unsigned int)font->net.width);
-		string_format_append(output, "\n- net height: %u", (unsigned int)font->net.height);
-		string_format_append(output, "\n- basic glyphs: %d", font_basic_glyphs_size);
-		string_format_append(output, "\n- extra glyphs: %u", (unsigned int)font->extra_glyphs);
-		string_format_append(output, "\n- columns: %u", display_columns);
-		string_format_append(output, "\n- rows: %u", display_rows);
+		output += "font info: ";
+		output += (boost::format("\n- magic word: %08x") % static_cast<unsigned int>(font->magic_word)).str();
+		output += (boost::format("\n- raw width: %u") % static_cast<unsigned int>(font->raw.width)).str();
+		output += (boost::format("\n- raw height: %u") % static_cast<unsigned int>(font->raw.height)).str();
+		output += (boost::format("\n- net width: %u") % static_cast<unsigned int>(font->net.width)).str();
+		output += (boost::format("\n- net height: %u") % static_cast<unsigned int>(font->net.height)).str();
+		output += (boost::format("\n- basic glyphs: %d") % font_basic_glyphs_size).str();
+		output += (boost::format("\n- extra glyphs: %u") % static_cast<unsigned int>(font->extra_glyphs)).str();
+		output += (boost::format("\n- columns: %u") % display_columns).str();
+		output += (boost::format("\n- rows: %u") % display_rows).str();
 
-		string_append_cstr(output, "\nPAGES:");
+		output += "\nPAGES:";
 
 		for(page = 0; page < display_page_size; page++)
 		{
@@ -1037,14 +1040,14 @@ static void display_info(string_t output)
 			{
 				case(dpt_text):
 				{
-					string_format_append(output, "\ntext: %s [%s]", string_cstr(page_ptr->name), string_cstr(datetime));
+					output += (boost::format("\ntext: %s [%s]") % string_cstr(page_ptr->name) % string_cstr(datetime)).str();
 
 					for(line = 0; (line < display_page_text_lines_size); line++)
 					{
 						if(!string_length(page_ptr->text.line[line]))
 							break;
 
-						string_format_append(output, "\n- [%u]: %s", line, string_cstr(page_ptr->text.line[line]));
+						output += (boost::format("\n- [%u]: %s") % line % string_cstr(page_ptr->text.line[line])).str();
 					}
 
 					break;
@@ -1052,22 +1055,25 @@ static void display_info(string_t output)
 
 				case(dpt_image):
 				{
-					string_format_append(output, "\nimage: %s, file: %s/%u [%s]", string_cstr(page_ptr->name), string_cstr(page_ptr->image.filename), page_ptr->image.length, string_cstr(datetime));
+					output += (boost::format("\nimage: %s, file: %s/%u [%s]") % string_cstr(page_ptr->name) % string_cstr(page_ptr->image.filename) % page_ptr->image.length % string_cstr(datetime)).str();
+					break;
+				}
+
+				case(dpt_unused):
+				{
 					break;
 				}
 
 				default:
 				{
-					goto done;
+					util_abort("page_ptr->type invalid");
 				}
 			}
-done:
-			(void)0;
 		}
 
-		string_append_cstr(output, "\nSTATS:");
-		string_format_append(output, "\n- display draw time: %u ms", stat_display_show);
-		string_format_append(output, "\n- incomplete images skipped: %u", stat_skipped_incomplete_images);
+		output += "\nSTATS:";
+		output += (boost::format("\n- display draw time: %u ms") % stat_display_show).str();
+		output += (boost::format("\n- incomplete images skipped: %u") % stat_skipped_incomplete_images).str();
 	}
 }
 
@@ -1200,9 +1206,9 @@ void command_display_brightness(cli_command_call_t *call)
 	assert(call->parameter_count == 1);
 
 	if(brightness(call->parameters[0].unsigned_int))
-		string_assign_cstr(call->result, "set brightness: ok");
+		call->result = "set brightness: ok";
 	else
-		string_assign_cstr(call->result, "set brightness: no display");
+		call->result = "set brightness: no display";
 }
 
 void command_display_configure(cli_command_call_t *call)
@@ -1219,18 +1225,18 @@ void command_display_configure(cli_command_call_t *call)
 
 	if(call->parameters[0].unsigned_int >= dt_size)
 	{
-		string_assign_cstr(call->result, "display-configure: invalid display type, choose type as:");
-		string_append_cstr(call->result, "\n- 0: generic SPI LCD");
+		call->result = "display-configure: invalid display type, choose type as:";
+		call->result += "\n- 0: generic SPI LCD";
 
 		return;
 	}
 
 	if(call->parameter_count < 4)
 	{
-		string_assign_cstr(call->result, "display-configure: at least 4 parameters required:");
+		call->result = "display-configure: at least 4 parameters required:";
 
 		for(ix = dv_start; ix < dv_size; ix = static_cast<dv_t>(ix + 1))
-			string_format_append(call->result, "\n- %u: %s", (unsigned int)ix + 1U, display_variable[ix][2]);
+			call->result += (boost::format("\n- %u: %s") % (ix + 1) % display_variable[ix][2]).str();
 
 		return;
 	}
@@ -1271,7 +1277,7 @@ void command_display_page_add_text(cli_command_call_t *call)
 	rv = page_add_text(call->parameters[0].str, call->parameters[1].unsigned_int, call->parameters[2].str);
 	page_data_mutex_give();
 
-	string_format(call->result, "display-page-add-text%sadded \"%s\"", rv ? " " : " not ", call->parameters[0].str.c_str());
+	call->result = (boost::format("display-page-add-text%sadded \"%s\"") % (rv ? " " : " not ") % call->parameters[0].str).str();
 }
 
 void command_display_page_add_image(cli_command_call_t *call)
@@ -1284,7 +1290,7 @@ void command_display_page_add_image(cli_command_call_t *call)
 	rv = page_add_image(call->parameters[0].str, call->parameters[1].unsigned_int, call->parameters[2].str, call->parameters[3].unsigned_int);
 	page_data_mutex_give();
 
-	string_format(call->result, "display-page-add-image%sadded \"%s\"", rv ? " " : " not ", call->parameters[0].str.c_str());
+	call->result = (boost::format("display-page-add-image%sadded \"%s\"") % (rv ? " " : " not ") % call->parameters[0].str).str();
 }
 
 void command_display_page_remove(cli_command_call_t *call)
@@ -1299,12 +1305,12 @@ void command_display_page_remove(cli_command_call_t *call)
 	if(page < 0)
 	{
 		page_data_mutex_give();
-		string_format(call->result, "display-page-remove not found \"%s\"", call->parameters[0].str.c_str());
+		call->result = (boost::format("display-page-remove not found \"%s\"") % call->parameters[0].str).str();
 		return;
 	}
 
 	page_erase(&display_pages[page]);
 	page_data_mutex_give();
 
-	string_format(call->result, "display-page-remove removed \"%s\"", call->parameters[0].str.c_str());
+	call->result = (boost::format("display-page-remove removed \"%s\"") % call->parameters[0].str).str();
 }

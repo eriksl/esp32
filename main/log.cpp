@@ -1,20 +1,21 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <errno.h>
 
 #include <esp_log.h>
 #include <esp_timer.h>
 #include <esp_random.h>
 
-#include "log.h"
-
 #include "string.h"
+#include "log.h"
 #include "util.h"
 #include "cli-command.h"
 #include "console.h"
 #include "cli.h"
 
-#include <errno.h>
+#include <string>
+#include <boost/format.hpp>
 
 enum
 {
@@ -306,14 +307,14 @@ void log_command_info(cli_command_call_t *call)
 
 	data_mutex_take();
 
-	string_format(call->result, "logging");
-	string_format_append(call->result, "\n  buffer: 0x%08lx", (uint32_t)log_buffer);
-	string_format_append(call->result, "\n  magic word: %08lx", log_buffer->magic_word);
-	string_format_append(call->result, "\n  random salt: %08lx", log_buffer->random_salt);
-	string_format_append(call->result, "\n  magic word salted: %08lx", log_buffer->magic_word_salted);
-	string_format_append(call->result, "\n  entries: %u", log_buffer->entries);
-	string_format_append(call->result, "\n  last entry added: %u", log_buffer->in);
-	string_format_append(call->result, "\n  last entry viewed: %u", log_buffer->out);
+	call->result = "logging";
+	call->result += (boost::format("\n  buffer: 0x%08lx") % log_buffer).str();
+	call->result += (boost::format("\n  magic word: %08lx") % log_buffer->magic_word).str();
+	call->result += (boost::format("\n  random salt: %08lx") % log_buffer->random_salt).str();
+	call->result += (boost::format("\n  magic word salted: %08lx") % log_buffer->magic_word_salted).str();
+	call->result += (boost::format("\n  entries: %u") % log_buffer->entries).str();
+	call->result += (boost::format("\n  last entry added: %u") % log_buffer->in).str();
+	call->result += (boost::format("\n  last entry viewed: %u") % log_buffer->out).str();
 
 	data_mutex_give();
 }
@@ -339,17 +340,17 @@ void log_command_log(cli_command_call_t *call)
 	if(entries == log_buffer_entries)
 		entries = 0;
 
-	string_format(call->result, "%u entries:", entries);
+	call->result = (boost::format("LOG %u entries:") % entries).str();
 	amount = 0;
 
 	for(amount = 0; (amount < 24) && (amount < entries); amount++)
 	{
 		util_time_to_string(timestring, &log_buffer->entry[log_buffer->out].timestamp);
 
-		string_format_append(call->result, "\n%3u %s %s",
-				log_buffer->out,
-				string_cstr(timestring),
-				log_buffer->entry[log_buffer->out].data);
+		call->result += (boost::format("\n%3u %s %s") %
+				log_buffer->out %
+				string_cstr(timestring) %
+				log_buffer->entry[log_buffer->out].data).str();
 
 		if(++log_buffer->out >= log_buffer_entries)
 			log_buffer->out = 0;
@@ -358,7 +359,7 @@ void log_command_log(cli_command_call_t *call)
 	data_mutex_give();
 
 	if(amount != entries)
-		string_format_append(call->result, "\n[%u more]", entries - amount);
+		call->result += (boost::format("\n[%u more]") % (entries - amount)).str();
 }
 
 void log_command_log_clear(cli_command_call_t *call)
@@ -369,7 +370,7 @@ void log_command_log_clear(cli_command_call_t *call)
 
 	log_clear();
 
-	string_format_append(call->result, "\nlog cleared");
+	call->result = "\nlog cleared";
 }
 
 void log_command_log_monitor(cli_command_call_t *call)
@@ -379,5 +380,5 @@ void log_command_log_monitor(cli_command_call_t *call)
 	if(call->parameter_count == 1)
 		monitor = call->parameters[0].unsigned_int != 0;
 
-	string_format_append(call->result, "log monitor: %s", monitor ? "yes" : "no");
+	call->result = (boost::format("log monitor: %s") % (monitor ? "yes" : "no")).str();
 }

@@ -18,6 +18,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <string>
+#include <boost/format.hpp>
+
 enum
 {
 	line_size = 64,
@@ -422,12 +425,12 @@ void console_command_info(cli_command_call_t *call)
 	assert(inited_2);
 	assert(call->parameter_count == 0);
 
-	string_format(call->result, "received:");
-	string_format_append(call->result, "\n- lines: %u", console_stats_lines_received);
-	string_format_append(call->result, "\n- bytes: %u", console_stats_bytes_received);
-	string_format_append(call->result, "\n- errors: %u", console_stats_bytes_received_error);
-	string_format_append(call->result, "\nsent:");
-	string_format_append(call->result, "\n- lines: %u", console_stats_lines_sent);
-	string_format_append(call->result, "\n- bytes: %u", console_stats_bytes_sent);
-	string_format_append(call->result, "\n- dropped: %u", console_stats_bytes_dropped);
+	call->result = "received:";
+	call->result += (boost::format("\n- lines: %u") % console_stats_lines_received).str();
+	call->result += (boost::format("\n- bytes: %u") % console_stats_bytes_received).str();
+	call->result += (boost::format("\n- errors: %u") % console_stats_bytes_received_error).str();
+	call->result += "\nsent:";
+	call->result += (boost::format("\n- lines: %u") % console_stats_lines_sent).str();
+	call->result += (boost::format("\n- bytes: %u") % console_stats_bytes_sent).str();
+	call->result += (boost::format("\n- dropped: %u") % console_stats_bytes_dropped).str();
 }

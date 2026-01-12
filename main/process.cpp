@@ -14,6 +14,9 @@
 #include "cli-command.h"
 #include "process.h"
 
+#include <string>
+#include <boost/format.hpp>
+
 enum
 {
 	task_id_size = 48,
@@ -73,11 +76,12 @@ void command_process_list(cli_command_call_t *call)
 			total_delta_idle   += pip->ulRunTimeCounter - task_info_cache_ptr->previous_runtime;
 	}
 
-	string_format_append(call->result, "threads: %u, active: %lld%%, idle: %lld%%\n", processes,
-			total_delta_active * 100 / (total_delta_active + total_delta_idle),
-			total_delta_idle   * 100 / (total_delta_active + total_delta_idle));
+	call->result += (boost::format("threads: %u, active: %lld%%, idle: %lld%%\n") %
+			processes %
+			(total_delta_active * 100 / (total_delta_active + total_delta_idle)) %
+			(total_delta_idle   * 100 / (total_delta_active + total_delta_idle))).str();;
 
-	string_format_append(call->result, "  %2s  %-14s %4s %-10s %4s %5s %10s %10s %8s\n", "#", "name", "core", "state", "prio", "stack", "runtime", "delta", "active_%");
+	call->result += (boost::format("  %2s  %-14s %4s %-10s %4s %5s %10s %10s %8s\n") % "#" % "name" % "core" % "state" % "prio" % "stack" % "runtime" % "delta" % "active_%").str();;
 
 	done = 0;
 
@@ -153,16 +157,16 @@ void command_process_list(cli_command_call_t *call)
 
 			delta = pip->ulRunTimeCounter - task_info_cache_ptr->previous_runtime;
 
-			string_format_append(call->result, "  %2u: %-14s %4s %-10s %4u %5lu %10llu %10lld %8llu\n",
-					current_task_id,
-					name,
-					core_string,
-					state,
-					pip->uxCurrentPriority,
-					pip->usStackHighWaterMark,
-					pip->ulRunTimeCounter,
-					delta,
-					idle_task ? 0 : ((delta * 100ULL) / total_delta_active));
+			call->result += (boost::format("  %2u: %-14s %4s %-10s %4u %5lu %10llu %10lld %8llu\n") %
+					current_task_id %
+					name %
+					core_string %
+					state %
+					pip->uxCurrentPriority %
+					pip->usStackHighWaterMark %
+					pip->ulRunTimeCounter %
+					delta %
+					(idle_task ? 0 : ((delta * 100ULL) / total_delta_active))).str();
 
 			task_info_cache_ptr->previous_runtime = pip->ulRunTimeCounter;
 		}
