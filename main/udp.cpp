@@ -39,7 +39,7 @@ class UDP
 
 		UDP();
 
-		void send(const cli_buffer_t *src);
+		void send(const command_response_t *command_response);
 		void command_info(cli_command_call_t *call);
 		static __attribute__((noreturn)) void run_wrapper(void *);
 		__attribute__((noreturn)) void run();
@@ -61,7 +61,7 @@ UDP::UDP() :
 
 	thread_config.thread_name = "udp";
 	thread_config.pin_to_core = 1;
-	thread_config.stack_size = 3 * 1024;
+	thread_config.stack_size = 4 * 1024; // FIXME
 	thread_config.prio = 1;
 	esp_pthread_set_cfg(&thread_config);
 
@@ -72,19 +72,11 @@ UDP::UDP() :
 
 void UDP::run()
 {
-	string_t udp_receive_buffer; // FIXME convert to std::string when possible
+	std::string udp_receive_buffer;
 	int rv;
 	struct sockaddr_in6 si6_addr;
-	unsigned int si6_addr_length;
+	socklen_t si6_addr_length;
 	int length;
-	cli_buffer_t cli_buffer;
-
-	static_assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr));
-	static_assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr_in));
-	static_assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr_in6));
-
-	udp_receive_buffer = string_new(this->mtu);
-	assert(udp_receive_buffer);
 
 	this->socket_fd = socket(AF_INET6, SOCK_DGRAM, 0);
 	assert(this->socket_fd >= 0);
@@ -100,11 +92,11 @@ void UDP::run()
 	{
 		si6_addr_length = sizeof(si6_addr);
 
-		string_clear(udp_receive_buffer);
-		length = string_recvfrom_fd(udp_receive_buffer, this->socket_fd, &si6_addr_length, &si6_addr);
+		udp_receive_buffer.resize(8192); // FIXME, check pending packet size
+		length = ::recvfrom(this->socket_fd, udp_receive_buffer.data(), udp_receive_buffer.size(), 0, reinterpret_cast<sockaddr *>(&si6_addr), &si6_addr_length); // FIXME
 
-		util_memcpy(&cli_buffer.ip.address.sin6_addr, &si6_addr, si6_addr_length);
-		cli_buffer.ip.address.sin6_length = si6_addr_length;
+		if(length >= 0)
+			udp_receive_buffer.resize(length);
 
 		if(length == 0)
 		{
@@ -135,21 +127,31 @@ void UDP::run()
 			continue;
 		}
 
+		command_response_t *command_response = new command_response_t;
+
+		static_assert(sizeof(command_response->ip.address.sin6_addr) >= sizeof(struct sockaddr));
+		static_assert(sizeof(command_response->ip.address.sin6_addr) >= sizeof(struct sockaddr_in));
+		static_assert(sizeof(command_response->ip.address.sin6_addr) >= sizeof(struct sockaddr_in6));
+
+		util_memcpy(&command_response->ip.address.sin6_addr, &si6_addr, si6_addr_length);
+		command_response->ip.address.sin6_length = si6_addr_length;
+
+		command_response->source = cli_source_wlan_udp;
+		command_response->packetised = 1;
+		command_response->mtu = this->mtu;
+		command_response->packet = udp_receive_buffer;
+
+		cli_receive_queue_push(command_response);
+
+		command_response = nullptr;
+
 		this->receive_packets++;
-
-		cli_buffer.source = cli_source_wlan_udp;
-		cli_buffer.packetised = 1;
-		cli_buffer.mtu = this->mtu;
-		cli_buffer.data = string_new(string_length(udp_receive_buffer));
-		string_assign_string(cli_buffer.data, udp_receive_buffer);
-
-		cli_receive_queue_push(&cli_buffer);
 	}
 
 	close(this->socket_fd);
 	this->socket_fd = -1;
 
-	string_free(&udp_receive_buffer);
+	udp_receive_buffer.clear();
 }
 
 void UDP::run_wrapper(void *ptr)
@@ -159,9 +161,11 @@ void UDP::run_wrapper(void *ptr)
 	_this->run();
 }
 
-void UDP::send(const cli_buffer_t *src)
+void UDP::send(const command_response_t *command_response)
 {
 	int sent;
+
+	assert(command_response);
 
 	if(this->socket_fd < 0)
 	{
@@ -169,7 +173,8 @@ void UDP::send(const cli_buffer_t *src)
 		return;
 	}
 
-	sent = ::sendto(this->socket_fd, string_data(src->data), string_length(src->data), 0, (const struct sockaddr *)&src->ip.address.sin6_addr, src->ip.address.sin6_length);
+	sent = ::sendto(this->socket_fd, command_response->packet.data(), command_response->packet.length(), 0,
+			(const struct sockaddr *)&command_response->ip.address.sin6_addr, command_response->ip.address.sin6_length);
 
 	if(sent <= 0)
 	{
@@ -210,11 +215,11 @@ void net_udp_init(void)
 	assert(UDP_singleton);
 }
 
-void net_udp_send(const cli_buffer_t *src)
+void net_udp_send(const command_response_t *command_response)
 {
 	assert(UDP_singleton);
 
-	return(UDP_singleton->send(src));
+	return(UDP_singleton->send(command_response));
 }
 
 void net_udp_command_info(cli_command_call_t *call)

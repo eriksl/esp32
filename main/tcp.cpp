@@ -43,7 +43,7 @@ class TCP
 
 		TCP();
 
-		void send(const cli_buffer_t *src);
+		void send(const command_response_t *command_response);
 		void command_info(cli_command_call_t *call);
 		static __attribute__((noreturn)) void run_wrapper(void *);
 		__attribute__((noreturn)) void run();
@@ -67,7 +67,7 @@ TCP::TCP() :
 
 	thread_config.thread_name = "tcp";
 	thread_config.pin_to_core = 1;
-	thread_config.stack_size = 3 * 1024;
+	thread_config.stack_size = 4 * 1024; // FIXME
 	thread_config.prio = 1;
 	esp_pthread_set_cfg(&thread_config);
 
@@ -78,25 +78,18 @@ TCP::TCP() :
 
 void TCP::run()
 {
-	string_t tcp_receive_buffer; // FIXME convert to std::string when possible
+	std::string tcp_receive_buffer;
 	int accept_fd, rv;
 	struct sockaddr_in6 si6_addr;
 	socklen_t si6_addr_length;
 	int length;
-	cli_buffer_t cli_buffer;
 
-	static_assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr));
-	static_assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr_in));
-	static_assert(sizeof(cli_buffer.ip.address.sin6_addr) >= sizeof(struct sockaddr_in6));
-
-	tcp_receive_buffer = string_new(packet_size + packet_overhead);
+	accept_fd = socket(AF_INET6, SOCK_STREAM, 0);
+	assert(accept_fd >= 0);
 
 	memset(&si6_addr, 0, sizeof(si6_addr));
 	si6_addr.sin6_family = AF_INET6;
 	si6_addr.sin6_port = htons(24);
-
-	accept_fd = socket(AF_INET6, SOCK_STREAM, 0);
-	assert(accept_fd >= 0);
 
 	rv = bind(accept_fd, (const struct sockaddr *)&si6_addr, sizeof(si6_addr));
 	assert(rv == 0);
@@ -115,14 +108,15 @@ void TCP::run()
 		}
 
 		receive_accepts++;
-		string_clear(tcp_receive_buffer);
+		tcp_receive_buffer.clear();
 
 		for(;;)
 		{
-			util_memcpy(&cli_buffer.ip.address.sin6_addr, &si6_addr, si6_addr_length);
-			cli_buffer.ip.address.sin6_length = si6_addr_length;
+			tcp_receive_buffer.resize(8192); // FIXME, peek message length
+			length = ::recv(this->socket_fd, tcp_receive_buffer.data(), tcp_receive_buffer.size(), 0);
 
-			length = string_recvfrom_fd(tcp_receive_buffer, socket_fd, (unsigned int *)0, (void *)0);
+			if(length >= 0)
+				tcp_receive_buffer.resize(length);
 
 			if(length == 0)
 				break;
@@ -142,24 +136,29 @@ void TCP::run()
 				continue;
 			}
 
-			cli_buffer.packetised = !!packet_valid(tcp_receive_buffer);
+			command_response_t *command_response = new command_response_t;
 
+			static_assert(sizeof(command_response->ip.address.sin6_addr) >= sizeof(struct sockaddr));
+			static_assert(sizeof(command_response->ip.address.sin6_addr) >= sizeof(struct sockaddr_in));
+			static_assert(sizeof(command_response->ip.address.sin6_addr) >= sizeof(struct sockaddr_in6));
+
+			util_memcpy(&command_response->ip.address.sin6_addr, &si6_addr, si6_addr_length);
+			command_response->ip.address.sin6_length = si6_addr_length;
+			command_response->source = cli_source_wlan_tcp;
+			command_response->mtu = tcp_mtu;
+			command_response->packetised = !!packet_valid(tcp_receive_buffer);
+			command_response->packet = tcp_receive_buffer;
+
+			cli_receive_queue_push(command_response);
+
+			command_response = nullptr;
+			tcp_receive_buffer.clear();
 			receive_packets++;
-
-			cli_buffer.source = cli_source_wlan_tcp;
-			cli_buffer.mtu = tcp_mtu;
-			cli_buffer.data = string_new(string_length(tcp_receive_buffer));
-			string_assign_string(cli_buffer.data, tcp_receive_buffer);
-			string_clear(tcp_receive_buffer);
-
-			cli_receive_queue_push(&cli_buffer);
 		}
 
 		close(socket_fd);
 		socket_fd = -1;
 	}
-
-	string_free(&tcp_receive_buffer);
 }
 
 void TCP::run_wrapper(void *ptr)
@@ -169,23 +168,25 @@ void TCP::run_wrapper(void *ptr)
 	_this->run();
 }
 
-void TCP::send(const cli_buffer_t *src)
+void TCP::send(const command_response_t *command_response)
 {
 	int length, offset, chunk_length, sent;
+
+	assert(command_response);
 
 	if(socket_fd < 0)
 	{
 		send_no_connection++;
-		return;
+		goto error; // FIXME
 	}
 
 	send_packets++;
 
 	offset = 0;
-	length = string_length(src->data);
+	length = command_response->packet.length();
 
-	if(!src->packetised && (length > src->mtu))
-		length = src->mtu;
+	if(!command_response->packetised && (length > command_response->mtu))
+		length = command_response->mtu;
 
 	for(;;)
 	{
@@ -194,7 +195,7 @@ void TCP::send(const cli_buffer_t *src)
 		if(chunk_length > tcp_mtu)
 			chunk_length = tcp_mtu;
 
-		sent = ::send(socket_fd, string_data(src->data) + offset, chunk_length, 0);
+		sent = ::send(socket_fd, command_response->packet.data() + offset, chunk_length, 0);
 
 		send_segments++;
 
@@ -210,13 +211,15 @@ void TCP::send(const cli_buffer_t *src)
 		offset += sent;
 
 		assert(length >= 0);
-		assert(offset <= string_length(src->data));
+		assert(offset <= command_response->packet.length());
 
 		if(length == 0)
 			break;
 
-		assert(offset < string_length(src->data));
+		assert(offset < command_response->packet.length());
 	}
+
+error:
 }
 
 void TCP::command_info(cli_command_call_t *call)
@@ -250,11 +253,11 @@ void net_tcp_init(void)
 	assert(TCP_singleton);
 }
 
-void net_tcp_send(const cli_buffer_t *src)
+void net_tcp_send(const command_response_t *command_response)
 {
 	assert(TCP_singleton);
 
-	return(TCP_singleton->send(src));
+	return(TCP_singleton->send(command_response));
 }
 
 void net_tcp_command_info(cli_command_call_t *call)

@@ -1,6 +1,8 @@
 #pragma once
 
-bool packet_valid(const const_string_t data);
-bool packet_complete(const const_string_t data);
-void packet_encapsulate(cli_buffer_t *dst, const const_string_t data, const const_string_t oob_data) __attribute__((nonnull (1, 2)));
-void packet_decapsulate(const cli_buffer_t *src, string_t *data, string_t *oob_data) __attribute__((nonnull (1, 2, 3)));
+#include <string>
+
+bool packet_valid(const std::string &data);
+bool packet_complete(const std::string &data);
+void packet_encapsulate(command_response_t *dst, const std::string &data, const std::string &oob_data);
+void packet_decapsulate(const command_response_t *src, std::string &data, std::string &oob_data);

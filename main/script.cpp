@@ -41,7 +41,6 @@ static void script_run(ThreadState *initial_thread_state)
 		ThreadStates thread_states;
 		ThreadState *thread_state;
 
-		cli_buffer_t cli_buffer;
 		std::string line, command, expanded_line;
 		unsigned int ix, parameter_index;
 		size_t pos, start, end;
@@ -128,7 +127,7 @@ static void script_run(ThreadState *initial_thread_state)
 				{
 					thread_states.push_front(thread_state);
 
-					thread_state = new ThreadState;
+					thread_state = new ThreadState();
 
 					thread_state->repeat.active = false;
 					thread_state->repeat.target = 0;
@@ -245,17 +244,20 @@ static void script_run(ThreadState *initial_thread_state)
 					continue;
 				}
 
-				cli_buffer.source = cli_source_script;
-				cli_buffer.mtu = 0;
-				cli_buffer.packetised = 0;
-				cli_buffer.data = string_new(expanded_line.length());
-				string_assign_cstr(cli_buffer.data, expanded_line.c_str());
-				strlcpy(cli_buffer.script.name, thread_state->script.c_str(), sizeof(cli_buffer.script.name));
-				cli_buffer.script.task = xTaskGetCurrentTaskHandle();
+				command_response_t *command_response = new command_response_t;
 
-				cli_receive_queue_push(&cli_buffer);
+				command_response->source = cli_source_script;
+				command_response->mtu = 0;
+				command_response->packetised = 0;
+				command_response->packet = expanded_line;
+				strlcpy(command_response->script.name, thread_state->script.c_str(), sizeof(command_response->script.name)); // FIXME
+				command_response->script.task = xTaskGetCurrentTaskHandle();
+
+				cli_receive_queue_push(command_response);
 
 				ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+				command_response = nullptr;
 			}
 
 			delete thread_state;
@@ -273,7 +275,7 @@ static void script_run(ThreadState *initial_thread_state)
 
 void command_run(cli_command_call_t *call)
 {
-	auto *thread_state = new ThreadState;
+	auto *thread_state = new ThreadState();
 	unsigned int ix;
 	esp_pthread_cfg_t thread_config = esp_pthread_get_default_config();
 

@@ -3,9 +3,9 @@
 #include <errno.h>
 #include <string.h>
 
-#include "string.h"
 #include "cli.h"
 #include "log.h"
+#include "string.h"
 #include "config.h"
 #include "util.h"
 #include "cli-command.h"
@@ -23,8 +23,8 @@
 
 enum
 {
-	line_size = 64,
-	line_amount = 8,
+	max_line_length = 64,
+	lines_amount = 8,
 	usb_uart_rx_buffer_size = 128,
 	usb_uart_tx_buffer_size = 256,
 	usb_uart_tx_timeout_ms = 100,
@@ -41,28 +41,11 @@ typedef enum
 	ess_bracket_seen,
 } escape_sequence_state_t;
 
-typedef struct
-{
-	unsigned int size;
-	unsigned int length;
-	char data[line_size];
-} line_t;
-
-static_assert(sizeof(line_t) == 72);
-
-typedef struct
-{
-	unsigned int size;
-	unsigned int current;
-	line_t line[line_amount];
-} lines_t;
-
-static_assert(sizeof(lines_t) == 584);
-
 static bool inited_1 = false;
 static bool inited_2 = false;
-static lines_t *lines;
-static char hostname[16] = "<>";
+static std::string hostname;
+static unsigned int current_line;
+static std::string line[lines_amount];
 static unsigned int console_stats_lines_received;
 static unsigned int console_stats_bytes_received;
 static unsigned int console_stats_bytes_received_error;
@@ -84,20 +67,23 @@ static char read_console(void)
 	}
 }
 
-static void write_console(unsigned int length, const char data[])
+static void write_console(const std::string &data)
 {
-	unsigned int chunk, offset;
+	unsigned int chunk, offset, length;
+	const char *raw_data;
 
+	raw_data = data.data();
+	length = data.length();
 	offset = 0;
 
-	for(offset = 0; length > 0; )
+	while(length > 0)
 	{
 		chunk = length;
 
 		if(chunk > usb_uart_tx_buffer_size)
 			chunk = usb_uart_tx_buffer_size;
 
-		if(!usb_serial_jtag_write_bytes(&data[offset], chunk, pdMS_TO_TICKS(usb_uart_tx_timeout_ms)))
+		if(!usb_serial_jtag_write_bytes(raw_data + offset, chunk, pdMS_TO_TICKS(usb_uart_tx_timeout_ms)))
 		{
 			console_stats_bytes_dropped += length - offset;
 			break;
@@ -108,40 +94,44 @@ static void write_console(unsigned int length, const char data[])
 	}
 }
 
+static void write_console(char data)
+{
+	std::string str;
+
+	str.assign(1, data);
+	write_console(str);
+}
+
 static void prompt(void)
 {
-	string_auto(prompt, 32);
-
-	string_format(prompt, "%s [%u]> ", hostname, lines->current);
-	write_console(string_length(prompt), string_cstr(prompt));
+	write_console((boost::format("%s [%u]> ") % hostname % current_line).str());
 }
 
 static void run_console(void *)
 {
-	static const char backspace_string[] = { 0x08, 0x20, 0x08 };
-	static const char reprint_string[] = "^R\n";
-	static const char history_string[] = "^@\n";
-	static const char interrupt_string[] = "^C\n";
-	static const char newline_string[] = "\n";
+	static constexpr char backspace_string[] = { 0x08, 0x20, 0x08, 0x00 };
+
+	static constexpr char reprint_string[] = "^R\n";
+	static constexpr char history_string[] = "^@\n";
+	static constexpr char interrupt_string[] = "^C\n";
+	static constexpr char newline_string[] = "\n";
 
 	assert(inited_2);
 
 	escape_sequence_state_t state;
-	line_t *line;
-	cli_buffer_t cli_buffer;
 	char character;
 	unsigned int ix;
 	bool whitespace;
-	string_auto(tmp, 16);
 
 	prompt();
 
 	for(;;)
 	{
 		state = ess_inactive;
-		line = &lines->line[lines->current];
 
-		for(line->length = 0; line->length < line->size;)
+		line[current_line].clear();
+
+		while(line[current_line].length() < max_line_length)
 		{
 			character = read_console();
 			console_stats_bytes_received++;
@@ -177,32 +167,34 @@ static void run_console(void *)
 					{
 						case('A'):
 						{
-							for(ix = 0; ix < line->length; ix++)
-								write_console(sizeof(backspace_string), backspace_string);
+							for(ix = line[current_line].length(); ix > 0; ix--)
+								write_console(backspace_string);
 
-							if(lines->current > 0)
-								lines->current--;
+							line[current_line].clear();
+
+							if(current_line > 0)
+								current_line--;
 							else
-								lines->current = lines->size - 1;
+								current_line = lines_amount - 1;
 
-							line = &lines->line[lines->current];
-							write_console(line->length, line->data);
+							write_console(line[current_line]);
 							state = ess_inactive;
 							continue;
 						}
 
 						case('B'):
 						{
-							for(ix = 0; ix < line->length; ix++)
-								write_console(sizeof(backspace_string), backspace_string);
+							for(ix = line[current_line].length(); ix > 0; ix--)
+								write_console(backspace_string);
 
-							if((lines->current + 1) < lines->size)
-								lines->current++;
+							line[current_line].clear();
+
+							if((current_line + 1) < lines_amount)
+								current_line++;
 							else
-								lines->current = 0;
+								current_line = 0;
 
-							line = &lines->line[lines->current];
-							write_console(line->length, line->data);
+							write_console(line[current_line]);
 							state = ess_inactive;
 							continue;
 						}
@@ -223,10 +215,10 @@ static void run_console(void *)
 
 			if((character == /* ^H */ 0x08) || (character == /* DEL */ 0x7f))
 			{
-				if(line->length > 0)
+				if(line[current_line].length() > 0)
 				{
-					line->length--;
-					write_console(sizeof(backspace_string), backspace_string);
+					line[current_line].pop_back();
+					write_console(backspace_string);
 				}
 
 				continue;
@@ -234,15 +226,15 @@ static void run_console(void *)
 
 			if(character == /* ^W */ 0x17)
 			{
-				for(whitespace = false; line->length > 0; line->length--)
+				for(whitespace = false; line[current_line].length() > 0; line[current_line].pop_back())
 				{
-					if(whitespace && line->data[line->length - 1] != ' ')
+					if(whitespace && (line[current_line].back() != ' '))
 						break;
 
-					if(line->data[line->length - 1] == ' ')
+					if(line[current_line].back() == ' ')
 						whitespace = true;
 
-					write_console(sizeof(backspace_string), backspace_string);
+					write_console(backspace_string);
 				}
 
 				continue;
@@ -250,48 +242,41 @@ static void run_console(void *)
 
 			if(character == /* ^U */ 0x15)
 			{
-				for(; line->length > 0; line->length--)
-					write_console(sizeof(backspace_string), backspace_string);
+				for(ix = line[current_line].length(); ix > 0; ix--)
+					write_console(backspace_string);
+
+				line[current_line].clear();
+
 				continue;
 			}
 
 			if(character == /* ^R */ 0x12)
 			{
-				write_console(sizeof(reprint_string), reprint_string);
+				write_console(reprint_string);
 				prompt();
-				write_console(line->length, line->data);
+				write_console(line[current_line]);
 				continue;
 			}
 
 			if(character == /* ^C */ 0x03)
 			{
-				write_console(sizeof(interrupt_string), interrupt_string);
-				line->length = 0;
+				write_console(interrupt_string);
+				line[current_line].clear();
 				break;
 			}
 
 			if(character == /* ^@ */ 0x00)
 			{
-				write_console(sizeof(history_string), history_string);
+				write_console(history_string);
 
-				for(ix = lines->current + 1; ix < lines->size; ix++)
-				{
-					string_format(tmp, "[%u] ", ix);
-					write_console(string_length(tmp), string_cstr(tmp));
-					write_console(lines->line[ix].length, lines->line[ix].data);
-					write_console(sizeof(newline_string), newline_string);
-				}
+				for(ix = current_line + 1; ix < lines_amount; ix++)
+					write_console((boost::format("[%u] %s%s") % ix % line[ix] % newline_string).str());
 
-				for(ix = 0; ix < lines->current; ix++)
-				{
-					string_format(tmp, "[%u] ", ix);
-					write_console(string_length(tmp), string_cstr(tmp));
-					write_console(lines->line[ix].length, lines->line[ix].data);
-					write_console(sizeof(newline_string), newline_string);
-				}
+				for(ix = 0; ix < current_line; ix++)
+					write_console((boost::format("[%u] %s%s") % ix % line[ix] % newline_string).str());
 
 				prompt();
-				write_console(line->length, line->data);
+				write_console(line[current_line]);
 
 				continue;
 			}
@@ -299,53 +284,49 @@ static void run_console(void *)
 			if((character < ' ') || (character > '~'))
 				continue;
 
-			write_console(1, &character);
-			line->data[line->length++] = character;
+			write_console(character);
+			line[current_line].append(1, character);
 		}
 
-		if((line->length == 2) && (line->data[0] == '!'))
+		if((line[current_line].length() == 2) && (line[current_line].at(0) == '!'))
 		{
-			if((line->data[1] >= '0') && (line->data[1] <= '7')) // FIXME
-			{
-				lines->current = line->data[1] - '0';
-				line = &lines->line[lines->current];
-			}
+			if((line[current_line].at(1) >= '0') && (line[current_line].at(1) <= '7')) // FIXME
+				current_line = line[current_line].at(1) - '0';
 			else
 			{
-				if(line->data[1] == '!')
+				if(line[current_line].at(1) == '!')
 				{
-					if(lines->current > 0)
-						lines->current--;
+					if(current_line > 0)
+						current_line--;
 					else
-						lines->current = lines->size - 1;
-
-					line = &lines->line[lines->current];
+						current_line = lines_amount - 1;
 				}
 			}
 		}
 
-		if(line->length)
+		if(line[current_line].length() > 0)
 		{
-			cli_buffer.source = cli_source_console;
-			cli_buffer.mtu = 0;
-			cli_buffer.data = string_new(line->length);
-			string_assign_data(cli_buffer.data, line->length, (uint8_t *)line->data);
+			command_response_t *command_response = new command_response_t;
 
-			cli_receive_queue_push(&cli_buffer);
+			command_response->source = cli_source_console;
+			command_response->mtu = 0;
+			command_response->packetised = 0;
+			command_response->packet = line[current_line];
+			cli_receive_queue_push(command_response);
+			command_response = nullptr;
 
-			if((lines->current + 1) < lines->size)
-				lines->current++;
+			if((current_line + 1) < lines_amount)
+				current_line++;
 			else
-				lines->current = 0;
+				current_line = 0;
 
-			line = lines[lines->current].line;
-			line->length = 0;
+			line[current_line].clear();
 
-			write_console(sizeof(newline_string), newline_string);
+			write_console(newline_string);
 		}
 		else
 		{
-			write_console(sizeof(newline_string), newline_string);
+			write_console(newline_string);
 			prompt();
 		}
 
@@ -357,21 +338,13 @@ void console_init_1(void)
 {
 	usb_serial_jtag_driver_config_t usb_serial_jtag_config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
 	unsigned int ix;
-	line_t *line;
 
 	assert(!inited_1);
 
-	lines = static_cast<lines_t *>(util_memory_alloc_spiram(sizeof(lines_t)));
+	current_line = 0;
 
-	lines->size = line_amount;
-	lines->current = 0;
-
-	for(ix = 0; ix < lines->size; ix++)
-	{
-		line = &lines->line[ix];
-		line->size = line_size;
-		line->length = 0;
-	}
+	for(ix = 0; ix < lines_amount; ix++)
+		line[ix].clear();
 
 	usb_serial_jtag_config.rx_buffer_size = usb_uart_rx_buffer_size;
 	usb_serial_jtag_config.tx_buffer_size = usb_uart_tx_buffer_size;
@@ -380,22 +353,21 @@ void console_init_1(void)
 	inited_1 = true;
 }
 
-void console_init_2(void)
+void console_init_2(void) // FIXME
 {
-	string_auto(hostname_in, 16);
-	string_auto_init(hostname_key, "hostname");
+	std::string hostname_in;
 
 	assert(inited_1);
 	assert(!inited_2);
 
-	if(config_get_string(hostname_key, hostname_in))
-		string_to_cstr(hostname_in, sizeof(hostname), hostname);
+	if(config_get_string("hostname", hostname_in))
+		hostname = hostname_in;
 	else
-		strlcpy(hostname, "esp32", sizeof(hostname));
+		hostname = "esp32";
 
 	inited_2 = true;
 
-	if(xTaskCreatePinnedToCore(run_console, "console", 4096, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
+	if(xTaskCreatePinnedToCore(run_console, "console", 6 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS) // FIXME
 		util_abort("console: xTaskCreatePinnedToNode run_console");
 }
 
@@ -403,20 +375,23 @@ void console_write_line(const char *string)
 {
 	if(inited_1)
 	{
-		write_console(strlen(string), string);
-		write_console(1, "\n");
+		write_console(std::string(string));
+		write_console("\n");
 	}
 }
 
-void console_send(const cli_buffer_t *cli_buffer)
+void console_send(const command_response_t *command_response)
 {
+	if(!command_response)
+		return;
+
 	if(inited_1)
-		write_console(string_length(cli_buffer->data), (const char *)string_data(cli_buffer->data));
+		write_console(command_response->packet.data());
 
 	if(inited_2)
 		prompt();
 
-	console_stats_bytes_sent += string_length(cli_buffer->data);
+	console_stats_bytes_sent += command_response->packet.length();
 	console_stats_lines_sent++;
 }
 

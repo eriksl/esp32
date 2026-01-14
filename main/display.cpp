@@ -231,7 +231,7 @@ static unsigned int utf8_to_unicode(const uint8_t *src, unsigned int dst_size, u
 						else
 							if((src_current & 0x80) == 0x80)
 							{
-								log_format("utf8 parser: invalid utf8, bit 7 set: %x %c\n", src_current, (int)src_current);
+								//log_format("utf8 parser: invalid utf8, bit 7 set: %x %c\n", src_current, (int)src_current); // FIXME
 								unicode = '*';
 							}
 							else
@@ -1178,10 +1178,10 @@ void display_init(void)
 	clear(dc_black);
 	brightness(75);
 
-	if(xTaskCreatePinnedToCore(run_display_log, "display-log", 3 * 1024, nullptr, 1, (TaskHandle_t *)0, 1) != pdPASS)
+	if(xTaskCreatePinnedToCore(run_display_log, "display-log", 10 * 1024, nullptr, 1, (TaskHandle_t *)0, 1) != pdPASS) // FIXME
 		util_abort("display: xTaskCreatePinnedToNode display log");
 
-	if(xTaskCreatePinnedToCore(run_display_info, "display-info", 5 * 1024, nullptr, 1, (TaskHandle_t *)0, 1) != pdPASS)
+	if(xTaskCreatePinnedToCore(run_display_info, "display-info", 10 * 1024, nullptr, 1, (TaskHandle_t *)0, 1) != pdPASS) // FIXME
 		util_abort("display: xTaskCreatePinnedToNode display run");
 }
 

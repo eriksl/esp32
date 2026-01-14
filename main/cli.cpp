@@ -20,10 +20,13 @@
 
 #include <algorithm>
 #include <string>
+#include <thread>
 #include <boost/format.hpp>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+
+#include <esp_pthread.h>
 
 enum
 {
@@ -89,6 +92,40 @@ typedef struct
 	cli_command_function_t *function;
 	cli_parameters_description_t parameters_description;
 } cli_command_t;
+
+class CommandException : public std::exception
+{
+	public:
+
+		CommandException() = delete;
+		CommandException(const std::string &what);
+		CommandException(const char *what);
+		CommandException(const boost::format &what);
+
+		const char *what() const noexcept;
+
+	private:
+
+		const std::string what_string;
+};
+
+
+CommandException::CommandException(const std::string &what) : what_string(what)
+{
+}
+
+CommandException::CommandException(const char *what) : what_string(what)
+{
+}
+
+CommandException::CommandException(const boost::format &what) : what_string(what.str())
+{
+}
+
+const char *CommandException::what() const noexcept
+{
+    return(what_string.c_str());
+}
 
 static QueueHandle_t receive_queue_handle;
 static QueueHandle_t send_queue_handle;
@@ -604,32 +641,35 @@ static void help(cli_command_call_t *call)
 	}
 }
 
-static void receive_queue_pop(cli_buffer_t *cli_buffer)
+static command_response_t *receive_queue_pop(void)
 {
+	command_response_t *command_response = nullptr;
+
 	assert(inited);
-	assert(cli_buffer);
 	assert(receive_queue_handle);
 
-	xQueueReceive(receive_queue_handle, cli_buffer, portMAX_DELAY);
+	xQueueReceive(receive_queue_handle, &command_response, portMAX_DELAY);
 
-	assert(cli_buffer->magic_number_head == cli_buffer_magic_number_head);
-	assert(cli_buffer->magic_number_tail == cli_buffer_magic_number_tail);
+	assert(command_response->magic_number_head == command_response_magic_number_head);
+	assert(command_response->magic_number_tail == command_response_magic_number_tail);
 
 	cli_stats_commands_received++;
+
+	return(command_response);
 }
 
-static void send_queue_push(cli_buffer_t *cli_buffer)
+static void send_queue_push(command_response_t *command_response)
 {
 	assert(inited);
-	assert(cli_buffer);
+	assert(command_response);
 	assert(send_queue_handle);
 
-	cli_buffer->magic_number_head = cli_buffer_magic_number_head;
-	cli_buffer->magic_number_tail = cli_buffer_magic_number_tail;
+	command_response->magic_number_head = command_response_magic_number_head;
+	command_response->magic_number_tail = command_response_magic_number_tail;
 
-	xQueueSendToBack(send_queue_handle, cli_buffer, portMAX_DELAY);
+	xQueueSendToBack(send_queue_handle, &command_response, portMAX_DELAY);
 
-	if(cli_buffer->packetised)
+	if(command_response->packetised)
 		cli_stats_replies_sent_packet++;
 	else
 		cli_stats_replies_sent_raw++;
@@ -637,482 +677,390 @@ static void send_queue_push(cli_buffer_t *cli_buffer)
 	cli_stats_replies_sent++;
 }
 
-static void send_queue_pop(cli_buffer_t *cli_buffer)
+static command_response_t *send_queue_pop(void)
 {
+	command_response_t *command_response = nullptr;
+
 	assert(inited);
 
-	xQueueReceive(send_queue_handle, cli_buffer, portMAX_DELAY);
+	xQueueReceive(send_queue_handle, &command_response, portMAX_DELAY);
 
-	assert(cli_buffer->magic_number_head == cli_buffer_magic_number_head);
-	assert(cli_buffer->magic_number_tail == cli_buffer_magic_number_tail);
+	assert(command_response->magic_number_head == command_response_magic_number_head);
+	assert(command_response->magic_number_tail == command_response_magic_number_tail);
+
+	return(command_response);
 }
 
 static void run_receive_queue(void *)
 {
-	cli_buffer_t						cli_buffer;
-	string_t							data = (string_t)0;
-	string_t							oob_data = (string_t)0;
-	string_t							command = (string_t)0;
-	string_t							token = (string_t)0;
-	unsigned int						count, current, ix, string_parse_offset, previous_string_parse_offset;
+	command_response_t					*command_response;
+	std::string							data;
+	std::string::const_iterator			data_iterator;
+	std::string							oob_data;
+	std::string							command;
+	unsigned int						count, current, ix;
 	const cli_command_t					*cli_command;
-	unsigned int						parameter_count;
+	cli_parameter_t						*parameter;
 	const cli_parameter_description_t	*parameter_description;
 	cli_command_call_t					call;
-	cli_parameter_t						*parameter;
-	string_auto(error, 128);
-
-	call.parameter_count = 0;
-	call.oob.clear();
-	call.result.clear();
-	call.result_oob.clear();
 
 	assert(inited);
 
 	for(;;)
 	{
-		command = (string_t)0;
+		command_response = receive_queue_pop();
+		packet_decapsulate(command_response, data, oob_data);
 
-		receive_queue_pop(&cli_buffer);
-		packet_decapsulate(&cli_buffer, &data, &oob_data);
-		string_free(&cli_buffer.data);
-
-		if(cli_buffer.packetised)
+		if(command_response->packetised)
 			cli_stats_commands_received_packet++;
 		else
 			cli_stats_commands_received_raw++;
 
-		std::string data_ = string_cstr(data); // FIXME
-		alias_expand(data_); // FIXME
-		string_assign_cstr(data, data_.c_str()); // FIXME
-
-		string_parse_offset = 0;
-		previous_string_parse_offset = 0;
-
-		if(!(command = string_parse(data, &string_parse_offset)))
+		try
 		{
-			string_format(error, "ERROR: empty line");
-			packet_encapsulate(&cli_buffer, error, (string_t)0);
-			send_queue_push(&cli_buffer);
-			goto error1;
-		}
+			if(data.length() == 0)
+				throw(CommandException("ERROR: empty line"));
 
-		for(ix = 0;; ix++)
-		{
-			cli_command = &cli_commands[ix];
+			alias_expand(data);
 
-			if(!cli_command->name || string_equal_cstr(command, cli_command->name))
-				break;
+			command.clear();
 
-			if(cli_command->alias && string_equal_cstr(command, cli_command->alias))
-				break;
-		}
+			for(data_iterator = data.begin(); data_iterator != data.end(); data_iterator++)
+				if(*data_iterator > ' ')
+					command.append(1, *data_iterator);
+				else
+					break;
 
-		if(!cli_command->name)
-		{
-			string_format(error, "ERROR: unknown command \"%s\"", string_cstr(command));
-			packet_encapsulate(&cli_buffer, error, (string_t)0);
-			send_queue_push(&cli_buffer);
-			goto error;
-		}
-
-		count = cli_command->parameters_description.count;
-
-		if(count > parameters_size)
-			count = parameters_size;
-
-		parameter_count = 0;
-
-		for(current = 0; current < count; current++)
-		{
-			parameter_description = &cli_command->parameters_description.entries[current];
-			parameter = &call.parameters[current];
-
-			parameter->type = cli_parameter_none;
-			parameter->has_value = 0;
-
-			previous_string_parse_offset = string_parse_offset;
-
-			if(!(token = string_parse(data, &string_parse_offset)))
+			for(ix = 0;; ix++)
 			{
-				if(!parameter_description->value_required)
-					continue;
+				cli_command = &cli_commands[ix];
+
+				if(!cli_command->name || (command == cli_command->name))
+					break;
+
+				if(cli_command->alias && (command == cli_command->alias))
+					break;
+			}
+
+			if(!cli_command->name)
+				throw(CommandException(boost::format("ERROR: unknown command \"%s\"") % command));
+
+			count = cli_command->parameters_description.count;
+
+			if(count > parameters_size)
+				count = parameters_size;
+
+			call.parameter_count = 0;
+
+			for(current = 0; current < count; current++)
+			{
+				parameter_description = &cli_command->parameters_description.entries[current];
+				parameter = &call.parameters[current];
+
+				parameter->type = cli_parameter_none;
+				parameter->has_value = 0;
+
+				for(; data_iterator != data.end(); data_iterator++)
+					if(*data_iterator > ' ')
+						break;
+
+				if(data_iterator == data.end())
+				{
+					if(!parameter_description->value_required)
+						continue;
+					else
+						throw(CommandException(boost::format("ERROR: missing required parameter %u") % (current + 1)));
+				}
 				else
 				{
-					string_format(error, "ERROR: missing required parameter %u", current + 1);
-					packet_encapsulate(&cli_buffer, error, (string_t)0);
-					send_queue_push(&cli_buffer);
-					goto error;
-				}
-			}
-			else
-			{
-				parameter_count++;
+					call.parameter_count++;
 
-				parameter->str = string_cstr(token);
+					parameter->str.clear();
 
-				switch(parameter_description->type)
-				{
-					case(cli_parameter_none):
-					case(cli_parameter_size):
+					for(; data_iterator != data.end(); data_iterator++)
+						if(*data_iterator > ' ')
+							parameter->str.append(1, *data_iterator);
+						else
+							break;
+
+					switch(parameter_description->type)
 					{
-						string_format(error, "ERROR: parameter with invalid type %d", parameter_description->type);
-						packet_encapsulate(&cli_buffer, error, (string_t)0);
-						send_queue_push(&cli_buffer);
-						goto error;
-					}
-
-					case(cli_parameter_unsigned_int):
-					{
-						unsigned int value;
-
-						try
+						case(cli_parameter_none):
+						case(cli_parameter_size):
 						{
-							value = std::stoul(parameter->str, nullptr, parameter_description->base);
-						}
-						catch(...)
-						{
-							string_format(error, "ERROR: invalid unsigned integer value: %s", parameter->str.c_str());
-							packet_encapsulate(&cli_buffer, error, nullptr);
-							send_queue_push(&cli_buffer);
-							goto error;
+							throw(CommandException(boost::format("ERROR: parameter with invalid type %d") % parameter_description->type));
 						}
 
-						if((parameter_description->lower_bound_required) && (value < parameter_description->unsigned_int.lower_bound))
+						case(cli_parameter_unsigned_int):
 						{
-							string_format(error, "ERROR: invalid unsigned integer value: %u, smaller than lower bound: %u", value, parameter_description->unsigned_int.lower_bound);
-							packet_encapsulate(&cli_buffer, error, (string_t)0);
-							send_queue_push(&cli_buffer);
-							goto error;
+							unsigned int value;
+
+							try
+							{
+								value = std::stoul(parameter->str, nullptr, parameter_description->base);
+							}
+							catch(...)
+							{
+								throw(CommandException(boost::format("ERROR: invalid unsigned integer value: %s") % parameter->str));
+							}
+
+							if((parameter_description->lower_bound_required) && (value < parameter_description->unsigned_int.lower_bound))
+								throw(CommandException(boost::format("ERROR: invalid unsigned integer value: %u, smaller than lower bound: %u") %
+										value % parameter_description->unsigned_int.lower_bound));
+
+							if((parameter_description->upper_bound_required) && (value > parameter_description->unsigned_int.upper_bound))
+								throw(CommandException(boost::format("ERROR: invalid unsigned integer value: %u, larger than upper bound: %u") %
+										value % parameter_description->unsigned_int.upper_bound));
+
+							parameter->type = cli_parameter_unsigned_int;
+							parameter->has_value = 1;
+							parameter->unsigned_int = value;
+
+							break;
 						}
 
-						if((parameter_description->upper_bound_required) && (value > parameter_description->unsigned_int.upper_bound))
+						case(cli_parameter_signed_int):
 						{
-							string_format(error, "ERROR: invalid unsigned integer value: %u, larger than upper bound: %u", value, parameter_description->unsigned_int.upper_bound);
-							packet_encapsulate(&cli_buffer, error, (string_t)0);
-							send_queue_push(&cli_buffer);
-							goto error;
+							int value;
+
+							try
+							{
+								value = std::stol(parameter->str, nullptr, parameter_description->base);
+							}
+							catch(...)
+							{
+								throw(CommandException(boost::format("ERROR: invalid signed integer value: %s") % parameter->str));
+							}
+
+							if((parameter_description->lower_bound_required) && (value < parameter_description->signed_int.lower_bound))
+								throw(CommandException(boost::format("ERROR: invalid signed integer value: %d, smaller than lower bound: %d") %
+										value % parameter_description->signed_int.lower_bound));
+
+							if((parameter_description->upper_bound_required) && (value > parameter_description->signed_int.upper_bound))
+								throw(CommandException(boost::format("ERROR: invalid signed integer value: %d, larger than upper bound: %d") %
+										value % parameter_description->signed_int.upper_bound));
+
+							parameter->type = cli_parameter_signed_int;
+							parameter->has_value = 1;
+							parameter->signed_int = value;
+
+							break;
 						}
 
-						parameter->type = cli_parameter_unsigned_int;
-						parameter->has_value = 1;
-						parameter->unsigned_int = value;
-
-						break;
-					}
-
-					case(cli_parameter_signed_int):
-					{
-						int value;
-
-						try
+						case(cli_parameter_float):
 						{
-							value = std::stol(parameter->str, nullptr, parameter_description->base);
-						}
-						catch(...)
-						{
-							string_format(error, "ERROR: invalid signed integer value: %s", parameter->str.c_str());
-							packet_encapsulate(&cli_buffer, error, nullptr);
-							send_queue_push(&cli_buffer);
-							goto error;
-						}
+							float value;
 
-						if((parameter_description->lower_bound_required) && (value < parameter_description->signed_int.lower_bound))
-						{
-							string_format(error, "ERROR: invalid signed integer value: %d, smaller than lower bound: %d", value, parameter_description->signed_int.lower_bound);
-							packet_encapsulate(&cli_buffer, error, (string_t)0);
-							send_queue_push(&cli_buffer);
-							goto error;
+							try
+							{
+								value = std::stod(parameter->str, nullptr);
+							}
+							catch(...)
+							{
+								throw(CommandException(boost::format("ERROR: invalid float value: %s") % parameter->str));
+							}
+
+							if((parameter_description->lower_bound_required) && (value < parameter_description->fp.lower_bound))
+								throw(CommandException(boost::format("ERROR: invalid float value: %f, smaller than lower bound: %f") % value % parameter_description->fp.lower_bound));
+
+							if((parameter_description->upper_bound_required) && (value > parameter_description->fp.upper_bound))
+								throw(CommandException(boost::format("ERROR: invalid float value: %f, larger than upper bound: %f") % value % parameter_description->fp.upper_bound));
+
+							parameter->type = cli_parameter_float;
+							parameter->has_value = 1;
+							parameter->fp = value;
+
+							break;
 						}
 
-						if((parameter_description->upper_bound_required) && (value > parameter_description->signed_int.upper_bound))
+						case(cli_parameter_string):
 						{
-							string_format(error, "ERROR: invalid signed integer value: %d, larger than upper bound: %d", value, parameter_description->signed_int.upper_bound);
-							packet_encapsulate(&cli_buffer, error, (string_t)0);
-							send_queue_push(&cli_buffer);
-							goto error;
+							unsigned int length;
+
+							length = parameter->str.length();
+
+							if((parameter_description->lower_bound_required) && (length < parameter_description->string.lower_length_bound))
+								throw(CommandException(boost::format("ERROR: invalid string length: %u, smaller than lower bound: %u") % length % parameter_description->string.lower_length_bound));
+
+							if((parameter_description->upper_bound_required) && (length > parameter_description->string.upper_length_bound))
+								throw(CommandException(boost::format("ERROR: invalid string length: %u, larger than upper bound: %u") % length % parameter_description->string.upper_length_bound));
+
+							parameter->type = cli_parameter_string;
+							parameter->has_value = 1;
+
+							break;
 						}
 
-						parameter->type = cli_parameter_signed_int;
-						parameter->has_value = 1;
-						parameter->signed_int = value;
-
-						break;
-					}
-
-					case(cli_parameter_float):
-					{
-						float value;
-
-						try
+						case(cli_parameter_string_raw):
 						{
-							value = std::stod(parameter->str, nullptr);
+							unsigned int length;
+
+							for(; data_iterator != data.end(); data_iterator++)
+								parameter->str.append(1, *data_iterator);
+
+							length = parameter->str.length();
+
+							if((parameter_description->lower_bound_required) && (length < parameter_description->string.lower_length_bound))
+								throw(CommandException(boost::format("ERROR: invalid raw string length: %u, smaller than lower bound: %u") % length % parameter_description->string.lower_length_bound));
+
+							if((parameter_description->upper_bound_required) && (length > parameter_description->string.upper_length_bound))
+								throw(CommandException(boost::format("ERROR: invalid raw string length: %u, larger than upper bound: %u") % length % parameter_description->string.upper_length_bound));
+
+							parameter->type = cli_parameter_string;
+							parameter->has_value = 1;
+
+							break;
 						}
-						catch(...)
-						{
-							string_format(error, "ERROR: invalid float value: %s", parameter->str.c_str());
-							packet_encapsulate(&cli_buffer, error, nullptr);
-							send_queue_push(&cli_buffer);
-							goto error;
-						}
-
-						if((parameter_description->lower_bound_required) && (value < parameter_description->fp.lower_bound))
-						{
-							string_format(error, "ERROR: invalid float value: %f, smaller than lower bound: %f", (double)value, (double)parameter_description->fp.lower_bound);
-							packet_encapsulate(&cli_buffer, error, (string_t)0);
-							send_queue_push(&cli_buffer);
-							goto error;
-						}
-
-						if((parameter_description->upper_bound_required) && (value > parameter_description->fp.upper_bound))
-						{
-							string_format(error, "ERROR: invalid float value: %f, larger than upper bound: %f", (double)value, (double)parameter_description->fp.upper_bound);
-							packet_encapsulate(&cli_buffer, error, (string_t)0);
-							send_queue_push(&cli_buffer);
-							goto error;
-						}
-
-						parameter->type = cli_parameter_float;
-						parameter->has_value = 1;
-						parameter->fp = value;
-
-						break;
-					}
-
-					case(cli_parameter_string):
-					{
-						unsigned int length;
-
-						length = parameter->str.length();
-
-						if((parameter_description->lower_bound_required) && (length < parameter_description->string.lower_length_bound))
-						{
-							string_format(error, "ERROR: invalid string length: %u, smaller than lower bound: %u", length, parameter_description->string.lower_length_bound);
-							packet_encapsulate(&cli_buffer, error, nullptr);
-							send_queue_push(&cli_buffer);
-							goto error;
-						}
-
-						if((parameter_description->upper_bound_required) && (length > parameter_description->string.upper_length_bound))
-						{
-							string_format(error, "ERROR: invalid string length: %u, larger than upper bound: %u", length, parameter_description->string.upper_length_bound);
-							packet_encapsulate(&cli_buffer, error, nullptr);
-							send_queue_push(&cli_buffer);
-							goto error;
-						}
-
-						parameter->type = cli_parameter_string;
-						parameter->has_value = 1;
-
-						break;
-					}
-
-					case(cli_parameter_string_raw):
-					{
-						unsigned int length;
-
-						parameter->str.clear();
-
-						while((previous_string_parse_offset < string_length(data)) && (string_at(data, previous_string_parse_offset) == ' '))
-							previous_string_parse_offset++;
-
-						//string_cut(parameter->str, data, previous_string_parse_offset, ~0);
-						parameter->str.assign(string_cstr(data) + previous_string_parse_offset);
-
-						string_parse_offset = string_length(data);
-
-						length = parameter->str.length();
-
-						if((parameter_description->lower_bound_required) && (length < parameter_description->string.lower_length_bound))
-						{
-							string_format(error, "ERROR: invalid raw string length: %u, smaller than lower bound: %u", length, parameter_description->string.lower_length_bound);
-							packet_encapsulate(&cli_buffer, error, nullptr);
-							send_queue_push(&cli_buffer);
-							goto error;
-						}
-
-						if((parameter_description->upper_bound_required) && (length > parameter_description->string.upper_length_bound))
-						{
-							string_format(error, "ERROR: invalid raw string length: %u, larger than upper bound: %u", length, parameter_description->string.upper_length_bound);
-							packet_encapsulate(&cli_buffer, error, nullptr);
-							send_queue_push(&cli_buffer);
-							goto error;
-						}
-
-						parameter->type = cli_parameter_string;
-						parameter->has_value = 1;
-
-						break;
 					}
 				}
 			}
-		}
 
-		if(current >= parameters_size)
+			if(current >= parameters_size)
+				throw(CommandException(boost::format("ERROR: too many parameters: %u") % current));
+
+			if(current < cli_command->parameters_description.count)
+				throw(CommandException("ERROR: missing parameters"));
+
+			for(; data_iterator != data.end(); data_iterator++)
+				if(*data_iterator > ' ')
+					break;
+
+			if(data_iterator != data.end())
+				throw(CommandException("ERROR: too many parameters"));
+
+			call.source =			command_response->source;
+			call.mtu =				command_response->mtu;
+			call.oob =				oob_data;
+			call.result.clear();
+			call.result_oob.clear();
+
+			cli_command->function(&call);
+		}
+		catch(const CommandException &exception)
 		{
-			string_format(error, "ERROR: too many parameters: %u", current);
-			packet_encapsulate(&cli_buffer, error, (string_t)0);
-			send_queue_push(&cli_buffer);
-			goto error;
+			call.result = exception.what();
+			call.result_oob.clear();
 		}
 
-		if(current < cli_command->parameters_description.count)
-		{
-			string_format(error, "ERROR: missing parameters");
-			packet_encapsulate(&cli_buffer, error, (string_t)0);
-			send_queue_push(&cli_buffer);
-			goto error;
-		}
+		command_response->packet.clear();
+		packet_encapsulate(command_response, call.result, call.result_oob);
+		send_queue_push(command_response);
 
-		if((token = string_parse(data, &string_parse_offset)))
-		{
-			string_free(&token);
-			string_format(error, "ERROR: too many parameters");
-			packet_encapsulate(&cli_buffer, error, (string_t)0);
-			send_queue_push(&cli_buffer);
-			goto error;
-		}
-
-		call.source =			cli_buffer.source;
-		call.mtu =				cli_buffer.mtu;
-		call.parameter_count =	parameter_count;
-		call.oob =				oob_data ? string_cstr(oob_data) : ""; // FIXME
-		call.result.clear();
-		call.result_oob.clear();
-
-		cli_command->function(&call);
-
-		{ // FIXME: workaround goto issue
-			string_t tmp_result = string_new(call.result.length()); // FIXME
-			string_t tmp_result_oob = string_new(call.result_oob.length()); // FIXME
-
-			string_assign_cstr(tmp_result, call.result.c_str()); // FIXME
-			string_assign_cstr(tmp_result_oob, call.result_oob.c_str()); // FIXME
-
-			packet_encapsulate(&cli_buffer, tmp_result, tmp_result_oob); // FIXME
-
-			string_clear(tmp_result); // FIXME
-			string_clear(tmp_result_oob); // FIXME
-
-			send_queue_push(&cli_buffer);
-		}
-
-error:
-		string_free(&command);
-error1:
 		for(ix = 0; ix < call.parameter_count; ix++)
 			call.parameters[ix].str.clear();
-
-		cli_buffer.source = cli_source_none;
-		string_free(&data);
-
-		if(oob_data)
-			string_free(&oob_data);
 	}
 }
 
 static void run_send_queue(void *)
 {
-	cli_buffer_t cli_buffer;
+	command_response_t *command_response;
 
 	assert(inited);
 
 	for(;;)
 	{
-		send_queue_pop(&cli_buffer);
+		command_response = send_queue_pop();
 
-		switch(cli_buffer.source)
+		switch(command_response->source)
 		{
 			case(cli_source_bt):
 			{
-				net_bt_send(&cli_buffer);
+				net_bt_send(command_response);
 				break;
 			}
 
 			case(cli_source_console):
 			{
-				console_send(&cli_buffer);
+				console_send(command_response);
 				break;
 			}
 
 			case(cli_source_wlan_tcp):
 			{
-				net_tcp_send(&cli_buffer);
+				net_tcp_send(command_response);
 				break;
 			}
 
 			case(cli_source_wlan_udp):
 			{
-				net_udp_send(&cli_buffer);
+				net_udp_send(command_response);
 				break;
 			}
 
 			case(cli_source_script):
 			{
-				if(string_at_back(cli_buffer.data) == '\n')
-					string_pop_back(cli_buffer.data);
+				if(!command_response->packet.empty() && command_response->packet.back() == '\n') // FIXME
+					command_response->packet.pop_back();
 
-				if(string_length(cli_buffer.data) > 0)
-					log_format("%s: %s", cli_buffer.script.name, string_cstr(cli_buffer.data));
+				if(!command_response->packet.empty())
+					log_format("%s: %s", command_response->script.name, command_response->packet.c_str());
 
 				break;
 			}
 
 			default:
 			{
-				log_format("cli: invalid source type: %d", cli_buffer.source);
+				log_format("cli: invalid source type: %d", command_response->source);
 				break;
 			}
 		}
 
-		string_free(&cli_buffer.data);
-
-		if(cli_buffer.source == cli_source_script)
+		if(command_response->source == cli_source_script)
 		{
-			assert(cli_buffer.script.task);
-			xTaskNotifyGive(static_cast<TaskHandle_t>(cli_buffer.script.task));
-			cli_buffer.script.name[0] = '\0';
-			cli_buffer.script.task = nullptr;
+			assert(command_response->script.task);
+			xTaskNotifyGive(static_cast<TaskHandle_t>(command_response->script.task));
+			command_response->script.name[0] = '\0';
+			command_response->script.task = nullptr;
 		}
 
-		cli_buffer.source = cli_source_none;
+		command_response->source = cli_source_none;
+		delete command_response;
+		command_response = nullptr;
 	}
 }
 
-void cli_receive_queue_push(cli_buffer_t *buffer)
+void cli_receive_queue_push(command_response_t *command_response)
 {
 	assert(inited);
 
-	buffer->magic_number_head = cli_buffer_magic_number_head;
-	buffer->magic_number_tail = cli_buffer_magic_number_tail;
+	command_response->magic_number_head = command_response_magic_number_head;
+	command_response->magic_number_tail = command_response_magic_number_tail;
 
-	xQueueSendToBack(receive_queue_handle, buffer, portMAX_DELAY);
+	xQueueSendToBack(receive_queue_handle, &command_response, portMAX_DELAY);
 }
 
 void cli_init(void)
 {
 	assert(!inited);
+	esp_pthread_cfg_t thread_config;
 
-	uint8_t *queue_data;
-	StaticQueue_t *queue;
-
-	queue_data = static_cast<uint8_t *>(util_memory_alloc_spiram(receive_queue_size * sizeof(cli_buffer_t)));
-	queue = static_cast<StaticQueue_t *>(util_memory_alloc_spiram(sizeof(StaticQueue_t)));
-
-	if(!(receive_queue_handle = xQueueCreateStatic(receive_queue_size, sizeof(cli_buffer_t), queue_data, queue)))
+	if(!(receive_queue_handle = xQueueCreate(receive_queue_size, sizeof(command_response_t *))))
 		util_abort("cli: xQueueCreateStatic receive queue init");
 
-	queue_data = static_cast<uint8_t *>(util_memory_alloc_spiram(send_queue_size * sizeof(cli_buffer_t)));
-	queue = static_cast<StaticQueue_t *>(util_memory_alloc_spiram(sizeof(StaticQueue_t)));
-
-	if(!(send_queue_handle = xQueueCreateStatic(send_queue_size, sizeof(cli_buffer_t), queue_data, queue)))
+	if(!(send_queue_handle = xQueueCreate(send_queue_size, sizeof(command_response_t *))))
 		util_abort("cli: xQueueCreateStatic send queue init");
 
 	inited = true;
 
-	if(xTaskCreatePinnedToCore(run_receive_queue, "cli-recv", 5 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
-		util_abort("cli: xTaskCreatePinnedToNode run_receive_queue");
+	thread_config = esp_pthread_get_default_config();
+	thread_config.thread_name = "cli recv";
+	thread_config.pin_to_core = 1;
+	thread_config.stack_size = 8 * 1024; // FIXME
+	thread_config.prio = 1;
+	esp_pthread_set_cfg(&thread_config);
 
-	if(xTaskCreatePinnedToCore(run_send_queue, "cli-send", 4 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
-		util_abort("cli: xTaskCreatePinnedToNode run_send_queue");
+	std::thread receive_thread(run_receive_queue, nullptr);
+
+	receive_thread.detach();
+
+	thread_config = esp_pthread_get_default_config();
+	thread_config.thread_name = "cli send";
+	thread_config.pin_to_core = 1;
+	thread_config.stack_size = 8 * 1024; // FIXME
+	thread_config.prio = 1;
+	esp_pthread_set_cfg(&thread_config);
+
+	std::thread send_thread(run_send_queue, nullptr);
+
+	send_thread.detach();
 }

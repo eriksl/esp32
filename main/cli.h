@@ -1,9 +1,11 @@
 #pragma once
 
+#include <string>
+
 enum
 {
-	cli_buffer_magic_number_head = 0x1234abcd,
-	cli_buffer_magic_number_tail = 0xdcba4321,
+	command_response_magic_number_head = 0x1234abcd,
+	command_response_magic_number_tail = 0xdcba4321,
 };
 
 typedef enum
@@ -19,10 +21,10 @@ typedef enum
 
 typedef struct
 {
-	unsigned int	magic_number_head;
-	cli_source_t	source;
-	unsigned int	mtu;
-	string_t		data;
+	unsigned int magic_number_head;
+	cli_source_t source;
+	unsigned int mtu;
+	std::string packet;
 
 	struct
 	{
@@ -53,7 +55,7 @@ typedef struct
 		} script;
 	};
 	unsigned int magic_number_tail;
-} cli_buffer_t;
+} command_response_t;
 
-void cli_receive_queue_push(cli_buffer_t *buffer);
+void cli_receive_queue_push(command_response_t *buffer);
 void cli_init(void);

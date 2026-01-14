@@ -453,15 +453,15 @@ static const uint32_t crc32_table_byte[] =
 	0x0d432626, 0x09823b91, 0x04c11d48, 0x000000ff
 };
 
-uint32_t util_crc32cksum_byte(uint32_t crc, void const *mem, size_t len)
+uint32_t util_crc32(uint32_t crc, const uint8_t *data, unsigned int length)
 {
-	const uint8_t *data = static_cast<const uint8_t *>(mem);
+	int ix;
 
 	if(!data)
 		return(0xffffffffUL);
 
-	for(size_t i = 0; i < len; i++)
-		crc = (crc << 8) ^ crc32_table_byte[((crc >> 24) ^ data[i]) & 0xff];
+	for(ix = 0; ix < length; ix++)
+		crc = (crc << 8) ^ crc32_table_byte[((crc >> 24) ^ data[ix]) & 0xff];
 
 	return(crc);
 }

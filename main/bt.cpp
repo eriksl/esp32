@@ -44,7 +44,7 @@ enum
 };
 
 static TimerHandle_t bt_defragmentation_timer;
-static string_t bt_receive_buffer;
+static std::string bt_receive_buffer;
 static bool bt_defragmentation_incomplete;
 
 static int gap_event(struct ble_gap_event *event, void *arg);
@@ -74,6 +74,26 @@ static unsigned int bt_stats_received_packets;
 static unsigned int bt_stats_received_raw_packets;
 static unsigned int bt_stats_received_packetised_packets;
 static unsigned int bt_stats_received_defragmentation_timeouts;
+
+static unsigned int append_mbuf(std::string &dst, const void *src)
+{
+	unsigned int length;
+	uint16_t om_length;
+	const struct os_mbuf *_src;
+
+	_src = static_cast<const struct os_mbuf *>(src);
+	length = os_mbuf_len(_src);
+
+	dst.reserve(length);
+
+	ble_hs_mbuf_to_flat(_src, dst.data(), length, &om_length);
+
+	assert(om_length == length);
+
+	dst.resize(om_length);
+
+	return(length);
+}
 
 static void nimble_port_task(void *param)
 {
@@ -425,18 +445,18 @@ static void bt_defragmentation_callback(TimerHandle_t handle)
 		log("bt: defragmentation while not active");
 
 	bt_defragmentation_incomplete = false;
-	string_clear(bt_receive_buffer);
+	bt_receive_buffer.clear();
 }
 
 static void bt_received(unsigned int connection_handle, unsigned int attribute_handle, const struct os_mbuf *mbuf)
 {
-	cli_buffer_t cli_buffer;
+	bool packetised = false;
 	unsigned int length;
 
 	assert(inited);
 	assert(mbuf);
 
-	length = string_append_mbuf(bt_receive_buffer, mbuf);
+	length = append_mbuf(bt_receive_buffer, mbuf);
 
 	bt_stats_received_bytes += length;
 
@@ -448,7 +468,7 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 		{
 			bt_defragmentation_incomplete = false;
 			xTimerStop(bt_defragmentation_timer, portMAX_DELAY);
-			cli_buffer.packetised = 1;
+			packetised = true;
 		}
 		else
 		{
@@ -463,36 +483,40 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 	{
 		bt_stats_received_raw_packets++;
 		bt_defragmentation_incomplete = false;
-		cli_buffer.packetised = 0;
+		packetised = false;
 	}
 
 	if(!bt_defragmentation_incomplete)
 	{
 		bt_stats_received_packets++;
 
-		cli_buffer.source = cli_source_bt;
-		cli_buffer.mtu = bt_mtu;
-		cli_buffer.data = string_new(string_length(bt_receive_buffer));
-		string_assign_string(cli_buffer.data, bt_receive_buffer);
-		cli_buffer.bt.connection_handle = connection_handle;
-		cli_buffer.bt.attribute_handle = attribute_handle;
-		string_clear(bt_receive_buffer);
-		bt_defragmentation_incomplete = false;
+		command_response_t *command_response = new command_response_t;
 
-		cli_receive_queue_push(&cli_buffer);
+		command_response->source = cli_source_bt;
+		command_response->packetised = packetised ? 1 : 0;
+		command_response->mtu = bt_mtu;
+		command_response->packet = bt_receive_buffer;
+		command_response->bt.connection_handle = connection_handle;
+		command_response->bt.attribute_handle = attribute_handle;
+
+		cli_receive_queue_push(command_response);
+
+		command_response = nullptr;
+		bt_defragmentation_incomplete = false;
+		bt_receive_buffer.clear();
 	}
 }
 
-void net_bt_send(const cli_buffer_t *cli_buffer)
+void net_bt_send(const command_response_t *command_response)
 {
 	struct os_mbuf *txom;
 	int offset, chunk_length, rv, attempt;
 
 	assert(inited);
 
-	for(offset = 0; offset < string_length(cli_buffer->data);)
+	for(offset = 0; offset < command_response->packet.length();)
 	{
-		if((chunk_length = string_length(cli_buffer->data) - offset) < 0)
+		if((chunk_length = command_response->packet.length() - offset) < 0)
 			break;
 
 		if(chunk_length > bt_max_chunk)
@@ -500,10 +524,10 @@ void net_bt_send(const cli_buffer_t *cli_buffer)
 
 		for(attempt = 16; attempt > 0; attempt--)
 		{
-			txom = ble_hs_mbuf_from_flat(string_data(cli_buffer->data) + offset, chunk_length);
+			txom = ble_hs_mbuf_from_flat(command_response->packet.data() + offset, chunk_length);
 			assert(txom);
 
-			rv = ble_gatts_indicate_custom(cli_buffer->bt.connection_handle, cli_buffer->bt.attribute_handle, txom);
+			rv = ble_gatts_indicate_custom(command_response->bt.connection_handle, command_response->bt.attribute_handle, txom);
 
 			if(rv == 0)
 				break;
@@ -547,7 +571,6 @@ void bt_init(void)
 	inited = true;
 
 	bt_defragmentation_incomplete = false;
-	bt_receive_buffer = string_new(max_packet_size);
 
 	bt_defragmentation_timer = xTimerCreate("bt-defrag", pdMS_TO_TICKS(10000), pdFALSE, (void *)0, bt_defragmentation_callback);
 	assert(bt_defragmentation_timer);
