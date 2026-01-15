@@ -326,7 +326,7 @@ static const cli_command_t cli_commands[] =
 	{ "fs-read", (const char*)0, "read chunk from a file", fs_command_read,
 		{	3,
 			{
-				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length",  { .unsigned_int = { 0, 4096 }}},
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length",  { .unsigned_int = { 0, 32768 }}},
 				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "offset", {}},
 				{ cli_parameter_string, 0, 1, 1, 1, "file", { .string = { 1, 64 }}},
 			}

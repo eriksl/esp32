@@ -23,7 +23,7 @@ class UDP
 
 		enum
 		{
-			mtu = 5 * 4096, // emperical derived from LWIP max UDP reassembly (~22k)
+			mtu = 16 * 1024, // emperically derived
 		};
 
 		int socket_fd;
@@ -141,15 +141,15 @@ void UDP::run()
 
 		this->receive_bytes += length;
 
-		if(!packet_complete(udp_receive_buffer))
-		{
-			this->receive_incomplete_packets++;
-			continue;
-		}
-
 		if(!packet_valid(udp_receive_buffer))
 		{
 			this->receive_invalid_packets++;
+			continue;
+		}
+
+		if(!packet_complete(udp_receive_buffer))
+		{
+			this->receive_incomplete_packets++;
 			continue;
 		}
 
@@ -222,7 +222,7 @@ void UDP::command_info(cli_command_call_t *call)
 	call->result += (boost::format("\n- sent packets: %u") % this->send_packets).str();
 	call->result += (boost::format("\n- send errors: %u") % this->send_errors).str();
 	call->result += (boost::format("\n- disconnected socket events: %u") % this->send_no_connection).str();
-	call->result = "\nreceiving";
+	call->result += "\nreceiving";
 	call->result += (boost::format("\n- received bytes: %u") % this->receive_bytes).str();
 	call->result += (boost::format("\n- received packets: %u") % this->receive_packets).str();
 	call->result += (boost::format("\n- received incomplete packets: %u") % this->receive_incomplete_packets).str();

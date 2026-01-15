@@ -175,7 +175,7 @@ void fs_command_read(cli_command_call_t *call)
 		length = 0;
 	else
 	{
-		call->result_oob.reserve(call->parameters[0].unsigned_int);
+		call->result_oob.resize(call->parameters[0].unsigned_int);
 
 		if((length = ::read(fd, call->result_oob.data(), call->parameters[0].unsigned_int)) == 0)
 		{

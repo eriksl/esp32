@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <sys/socket.h>
+#include <sys/poll.h>
 #include <assert.h>
 #include <thread>
 #include <esp_pthread.h>
@@ -22,9 +23,7 @@ class TCP
 
 		enum
 		{
-			packet_size = 4096,
-			packet_overhead = 128,
-			tcp_mtu = 1200,
+			mtu = 1200, // emperically determined
 		};
 
 		int socket_fd = -1;
@@ -39,6 +38,7 @@ class TCP
 		unsigned int receive_accepts;
 		unsigned int receive_accept_errors;
 		unsigned int receive_errors;
+		unsigned int receive_invalid_packets;
 		unsigned int receive_incomplete_packets;
 
 		TCP();
@@ -61,6 +61,7 @@ TCP::TCP() :
 		receive_accepts(0),
 		receive_accept_errors(0),
 		receive_errors(0),
+		receive_invalid_packets(0),
 		receive_incomplete_packets(0)
 {
 	esp_pthread_cfg_t thread_config = esp_pthread_get_default_config();
@@ -83,6 +84,7 @@ void TCP::run()
 	struct sockaddr_in6 si6_addr;
 	socklen_t si6_addr_length;
 	int length;
+	struct pollfd pfd;
 
 	accept_fd = socket(AF_INET6, SOCK_STREAM, 0);
 	assert(accept_fd >= 0);
@@ -112,14 +114,33 @@ void TCP::run()
 
 		for(;;)
 		{
-			tcp_receive_buffer.resize(8192); // FIXME, peek message length
+			pfd.fd = this->socket_fd;
+			pfd.events = POLLIN;
+			pfd.revents = 0;
+
+			rv = poll(&pfd, 1, -1);
+
+			if(rv < 0)
+			{
+				log_errno("tcp: poll error");
+				continue;
+			}
+
+			if(!(pfd.revents & POLLIN))
+			{
+				log_errno("tcp: socket error");
+				util_abort("tcp socket error");
+			}
+
+			if(ioctl(this->socket_fd, FIONREAD, &length))
+			{
+				log_errno("tcp: ioctl");
+				util_abort("tcp ioctl error");
+			}
+
+			tcp_receive_buffer.resize(length);
+
 			length = ::recv(this->socket_fd, tcp_receive_buffer.data(), tcp_receive_buffer.size(), 0);
-
-			if(length >= 0)
-				tcp_receive_buffer.resize(length);
-
-			if(length == 0)
-				break;
 
 			if(length <= 0)
 			{
@@ -128,9 +149,20 @@ void TCP::run()
 				break;
 			}
 
+			if(length == 0)
+				break;
+
+			tcp_receive_buffer.resize(length);
+
 			receive_bytes += length;
 
-			if(packet_valid(tcp_receive_buffer) && !packet_complete(tcp_receive_buffer))
+			if(!packet_valid(tcp_receive_buffer))
+			{
+				receive_invalid_packets++;
+				continue;
+			}
+
+			if(!packet_complete(tcp_receive_buffer))
 			{
 				receive_incomplete_packets++;
 				continue;
@@ -145,8 +177,8 @@ void TCP::run()
 			util_memcpy(&command_response->ip.address.sin6_addr, &si6_addr, si6_addr_length);
 			command_response->ip.address.sin6_length = si6_addr_length;
 			command_response->source = cli_source_wlan_tcp;
-			command_response->mtu = tcp_mtu;
-			command_response->packetised = !!packet_valid(tcp_receive_buffer);
+			command_response->mtu = this->mtu;
+			command_response->packetised = 1;
 			command_response->packet = tcp_receive_buffer;
 
 			cli_receive_queue_push(command_response);
@@ -192,8 +224,8 @@ void TCP::send(const command_response_t *command_response)
 	{
 		chunk_length = length;
 
-		if(chunk_length > tcp_mtu)
-			chunk_length = tcp_mtu;
+		if(chunk_length > mtu)
+			chunk_length = mtu;
 
 		sent = ::send(socket_fd, command_response->packet.data() + offset, chunk_length, 0);
 
