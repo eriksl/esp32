@@ -390,7 +390,7 @@ static const cli_command_t cli_commands[] =
 		{	3,
 			{
 				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "mode, 0 = truncate, 1 = append", { .unsigned_int = { 0, 1 }}},
-				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length", { .unsigned_int = { 0, 4096 }}},
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length", { .unsigned_int = { 0, 32768 }}},
 				{ cli_parameter_string, 0, 1, 1, 1, "file", { .string = { 1, 64 }}},
 			}
 		}
