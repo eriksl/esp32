@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <sys/socket.h>
+#include <sys/poll.h>
 #include <assert.h>
 #include <thread>
 #include <esp_pthread.h>
@@ -41,7 +42,7 @@ class UDP
 
 		void send(const command_response_t *command_response);
 		void command_info(cli_command_call_t *call);
-		static __attribute__((noreturn)) void run_wrapper(void *);
+		__attribute__((noreturn)) static void run_wrapper(void *);
 		__attribute__((noreturn)) void run();
 };
 
@@ -77,6 +78,7 @@ void UDP::run()
 	struct sockaddr_in6 si6_addr;
 	socklen_t si6_addr_length;
 	int length;
+	struct pollfd pfd;
 
 	this->socket_fd = socket(AF_INET6, SOCK_DGRAM, 0);
 	assert(this->socket_fd >= 0);
@@ -92,11 +94,40 @@ void UDP::run()
 	{
 		si6_addr_length = sizeof(si6_addr);
 
-		udp_receive_buffer.resize(8192); // FIXME, check pending packet size
-		length = ::recvfrom(this->socket_fd, udp_receive_buffer.data(), udp_receive_buffer.size(), 0, reinterpret_cast<sockaddr *>(&si6_addr), &si6_addr_length); // FIXME
+		pfd.fd = this->socket_fd;
+		pfd.events = POLLIN;
+		pfd.revents = 0;
 
-		if(length >= 0)
-			udp_receive_buffer.resize(length);
+		rv = poll(&pfd, 1, -1);
+
+		if(rv < 0)
+		{
+			log_errno("udp: poll error");
+			continue;
+		}
+
+		if(!(pfd.revents & POLLIN))
+		{
+			log_errno("udp: socket error");
+			util_abort("udp socket error");
+		}
+
+		if(ioctl(this->socket_fd, FIONREAD, &length))
+		{
+			log_errno("udp: ioctl");
+			util_abort("udp ioctl error");
+		}
+
+		udp_receive_buffer.resize(length);
+
+		length = ::recvfrom(this->socket_fd, udp_receive_buffer.data(), udp_receive_buffer.size(), 0, reinterpret_cast<sockaddr *>(&si6_addr), &si6_addr_length);
+
+		if(length < 0)
+		{
+			this->receive_errors++;
+			util_sleep(100);
+			continue;
+		}
 
 		if(length == 0)
 		{
@@ -106,12 +137,7 @@ void UDP::run()
 			continue;
 		}
 
-		if(length < 0)
-		{
-			this->receive_errors++;
-			util_sleep(100);
-			continue;
-		}
+		udp_receive_buffer.resize(length);
 
 		this->receive_bytes += length;
 
