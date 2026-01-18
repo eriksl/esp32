@@ -238,7 +238,7 @@ static bool get_value_as_string(std::string name_space, const std::string &key, 
 			uint8_t raw_value;
 			type = "uint8";
 			util_abort_on_esp_err("nvs_get_u8", nvs_get_u8(handle, info->key, &raw_value));
-			dst = (boost::format("%u (%#02x)") % raw_value % raw_value).str();
+			dst = (boost::format("%u (0x%02x)") % static_cast<unsigned int>(raw_value) % static_cast<unsigned int>(raw_value)).str();
 			break;
 		}
 		case(NVS_TYPE_I8):
@@ -246,7 +246,7 @@ static bool get_value_as_string(std::string name_space, const std::string &key, 
 			int8_t raw_value;
 			type = "int8";
 			util_abort_on_esp_err("nvs_get_i8", nvs_get_i8(handle, info->key, &raw_value));
-			dst = (boost::format("%d (%#02x)") % raw_value % raw_value).str();
+			dst = (boost::format("%d (0x%02x)") % static_cast<int>(raw_value) % static_cast<int>(raw_value)).str();
 			break;
 		}
 		case(NVS_TYPE_U16):
@@ -254,7 +254,7 @@ static bool get_value_as_string(std::string name_space, const std::string &key, 
 			uint16_t raw_value;
 			type = "uint16";
 			util_abort_on_esp_err("nvs_get_u16", nvs_get_u16(handle, info->key, &raw_value));
-			dst = (boost::format("%u (%#04x)") % raw_value % raw_value).str();
+			dst = (boost::format("%u (0x%04x)") % raw_value % raw_value).str();
 			break;
 		}
 		case(NVS_TYPE_I16):
@@ -262,7 +262,7 @@ static bool get_value_as_string(std::string name_space, const std::string &key, 
 			int16_t raw_value;
 			type = "int16";
 			util_abort_on_esp_err("nvs_get_i16", nvs_get_i16(handle, info->key, &raw_value));
-			dst = (boost::format("%d (%#04x)") % raw_value % raw_value).str();
+			dst = (boost::format("%d (0x%04x)") % raw_value % raw_value).str();
 			break;
 		}
 		case(NVS_TYPE_U32):
@@ -270,7 +270,7 @@ static bool get_value_as_string(std::string name_space, const std::string &key, 
 			uint32_t raw_value;
 			type = "uint32";
 			util_abort_on_esp_err("nvs_get_u32", nvs_get_u32(handle, info->key, &raw_value));
-			dst = (boost::format("%lu (%#08lx)") % raw_value % raw_value).str();
+			dst = (boost::format("%lu (0x%08lx)") % raw_value % raw_value).str();
 			break;
 		}
 		case(NVS_TYPE_I32):
@@ -278,7 +278,7 @@ static bool get_value_as_string(std::string name_space, const std::string &key, 
 			int32_t raw_value;
 			type = "int32";
 			util_abort_on_esp_err("nvs_get_i32", nvs_get_i32(handle, info->key, &raw_value));
-			dst = (boost::format("%ld (%#08x)") % raw_value % raw_value).str();
+			dst = (boost::format("%ld (0x%08x)") % raw_value % raw_value).str();
 			break;
 		}
 		case(NVS_TYPE_U64):
@@ -286,7 +286,7 @@ static bool get_value_as_string(std::string name_space, const std::string &key, 
 			uint64_t raw_value;
 			type = "uint64";
 			util_abort_on_esp_err("nvs_get_u64", nvs_get_u64(handle, info->key, &raw_value));
-			dst = (boost::format("%llu (%#016llx)") % raw_value % raw_value).str();
+			dst = (boost::format("%llu (0x%016llx)") % raw_value % raw_value).str();
 			break;
 		}
 		case(NVS_TYPE_I64):
@@ -294,7 +294,7 @@ static bool get_value_as_string(std::string name_space, const std::string &key, 
 			int64_t raw_value;
 			type = "int64";
 			util_abort_on_esp_err("nvs_get_i64", nvs_get_i64(handle, info->key, &raw_value));
-			dst = (boost::format("%lld (%#016llx)") % raw_value % raw_value).str();
+			dst = (boost::format("%lld (0x%016llx)") % raw_value % raw_value).str();
 			break;
 		}
 		case(NVS_TYPE_STR):
@@ -558,9 +558,9 @@ static void config_dump(cli_command_call_t *call, const char *name_space)
 			dst = "<not found>";
 
 		if(name_space)
-			call->result = (boost::format("\n- %-7s %-20s %s") % type % key % dst).str();
+			call->result += (boost::format("\n- %-7s %-20s %s") % type % key % dst).str();
 		else
-			call->result = (boost::format("\n- %-12s %-7s %-20s %s") % info.namespace_name % type % key % dst).str();
+			call->result += (boost::format("\n- %-12s %-7s %-20s %s") % info.namespace_name % type % key % dst).str();
 
 		if((rv = nvs_entry_next(&iterator)) == ESP_ERR_NVS_NOT_FOUND)
 			break;
