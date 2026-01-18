@@ -99,7 +99,8 @@ void info_command_info_board(cli_command_call_t *call)
 
 	call->result = (boost::format("firmware date: %s %s, ") % __DATE__ % __TIME__).str();
 	call->result += (boost::format("transport mtu: %u, ") % call->mtu).str();
-    call->result += (boost::format("display area: %ux%u\n") % display_image_x_size() % display_image_y_size()).str();
+    call->result += (boost::format("display area: %ux%u, ") % display_image_x_size() % display_image_y_size()).str();
+	call->result += "fs-api-v2\n";
 }
 
 void info_command_info_partitions(cli_command_call_t *call)
