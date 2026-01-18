@@ -94,6 +94,13 @@ static void write_console(const std::string &data)
 	}
 }
 
+static void write_console(const char *data)
+{
+	std::string str = data;
+
+	write_console(str);
+}
+
 static void write_console(char data)
 {
 	std::string str;
@@ -386,7 +393,7 @@ void console_send(const command_response_t *command_response)
 		return;
 
 	if(inited_1)
-		write_console(command_response->packet.data());
+		write_console(command_response->packet);
 
 	if(inited_2)
 		prompt();
