@@ -23,7 +23,7 @@ class TCP
 
 		enum
 		{
-			mtu = 1200, // emperically determined
+			mtu = 16 * 1024, // emperically determined
 		};
 
 		int socket_fd = -1;
@@ -110,10 +110,11 @@ void TCP::run()
 		}
 
 		receive_accepts++;
-		tcp_receive_buffer.clear();
 
 		for(;;)
 		{
+			tcp_receive_buffer.clear();
+
 			pfd.fd = this->socket_fd;
 			pfd.events = POLLIN;
 			pfd.revents = 0;
@@ -142,9 +143,9 @@ void TCP::run()
 
 			length = ::recv(this->socket_fd, tcp_receive_buffer.data(), tcp_receive_buffer.size(), 0);
 
-			if(length <= 0)
+			if(length < 0)
 			{
-				log_format("tcp receive error: %d", length);
+				log_format_errno("tcp: receive error: %d", length);
 				receive_errors++;
 				break;
 			}
@@ -164,8 +165,63 @@ void TCP::run()
 
 			if(!packet_complete(tcp_receive_buffer))
 			{
-				receive_incomplete_packets++;
-				continue;
+				unsigned int offset, pending;
+
+				offset = length;
+				pending = packet_length(tcp_receive_buffer) - offset;
+				tcp_receive_buffer.resize(packet_length(tcp_receive_buffer));
+
+				while(pending > 0)
+				{
+					pfd.fd = this->socket_fd;
+					pfd.events = POLLIN;
+					pfd.revents = 0;
+
+					rv = poll(&pfd, 1, 1000);
+
+					if(rv < 0)
+					{
+						log_errno("tcp: poll error (2)");
+						break;
+					}
+
+					if(rv == 0)
+					{
+						log("tcp: timeout");
+						break;
+					}
+
+					if(!(pfd.revents & POLLIN))
+					{
+						log_errno("tcp: socket error (2)");
+						util_abort("tcp socket error (2)");
+					}
+
+					length = ::recv(this->socket_fd, tcp_receive_buffer.data() + offset, pending, 0);
+
+					if(length == 0)
+						break;
+
+					if(length < 0)
+					{
+						log_format_errno("tcp: receive error (2): %d", length);
+						receive_errors++;
+						break;
+					}
+
+					pending -= length;
+					offset += length;
+				}
+
+				if(!packet_complete(tcp_receive_buffer))
+				{
+					log("tcp: packet incomplete");
+					receive_incomplete_packets++;
+					continue;
+				}
+
+				length = packet_length(tcp_receive_buffer);
+				tcp_receive_buffer.resize(length);
 			}
 
 			command_response_t *command_response = new command_response_t;

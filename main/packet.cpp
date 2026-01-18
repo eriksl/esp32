@@ -26,11 +26,16 @@ bool packet_valid(const std::string &data)
 			(packet_header->id == packet_header_id));
 }
 
-bool packet_complete(const std::string &data)
+unsigned int packet_length(const std::string &data)
 {
 	const packet_header_t *packet_header = reinterpret_cast<const packet_header_t *>(data.data());
 
-    return(data.length() >= (packet_header->header_length + packet_header->payload_length + packet_header->oob_length));
+    return(packet_header->header_length + packet_header->payload_length + packet_header->oob_length);
+}
+
+bool packet_complete(const std::string &data)
+{
+    return(data.length() >= packet_length(data));
 }
 
 void packet_encapsulate(command_response_t *dst, const std::string &data, const std::string &oob_data)
@@ -81,7 +86,7 @@ void packet_encapsulate(command_response_t *dst, const std::string &data, const 
 		dst->packet = data;
 
 		if(!dst->packet.empty() && (dst->packet.back() != '\n'))
-			dst->packet.append(1, '\n');
+			dst->packet.append("\n");
 
 		if(oob_data.length() > 0)
 		{
