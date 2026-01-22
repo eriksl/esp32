@@ -1,7 +1,5 @@
 #pragma once
 
-#pragma once
-
 enum
 {
 	string_header_length = 20,
