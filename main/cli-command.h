@@ -49,6 +49,7 @@ typedef struct
 typedef void(cli_command_function_t)(cli_command_call_t *);
 
 void bluetooth_command_info(cli_command_call_t *call);
+void bluetooth_command_key(cli_command_call_t *call);
 
 void config_command_info(cli_command_call_t *call);
 void config_command_dump(cli_command_call_t *call);

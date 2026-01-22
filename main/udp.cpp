@@ -141,13 +141,13 @@ void UDP::run()
 
 		this->receive_bytes += length;
 
-		if(!packet_valid(udp_receive_buffer))
+		if(!Packet::valid(udp_receive_buffer))
 		{
 			this->receive_invalid_packets++;
 			continue;
 		}
 
-		if(!packet_complete(udp_receive_buffer))
+		if(!Packet::complete(udp_receive_buffer))
 		{
 			this->receive_incomplete_packets++;
 			continue;

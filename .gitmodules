@@ -1,0 +1,3 @@
+[submodule "main/esp32-common"]
+	path = main/esp32-common
+	url = git@github.com:eriksl/esp32-common.git

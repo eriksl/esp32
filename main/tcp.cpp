@@ -157,19 +157,19 @@ void TCP::run()
 
 			receive_bytes += length;
 
-			if(!packet_valid(tcp_receive_buffer))
+			if(!Packet::valid(tcp_receive_buffer))
 			{
 				receive_invalid_packets++;
 				continue;
 			}
 
-			if(!packet_complete(tcp_receive_buffer))
+			if(!Packet::complete(tcp_receive_buffer))
 			{
 				unsigned int offset, pending;
 
 				offset = length;
-				pending = packet_length(tcp_receive_buffer) - offset;
-				tcp_receive_buffer.resize(packet_length(tcp_receive_buffer));
+				pending = Packet::length(tcp_receive_buffer) - offset;
+				tcp_receive_buffer.resize(Packet::length(tcp_receive_buffer));
 
 				while(pending > 0)
 				{
@@ -213,14 +213,14 @@ void TCP::run()
 					offset += length;
 				}
 
-				if(!packet_complete(tcp_receive_buffer))
+				if(!Packet::complete(tcp_receive_buffer))
 				{
 					log("tcp: packet incomplete");
 					receive_incomplete_packets++;
 					continue;
 				}
 
-				length = packet_length(tcp_receive_buffer);
+				length = Packet::length(tcp_receive_buffer);
 				tcp_receive_buffer.resize(length);
 			}
 

@@ -227,6 +227,15 @@ static const cli_command_t cli_commands[] =
 	},
 
 	{ "bt-info", "bi", "show information about bluetooth", bluetooth_command_info, {}},
+
+	{ "bt-key", "bk", "show or set bluetooth encryption key", bluetooth_command_key,
+		{	1,
+			{
+				{ cli_parameter_string, 0, 0, 0, 0, "key", {}},
+			},
+		}
+	},
+
 	{ "config-dump", "cd", "dump all nvs keys", config_command_dump, {}},
 
 	{ "config-erase", "ce", "erase a config entry", config_command_erase,
@@ -709,7 +718,7 @@ static void run_receive_queue(void *)
 	for(;;)
 	{
 		command_response = receive_queue_pop();
-		packet_decapsulate(command_response, data, oob_data);
+		Packet::decapsulate(command_response->packetised, command_response->packet, data, oob_data);
 
 		if(command_response->packetised)
 			cli_stats_commands_received_packet++;
@@ -942,8 +951,7 @@ static void run_receive_queue(void *)
 			call.result_oob.clear();
 		}
 
-		command_response->packet.clear();
-		packet_encapsulate(command_response, call.result, call.result_oob);
+		command_response->packet = Packet::encapsulate(command_response->packetised, call.result, call.result_oob);
 		send_queue_push(command_response);
 
 		for(ix = 0; ix < call.parameter_count; ix++)

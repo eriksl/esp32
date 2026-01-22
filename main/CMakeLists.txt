@@ -8,6 +8,8 @@ idf_component_register(
 		"display.cpp"
 		"display-spi-generic.cpp"
 		"display-ra8875.cpp"
+		"esp32-common/encryption.cpp"
+		"esp32-common/exception.cpp"
 		"fs.cpp"
         "i2c.cpp"
 		"info.cpp"
@@ -19,7 +21,7 @@ idf_component_register(
 		"mcpwm.cpp"
 		"notify.cpp"
 		"ota.cpp"
-		"packet.cpp"
+		"esp32-common/packet.cpp"
 		"perftest.cpp"
 		"pdm.cpp"
 		"process.cpp"
@@ -33,6 +35,8 @@ idf_component_register(
 		"wlan.cpp"
 	INCLUDE_DIRS
 		"")
+
+include_directories(esp32-common)
 
 #		-Wtrailing-whitespace=any
 #		-Wleading-whitespace=tabs

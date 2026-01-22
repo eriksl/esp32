@@ -11,7 +11,8 @@
 #include "packet.h"
 #include "config.h"
 #include "cli-command.h"
-#include "packet_header.h"
+#include "encryption.h"
+#include "exception.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -28,6 +29,7 @@
 #include "bt.h"
 
 #include <string>
+#include <exception>
 #include <boost/format.hpp>
 
 extern "C" void ble_store_config_init(void);
@@ -36,38 +38,35 @@ enum
 {
 	service_handle = 0xabf0,
 	characteristics_handle = 0xabf1,
-	key_handle = 0xabf2,
-	bt_mtu = 500,
+	bt_mtu = 484,
 };
 
 static int gap_event(struct ble_gap_event *event, void *arg);
 static int gatt_value_event(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *context, void *arg);
-static int gatt_key_event(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *context, void *arg);
 static void bt_received(unsigned int connection_handle, unsigned int attribute_handle, const struct os_mbuf *mbuf);
 
+static std::string hostname;
+static std::string encryption_key;
+
 static uint8_t bt_host_address[6] = {0};
-static uint8_t key[12];
 static uint16_t value_attribute_handle;
-static uint16_t key_attribute_handle;
 static uint8_t own_addr_type;
-static bool inited = false;
-static bool authorised = false;
-
-static unsigned int stats_authentication_attempts;
-static unsigned int stats_unauthorised_access;
-static unsigned int stats_authorised_access;
-
-static unsigned int stats_indication_error;
-static unsigned int stats_indication_timeout;
 
 static unsigned int stats_sent_bytes;
 static unsigned int stats_sent_packets;
+static unsigned int stats_sent_encryption_failed;
 
 static unsigned int stats_received_bytes;
 static unsigned int stats_received_packets;
 static unsigned int stats_received_null_packets;
+static unsigned int stats_received_decryption_failed;
 static unsigned int stats_received_invalid_packets;
 static unsigned int stats_received_incomplete_packets;
+
+static unsigned int stats_indication_error;
+static unsigned int stats_indication_timeout;
+
+static bool inited = false;
 
 static void nimble_port_task(void *param)
 {
@@ -85,13 +84,7 @@ static int gatt_value_event(uint16_t connection_handle, uint16_t attribute_handl
 	{
 		case(BLE_GATT_ACCESS_OP_WRITE_CHR):
 		{
-			if(!authorised)
-				stats_unauthorised_access++;
-			else
-			{
-				stats_authorised_access++;
-				bt_received(connection_handle, attribute_handle, context->om);
-			}
+			bt_received(connection_handle, attribute_handle, context->om);
 			break;
 		}
 
@@ -105,62 +98,11 @@ static int gatt_value_event(uint16_t connection_handle, uint16_t attribute_handl
 	return(0);
 }
 
-static int gatt_key_event(uint16_t connection_handle, uint16_t attribute_handle, struct ble_gatt_access_ctxt *context, void *arg)
-{
-	assert(inited);
-	authorised = false;
-
-	switch (context->op)
-	{
-		case(BLE_GATT_ACCESS_OP_WRITE_CHR):
-		{
-			string_auto(input_string, 16);
-			string_auto(output_string, 16);
-			unsigned int length;
-
-			stats_authentication_attempts++;
-
-			length = string_assign_mbuf(input_string, context->om);
-
-			if(length != 16)
-				break;
-
-			decrypt_aes_256(output_string, input_string);
-
-			if(string_length(output_string) != 16)
-				break;
-
-			if((string_at(output_string, 12) != 0x04) ||
-					(string_at(output_string, 13) != 0x04) ||
-					(string_at(output_string, 14) != 0x04) ||
-					(string_at(output_string, 15) != 0x04))
-				break;
-
-			string_truncate(output_string, sizeof(key));
-
-			if(!string_equal_data(output_string, sizeof(key), key))
-				break;
-
-			authorised = true;
-
-			break;
-		}
-
-		default:
-		{
-			log_format("bt: gatt_key_event: default callback: 0x%x", context->op);
-			break;
-		}
-	}
-
-	return(0);
-}
-
 static int gatt_init(void)
 {
 	static constexpr ble_uuid_t uuid16 = { .type = BLE_UUID_TYPE_16, };
 	static struct ble_gatt_svc_def gatt_svc_definitions[2];
-	static struct ble_gatt_chr_def gatt_chr_definitions[3];
+	static struct ble_gatt_chr_def gatt_chr_definitions[2];
 	ble_gatt_svc_def *gatt_svc_definition;
 	ble_gatt_chr_def *gatt_chr_definition;
 	int rc = 0;
@@ -175,12 +117,6 @@ static int gatt_init(void)
 	{
 		.u = uuid16,
 		.value = characteristics_handle,
-	};
-
-	static const ble_uuid16_t uuid_key_handle =
-	{
-		.u = uuid16,
-		.value = key_handle,
 	};
 
 	ble_svc_gap_init();
@@ -205,12 +141,6 @@ static int gatt_init(void)
 	gatt_chr_definition->flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY,
 
 	gatt_chr_definition = &gatt_chr_definitions[1];
-	gatt_chr_definition->uuid = reinterpret_cast<const ble_uuid_t *>(&uuid_key_handle);
-	gatt_chr_definition->access_cb = gatt_key_event,
-	gatt_chr_definition->val_handle = &key_attribute_handle,
-	gatt_chr_definition->flags = BLE_GATT_CHR_F_WRITE;
-
-	gatt_chr_definition = &gatt_chr_definitions[2];
 	gatt_chr_definition->uuid = nullptr;
 	gatt_chr_definition->access_cb = nullptr;
 	gatt_chr_definition->val_handle = nullptr;
@@ -267,26 +197,9 @@ static void callback_reset(int reason)
 
 static void callback_sync(void)
 {
-	uint8_t *keyptr;
-
 	util_abort_on_esp_err("bt: ble_hs_util_ensure_addr", ble_hs_util_ensure_addr(0));
 	util_abort_on_esp_err("bt: ble_hs_id_infer_auto", ble_hs_id_infer_auto(0, &own_addr_type));
 	util_abort_on_esp_err("bt: ble_hId_copy_addr", ble_hs_id_copy_addr(own_addr_type, bt_host_address, NULL));
-
-	keyptr = key;
-
-	*(keyptr++) = bt_host_address[0] ^ 0x55;
-	*(keyptr++) = bt_host_address[1] ^ 0x55;
-	*(keyptr++) = bt_host_address[2] ^ 0x55;
-	*(keyptr++) = bt_host_address[3] ^ 0x55;
-	*(keyptr++) = bt_host_address[4] ^ 0x55;
-	*(keyptr++) = bt_host_address[5] ^ 0x55;
-	*(keyptr++) = bt_host_address[5] ^ 0xaa;
-	*(keyptr++) = bt_host_address[4] ^ 0xaa;
-	*(keyptr++) = bt_host_address[3] ^ 0xaa;
-	*(keyptr++) = bt_host_address[2] ^ 0xaa;
-	*(keyptr++) = bt_host_address[1] ^ 0xaa;
-	*(keyptr++) = bt_host_address[0] ^ 0xaa;
 
 	server_advertise();
 }
@@ -299,10 +212,6 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 	{
 		case(BLE_GAP_EVENT_CONNECT):
 		{
-			//log("bt: gap event connect");
-
-			authorised = false;
-
 			if(event->connect.status != 0)
 				server_advertise();
 
@@ -311,9 +220,6 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
 		case(BLE_GAP_EVENT_DISCONNECT):
 		{
-			// log("bt: gap event disconnect");
-
-			authorised = false;
 			server_advertise();
 
 			break;
@@ -454,7 +360,7 @@ static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *context, void *a
 static void bt_received(unsigned int connection_handle, unsigned int attribute_handle, const struct os_mbuf *mbuf)
 {
 	unsigned int length;
-	std::string receive_buffer;
+	std::string receive_buffer, decrypt_buffer;
 	uint16_t om_length;
 
 	assert(inited);
@@ -476,15 +382,28 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 		return;
 	}
 
-	stats_received_bytes += length;
+	try
+	{
+		decrypt_buffer = Encryption::aes256_decrypt(Encryption::password_to_aes256_key(encryption_key), receive_buffer);
+	}
+	catch(const hard_exception &e)
+	{
+		log_format("bt_received: %s", e.what());
+		stats_received_decryption_failed++;
+		return;
+	}
 
-	if(!packet_valid(receive_buffer))
+	receive_buffer.clear();
+
+	stats_received_bytes += decrypt_buffer.size();
+
+	if(!Packet::valid(decrypt_buffer))
 	{
 		stats_received_invalid_packets++;
 		return;
 	}
 
-	if(!packet_complete(receive_buffer))
+	if(!Packet::complete(decrypt_buffer))
 	{
 		stats_received_incomplete_packets++;
 		return;
@@ -495,7 +414,7 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 	command_response->source = cli_source_bt;
 	command_response->packetised = 1;
 	command_response->mtu = bt_mtu;
-	command_response->packet = receive_buffer;
+	command_response->packet = decrypt_buffer;
 	command_response->bt.connection_handle = connection_handle;
 	command_response->bt.attribute_handle = attribute_handle;
 
@@ -507,13 +426,25 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 void net_bt_send(const command_response_t *command_response)
 {
 	struct os_mbuf *txom;
+	std::string encrypt_buffer;
 	int attempt, rv;
 
 	assert(inited);
 
+	try
+	{
+		encrypt_buffer = Encryption::aes256_encrypt(Encryption::password_to_aes256_key(encryption_key), command_response->packet);
+	}
+	catch(const hard_exception &e)
+	{
+		log_format("bt_send: %s", e.what());
+		stats_sent_encryption_failed++;
+		return;
+	}
+
 	for(attempt = 16; attempt > 0; attempt--)
 	{
-		txom = ble_hs_mbuf_from_flat(command_response->packet.data(), command_response->packet.size());
+		txom = ble_hs_mbuf_from_flat(encrypt_buffer.data(), encrypt_buffer.size());
 		assert(txom);
 
 		rv = ble_gatts_indicate_custom(command_response->bt.connection_handle, command_response->bt.attribute_handle, txom);
@@ -547,12 +478,13 @@ void net_bt_send(const command_response_t *command_response)
 
 void bt_init(void)
 {
-	std::string hostname;
-
 	assert(!inited);
 
 	if(!config_get_string("hostname", hostname))
 		hostname = "esp32";
+
+	if(!config_get_string("bt.key", encryption_key))
+		encryption_key = "default";
 
 	util_warn_on_esp_err("nimble_port_init", nimble_port_init());
 
@@ -586,20 +518,47 @@ void bluetooth_command_info(cli_command_call_t *call)
 	call->result = "bluetooth information";
 
 	call->result += (boost::format("\n  address: %s") % string_cstr(string_addr)).str();
-	call->result += (boost::format("\n  authorised: %s") % (authorised ? "yes" : "no")).str();
-	call->result += (boost::format("\n  authentication attempts: %u") % stats_authentication_attempts).str();
-	call->result += (boost::format("\n  authorised access: %u") % stats_authorised_access).str();
-	call->result += (boost::format("\n  unauthorised access: %u") % stats_unauthorised_access).str();
 	call->result += "\n  data sent:";
 	call->result += (boost::format("\n  - packets: %u") % stats_sent_packets).str();
 	call->result += (boost::format("\n  - bytes: %u") % stats_sent_bytes).str();
+	call->result += (boost::format("\n  - encryption failed: %u") % stats_sent_encryption_failed).str();
 	call->result += "\n  data received:";
 	call->result += (boost::format("\n  - bytes: %u") % stats_received_bytes).str();
 	call->result += (boost::format("\n  - packets: %u") % stats_received_packets).str();
+	call->result += (boost::format("\n  - decryption failed: %u") % stats_received_decryption_failed).str();
 	call->result += (boost::format("\n  - null packets: %u") % stats_received_null_packets).str();
 	call->result += (boost::format("\n  - invalid packets: %u") % stats_received_invalid_packets).str();
 	call->result += (boost::format("\n  - incomplete packets: %u") % stats_received_incomplete_packets).str();
 	call->result += "\n  indications:";
 	call->result += (boost::format("\n  - errors: %u") % stats_indication_error).str();
 	call->result += (boost::format("\n  - timeouts: %u") % stats_indication_timeout).str();
+}
+
+void bluetooth_command_key(cli_command_call_t *call)
+{
+	std::string key;
+
+	switch(call->parameter_count)
+	{
+		case(1):
+		{
+			config_set_string("bt.key", call->parameters[0].str);
+			encryption_key = call->parameters[0].str;
+			[[fallthrough]];
+		}
+		case(0):
+		{
+			if(!config_get_string("bt.key", key))
+				key = encryption_key;
+
+			call->result = (boost::format("bluetooth key: %s") % key).str();
+
+			break;
+		}
+		default:
+		{
+			util_abort("bluetooth_command_key: invalid parameter count");
+			break;
+		}
+	}
 }
