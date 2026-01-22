@@ -208,7 +208,6 @@ static bool get_value_as_integer(const std::string &name_space, const std::strin
 
 static bool get_value_as_string(std::string name_space, const std::string &key, const nvs_entry_info_t *their_info, std::string &type, std::string &dst)
 {
-	esp_err_t rv;
 	nvs_entry_info_t our_info;
 	const nvs_entry_info_t *info;
 	nvs_handle_t handle;
@@ -297,22 +296,35 @@ static bool get_value_as_string(std::string name_space, const std::string &key, 
 			dst = (boost::format("%lld (0x%016llx)") % raw_value % raw_value).str();
 			break;
 		}
+
 		case(NVS_TYPE_STR):
 		{
-			char raw_value[32];
-			unsigned length;
+			std::string raw_value;
+			size_t length;
 
 			type = "string";
 
-			length = sizeof(raw_value);
-			rv = nvs_get_str(handle, info->key, raw_value, &length);
+			if(nvs_get_str(handle, info->key, nullptr, &length) != ESP_OK)
+			{
+				dst = "<error>";
+				break;
+			}
 
-			if(rv == ESP_ERR_NVS_INVALID_LENGTH)
-				length = 0;
-			else
-				util_abort_on_esp_err("nvs_get_str", rv);
+			if(length < 1)
+			{
+				dst = "<failure 1>";
+				break;
+			}
 
-			dst.assign(raw_value, length);
+			raw_value.resize(length);
+
+			if(nvs_get_str(handle, info->key, raw_value.data(), &length) != ESP_OK)
+			{
+				dst = "<failure 2>";
+				break;
+			}
+
+			dst = raw_value.substr(0, length - 1);
 
 			break;
 		}
@@ -556,6 +568,9 @@ static void config_dump(cli_command_call_t *call, const char *name_space)
 
 		if(!get_value_as_string(info.namespace_name, key, &info, type, dst))
 			dst = "<not found>";
+
+		if(type == "string")
+			dst = (boost::format("\"%s\" [%u/%u]") % dst % dst.length() % dst.size()).str();
 
 		if(name_space)
 			call->result += (boost::format("\n- %-7s %-20s %s") % type % key % dst).str();
