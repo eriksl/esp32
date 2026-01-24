@@ -8,7 +8,7 @@
 #include <esp_err.h>
 
 #include <string>
-#include <boost/format.hpp> // FIXME use std::formatter
+#include <format>
 
 static Command *singleton = nullptr;
 
@@ -20,10 +20,9 @@ Command::Command()
 	singleton = &*this;
 }
 
-std::string Command::make_exception_text(esp_err_t err, std::string_view fn, std::string_view message1, std::string_view message2)
+std::string Command::make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2)
 {
-	return((boost::format("Config::%s: %s%s, error: %u \"%s\"") %
-			fn % message1 % message2 % err % esp_err_to_name(err)).str());
+	return(std::format("{}: {}{}", fn, message1, message2));
 }
 
 
@@ -36,11 +35,11 @@ void Command::config_info(cli_command_call_t *call)
 
 	call->result = "CONFIG INFO";
 	call->result += "\nentries:";
-	call->result += (boost::format("\n- used: %u") % stats.used_entries).str();
-	call->result += (boost::format("\n- free: %u") % stats.free_entries).str();
-	call->result += (boost::format("\n- available: %u") % stats.available_entries).str();
-	call->result += (boost::format("\n- total: %u") % stats.total_entries).str();
-	call->result += (boost::format("\n- namespaces: %u") % stats.namespace_count).str();
+	call->result += std::format("\n- used: {}", stats.used_entries);
+	call->result += std::format("\n- free: {}", stats.free_entries);
+	call->result += std::format("\n- available: {}", stats.available_entries);
+	call->result += std::format("\n- total: {}", stats.total_entries);
+	call->result += std::format("\n- namespaces: {}", stats.namespace_count);
 }
 
 void Command::config_set_int(cli_command_call_t *call)
@@ -55,15 +54,15 @@ void Command::config_set_int(cli_command_call_t *call)
 	{
 		Config::set_int(call->parameters[0].str, call->parameters[1].signed_int);
 		value = Config::get_int(call->parameters[0].str, &type);
-		call->result = (boost::format("%s[%s]=%lld") % call->parameters[0].str % type % value).str();
+		call->result = std::format("{}[{}]={:d}", call->parameters[0].str, type, value);
 	}
 	catch(const e32if_exception &e)
 	{
-		call->result = singleton->make_exception_text(ESP_OK, "config-set-int", "ERROR: ", e.what());
+		call->result = singleton->make_exception_text("config-set-int", "ERROR: ", e.what());
 		return;
 	}
 
-	call->result = (boost::format("%s[%s]=%lld") % call->parameters[0].str % type % value).str();
+	call->result = std::format("{}[{}]={:d}", call->parameters[0].str, type, value);
 }
 
 void Command::config_set_string(cli_command_call_t *call)
@@ -78,15 +77,15 @@ void Command::config_set_string(cli_command_call_t *call)
 	{
 		Config::set_string(call->parameters[0].str, call->parameters[1].str);
 		value = Config::get_string(call->parameters[0].str, &type);
-		call->result = (boost::format("%s[%s]=%s") % call->parameters[0].str % type % value).str();
+		call->result = std::format("{}[{}]={}", call->parameters[0].str, type, value);
 	}
 	catch(const e32if_exception &e)
 	{
-		call->result = singleton->make_exception_text(ESP_OK, "config-set-str", "ERROR: ", e.what());
+		call->result = singleton->make_exception_text("config-set-str", "ERROR: ", e.what());
 		return;
 	}
 
-	call->result = (boost::format("%s[%s]=%s") % call->parameters[0].str % type % value).str();
+	call->result = std::format("{}[{}]={}", call->parameters[0].str, type, value);
 }
 
 void Command::config_erase(cli_command_call_t *call)
@@ -103,11 +102,11 @@ void Command::config_erase(cli_command_call_t *call)
 	}
 	catch(const e32if_exception &e)
 	{
-		call->result = singleton->make_exception_text(ESP_OK, "config-erase", "ERROR: ", e.what());
+		call->result = singleton->make_exception_text("config-erase", "ERROR: ", e.what());
 		return;
 	}
 
-	call->result = (boost::format("erase %s OK") % call->parameters[0].str).str();
+	call->result = std::format("erase {} OK", call->parameters[0].str);
 }
 
 void Command::config_dump(cli_command_call_t *call)

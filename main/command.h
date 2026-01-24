@@ -21,5 +21,5 @@ class Command
 
 	private:
 
-		std::string make_exception_text(esp_err_t err, std::string_view fn, std::string_view message1, std::string_view message2);
+		std::string make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2);
 };
