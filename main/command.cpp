@@ -96,7 +96,10 @@ void Command::config_erase(cli_command_call_t *call)
 
 	try
 	{
-		Config::erase(std::string(call->parameters[0].str));
+		if(call->parameter_count == 2)
+			Config::erase(call->parameters[0].str, call->parameters[1].str);
+		else
+			Config::erase(call->parameters[0].str);
 	}
 	catch(const e32if_exception &e)
 	{

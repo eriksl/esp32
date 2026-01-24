@@ -252,9 +252,10 @@ static const cli_command_t cli_commands[] =
 	{ "config-dump", "cd", "dump all nvs keys", Command::config_dump, {}},
 
 	{ "config-erase", "ce", "erase a config entry", Command::config_erase,
-		{	1,
+		{	2,
 			{
 				{ cli_parameter_string, 0, 1, 0, 0, "key", {}},
+				{ cli_parameter_string, 0, 0, 0, 0, "namespace", {}},
 			},
 		}
 	},
