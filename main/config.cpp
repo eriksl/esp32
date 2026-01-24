@@ -11,7 +11,6 @@
 
 #include <string>
 #include <format>
-#include <boost/format.hpp> // FIXME use std::formatter
 
 static Config *singleton = nullptr;
 
@@ -28,13 +27,13 @@ Config::Config(std::string_view default_name_space_in) :
 	if((rv == ESP_ERR_NVS_NO_FREE_PAGES) || (rv == ESP_ERR_NVS_NEW_VERSION_FOUND))
 	{
 		if((rv = nvs_flash_erase()) != ESP_OK)
-			throw(hard_exception(boost::format("Config::Config: nvs_flash_erase failed: %d (%s)") % rv % esp_err_to_name(rv)));
+			throw(hard_exception(std::format("Config::Config: nvs_flash_erase failed: {} ({})", rv, esp_err_to_name(rv))));
 
 		rv = nvs_flash_init();
 	}
 
 	if(rv != ESP_OK)
-		throw(hard_exception(boost::format("Config::Config: nvs_flash_init failed: %d (%s)") % rv % esp_err_to_name(rv)));
+		throw(hard_exception(std::format("Config::Config: nvs_flash_init failed: {} ({})", rv, esp_err_to_name(rv))));
 
 	singleton = &*this;
 }
@@ -45,8 +44,8 @@ std::string Config::make_exception_text(esp_err_t err,
 		std::string_view fn, std::string_view message1, std::string_view message2,
 		std::string_view key, std::string_view name_space)
 {
-	return((boost::format("Config::%s: %s%s, key: %s, namespace: %s, error: %u \"%s\"") %
-			fn % message1 % message2 % key % name_space % err % esp_err_to_name(err)).str());
+	return(std::format("Config::{}: {}{}, key: {}, namespace: {}, error: {:#x} \"{}\"",
+			fn, message1, message2, key, name_space, err, esp_err_to_name(err)));
 }
 
 void Config::set_value_(std::string_view key_in, std::string_view name_space_in, int64_t *int_value, const std::string *string_value)
@@ -99,10 +98,10 @@ void Config::get_value_(std::string_view key, std::string_view name_space,
 	nvs_iterator_t nvs_iterator = nullptr;
 	nvs_handle_t local_nvs_handle;
 	esp_err_t rv = ESP_OK;
-	std::string_view type = "none";
-	int64_t int_value = 0;
+	int64_t int_value;
 	std::string string_value;
 	std::string formatted_value;
+	std::string type;
 	const char *name_space_ptr;
 	std::string name_space_name;
 
@@ -164,94 +163,103 @@ void Config::get_value_(std::string_view key, std::string_view name_space,
 		if((rv = nvs_open(name_space_ptr, NVS_READONLY, &local_nvs_handle)) != ESP_OK)
 			throw(hard_exception("nvs_open"));
 
+		type = "none";
+		int_value = 0;
+		string_value = "";
+
 		switch(info->type)
 		{
 			case(NVS_TYPE_U8):
 			{
 				uint8_t raw_value;
+
 				if((rv = nvs_get_u8(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
 					throw(transient_exception("nvs_get_u8"));
+
 				type = "uint8";
 				int_value = raw_value;
-				string_value = std::to_string(raw_value);
-				formatted_value = (boost::format("%u (0x%02x)") % static_cast<unsigned int>(raw_value) % static_cast<unsigned int>(raw_value)).str();
+
 				break;
 			}
 			case(NVS_TYPE_I8):
 			{
 				int8_t raw_value;
+
 				if((rv = nvs_get_i8(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
 					throw(transient_exception("nvs_get_i8"));
+
 				type = "int8";
 				int_value = raw_value;
-				string_value = std::to_string(raw_value);
-				formatted_value = (boost::format("%d (0x%02x)") % static_cast<int>(raw_value) % static_cast<int>(raw_value)).str();
+
 				break;
 			}
 			case(NVS_TYPE_U16):
 			{
 				uint16_t raw_value;
+
 				if((rv = nvs_get_u16(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
 					throw(transient_exception("nvs_get_u16"));
+
 				type = "uint16";
 				int_value = raw_value;
-				string_value = std::to_string(raw_value);
-				formatted_value = (boost::format("%u (0x%04x)") % raw_value % raw_value).str();
+
 				break;
 			}
 			case(NVS_TYPE_I16):
 			{
 				int16_t raw_value;
+
 				if((rv = nvs_get_i16(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
 					throw(transient_exception("nvs_get_i16"));
 				type = "int16";
 				int_value = raw_value;
-				string_value = std::to_string(raw_value);
-				formatted_value = (boost::format("%d (0x%04x)") % raw_value % raw_value).str();
+
 				break;
 			}
 			case(NVS_TYPE_U32):
 			{
 				uint32_t raw_value;
+
 				if((rv = nvs_get_u32(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
 					throw(transient_exception("nvs_get_u16"));
 				type = "uint32";
 				int_value = raw_value;
-				string_value = std::to_string(raw_value);
-				formatted_value = (boost::format("%lu (0x%08lx)") % raw_value % raw_value).str();
+
 				break;
 			}
 			case(NVS_TYPE_I32):
 			{
 				int32_t raw_value;
+
 				if((rv = nvs_get_i32(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
 					throw(transient_exception("nvs_get_i32"));
 				type = "int32";
 				int_value = raw_value;
-				string_value = std::to_string(raw_value);
-				formatted_value = (boost::format("%ld (0x%08x)") % raw_value % raw_value).str(); // FIXME fixed length
+
 				break;
 			}
 			case(NVS_TYPE_U64):
 			{
 				uint64_t raw_value;
+
 				if((rv = nvs_get_u64(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
 					throw(transient_exception("nvs_get_u64"));
+
 				type = "uint64";
 				int_value = raw_value;
-				string_value = std::to_string(raw_value);
-				formatted_value = (boost::format("%llu (0x%016llx)") % raw_value % raw_value).str();
+
 				break;
 			}
 			case(NVS_TYPE_I64):
 			{
 				int64_t raw_value;
+
 				if((rv = nvs_get_i64(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
 					throw(transient_exception("nvs_get_i64"));
+
 				type = "int64";
 				int_value = raw_value;
-				string_value = std::to_string(raw_value);
-				formatted_value = (boost::format("%lld (0x%016llx)") % raw_value % raw_value).str();
+
 				break;
 			}
 			case(NVS_TYPE_STR):
@@ -272,8 +280,42 @@ void Config::get_value_(std::string_view key, std::string_view name_space,
 
 				type = "string";
 				string_value = raw_value.substr(0, length - 1);
-				formatted_value = (boost::format("\"%s\" (%u)") % string_value % string_value.length()).str();
 
+				break;
+			}
+			case(NVS_TYPE_BLOB):
+			{
+				type = "blob";
+
+				break;
+			}
+			default:
+			{
+				type = "unknown";
+
+				break;
+			}
+		}
+
+		switch(info->type)
+		{
+			case(NVS_TYPE_U8):
+			case(NVS_TYPE_I8):
+			case(NVS_TYPE_U16):
+			case(NVS_TYPE_I16):
+			case(NVS_TYPE_U32):
+			case(NVS_TYPE_I32):
+			case(NVS_TYPE_U64):
+			case(NVS_TYPE_I64):
+			{
+				string_value = std::to_string(int_value);
+				formatted_value = std::format("{:d} ({:#x})", int_value, int_value);
+
+				break;
+			}
+
+			case(NVS_TYPE_STR):
+			{
 				try
 				{
 					int_value = std::stoll(string_value);
@@ -287,22 +329,22 @@ void Config::get_value_(std::string_view key, std::string_view name_space,
 					int_value = 0;
 				}
 
+				formatted_value = std::format("{} ({:d})", string_value, string_value.length());
+
 				break;
 			}
+
 			case(NVS_TYPE_BLOB):
 			{
-				type = "blob";
-				string_value = "";
 				formatted_value = "<blob>";
-				int_value = 0;
+
 				break;
 			}
+
 			default:
 			{
-				type = "unknown";
-				string_value = "";
 				formatted_value = "<unknown>";
-				int_value = 0;
+
 				break;
 			}
 		}
@@ -331,6 +373,9 @@ void Config::get_value_(std::string_view key, std::string_view name_space,
 
 	nvs_close(local_nvs_handle);
 
+	if(type_in)
+		*type_in = type;
+
 	if(int_value_in)
 		*int_value_in = int_value;
 
@@ -339,9 +384,6 @@ void Config::get_value_(std::string_view key, std::string_view name_space,
 
 	if(formatted_value_in)
 		*formatted_value_in = formatted_value;
-
-	if(type_in)
-		*type_in = type;
 }
 
 void Config::erase_(const std::string &key, std::string_view name_space)
@@ -499,7 +541,7 @@ void Config::dump_(std::string &dst, std::string_view name_space)
 
 	try
 	{
-		dst = (boost::format("SHOW CONFIG namespace %s") % name_space_name).str();
+		dst = std::format("SHOW CONFIG namespace {}", name_space_name);
 
 		if((rv = nvs_entry_find("nvs", name_space_ptr, NVS_TYPE_ANY, &nvs_iterator)) == ESP_ERR_NVS_NOT_FOUND)
 			return;
