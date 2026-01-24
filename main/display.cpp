@@ -995,10 +995,14 @@ static void display_info(std::string &output)
 
 	for(dv = dv_start, found = 0; dv < dv_size; dv = static_cast<dv_t>(dv + 1))
 	{
-		if(config_get_uint(display_variable[dv][1], value))
+		try
 		{
+			value = Config::get_int(display_variable[dv][1]);
 			found++;
 			output += (boost::format("\n- %s: %u") % display_variable[dv][0] % value).str();
+		}
+		catch(const transient_exception &)
+		{
 		}
 	}
 
@@ -1091,7 +1095,7 @@ static bool brightness(unsigned int percentage)
 
 void display_init(void)
 {
-	uint32_t type, value;
+	uint32_t type;
 	unsigned int page, line;
 	display_page_t *page_ptr;
 
@@ -1105,8 +1109,14 @@ void display_init(void)
 		.rotate = -1,
 	};
 
-	if(!config_get_uint(display_variable[dv_type][1], type))
+	try
+	{
+		type = Config::get_int(display_variable[dv_type][1]);
+	}
+	catch(const transient_exception &e)
+	{
 		return;
+	}
 
 	if((type + dt_type_first) >= dt_size)
 	{
@@ -1116,23 +1126,53 @@ void display_init(void)
 
 	display_type = static_cast<display_type_t>(type + dt_type_first);
 
-	if(config_get_uint(display_variable[dv_if][1], value))
-		display_init_parameters.interface_index = (int)value;
+	try
+	{
+		display_init_parameters.interface_index = Config::get_int(display_variable[dv_if][1]);
+	}
+	catch(const transient_exception &)
+	{
+	}
 
-	if(config_get_uint(display_variable[dv_x_size][1], value))
-		display_init_parameters.x_size = x_size = (int)value;
+	try
+	{
+		display_init_parameters.x_size = x_size = Config::get_int(display_variable[dv_x_size][1]);
+	}
+	catch(const transient_exception &)
+	{
+	}
 
-	if(config_get_uint(display_variable[dv_y_size][1], value))
-		display_init_parameters.y_size = y_size = (int)value;
+	try
+	{
+		display_init_parameters.y_size = y_size = Config::get_int(display_variable[dv_y_size][1]);
+	}
+	catch(const transient_exception &)
+	{
+	}
 
-	if(config_get_uint(display_variable[dv_flip][1], value))
-		display_init_parameters.flip = (int)value;
+	try
+	{
+		display_init_parameters.flip = Config::get_int(display_variable[dv_flip][1]);
+	}
+	catch(const transient_exception &)
+	{
+	}
 
-	if(config_get_uint(display_variable[dv_invert][1], value))
-		display_init_parameters.invert = (int)value;
+	try
+	{
+		display_init_parameters.invert = Config::get_int(display_variable[dv_invert][1]);
+	}
+	catch(const transient_exception &)
+	{
+	}
 
-	if(config_get_uint(display_variable[dv_rotate][1], value))
-		display_init_parameters.rotate = (int)value;
+	try
+	{
+		display_init_parameters.rotate = Config::get_int(display_variable[dv_rotate][1]);
+	}
+	catch(const transient_exception &)
+	{
+	}
 
 	assert(info[display_type].init_fn);
 
@@ -1241,17 +1281,17 @@ void command_display_configure(cli_command_call_t *call)
 		return;
 	}
 
-	config_erase_wildcard("display.");
+	Config::erase_wildcard("display.");
 
 	for(ix = dv_start; (ix < dv_size) && (ix < call->parameter_count); ix = static_cast<dv_t>(ix + 1))
-		config_set_uint(display_variable[ix][1], call->parameters[ix].unsigned_int);
+		Config::set_int(display_variable[ix][1], call->parameters[ix].unsigned_int);
 
 	display_info(call->result);
 }
 
 void command_display_erase(cli_command_call_t *call)
 {
-	config_erase_wildcard("display.");
+	Config::erase_wildcard("display.");
 
 	assert(call->parameter_count == 0);
 

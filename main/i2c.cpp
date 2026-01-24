@@ -661,7 +661,6 @@ void i2c_init(void)
 	bus_t *bus_ptr;
 	uint8_t buffer_in[1];
 	uint8_t buffer_out[1];
-	uint32_t config_value;
 
 	assert(!inited);
 
@@ -688,10 +687,14 @@ void i2c_init(void)
 
 		data = &module_data[module];
 
-		if(config_get_uint("i2c.%d.speed", config_value))
-			data->speed_khz = config_value;
-		else
+		try
+		{
+			data->speed_khz = Config::get_int((boost::format("i2c.%u.speed") % module).str());
+		}
+		catch(const transient_exception &)
+		{
 			data->speed_khz = 100;
+		}
 
 		if(info->ulp)
 		{
@@ -1279,7 +1282,7 @@ void command_i2c_speed(cli_command_call_t *call)
 		data = &module_data[module_index];
 		data->speed_khz = config_value = speed;
 
-		config_set_uint("i2c.%d.speed", config_value);
+		Config::set_int((boost::format("i2c.%d.speed") % module_index).str(), config_value);
 
 		data_mutex_give();
 	}

@@ -2,677 +2,623 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "string.h"
 #include "log.h"
 #include "util.h"
-#include "cli-command.h"
 #include "config.h"
 
 #include <freertos/FreeRTOS.h>
 #include <esp_err.h>
-#include <nvs.h>
-#include <nvs_flash.h>
 
 #include <string>
-#include <boost/format.hpp>
+#include <format>
+#include <boost/format.hpp> // FIXME use std::formatter
 
-static bool inited = false;
+static Config *singleton = nullptr;
 
-void config_init(void)
+Config::Config(std::string_view default_name_space_in) :
+		default_name_space(default_name_space_in)
 {
 	esp_err_t rv;
 
-	assert(!inited);
+	if(singleton)
+		throw(hard_exception("Config: already constructed"));
 
 	rv = nvs_flash_init();
 
 	if((rv == ESP_ERR_NVS_NO_FREE_PAGES) || (rv == ESP_ERR_NVS_NEW_VERSION_FOUND))
 	{
-		log("init: erase and reinit flash");
-		util_abort_on_esp_err("nvs_flash_erase", nvs_flash_erase());
-		util_abort_on_esp_err("nvs_flash_init", nvs_flash_init());
-	}
-	else
-		util_abort_on_esp_err("nvs_flash_init", rv);
+		if((rv = nvs_flash_erase()) != ESP_OK)
+			throw(hard_exception(boost::format("Config::Config: nvs_flash_erase failed: %d (%s)") % rv % esp_err_to_name(rv)));
 
-	inited = true;
+		rv = nvs_flash_init();
+	}
+
+	if(rv != ESP_OK)
+		throw(hard_exception(boost::format("Config::Config: nvs_flash_init failed: %d (%s)") % rv % esp_err_to_name(rv)));
+
+	singleton = &*this;
 }
 
-static bool find_key(const std::string &name_space, const std::string &key, nvs_entry_info_t *info)
+// private
+
+std::string Config::make_exception_text(esp_err_t err,
+		std::string_view fn, std::string_view message1, std::string_view message2,
+		std::string_view key, std::string_view name_space)
 {
-	int rv;
-	nvs_iterator_t iterator;
-
-	iterator = nullptr;
-
-	if((rv = nvs_entry_find("nvs", name_space.c_str(), NVS_TYPE_ANY, &iterator)) == ESP_ERR_NVS_NOT_FOUND)
-		return(false);
-
-	util_abort_on_esp_err("nvs_entry_find", rv);
-
-	for(;;)
-	{
-		util_abort_on_esp_err("nvs_entry_info", nvs_entry_info(iterator, info));
-
-		if(key == info->key)
-			break;
-
-		util_abort_on_esp_err("nvs_entry_next", rv);
-		if((rv = nvs_entry_next(&iterator)) == ESP_ERR_NVS_NOT_FOUND)
-			goto error;
-	}
-
-	return(true);
-
-error:
-	nvs_release_iterator(iterator);
-	return(false);
+	return((boost::format("Config::%s: %s%s, key: %s, namespace: %s, error: %u \"%s\"") %
+			fn % message1 % message2 % key % name_space % err % esp_err_to_name(err)).str());
 }
 
-static bool get_value_as_integer(const std::string &name_space, const std::string &key, const nvs_entry_info_t *their_info, std::string &type, int64_t &value)
+void Config::set_value_(std::string_view key_in, std::string_view name_space_in, int64_t *int_value, const std::string *string_value)
 {
-	esp_err_t rv;
-	nvs_entry_info_t info;
-	nvs_handle_t handle;
+	nvs_handle_t local_nvs_handle;
+	esp_err_t rv = ESP_OK;
+	std::string key(key_in);
+	std::string name_space;
 
-	if(their_info)
-		info = *their_info;
-	else
+	name_space = name_space_in == "" ? this->default_name_space : name_space_in;
+
+	try
 	{
-		if(!find_key(name_space.c_str(), key.c_str(), &info) && !find_key("", key.c_str(), &info))
+		if((rv = nvs_open(name_space.c_str(), NVS_READWRITE, &local_nvs_handle)) != ESP_OK)
+			throw(hard_exception("nvs_open"));
+
+		if(int_value)
 		{
-			type = "not found";
-			return(false);
+			if((rv = nvs_set_i64(local_nvs_handle, key.c_str(), *int_value)) != ESP_OK)
+				throw(hard_exception("nvs_set_i64"));
 		}
+		else
+			if(string_value)
+				if((rv = nvs_set_str(local_nvs_handle, key.c_str(), string_value->c_str())) != ESP_OK)
+					throw(hard_exception("nvs_set_str"));
+
+		if((rv = nvs_commit(local_nvs_handle)) != ESP_OK)
+			throw(hard_exception("nvs_commit"));
+	}
+	catch(const transient_exception &e)
+	{
+		nvs_close(local_nvs_handle);
+		throw(transient_exception(this->make_exception_text(rv, "set-value", "error in ", e.what(), key, name_space)));
+	}
+	catch(const hard_exception &e)
+	{
+		nvs_close(local_nvs_handle);
+		throw(hard_exception(this->make_exception_text(rv, "set-value", "error in ", e.what(), key, name_space)));
 	}
 
-	util_abort_on_esp_err("nvs_open", nvs_open(name_space.c_str(), NVS_READONLY, &handle));
-
-	switch(info.type)
-	{
-		case(NVS_TYPE_U8):
-		{
-			uint8_t raw_value;
-			type = "uint8";
-			util_abort_on_esp_err("nvs_get_u8", nvs_get_u8(handle, info.key, &raw_value));
-			value = raw_value;
-			break;
-		}
-		case(NVS_TYPE_I8):
-		{
-			int8_t raw_value;
-			type = "int8";
-			util_abort_on_esp_err("nvs_get_i8", nvs_get_i8(handle, info.key, &raw_value));
-			value = raw_value;
-			break;
-		}
-		case(NVS_TYPE_U16):
-		{
-			uint16_t raw_value;
-			type = "uint16";
-			util_abort_on_esp_err("nvs_get_u16", nvs_get_u16(handle, info.key, &raw_value));
-			value = raw_value;
-			break;
-		}
-		case(NVS_TYPE_I16):
-		{
-			int16_t raw_value;
-			type = "int16";
-			util_abort_on_esp_err("nvs_get_i16", nvs_get_i16(handle, info.key, &raw_value));
-			value = raw_value;
-			break;
-		}
-		case(NVS_TYPE_U32):
-		{
-			uint32_t raw_value;
-			type = "uint32";
-			util_abort_on_esp_err("nvs_get_u32", nvs_get_u32(handle, info.key, &raw_value));
-			value = raw_value;
-			break;
-		}
-		case(NVS_TYPE_I32):
-		{
-			int32_t raw_value;
-			type = "int32";
-			util_abort_on_esp_err("nvs_get_i32", nvs_get_i32(handle, info.key, &raw_value));
-			value = raw_value;
-			break;
-		}
-		case(NVS_TYPE_U64):
-		{
-			uint64_t raw_value;
-			type = "uint64";
-			util_abort_on_esp_err("nvs_get_u64", nvs_get_u64(handle, info.key, &raw_value));
-			value = raw_value;
-			break;
-		}
-		case(NVS_TYPE_I64):
-		{
-			int64_t raw_value;
-			type = "int64";
-			util_abort_on_esp_err("nvs_get_i64", nvs_get_i64(handle, info.key, &raw_value));
-			value = raw_value;
-			break;
-		}
-		case(NVS_TYPE_STR):
-		{
-			char raw_value[32];
-			char *endptr;
-			unsigned length;
-
-			type = "string";
-
-			rv = nvs_get_str(handle, info.key, raw_value, &length);
-
-			if(rv == ESP_ERR_NVS_INVALID_LENGTH)
-				value = 0;
-			else
-			{
-				util_abort_on_esp_err("nvs_get_str", rv);
-				value = strtoll(raw_value, &endptr, 0);
-			}
-
-			break;
-		}
-		case(NVS_TYPE_BLOB):
-		{
-			char raw_value[32];
-			char *endptr;
-			unsigned length;
-
-			type = "blob";
-
-			rv = nvs_get_blob(handle, info.key, raw_value, &length);
-
-			if(rv == ESP_ERR_NVS_INVALID_LENGTH)
-				value = 0;
-			else
-			{
-				util_abort_on_esp_err("nvs_get_blob", rv);
-				value = strtoll(raw_value, &endptr, 0);
-			}
-			break;
-		}
-		default:
-		{
-			type = "unknown";
-			value = 0;
-			break;
-		}
-	}
-
-	nvs_close(handle);
-
-	return(true);
+	nvs_close(local_nvs_handle);
 }
 
-static bool get_value_as_string(std::string name_space, const std::string &key, const nvs_entry_info_t *their_info, std::string &type, std::string &dst)
+void Config::get_value_(std::string_view key, std::string_view name_space,
+		int64_t *int_value_in, std::string *string_value_in, std::string *formatted_value_in, std::string *type_in,
+		const nvs_entry_info_t *their_info)
 {
 	nvs_entry_info_t our_info;
-	const nvs_entry_info_t *info;
-	nvs_handle_t handle;
+	const nvs_entry_info_t *info = nullptr;
+	nvs_iterator_t nvs_iterator = nullptr;
+	nvs_handle_t local_nvs_handle;
+	esp_err_t rv = ESP_OK;
+	std::string_view type = "none";
+	int64_t int_value = 0;
+	std::string string_value;
+	std::string formatted_value;
+	const char *name_space_ptr;
+	std::string name_space_name;
 
-	if(name_space == "")
-		name_space = "config";
-
-	if(their_info)
-		info = their_info;
+	if(name_space == "*")
+	{
+		name_space_name = "ALL";
+		name_space_ptr = nullptr;
+	}
 	else
 	{
-		if(!find_key(name_space, key, &our_info) && !find_key("", key, &our_info))
+		if(name_space == "")
 		{
-			type = "not found";
-			return(false);
+			name_space_name = this->default_name_space;
+			name_space_ptr = this->default_name_space.c_str();
 		}
-
-		info = &our_info;
-	}
-
-	util_abort_on_esp_err("nvs_open", nvs_open(name_space.c_str(), NVS_READONLY, &handle));
-
-	switch(info->type)
-	{
-		case(NVS_TYPE_U8):
-		{
-			uint8_t raw_value;
-			type = "uint8";
-			util_abort_on_esp_err("nvs_get_u8", nvs_get_u8(handle, info->key, &raw_value));
-			dst = (boost::format("%u (0x%02x)") % static_cast<unsigned int>(raw_value) % static_cast<unsigned int>(raw_value)).str();
-			break;
-		}
-		case(NVS_TYPE_I8):
-		{
-			int8_t raw_value;
-			type = "int8";
-			util_abort_on_esp_err("nvs_get_i8", nvs_get_i8(handle, info->key, &raw_value));
-			dst = (boost::format("%d (0x%02x)") % static_cast<int>(raw_value) % static_cast<int>(raw_value)).str();
-			break;
-		}
-		case(NVS_TYPE_U16):
-		{
-			uint16_t raw_value;
-			type = "uint16";
-			util_abort_on_esp_err("nvs_get_u16", nvs_get_u16(handle, info->key, &raw_value));
-			dst = (boost::format("%u (0x%04x)") % raw_value % raw_value).str();
-			break;
-		}
-		case(NVS_TYPE_I16):
-		{
-			int16_t raw_value;
-			type = "int16";
-			util_abort_on_esp_err("nvs_get_i16", nvs_get_i16(handle, info->key, &raw_value));
-			dst = (boost::format("%d (0x%04x)") % raw_value % raw_value).str();
-			break;
-		}
-		case(NVS_TYPE_U32):
-		{
-			uint32_t raw_value;
-			type = "uint32";
-			util_abort_on_esp_err("nvs_get_u32", nvs_get_u32(handle, info->key, &raw_value));
-			dst = (boost::format("%lu (0x%08lx)") % raw_value % raw_value).str();
-			break;
-		}
-		case(NVS_TYPE_I32):
-		{
-			int32_t raw_value;
-			type = "int32";
-			util_abort_on_esp_err("nvs_get_i32", nvs_get_i32(handle, info->key, &raw_value));
-			dst = (boost::format("%ld (0x%08x)") % raw_value % raw_value).str();
-			break;
-		}
-		case(NVS_TYPE_U64):
-		{
-			uint64_t raw_value;
-			type = "uint64";
-			util_abort_on_esp_err("nvs_get_u64", nvs_get_u64(handle, info->key, &raw_value));
-			dst = (boost::format("%llu (0x%016llx)") % raw_value % raw_value).str();
-			break;
-		}
-		case(NVS_TYPE_I64):
-		{
-			int64_t raw_value;
-			type = "int64";
-			util_abort_on_esp_err("nvs_get_i64", nvs_get_i64(handle, info->key, &raw_value));
-			dst = (boost::format("%lld (0x%016llx)") % raw_value % raw_value).str();
-			break;
-		}
-
-		case(NVS_TYPE_STR):
-		{
-			std::string raw_value;
-			size_t length;
-
-			type = "string";
-
-			if(nvs_get_str(handle, info->key, nullptr, &length) != ESP_OK)
-			{
-				dst = "<error>";
-				break;
-			}
-
-			if(length < 1)
-			{
-				dst = "<failure 1>";
-				break;
-			}
-
-			raw_value.resize(length);
-
-			if(nvs_get_str(handle, info->key, raw_value.data(), &length) != ESP_OK)
-			{
-				dst = "<failure 2>";
-				break;
-			}
-
-			dst = raw_value.substr(0, length - 1);
-
-			break;
-		}
-		case(NVS_TYPE_BLOB):
-		{
-			type = "blob";
-			dst = "<blob>";
-
-			break;
-		}
-		default:
-		{
-			type = "unknown";
-			break;
-		}
-	}
-
-	nvs_close(handle);
-
-	return(true);
-}
-
-//
-
-bool config_get_uint(const std::string &key, uint32_t &value)
-{
-	int64_t raw_value;
-	std::string type;
-
-	assert(inited);
-
-	if(!get_value_as_integer("config", key, nullptr, type, raw_value))
-	{
-		value = 0;
-		return(false);
-	}
-
-	value = raw_value;
-	return(true);
-}
-
-bool config_get_uint(string_t key, uint32_t &value)
-{
-	return(config_get_uint(std::string(string_cstr(key)), value));
-}
-
-//
-
-bool config_get_int(const std::string &key, int32_t &value)
-{
-	int64_t raw_value;
-	std::string type;
-
-	assert(inited);
-
-	if(!get_value_as_integer("config", key, nullptr, type, raw_value))
-	{
-		value = 0;
-		return(false);
-	}
-
-	value = raw_value;
-	return(true);
-}
-
-bool config_get_int(const string_t key, int32_t &value)
-{
-	return(config_get_int(std::string(string_cstr(key)), value));
-}
-
-//
-
-bool config_get_string(const std::string &key, std::string &dst)
-{
-	std::string type;
-
-	assert(inited);
-
-	return(get_value_as_string("config", key, nullptr, type, dst));
-}
-
-bool config_get_string(const string_t key, string_t dst)
-{
-	assert(inited);
-	std::string tmp_dst;
-	bool rv;
-
-	if((rv = config_get_string(std::string(string_cstr(key)), tmp_dst)))
-		string_assign_cstr(dst, tmp_dst.c_str());
-
-	return(rv);
-}
-
-//
-
-void config_set_uint(const std::string &key, uint32_t value)
-{
-	nvs_handle_t handle;
-
-	util_abort_on_esp_err("nvs_open", nvs_open("config", NVS_READWRITE, &handle));
-	util_abort_on_esp_err("nvs_set_u32", nvs_set_u32(handle, key.c_str(), value));
-	util_abort_on_esp_err("nvs_commit", nvs_commit(handle));
-	nvs_close(handle);
-}
-
-void config_set_uint(const string_t key, uint32_t value)
-{
-	config_set_uint(std::string(string_cstr(key)), value);
-}
-
-//
-
-void config_set_int(const std::string &key, int32_t value)
-{
-	nvs_handle_t handle;
-
-	util_abort_on_esp_err("nvs_open", nvs_open("config", NVS_READWRITE, &handle));
-	util_abort_on_esp_err("nvs_set_i32", nvs_set_i32(handle, key.c_str(), value));
-	util_abort_on_esp_err("nvs_commit", nvs_commit(handle));
-	nvs_close(handle);
-}
-
-void config_set_int(const string_t key, int32_t value)
-{
-	config_set_int(std::string(string_cstr(key)), value);
-}
-
-//
-
-void config_set_string(const std::string &key, const std::string &value)
-{
-	nvs_handle_t handle;
-
-	util_abort_on_esp_err("nvs_open", nvs_open("config", NVS_READWRITE, &handle));
-	util_abort_on_esp_err("nvs_set_str", nvs_set_str(handle, key.c_str(), value.c_str()));
-	util_abort_on_esp_err("nvs_commit", nvs_commit(handle));
-	nvs_close(handle);
-}
-
-void config_set_string(const string_t key, string_t value)
-{
-	config_set_string(std::string(string_cstr(key)), std::string(string_cstr(key)));
-}
-
-//
-
-bool config_erase(const std::string &key)
-{
-	int rv;
-	nvs_handle_t handle;
-
-	util_abort_on_esp_err("nvs_open", nvs_open("config", NVS_READWRITE, &handle));
-
-	if((rv = nvs_erase_key(handle, key.c_str())) == ESP_ERR_NVS_NOT_FOUND)
-	{
-		nvs_close(handle);
-		return(false);
-	}
-
-	util_abort_on_esp_err("nvs_erase_key", rv);
-	util_abort_on_esp_err("nvs_commit", nvs_commit(handle));
-	nvs_close(handle);
-
-	return(true);
-}
-
-bool config_erase(const string_t key)
-{
-	return(config_erase(std::string(string_cstr(key))));
-}
-
-//
-
-bool config_erase_wildcard(const std::string &key)
-{
-	int rv;
-	nvs_handle_t handle;
-	nvs_iterator_t iterator;
-	nvs_entry_info_t info;
-
-	assert(inited);
-
-	util_abort_on_esp_err("nvs_open", nvs_open("config", NVS_READWRITE, &handle));
-
-	if((rv = nvs_entry_find("nvs", "config", NVS_TYPE_ANY, &iterator)) == ESP_ERR_NVS_NOT_FOUND)
-		return(true);
-
-	util_abort_on_esp_err("nvs_entry_find", rv);
-
-	for(;;)
-	{
-		util_abort_on_esp_err("nvs_entry_info", nvs_entry_info(iterator, &info));
-
-		if((strlen(info.key) >= key.length()) && (key.compare(0, std::string::npos, info.key, key.length()) == 0))
-			util_abort_on_esp_err("nvs_erase_key", nvs_erase_key(handle, info.key));
-
-		if((rv = nvs_entry_next(&iterator)) == ESP_ERR_NVS_NOT_FOUND)
-			break;
-
-		util_abort_on_esp_err("nvs_entry_next", rv);
-	}
-
-	nvs_release_iterator(iterator);
-
-	util_abort_on_esp_err("nvs_commit", nvs_commit(handle));
-	nvs_close(handle);
-
-	return(true);
-}
-
-bool config_erase_wildcard(const string_t key)
-{
-	return(config_erase_wildcard(std::string(string_cstr(key))));
-}
-
-//
-
-static void config_dump(cli_command_call_t *call, const char *name_space)
-{
-	int rv;
-	nvs_iterator_t iterator;
-	nvs_entry_info_t info;
-	std::string dst;
-	std::string key;
-	std::string type;
-
-	assert(inited);
-
-	call->result = (boost::format("SHOW CONFIG namespace %s") % (name_space ? name_space : "ALL")).str();
-
-	if((rv = nvs_entry_find("nvs", name_space, NVS_TYPE_ANY, &iterator)) == ESP_ERR_NVS_NOT_FOUND)
-		return;
-
-	util_abort_on_esp_err("nvs_entry_find", rv);
-
-	for(;;)
-	{
-		util_abort_on_esp_err("nvs_entry_info", nvs_entry_info(iterator, &info));
-
-		key = info.key;
-
-		if(!get_value_as_string(info.namespace_name, key, &info, type, dst))
-			dst = "<not found>";
-
-		if(type == "string")
-			dst = (boost::format("\"%s\" [%u/%u]") % dst % dst.length() % dst.size()).str();
-
-		if(name_space)
-			call->result += (boost::format("\n- %-7s %-20s %s") % type % key % dst).str();
 		else
-			call->result += (boost::format("\n- %-12s %-7s %-20s %s") % info.namespace_name % type % key % dst).str();
-
-		if((rv = nvs_entry_next(&iterator)) == ESP_ERR_NVS_NOT_FOUND)
-			break;
-
-		util_abort_on_esp_err("nvs_entry_next", rv);
+		{
+			name_space_name = name_space;
+			name_space_ptr = name_space_name.c_str();
+		}
 	}
 
-	nvs_release_iterator(iterator);
+	try
+	{
+		if(their_info)
+			info = their_info;
+		else
+		{
+			if((rv = nvs_entry_find("nvs", name_space_ptr, NVS_TYPE_ANY, &nvs_iterator)) == ESP_ERR_NVS_NOT_FOUND)
+				throw(transient_exception("nvs_entry_find"));
+
+			if(rv != ESP_OK)
+				throw(hard_exception("nvs_entry_find"));
+
+			for(;;)
+			{
+				if((rv = nvs_entry_info(nvs_iterator, &our_info)) != ESP_OK)
+					throw(hard_exception("nvs_entry_info"));
+
+				if(key == our_info.key)
+					break;
+
+				if((rv = nvs_entry_next(&nvs_iterator)) == ESP_ERR_NVS_NOT_FOUND)
+					throw(transient_exception("nvs_entry_next"));
+
+				if(rv != ESP_OK)
+					throw(hard_exception("nvs_entry_next"));
+			}
+
+			if(nvs_iterator)
+			{
+				nvs_release_iterator(nvs_iterator);
+				nvs_iterator = nullptr;
+			}
+
+			info = &our_info;
+		}
+
+		if((rv = nvs_open(name_space_ptr, NVS_READONLY, &local_nvs_handle)) != ESP_OK)
+			throw(hard_exception("nvs_open"));
+
+		switch(info->type)
+		{
+			case(NVS_TYPE_U8):
+			{
+				uint8_t raw_value;
+				if((rv = nvs_get_u8(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
+					throw(transient_exception("nvs_get_u8"));
+				type = "uint8";
+				int_value = raw_value;
+				string_value = std::to_string(raw_value);
+				formatted_value = (boost::format("%u (0x%02x)") % static_cast<unsigned int>(raw_value) % static_cast<unsigned int>(raw_value)).str();
+				break;
+			}
+			case(NVS_TYPE_I8):
+			{
+				int8_t raw_value;
+				if((rv = nvs_get_i8(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
+					throw(transient_exception("nvs_get_i8"));
+				type = "int8";
+				int_value = raw_value;
+				string_value = std::to_string(raw_value);
+				formatted_value = (boost::format("%d (0x%02x)") % static_cast<int>(raw_value) % static_cast<int>(raw_value)).str();
+				break;
+			}
+			case(NVS_TYPE_U16):
+			{
+				uint16_t raw_value;
+				if((rv = nvs_get_u16(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
+					throw(transient_exception("nvs_get_u16"));
+				type = "uint16";
+				int_value = raw_value;
+				string_value = std::to_string(raw_value);
+				formatted_value = (boost::format("%u (0x%04x)") % raw_value % raw_value).str();
+				break;
+			}
+			case(NVS_TYPE_I16):
+			{
+				int16_t raw_value;
+				if((rv = nvs_get_i16(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
+					throw(transient_exception("nvs_get_i16"));
+				type = "int16";
+				int_value = raw_value;
+				string_value = std::to_string(raw_value);
+				formatted_value = (boost::format("%d (0x%04x)") % raw_value % raw_value).str();
+				break;
+			}
+			case(NVS_TYPE_U32):
+			{
+				uint32_t raw_value;
+				if((rv = nvs_get_u32(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
+					throw(transient_exception("nvs_get_u16"));
+				type = "uint32";
+				int_value = raw_value;
+				string_value = std::to_string(raw_value);
+				formatted_value = (boost::format("%lu (0x%08lx)") % raw_value % raw_value).str();
+				break;
+			}
+			case(NVS_TYPE_I32):
+			{
+				int32_t raw_value;
+				if((rv = nvs_get_i32(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
+					throw(transient_exception("nvs_get_i32"));
+				type = "int32";
+				int_value = raw_value;
+				string_value = std::to_string(raw_value);
+				formatted_value = (boost::format("%ld (0x%08x)") % raw_value % raw_value).str(); // FIXME fixed length
+				break;
+			}
+			case(NVS_TYPE_U64):
+			{
+				uint64_t raw_value;
+				if((rv = nvs_get_u64(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
+					throw(transient_exception("nvs_get_u64"));
+				type = "uint64";
+				int_value = raw_value;
+				string_value = std::to_string(raw_value);
+				formatted_value = (boost::format("%llu (0x%016llx)") % raw_value % raw_value).str();
+				break;
+			}
+			case(NVS_TYPE_I64):
+			{
+				int64_t raw_value;
+				if((rv = nvs_get_i64(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
+					throw(transient_exception("nvs_get_i64"));
+				type = "int64";
+				int_value = raw_value;
+				string_value = std::to_string(raw_value);
+				formatted_value = (boost::format("%lld (0x%016llx)") % raw_value % raw_value).str();
+				break;
+			}
+			case(NVS_TYPE_STR):
+			{
+				std::string raw_value;
+				size_t length;
+
+				if((rv = nvs_get_str(local_nvs_handle, info->key, nullptr, &length)) != ESP_OK)
+					throw(transient_exception("nvs_get_str 1"));
+
+				if(length < 1)
+					throw(hard_exception("nvs_get_str length < 1"));
+
+				raw_value.resize(length);
+
+				if(nvs_get_str(local_nvs_handle, info->key, raw_value.data(), &length) != ESP_OK)
+					throw(hard_exception("nvs_get_str 2"));
+
+				type = "string";
+				string_value = raw_value.substr(0, length - 1);
+				formatted_value = (boost::format("\"%s\" (%u)") % string_value % string_value.length()).str();
+
+				try
+				{
+					int_value = std::stoll(string_value);
+				}
+				catch (const std::invalid_argument &)
+				{
+					int_value = 0;
+				}
+				catch (const std::out_of_range &)
+				{
+					int_value = 0;
+				}
+
+				break;
+			}
+			case(NVS_TYPE_BLOB):
+			{
+				type = "blob";
+				string_value = "";
+				formatted_value = "<blob>";
+				int_value = 0;
+				break;
+			}
+			default:
+			{
+				type = "unknown";
+				string_value = "";
+				formatted_value = "<unknown>";
+				int_value = 0;
+				break;
+			}
+		}
+	}
+	catch(const transient_exception &e)
+	{
+		if(nvs_iterator)
+			nvs_release_iterator(nvs_iterator);
+
+		nvs_close(local_nvs_handle);
+
+		throw(transient_exception(this->make_exception_text(rv, "get-value", "error in ", e.what(), key, name_space_name)));
+	}
+	catch(const hard_exception &e)
+	{
+		if(nvs_iterator)
+			nvs_release_iterator(nvs_iterator);
+
+		nvs_close(local_nvs_handle);
+
+		throw(hard_exception(this->make_exception_text(rv, "get-value", "error in ", e.what(), key, name_space_name)));
+	}
+
+	if(nvs_iterator)
+		nvs_release_iterator(nvs_iterator);
+
+	nvs_close(local_nvs_handle);
+
+	if(int_value_in)
+		*int_value_in = int_value;
+
+	if(string_value_in)
+		*string_value_in = string_value;
+
+	if(formatted_value_in)
+		*formatted_value_in = formatted_value;
+
+	if(type_in)
+		*type_in = type;
 }
 
-void config_command_info(cli_command_call_t *call)
+void Config::erase_(const std::string &key, std::string_view name_space)
 {
-	nvs_stats_t stats;
+	esp_err_t rv = ESP_OK;
+	nvs_handle_t local_nvs_handle;
+	const char *name_space_ptr;
+	std::string name_space_name;
 
-	assert(inited);
-	assert(call->parameter_count == 0);
+	if(name_space == "*")
+	{
+		name_space_name = "ALL";
+		name_space_ptr = nullptr;
+	}
+	else
+	{
+		if(name_space == "")
+		{
+			name_space_name = this->default_name_space;
+			name_space_ptr = this->default_name_space.c_str();
+		}
+		else
+		{
+			name_space_name = name_space;
+			name_space_ptr = name_space_name.c_str();
+		}
+	}
 
-	util_abort_on_esp_err("nvs_get_stats", nvs_get_stats(nullptr, &stats));
+	try
+	{
+		if((rv = nvs_open(name_space_ptr, NVS_READWRITE, &local_nvs_handle)) != ESP_OK)
+			throw(hard_exception("nvs_open"));
 
-	call->result = "CONFIG INFO";
-	call->result += "\nentries:";
-	call->result += (boost::format("\n- used: %u") % stats.used_entries).str();
-	call->result += (boost::format("\n- free: %u") % stats.free_entries).str();
-	call->result += (boost::format("\n- available: %u") % stats.available_entries).str();
-	call->result += (boost::format("\n- total: %u") % stats.total_entries).str();
-	call->result += (boost::format("\n- namespaces: %u") % stats.namespace_count).str();
+		if((rv = nvs_erase_key(local_nvs_handle, key.c_str())) == ESP_ERR_NVS_NOT_FOUND)
+			throw(transient_exception("nvs_erase_key"));
+
+		if(rv != ESP_OK)
+			throw(hard_exception("nvs_erase_key"));
+
+		if((rv = nvs_commit(local_nvs_handle)) != ESP_OK)
+			throw(hard_exception("nvs_commit"));
+	}
+	catch(const transient_exception &e)
+	{
+		nvs_close(local_nvs_handle);
+		throw(transient_exception(this->make_exception_text(rv, "erase", "error in ", e.what(), key, name_space_name)));
+	}
+	catch(const hard_exception &e)
+	{
+		nvs_close(local_nvs_handle);
+		throw(hard_exception(this->make_exception_text(rv, "erase", "error in ", e.what(), key, name_space_name)));
+	}
+
+	nvs_close(local_nvs_handle);
 }
 
-void config_command_set_uint(cli_command_call_t *call)
+void Config::erase_wildcard_(const std::string &key, std::string_view name_space)
+{
+	esp_err_t rv = ESP_OK;
+	nvs_handle_t local_nvs_handle;
+	nvs_iterator_t nvs_iterator;
+	nvs_entry_info_t nvs_entry_info_local;
+	const char *name_space_ptr;
+	std::string name_space_name;
+
+	if(name_space == "*")
+	{
+		name_space_name = "ALL";
+		name_space_ptr = nullptr;
+	}
+	else
+	{
+		if(name_space == "")
+		{
+			name_space_name = this->default_name_space;
+			name_space_ptr = this->default_name_space.c_str();
+		}
+		else
+		{
+			name_space_name = name_space;
+			name_space_ptr = name_space_name.c_str();
+		}
+	}
+
+	try
+	{
+		if((rv = nvs_open(name_space_ptr, NVS_READWRITE, &local_nvs_handle)) != ESP_OK)
+			throw(hard_exception("nvs_open"));
+
+		if((rv = nvs_entry_find("nvs", name_space_ptr, NVS_TYPE_ANY, &nvs_iterator)) != ESP_OK)
+			throw(hard_exception("nvs_entry_find"));
+
+		for(;;)
+		{
+			if((rv = nvs_entry_info(nvs_iterator, &nvs_entry_info_local)) != ESP_OK)
+				throw(hard_exception("nvs_entry_info"));
+
+			if((strlen(nvs_entry_info_local.key) >= key.length()) && (key.compare(0, std::string::npos, nvs_entry_info_local.key, key.length()) == 0))
+				if((rv = nvs_erase_key(local_nvs_handle, nvs_entry_info_local.key)) != ESP_OK)
+					throw(hard_exception("nvs_erase_key"));
+
+			if((rv = nvs_entry_next(&nvs_iterator)) == ESP_ERR_NVS_NOT_FOUND)
+				break;
+
+			if(rv != ESP_OK)
+				throw(hard_exception("nvs_entry_next"));
+		}
+
+		if((rv = nvs_commit(local_nvs_handle)) != ESP_OK)
+			throw(hard_exception("nvs_commit"));
+	}
+	catch(const hard_exception &e)
+	{
+		nvs_release_iterator(nvs_iterator);
+		nvs_close(local_nvs_handle);
+
+		throw(hard_exception(this->make_exception_text(rv, "erase-wildcard", "error in ", e.what(), key, name_space_name)));
+	}
+
+	nvs_release_iterator(nvs_iterator);
+	nvs_close(local_nvs_handle);
+}
+
+void Config::dump_(std::string &dst, std::string_view name_space)
+{
+	esp_err_t rv = ESP_OK;
+	nvs_iterator_t nvs_iterator;
+	nvs_entry_info_t info;
+	std::string key;
+	std::string string_value;
+	int64_t int_value;
+	std::string formatted_value;
+	std::string type;
+	const char *name_space_ptr;
+	std::string name_space_name;
+
+	if(name_space == "*")
+	{
+		name_space_name = "ALL";
+		name_space_ptr = nullptr;
+	}
+	else
+	{
+		if(name_space == "")
+		{
+			name_space_name = this->default_name_space;
+			name_space_ptr = this->default_name_space.c_str();
+		}
+		else
+		{
+			name_space_name = name_space;
+			name_space_ptr = name_space_name.c_str();
+		}
+	}
+
+	try
+	{
+		dst = (boost::format("SHOW CONFIG namespace %s") % name_space_name).str();
+
+		if((rv = nvs_entry_find("nvs", name_space_ptr, NVS_TYPE_ANY, &nvs_iterator)) == ESP_ERR_NVS_NOT_FOUND)
+			return;
+
+		if(rv != ESP_OK)
+			throw(hard_exception("nvs_entry_find"));
+
+		dst += std::format("\n- {:<16} {:<40} {:<6} {}", "KEY", "VALUE", "TYPE", "NAMESPACE");
+
+		for(;;)
+		{
+			if((rv = nvs_entry_info(nvs_iterator, &info)) != ESP_OK)
+				throw(hard_exception("nvs_entry_info"));
+
+			key = info.key;
+			name_space_name = info.namespace_name;
+
+			this->get_value_(key, name_space_name, &int_value, &string_value, &formatted_value, &type, &info);
+
+			dst += std::format("\n- {:<16} {:<40} {:<6} {}", key, formatted_value, type, info.namespace_name);
+
+			if((rv = nvs_entry_next(&nvs_iterator)) == ESP_ERR_NVS_NOT_FOUND)
+				break;
+
+			if(rv != ESP_OK)
+				throw(hard_exception("nvs_entry_next"));
+		}
+	}
+	catch(const hard_exception &e)
+	{
+		nvs_release_iterator(nvs_iterator);
+		throw(hard_exception(this->make_exception_text(rv, "erase-wildcard", "error in ", e.what(), key, name_space_name)));
+	}
+
+	nvs_release_iterator(nvs_iterator);
+}
+
+void Config::set_int_(const std::string &key, int64_t value, std::string_view name_space)
+{
+	this->set_value_(key, name_space, &value, nullptr);
+}
+
+void Config::set_string_(const std::string &key, const std::string &value, std::string_view name_space)
+{
+	this->set_value_(key, name_space, nullptr, &value);
+}
+
+int64_t Config::get_int_(const std::string &key, std::string *type, std::string_view name_space)
 {
 	int64_t value;
-	std::string type;
 
-	assert(inited);
-	assert(call->parameter_count == 2);
+	this->get_value_(key, name_space, &value, nullptr, nullptr, type);
 
-	config_set_uint(call->parameters[0].str, call->parameters[1].unsigned_int);
-
-	if(get_value_as_integer("config", call->parameters[0].str, nullptr, type, value))
-		call->result = (boost::format("%s[%s]=%lld") % call->parameters[0].str % type % value).str();
-	else
-		call->result = (boost::format("ERROR: %s not found") % call->parameters[0].str).str();
+	return(value);
 }
 
-void config_command_set_int(cli_command_call_t *call)
+std::string Config::get_string_(const std::string &key, std::string *type, std::string_view name_space)
 {
-	int64_t value;
-	std::string type;
+	std::string value;
 
-	assert(inited);
-	assert(call->parameter_count == 2);
+	this->get_value_(key, name_space, nullptr, &value, nullptr, type);
 
-	config_set_int(call->parameters[0].str, call->parameters[1].signed_int);
-
-	if(get_value_as_integer("config", call->parameters[0].str, nullptr, type, value))
-		call->result = (boost::format("%s[%s]=%lld") % call->parameters[0].str % type % value).str();
-	else
-		call->result = (boost::format("ERROR: %s not found") % call->parameters[0].str).str();
+	return(value);
 }
 
-void config_command_set_string(cli_command_call_t *call)
+/// public
+
+void Config::set_int(const std::string &key, int64_t value, std::string_view name_space)
 {
-	std::string dst;
-	std::string type;
+	if(!singleton)
+		throw(hard_exception("Config: not constructed"));
 
-	assert(inited);
-	assert(call->parameter_count == 2);
-
-	config_set_string(call->parameters[0].str, call->parameters[1].str);
-
-	if(get_value_as_string("", call->parameters[0].str, (nvs_entry_info_t *)0, type, dst))
-		call->result = (boost::format("%s[%s]=%s") % call->parameters[0].str % type % dst).str();
-	else
-		call->result = (boost::format("ERROR: %s not found") % call->parameters[0].str).str();
+	singleton->set_int_(key, value, name_space);
 }
 
-void config_command_erase(cli_command_call_t *call)
+void Config::set_string(const std::string &key, const std::string &value, std::string_view name_space)
 {
-	assert(inited);
-	assert(call->parameter_count == 1);
+	if(!singleton)
+		throw(hard_exception("Config: not constructed"));
 
-	if(config_erase(std::string(call->parameters[0].str.c_str())))
-		call->result = (boost::format("erase %s OK") % call->parameters[0].str).str();
-	else
-		call->result = (boost::format("erase %s not found") % call->parameters[0].str).str();
+	singleton->set_string_(key, value, name_space);
 }
 
-void config_command_dump(cli_command_call_t *call)
+int64_t Config::get_int(const std::string &key, std::string *type, std::string_view name_space)
 {
-	assert(call->parameter_count == 0);
+	if(!singleton)
+		throw(hard_exception("Config: not constructed"));
 
-	return(config_dump(call, nullptr));
+	return(singleton->get_int_(key, type, name_space));
 }
 
-void config_command_show(cli_command_call_t *call)
+std::string Config::get_string(const std::string &key, std::string *type, std::string_view name_space)
 {
-	assert(call->parameter_count == 0);
+	if(!singleton)
+		throw(hard_exception("Config: not constructed"));
 
-	return(config_dump(call, "config"));
+	return(singleton->get_string_(key, type, name_space));
+}
+
+void Config::erase(const std::string &key, std::string_view name_space)
+{
+	if(!singleton)
+		throw(hard_exception("Config: not constructed"));
+
+	singleton->erase_(key, name_space);
+}
+
+void Config::erase_wildcard(const std::string &key, std::string_view name_space)
+{
+	if(!singleton)
+		throw(hard_exception("Config: not constructed"));
+
+	singleton->erase_wildcard_(key, name_space);
+}
+
+void Config::dump(std::string &dst, std::string_view name_space)
+{
+	if(!singleton)
+		throw(hard_exception("Config: not constructed"));
+
+	singleton->dump_(dst, name_space);
 }

@@ -3,6 +3,7 @@ idf_component_register(
 		"alias.cpp"
 		"bt.cpp"
 		"cli.cpp"
+		"command.cpp"
 		"config.cpp"
 		"console.cpp"
 		"display.cpp"

@@ -51,14 +51,6 @@ typedef void(cli_command_function_t)(cli_command_call_t *);
 void bluetooth_command_info(cli_command_call_t *call);
 void bluetooth_command_key(cli_command_call_t *call);
 
-void config_command_info(cli_command_call_t *call);
-void config_command_dump(cli_command_call_t *call);
-void config_command_show(cli_command_call_t *call);
-void config_command_set_int(cli_command_call_t *call);
-void config_command_set_uint(cli_command_call_t *call);
-void config_command_set_string(cli_command_call_t *call);
-void config_command_erase(cli_command_call_t *call);
-
 void console_command_info(cli_command_call_t *call);
 
 void flash_command_bench(cli_command_call_t *call);

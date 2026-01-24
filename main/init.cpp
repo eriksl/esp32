@@ -8,12 +8,14 @@ extern "C"
 __attribute__((noreturn)) void app_main(void);
 }
 
+#include "config.h"
+#include "command.h"
+
 #include "string.h"
 #include "cli.h"
 #include "log.h"
 #include "alias.h"
 #include "bt.h"
-#include "config.h"
 #include "console.h"
 #include "display.h"
 #include "fs.h"
@@ -50,7 +52,8 @@ void app_main(void)
 		process_init();
 		string_module_init();
 		log_init();
-		config_init();
+		Config config("config");
+		Command command;
 		util_init();
 		pdm_init();
 		mcpwm_init();
@@ -72,11 +75,27 @@ void app_main(void)
 		vTaskSuspend(NULL);
 		throw("vTaskSuspend returned");
 	}
+	catch(const hard_exception &e)
+	{
+		std::string text;
+
+		text = std::string("init: hard exception not handled: ") + e.what();
+		util_abort(text.c_str());
+		for(;;);
+	}
+	catch(const transient_exception &e)
+	{
+		std::string text;
+
+		text = std::string("init: transient exception not handled: ") + e.what();
+		util_abort(text.c_str());
+		for(;;);
+	}
 	catch(const std::exception &e)
 	{
 		std::string text;
 
-		text = std::string("init: exception caught: ") + e.what();
+		text = std::string("init: std exception not handled: ") + e.what();
 		util_abort(text.c_str());
 		for(;;);
 	}
@@ -84,13 +103,13 @@ void app_main(void)
 	{
 		std::string text;
 
-		text = std::string("init: exception caught: ") + e;
+		text = std::string("init: char exception not handled: ") + e;
 		util_abort(text.c_str());
 		for(;;);
 	}
 	catch(...)
 	{
-		util_abort("init: exception caught");
+		util_abort("init: default exception not handled");
 		for(;;);
 	}
 }

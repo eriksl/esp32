@@ -393,24 +393,32 @@ void wlan_command_client_config(cli_command_call_t *call)
 	assert(call->parameter_count  < 3);
 
 	if(call->parameter_count > 1)
-		config_set_string("wlan-passwd", call->parameters[1].str);
+		Config::set_string("wlan-passwd", call->parameters[1].str);
 
 	if(call->parameter_count > 0)
-		config_set_string("wlan-ssid", call->parameters[0].str);
+		Config::set_string("wlan-ssid", call->parameters[0].str);
 
 	call->result = "client ssid: ";
 
-	if(config_get_string("wlan-ssid", value))
-		call->result += value;
-	else
-		call->result = "<unset>";
+	try
+	{
+		call->result += Config::get_string("wlan-ssid");
+	}
+	catch(transient_exception &)
+	{
+		call->result += "<unset>";
+	}
 
 	call->result += "\nclient password: ";
 
-	if(config_get_string("wlan-passwd", value))
-		call->result += value;
-	else
-		call->result = "<unset>";
+	try
+	{
+		call->result += Config::get_string("wlan-passwd");
+	}
+	catch(transient_exception &)
+	{
+		call->result += "<unset>";
+	}
 
 	if(call->parameter_count > 1)
 	{
@@ -510,7 +518,7 @@ void wlan_command_ipv6_static(cli_command_call_t *call)
 		for(auto &c : ipv6_address_string)
 			c = std::tolower(c);
 
-		config_set_string(key_ipv6_static_address, ipv6_address_string);
+		Config::set_string(key_ipv6_static_address, ipv6_address_string);
 
 		static_ipv6_address = ipv6_address;
 		static_ipv6_address_set = true;
@@ -518,10 +526,14 @@ void wlan_command_ipv6_static(cli_command_call_t *call)
 
 	call->result = "ipv6 static address: ";
 
-	if(config_get_string(key_ipv6_static_address, ipv6_address_string))
-		call->result += ipv6_address_string;
-	else
+	try
+	{
+		call->result += Config::get_string(key_ipv6_static_address);
+	}
+	catch(transient_exception &)
+	{
 		call->result += "<unset>";
+	}
 }
 
 void wlan_init(void)
@@ -539,8 +551,14 @@ void wlan_init(void)
 	init_config.nvs_enable = 1;
 	init_config.wifi_task_core_id = 0;
 
-	if(!config_get_string("hostname", hostname))
+	try
+	{
+		hostname = Config::get_string("hostname");
+	}
+	catch(transient_exception &e)
+	{
 		hostname = "esp32s3";
+	}
 
 	sntp_config.start = false;
 	sntp_config.server_from_dhcp = true;
@@ -550,10 +568,15 @@ void wlan_init(void)
 
 	set_state(ws_init);
 
-	if(config_get_string(key_ipv6_static_address, ipv6_address_string) && !esp_netif_str_to_ip6(ipv6_address_string.c_str(), &static_ipv6_address))
-		static_ipv6_address_set = true;
-	else
+	try
+	{
+		ipv6_address_string = Config::get_string(key_ipv6_static_address);
+		static_ipv6_address_set = esp_netif_str_to_ip6(ipv6_address_string.c_str(), &static_ipv6_address) == ESP_OK;
+	}
+	catch(transient_exception &)
+	{
 		static_ipv6_address_set = false;
+	}
 
 	inited = true;
 

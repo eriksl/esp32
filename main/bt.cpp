@@ -480,11 +480,23 @@ void bt_init(void)
 {
 	assert(!inited);
 
-	if(!config_get_string("hostname", hostname))
+	try
+	{
+		hostname = Config::get_string("hostname");
+	}
+	catch(transient_exception &)
+	{
 		hostname = "esp32";
+	}
 
-	if(!config_get_string("bt.key", encryption_key))
+	try
+	{
+		encryption_key = Config::get_string("bt.key");
+	}
+	catch(transient_exception &)
+	{
 		encryption_key = "default";
+	}
 
 	util_warn_on_esp_err("nimble_port_init", nimble_port_init());
 
@@ -538,27 +550,39 @@ void bluetooth_command_key(cli_command_call_t *call)
 {
 	std::string key;
 
-	switch(call->parameter_count)
+	try
 	{
-		case(1):
+		switch(call->parameter_count)
 		{
-			config_set_string("bt.key", call->parameters[0].str);
-			encryption_key = call->parameters[0].str;
-			[[fallthrough]];
-		}
-		case(0):
-		{
-			if(!config_get_string("bt.key", key))
-				key = encryption_key;
+			case(1):
+			{
+				Config::set_string("bt.key", call->parameters[0].str);
+				encryption_key = call->parameters[0].str;
+				[[fallthrough]];
+			}
+			case(0):
+			{
+				try
+				{
+					key = Config::get_string("bt.key");
+				}
+				catch(const transient_exception &)
+				{
+					key = encryption_key;
+				}
 
-			call->result = (boost::format("bluetooth key: %s") % key).str();
-
-			break;
+				call->result = (boost::format("bluetooth key: %s") % key).str();
+				break;
+			}
+			default:
+			{
+				util_abort("bluetooth-command-key: invalid parameter count");
+				break;
+			}
 		}
-		default:
-		{
-			util_abort("bluetooth_command_key: invalid parameter count");
-			break;
-		}
+	}
+	catch(const e32if_exception &e)
+	{
+		call->result = std::string("bluetooth-command-key: ") + e.what();
 	}
 }

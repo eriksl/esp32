@@ -1,35 +1,53 @@
 #pragma once
 
+#include "exception.h"
+
 #include <string>
 
-void config_init(void);
+#include <nvs.h>
+#include <nvs_flash.h>
 
-// get
+class Config
+{
+	public:
 
-bool config_get_uint(const string_t key, uint32_t &value);
-bool config_get_uint(const std::string &key, uint32_t &value);
+		Config() = delete;
+		Config(const Config &) = delete;
+		Config(std::string_view default_name_space);
 
-bool config_get_int(const string_t key, int32_t &value);
-bool config_get_int(const std::string &key, int32_t &value);
+		static void set_int(const std::string &key, int64_t value, std::string_view name_space = "");
+		static void set_string(const std::string &key, const std::string &value, std::string_view name_space = "");
+		static int64_t get_int(const std::string &key, std::string *type = nullptr, const std::string_view name_space = "");
+		static std::string get_string(const std::string &key, std::string *type = nullptr, std::string_view name_space = "");
 
-bool config_get_string(const string_t key, string_t string);
-bool config_get_string(const std::string &key, std::string &string);
+		static void erase(const std::string &key, std::string_view name_space = "");
+		static void erase_wildcard(const std::string &key, std::string_view name_space = "");
 
-// set
+		static void dump(std::string &dst, std::string_view name_space = "");
 
-void config_set_uint(const string_t key, uint32_t value);
-void config_set_uint(const std::string &key, uint32_t value);
+	private:
 
-void config_set_int(const string_t key, int32_t value);
-void config_set_int(const std::string &key, int32_t value);
+		std::string default_name_space;
 
-void config_set_string(const string_t key, string_t value);
-void config_set_string(const std::string &key, const std::string &value);
+		std::string make_exception_text(esp_err_t err,
+				std::string_view fn, std::string_view message1, std::string_view message2,
+				std::string_view key, std::string_view name_space);
 
-// erase
+		void set_value_(std::string_view key, std::string_view name_space,
+				int64_t *int_value = nullptr, const std::string *string_value = nullptr);
 
-bool config_erase(const string_t key);
-bool config_erase(const std::string &key);
+		void get_value_(std::string_view key, std::string_view name_space,
+				int64_t *int_value_in = nullptr, std::string *string_value_in = nullptr,
+				std::string *formatted_value_in = nullptr, std::string *type_in = nullptr,
+				const nvs_entry_info_t *their_info = nullptr);
 
-bool config_erase_wildcard(const string_t key);
-bool config_erase_wildcard(const std::string &key);
+		void set_int_(const std::string &key, int64_t value, std::string_view name_space);
+		void set_string_(const std::string &key, const std::string &value, std::string_view name_space);
+		int64_t get_int_(const std::string &key, std::string *type, std::string_view name_space);
+		std::string get_string_(const std::string &key, std::string *type, std::string_view name_space);
+
+		void erase_(const std::string &key, std::string_view name_space);
+		void erase_wildcard_(const std::string &key, std::string_view name_space);
+
+		void dump_(std::string &dst, std::string_view name_space);
+};

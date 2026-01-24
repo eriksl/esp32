@@ -362,15 +362,17 @@ void console_init_1(void)
 
 void console_init_2(void) // FIXME
 {
-	std::string hostname_in;
-
 	assert(inited_1);
 	assert(!inited_2);
 
-	if(config_get_string("hostname", hostname_in))
-		hostname = hostname_in;
-	else
+	try
+	{
+		hostname = Config::get_string("hostname");
+	}
+	catch(transient_exception &)
+	{
 		hostname = "esp32";
+	}
 
 	inited_2 = true;
 

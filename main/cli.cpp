@@ -17,6 +17,7 @@
 #include "bt.h"
 #include "udp.h"
 #include "tcp.h"
+#include "command.h"
 
 #include <algorithm>
 #include <string>
@@ -173,17 +174,29 @@ static void command_hostname(cli_command_call_t *call)
 	{
 		description = call->parameters[1].str;
 		std::replace(description.begin(), description.end(), '_', ' ');
-		config_set_string("hostname_desc", description);
+		Config::set_string("hostname_desc", description);
 	}
 
 	if(call->parameter_count > 0)
-		config_set_string("hostname", call->parameters[0].str);
+		Config::set_string("hostname", call->parameters[0].str);
 
-	if(!config_get_string("hostname", hostname))
+	try
+	{
+		hostname = Config::get_string("hostname");
+	}
+	catch(const transient_exception &)
+	{
 		hostname = "<unset>";
+	}
 
-	if(!config_get_string("hostname_desc", description))
+	try
+	{
+		description = Config::get_string("hostname_desc");
+	}
+	catch(const transient_exception &)
+	{
 		description = "<unset>";
+	}
 
 	call->result = (boost::format("hostname: %s (%s)") % hostname.c_str() % description.c_str()).str();
 }
@@ -236,9 +249,9 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "config-dump", "cd", "dump all nvs keys", config_command_dump, {}},
+	{ "config-dump", "cd", "dump all nvs keys", Command::config_dump, {}},
 
-	{ "config-erase", "ce", "erase a config entry", config_command_erase,
+	{ "config-erase", "ce", "erase a config entry", Command::config_erase,
 		{	1,
 			{
 				{ cli_parameter_string, 0, 1, 0, 0, "key", {}},
@@ -246,9 +259,9 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "config-info", "ci", "show information about the configuration", config_command_info, {}},
+	{ "config-info", "ci", "show information about the configuration", Command::config_info, {}},
 
-	{ "config-set-int", "csi", "set a signed int config value", config_command_set_int,
+	{ "config-set-int", "csi", "set a signed int config value", Command::config_set_int,
 		{	2,
 			{
 				{ cli_parameter_string, 0, 1, 0, 0, "key", {}},
@@ -257,16 +270,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "config-set-uint", "csu", "set an unsigned int config value", config_command_set_uint,
-		{	2,
-			{
-				{ cli_parameter_string, 0, 1, 0, 0, "key", {}},
-				{ cli_parameter_unsigned_int, 0, 1, 0, 0, "value", {}},
-			},
-		}
-	},
-
-	{ "config-set-string", "css", "set a string config value", config_command_set_string,
+	{ "config-set-string", "css", "set a string config value", Command::config_set_string,
 		{	2,
 			{
 				{ cli_parameter_string, 0, 1, 0, 0, "key", {}},
@@ -275,7 +279,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "config-show", "cs", "show config", config_command_show, {}},
+	{ "config-show", "cs", "show config", Command::config_show, {}},
 	{ "console-info", "coni", "show information about the console", console_command_info, {}},
 
 	{ "display-brightness", "db", "display brightness", command_display_brightness,
