@@ -246,16 +246,13 @@ QueueHandle_t log_get_display_queue(void)
 	return(log_display_queue);
 }
 
-void log_get_entry(unsigned int entry_index, time_t *stamp, unsigned int text_buffer_size, char *text_buffer)
+void log_get_entry(unsigned int entry_index, time_t *stamp, std::string &text_buffer)
 {
 	assert(inited);
-	assert(text_buffer_size);
-	assert(text_buffer);
 
 	const log_entry_t *entry;
 
-	*stamp = (time_t)0;
-	text_buffer[0] = '\0';
+	*stamp = static_cast<time_t>(0);
 
 	data_mutex_take();
 
@@ -265,7 +262,8 @@ void log_get_entry(unsigned int entry_index, time_t *stamp, unsigned int text_bu
 	entry = &log_buffer->entry[entry_index];
 
 	*stamp = entry->timestamp;
-	strlcpy(text_buffer, entry->data, text_buffer_size);
+
+	text_buffer.assign(entry->data);
 
 exit:
 	data_mutex_give();

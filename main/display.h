@@ -1,6 +1,8 @@
 #pragma once
 
-#include "string.h"
+#include <stdint.h>
+
+#include <deque>
 
 typedef enum
 {
@@ -24,6 +26,8 @@ typedef enum
 	dc_white,
 	dc_error,
 	dc_size = dc_error,
+	dc_first = dc_black,
+	dc_last = dc_white,
 } display_colour_t;
 
 typedef struct
@@ -92,7 +96,7 @@ typedef struct
 	void (*bright_fn)(unsigned int percentage);
 	void (*write_fn)(const font_t *font, display_colour_t fg, display_colour_t bg,
 				unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
-				unsigned int line_unicode_length, const uint32_t *line_unicode);
+				const std::deque<uint32_t> &line_unicode);
 	void (*clear_fn)(display_colour_t);
 	void (*box_fn)(display_colour_t, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y);
 	void (*plot_line_fn)(unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int rgb_pixels_length, const display_rgb_t *pixels);
@@ -107,7 +111,7 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters);
 void display_spi_generic_bright(unsigned int percentage);
 void display_spi_generic_write(const font_t *font, display_colour_t fg, display_colour_t bg,
 		unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
-		unsigned int line_unicode_length, const uint32_t *line_unicode);
+		const std::deque<uint32_t> &line_unicode);
 void display_spi_generic_clear(display_colour_t);
 void display_spi_generic_box(display_colour_t, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y);
 void display_spi_generic_plot_line(unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int rgb_pixels_length, const display_rgb_t *pixels);
@@ -116,7 +120,7 @@ bool display_ra8875_init(const display_init_parameters_t *parameters);
 void display_ra8875_bright(unsigned int percentage);
 void display_ra8875_write(const font_t *font, display_colour_t fg, display_colour_t bg,
 		unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
-		unsigned int line_unicode_length, const uint32_t *line_unicode);
+		const std::deque<uint32_t> &line_unicode);
 void display_ra8875_clear(display_colour_t);
 void display_ra8875_box(display_colour_t, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y);
 void display_ra8875_plot_line(unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int rgb_pixels_length, const display_rgb_t *pixels);

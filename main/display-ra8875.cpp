@@ -559,10 +559,9 @@ void display_ra8875_clear(display_colour_t bg)
 void display_ra8875_write(const font_t *font, display_colour_t fg_colour, display_colour_t bg_colour,
 		unsigned int from_x, unsigned int from_y,
 		unsigned int to_x, unsigned int to_y,
-		unsigned int unicode_line_length, const uint32_t *unicode_line)
+		const std::deque<uint32_t> &unicode_line)
 {
-	unsigned int current_unicode_entry;
-	uint32_t code;
+	std::deque<uint32_t>::const_iterator unicode_it;
 	const font_glyph_t *glyph;
 	int col, row, bit;
 	unsigned current_glyph;
@@ -597,13 +596,11 @@ void display_ra8875_write(const font_t *font, display_colour_t fg_colour, displa
 
 	col = from_x;
 
-	for(current_unicode_entry = 0; current_unicode_entry < unicode_line_length; current_unicode_entry++)
+	for(unicode_it = unicode_line.begin(); unicode_it != unicode_line.end(); unicode_it++)
 	{
-		code = unicode_line[current_unicode_entry];
-
-		if((code >= 0xf800) && (code < 0xf808)) // abuse private use unicode codepoints for foreground colours
+		if((*unicode_it >= 0xf800) && (*unicode_it < 0xf808)) // abuse private use unicode codepoints for foreground colours
 		{
-			ix = (code - 0xf800);
+			ix = (*unicode_it - 0xf800);
 
 			if(ix >= dc_size)
 				log_format("display-spi-generic: foreground colour out of range: %u", ix);
@@ -612,9 +609,9 @@ void display_ra8875_write(const font_t *font, display_colour_t fg_colour, displa
 		}
 		else
 		{
-			if((code >= 0xf808) && (code < 0xf810)) // abuse private use unicode codepoints for background colours
+			if((*unicode_it >= 0xf808) && (*unicode_it < 0xf810)) // abuse private use unicode codepoints for background colours
 			{
-				ix = (code - 0xf808);
+				ix = (*unicode_it - 0xf808);
 
 				if(ix >= dc_size)
 					log_format("display-spi-generic: background colour out of range: %u", ix);
@@ -623,15 +620,15 @@ void display_ra8875_write(const font_t *font, display_colour_t fg_colour, displa
 			}
 			else
 			{
-				if(code < font_basic_glyphs_size)
-					glyph = &font->basic_glyph[code];
+				if(*unicode_it < font_basic_glyphs_size)
+					glyph = &font->basic_glyph[*unicode_it];
 				else
 				{
 					for(current_glyph = 0; current_glyph < font->extra_glyphs; current_glyph++)
 					{
 						glyph = &font->extra_glyph[current_glyph];
 
-						if(glyph->codepoint == code)
+						if(glyph->codepoint == *unicode_it)
 							break;
 					}
 

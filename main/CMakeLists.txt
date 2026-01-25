@@ -56,7 +56,7 @@ set(ALLFLAGS
 		-Wunused-const-variable=2
 		-Wuse-after-free=3
 		-Wuninitialized
-		-Wstrict-overflow=5
+		-Wstrict-overflow=2
 		-Wstringop-overflow=4
 		-Wsuggest-attribute=noreturn
 		-Wsuggest-attribute=format
