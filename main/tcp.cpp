@@ -68,8 +68,9 @@ TCP::TCP() :
 
 	thread_config.thread_name = "tcp";
 	thread_config.pin_to_core = 1;
-	thread_config.stack_size = 4 * 1024; // FIXME
+	thread_config.stack_size = 2 * 1024;
 	thread_config.prio = 1;
+	//thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM;
 	esp_pthread_set_cfg(&thread_config);
 
 	std::thread new_thread(TCP::run_wrapper, this);

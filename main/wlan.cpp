@@ -547,7 +547,7 @@ void wlan_init(void)
 
 	init_config.ampdu_rx_enable = 1;
 	init_config.ampdu_tx_enable = 1;
-	init_config.amsdu_tx_enable = 1;
+	init_config.amsdu_tx_enable = 0;
 	init_config.nvs_enable = 1;
 	init_config.wifi_task_core_id = 0;
 

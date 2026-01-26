@@ -376,7 +376,7 @@ void console_init_2(void) // FIXME
 
 	inited_2 = true;
 
-	if(xTaskCreatePinnedToCore(run_console, "console", 6 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS) // FIXME
+	if(xTaskCreatePinnedToCore(run_console, "console", 3 * 1024, (void *)0, 1, (TaskHandle_t *)0, 1) != pdPASS)
 		util_abort("console: xTaskCreatePinnedToNode run_console");
 }
 

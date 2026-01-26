@@ -1272,9 +1272,9 @@ void display_init(void)
 	clear(dc_black);
 	brightness(75);
 
-	if(xTaskCreatePinnedToCore(run_display_log, "display-log", 5 * 1024, nullptr, 1, (TaskHandle_t *)0, 1) != pdPASS)
+	if(xTaskCreatePinnedToCore(run_display_log, "display-log", 4 * 1024, nullptr, 1, (TaskHandle_t *)0, 1) != pdPASS)
 		util_abort("display: xTaskCreatePinnedToNode display log");
 
-	if(xTaskCreatePinnedToCore(run_display_info, "display-info", 5 * 1024, nullptr, 1, (TaskHandle_t *)0, 1) != pdPASS)
+	if(xTaskCreatePinnedToCore(run_display_info, "display-info", 4 * 1024, nullptr, 1, (TaskHandle_t *)0, 1) != pdPASS)
 		util_abort("display: xTaskCreatePinnedToNode display run");
 }

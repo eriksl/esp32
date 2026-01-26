@@ -1058,8 +1058,9 @@ void cli_init(void)
 	thread_config = esp_pthread_get_default_config();
 	thread_config.thread_name = "cli recv";
 	thread_config.pin_to_core = 1;
-	thread_config.stack_size = 8 * 1024; // FIXME
+	thread_config.stack_size = 5 * 1024;
 	thread_config.prio = 1;
+	//thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM;
 	esp_pthread_set_cfg(&thread_config);
 
 	std::thread receive_thread(run_receive_queue, nullptr);
@@ -1069,8 +1070,9 @@ void cli_init(void)
 	thread_config = esp_pthread_get_default_config();
 	thread_config.thread_name = "cli send";
 	thread_config.pin_to_core = 1;
-	thread_config.stack_size = 8 * 1024; // FIXME
+	thread_config.stack_size = 3 * 1024;
 	thread_config.prio = 1;
+	//thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM;
 	esp_pthread_set_cfg(&thread_config);
 
 	std::thread send_thread(run_send_queue, nullptr);
