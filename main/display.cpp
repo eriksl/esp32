@@ -304,7 +304,7 @@ static void page_init(display_page_t &page)
 	page.image.length = 0;
 }
 
-static void page_clear(int page)
+static void page_erase(int page)
 {
 	assert(inited);
 	assert((page >= 0) && (page < display_pages.size()));
@@ -312,7 +312,7 @@ static void page_clear(int page)
 	if((display_pages[page].type == dpt_image) && unlink(display_pages[page].image.filename.c_str()))
 		log_format("display: page erase: unlink image %s failed", display_pages[page].image.filename.c_str());
 
-	page_init(display_pages[page]);
+	display_pages.erase(display_pages.begin() + page);
 }
 
 static int page_find(std::string_view name)
@@ -349,7 +349,9 @@ static bool page_add_text(std::string_view name, unsigned int lifetime, std::str
 		display_pages.push_back(new_page);
 		page = display_pages.size() - 1;
 	}
-
+	else
+		if((display_pages[page].type == dpt_image) && !display_pages[page].image.filename.empty() && unlink(display_pages[page].image.filename.c_str()))
+			log_format("display: page add text: unlink image %s failed", display_pages[page].image.filename.c_str());
 
 	page_ptr = &display_pages[page];
 
@@ -418,6 +420,12 @@ static bool page_add_image(std::string_view name, unsigned int lifetime, std::st
 		display_pages.push_back(new_page);
 		page = display_pages.size() - 1;
 	}
+	else
+		if((display_pages[page].type == dpt_image) &&
+					!display_pages[page].image.filename.empty() &&
+					(display_pages[page].image.filename != filename) &&
+					unlink(display_pages[page].image.filename.c_str()))
+			log_format("display: page add image: unlink image %s failed", display_pages[page].image.filename.c_str());
 
 	page_ptr = &display_pages[page];
 	page_init(*page_ptr);
@@ -904,9 +912,7 @@ skip:
 
 			if((display_pages[current_page].expiry > 0) && (time(nullptr) > display_pages[current_page].expiry))
 			{
-				page_clear(current_page);
-				display_pages.erase(display_pages.begin() + current_page);
-
+				page_erase(current_page);
 				goto next;
 			}
 
@@ -1163,9 +1169,7 @@ void command_display_page_remove(cli_command_call_t *call)
 		return;
 	}
 
-	page_clear(page);
-	display_pages.erase(display_pages.begin() + page);
-
+	page_erase(page);
 	page_data_mutex_give();
 
 	call->result = std::format("display-page-remove removed \"{}\"", call->parameters[0].str);
