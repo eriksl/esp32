@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 typedef enum
 {
 	io_id_esp32_mcpwm = 0,
@@ -27,9 +29,9 @@ typedef enum
 
 static_assert(io_cap_size < 32, "io_cap_size < 32"); // bitmap
 
-bool io_info(string_t result, unsigned int io);
-bool io_read(string_t result, unsigned int io, unsigned int pin, unsigned int *value);
-bool io_write(string_t result, unsigned int io, unsigned int pin, unsigned int value);
-bool io_pin_info(string_t result, unsigned int io, unsigned int pin);
+bool io_info(std::string & result, unsigned int io);
+bool io_read(std::string & result, unsigned int io, unsigned int pin, unsigned int *value);
+bool io_write(std::string & result, unsigned int io, unsigned int pin, unsigned int value);
+bool io_pin_info(std::string & result, unsigned int io, unsigned int pin);
 
 void io_init(void);

@@ -2,7 +2,6 @@
 #include <stdbool.h>
 #include <assert.h>
 
-#include "string.h"
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
@@ -15,7 +14,7 @@
 #include "i2c.h"
 
 #include <string>
-#include <boost/format.hpp>
+#include <format>
 
 #include <freertos/FreeRTOS.h>
 
@@ -61,12 +60,12 @@ typedef struct io_info_T
 			lp_t instance;
 		} ledpixel;
 	} instance;
-	void (*info_fn)(const struct io_data_T *data, string_t result);
+	void (*info_fn)(const struct io_data_T *data, std::string &result);
 	bool (*detect_fn)(const struct io_info_T *info, unsigned int module, unsigned int bus, unsigned int address);
 	bool (*init_fn)(struct io_data_T *data);
 	bool (*read_fn)(struct io_data_T *data, unsigned int pin, unsigned int *value);
 	bool (*write_fn)(struct io_data_T *data, unsigned int pin, unsigned int value);
-	void (*pin_info_fn)(const struct io_data_T *data, unsigned int pin, string_t result);
+	void (*pin_info_fn)(const struct io_data_T *data, unsigned int pin, std::string &result);
 } io_info_t;
 
 typedef struct io_data_T
@@ -87,7 +86,7 @@ typedef struct io_data_T
 static bool inited = false;
 static io_data_t *data_root = (io_data_t *)0;
 static SemaphoreHandle_t data_mutex;
-static const char *cap_to_string[io_cap_size] =
+static const char *cap_to_string[io_cap_size] = // FIXME
 {
 	[io_cap_input] = "input",
 	[io_cap_output] = "output",
@@ -122,7 +121,7 @@ static_assert((unsigned int)esp32_mcpwm_pin_1 == (unsigned int)mpt_16bit_150hz_1
 static_assert((unsigned int)esp32_mcpwm_pin_2 == (unsigned int)mpt_16bit_2400hz_0);
 static_assert((unsigned int)esp32_mcpwm_pin_3 == (unsigned int)mpt_16bit_2400hz_1);
 
-static void esp32_mcpwm_info(const io_data_t *dataptr, string_t result)
+static void esp32_mcpwm_info(const io_data_t *dataptr, std::string &result)
 {
 	assert(inited);
 	assert(dataptr);
@@ -159,18 +158,17 @@ static bool esp32_mcpwm_write(io_data_t *dataptr, unsigned int pin, unsigned int
 	return(true);
 }
 
-static void esp32_mcpwm_pin_info(const io_data_t *dataptr, unsigned int pin, string_t result)
+static void esp32_mcpwm_pin_info(const io_data_t *dataptr, unsigned int pin, std::string &result)
 {
 	assert(inited);
 	assert(dataptr);
-	assert(result);
 	assert(pin < dataptr->info->pins);
 	assert(pin < mpt_size);
 
 	if(dataptr->int_value[pin])
-		string_format_append(result, "MC-PWM channel %u duty: %u", pin, mcpwm_get(static_cast<mcpwm_t>(pin)));
+		result += std::format("MC-PWM channel {:d} duty: {:d}", pin, mcpwm_get(static_cast<mcpwm_t>(pin)));
 	else
-		string_append_cstr(result, "pin unvailable on this board");
+		result += "pin unvailable on this board";
 }
 
 enum
@@ -188,10 +186,9 @@ static_assert((unsigned int)esp32_ledpwm_pin_1 == (unsigned int)lpt_14bit_5khz_l
 static_assert((unsigned int)esp32_ledpwm_pin_2 == (unsigned int)lpt_14bit_5khz_lcd_spi_3);
 static_assert((unsigned int)esp32_ledpwm_pin_3 == (unsigned int)lpt_14bit_120hz);
 
-static void esp32_ledpwm_info(const io_data_t *dataptr, string_t result)
+static void esp32_ledpwm_info(const io_data_t *, std::string &)
 {
 	assert(inited);
-	assert(dataptr);
 }
 
 static bool esp32_ledpwm_init(io_data_t *dataptr)
@@ -225,18 +222,17 @@ static bool esp32_ledpwm_write(io_data_t *dataptr, unsigned int pin, unsigned in
 	return(true);
 }
 
-static void esp32_ledpwm_pin_info(const io_data_t *dataptr, unsigned int pin, string_t result)
+static void esp32_ledpwm_pin_info(const io_data_t *dataptr, unsigned int pin, std::string &result)
 {
 	assert(inited);
 	assert(dataptr);
-	assert(result);
 	assert(pin < dataptr->info->pins);
 	assert(pin < lp_size);
 
 	if(dataptr->int_value[pin])
-		string_format_append(result, "LED-PWM channel %u duty: %u", pin, ledpwm_get(static_cast<ledpwm_t>(pin)));
+		result += std::format("LED-PWM channel {:d} duty: {:d}", pin, ledpwm_get(static_cast<ledpwm_t>(pin)));
 	else
-		string_append_cstr(result, "pin unvailable on this board");
+		result += "pin unvailable on this board";
 }
 
 enum
@@ -254,10 +250,9 @@ static_assert((unsigned int)esp32_pdm_pin_1 == pdm_8bit_150khz_1);
 static_assert((unsigned int)esp32_pdm_pin_2 == pdm_8bit_150khz_2);
 static_assert((unsigned int)esp32_pdm_pin_3 == pdm_8bit_150khz_3);
 
-static void esp32_pdm_info(const io_data_t *dataptr, string_t result)
+static void esp32_pdm_info(const io_data_t *, std::string &)
 {
 	assert(inited);
-	assert(dataptr);
 }
 
 static bool esp32_pdm_init(io_data_t *dataptr)
@@ -291,18 +286,17 @@ static bool esp32_pdm_write(io_data_t *dataptr, unsigned int pin, unsigned int v
 	return(true);
 }
 
-static void esp32_pdm_pin_info(const io_data_t *dataptr, unsigned int pin, string_t result)
+static void esp32_pdm_pin_info(const io_data_t *dataptr, unsigned int pin, std::string &result)
 {
 	assert(inited);
 	assert(dataptr);
-	assert(result);
 	assert(pin < dataptr->info->pins);
 	assert(pin < pdm_size);
 
 	if(dataptr->int_value[pin])
-		string_format_append(result, "PDM channel %u density: %u", pin, pdm_channel_get(static_cast<pdm_t>(pin)));
+		result += std::format("PDM channel {:d} density: {:d}", pin, pdm_channel_get(static_cast<pdm_t>(pin)));
 	else
-		string_append_cstr(result, "pin unvailable on this board");
+		result += "pin unvailable on this board";
 }
 
 enum
@@ -312,10 +306,9 @@ enum
 
 static_assert((unsigned int)esp32_ledpixel_int_value_open < (unsigned int)io_int_value_size);
 
-static void esp32_ledpixel_info(const io_data_t *dataptr, string_t result)
+static void esp32_ledpixel_info(const io_data_t *, std::string &)
 {
 	assert(inited);
-	assert(dataptr);
 }
 
 static bool esp32_ledpixel_init(io_data_t *dataptr)
@@ -348,17 +341,16 @@ static bool esp32_ledpixel_write(io_data_t *dataptr, unsigned int pin, unsigned 
 	return(true);
 }
 
-static void esp32_ledpixel_pin_info(const io_data_t *dataptr, unsigned int pin, string_t result)
+static void esp32_ledpixel_pin_info(const io_data_t *dataptr, unsigned int pin, std::string &result)
 {
 	assert(inited);
 	assert(dataptr);
-	assert(result);
 	assert(pin < dataptr->info->pins);
 
 	if(dataptr->int_value[esp32_ledpixel_int_value_open])
-		string_format_append(result, "LEDpixel instance %d", dataptr->info->instance.ledpixel.instance);
+		result += std::format("LEDpixel instance {:d}", static_cast<unsigned int>(dataptr->info->instance.ledpixel.instance));
 	else
-		string_append_cstr(result, "pin unvailable on this board");
+		result += "pin unvailable on this board";
 }
 
 enum
@@ -370,11 +362,11 @@ enum
 
 static_assert((unsigned int)pcf8574_int_value_size <= (unsigned int)io_int_value_size);
 
-static void pcf8574_info(const io_data_t *dataptr, string_t result)
+static void pcf8574_info(const io_data_t *dataptr, std::string &result)
 {
-	string_append_cstr(result, "\npin cache");
-	string_format_append(result, "\n- input %#02x", (unsigned int)dataptr->int_value[pcf8574_int_value_cache_in]);
-	string_format_append(result, "\n- output %#02x", (unsigned int)dataptr->int_value[pcf8574_int_value_cache_out]);
+	result += "\npin cache";
+	result += std::format("\n- input  {:#02x}", dataptr->int_value[pcf8574_int_value_cache_in]);
+	result += std::format("\n- output {:#02x}", dataptr->int_value[pcf8574_int_value_cache_out]);
 }
 
 static bool pcf8574_detect(const io_info_t *info, unsigned int module, unsigned int bus, unsigned int address)
@@ -437,11 +429,11 @@ static bool pcf8574_write(io_data_t *dataptr, unsigned int pin, unsigned int val
 	return(i2c_send_1(dataptr->i2c.slave, dataptr->int_value[pcf8574_int_value_cache_out]));
 }
 
-static void pcf8574_pin_info(const io_data_t *dataptr, unsigned int pin, string_t result)
+static void pcf8574_pin_info(const io_data_t *dataptr, unsigned int pin, std::string &result)
 {
-	string_format_append(result, "binary I/O, current I/O value: %u/%u",
-			(unsigned int)!(dataptr->int_value[pcf8574_int_value_cache_in] & (1 << pin)),
-			(unsigned int)!(dataptr->int_value[pcf8574_int_value_cache_out] & (1 << pin)));
+	result += std::format("binary I/O, current I/O value: {:d}/{:d}",
+			!(dataptr->int_value[pcf8574_int_value_cache_in] & (1 << pin)),
+			!(dataptr->int_value[pcf8574_int_value_cache_out] & (1 << pin)));
 }
 
 static const io_info_t info[io_id_size] =
@@ -836,31 +828,31 @@ static io_data_t *get_data(unsigned int io)
 	return(dataptr);
 }
 
-static void io_info_x(string_t result, const io_data_t *dataptr)
+static void io_info_x(std::string &result, const io_data_t *dataptr)
 {
 	io_capabilities_t cap;
 
 	assert(inited);
-	assert(result);
 	assert(dataptr);
 
-	string_append_cstr(result, dataptr->info->name);
-	string_format_append(result, "\n- id: %u", (unsigned int)dataptr->info->id);
-	string_format_append(result, "\n- pins: %u", dataptr->info->pins);
-	string_format_append(result, "\n- max value per pin: %u", dataptr->info->max_value);
-	string_append_cstr(result, "\n- capabilities:");
+	result += dataptr->info->name;;
+	result += std::format("\n- id: {:d}", static_cast<unsigned int>(dataptr->info->id));
+	result += std::format("\n- pins: {:d}", dataptr->info->pins);
+	result += std::format("\n- max value per pin: {:d}", dataptr->info->max_value);
+
+	result += "\n- capabilities:";
 
 	for(cap = io_cap_first; cap < io_cap_size; cap = static_cast<io_capabilities_t>(cap + 1))
 		if(dataptr->info->caps & (1 << cap))
-			string_format_append(result, " %s", cap_to_string[cap]);
+			result += std::format(" {}", cap_to_string[cap]);
 
-	string_append_cstr(result, "\n- extra device info: ");
+	result += "\n- extra device info: ";
 
 	if(dataptr->info->info_fn)
 		dataptr->info->info_fn(dataptr, result);
 }
 
-static bool io_read_x(string_t result, io_data_t *dataptr, unsigned int pin, unsigned int *value)
+static bool io_read_x(std::string &result, io_data_t *dataptr, unsigned int pin, unsigned int *value)
 {
 	assert(inited);
 	assert(dataptr);
@@ -868,51 +860,45 @@ static bool io_read_x(string_t result, io_data_t *dataptr, unsigned int pin, uns
 
 	if(!(dataptr->info->caps & (1 << io_cap_input)) || !dataptr->info->read_fn)
 	{
-		if(result)
-			string_append_cstr(result, "not input capable");
+		result += "not input capable";
 		return(false);
 	}
 
 	if(pin >= dataptr->info->pins)
 	{
-		if(result)
-			string_format_append(result, "no such pin %u", pin);
+		result += std::format("no such pin {:d}", pin);
 		return(false);
 	}
 
 	if(!dataptr->info->read_fn(dataptr, pin, value))
 	{
-		if(result)
-			string_append_cstr(result, "read failed");
+		result += "read failed";
 		return(false);
 	}
 
 	return(true);
 }
 
-static bool io_write_x(string_t result, io_data_t *dataptr, unsigned int pin, unsigned int value)
+static bool io_write_x(std::string &result, io_data_t *dataptr, unsigned int pin, unsigned int value)
 {
 	assert(inited);
 	assert(dataptr);
 
 	if(!(dataptr->info->caps & (1 << io_cap_output)))
 	{
-		if(result)
-			string_append_cstr(result, "not output capable");
+		result += "not output capable";
 		return(false);
 	}
 
 	if(pin >= dataptr->info->pins)
 	{
-		if(result)
-			string_format_append(result, "no such pin %u", pin);
+		result += std::format("no such pin {:d}", pin);
 		return(false);
 	}
 
 	if(value > dataptr->info->max_value)
 	{
-		if(result)
-			string_format_append(result, "value %u out of range", value);
+		result += std::format("value {:d} out of range", value);
 		return(false);
 	}
 
@@ -920,30 +906,28 @@ static bool io_write_x(string_t result, io_data_t *dataptr, unsigned int pin, un
 
 	if(!dataptr->info->write_fn(dataptr, pin, value))
 	{
-		if(result)
-			string_append_cstr(result, "write failed");
+		result += "write failed";
 		return(false);
 	}
 
 	return(true);
 }
 
-static void io_pin_info_x(string_t result, const io_data_t *dataptr, unsigned int pin)
+static void io_pin_info_x(std::string &result, const io_data_t *dataptr, unsigned int pin)
 {
 	if(dataptr->info->pin_info_fn)
 		dataptr->info->pin_info_fn(dataptr, pin, result);
 }
 
-bool io_info(string_t result, unsigned int io)
+bool io_info(std::string &result, unsigned int io)
 {
 	const io_data_t *dataptr;
 
 	assert(inited);
-	assert(result);
 
 	if(!(dataptr = get_data(io)))
 	{
-		string_format_append(result, "no such I/O %u", io);
+		result += std::format("no such I/O {:d}", io);
 		return(false);
 	}
 
@@ -952,7 +936,7 @@ bool io_info(string_t result, unsigned int io)
 	return(true);
 }
 
-bool io_read(string_t result, unsigned int io, unsigned int pin, unsigned int *value)
+bool io_read(std::string &result, unsigned int io, unsigned int pin, unsigned int *value)
 {
 	io_data_t *dataptr;
 
@@ -960,15 +944,14 @@ bool io_read(string_t result, unsigned int io, unsigned int pin, unsigned int *v
 
 	if(!(dataptr = get_data(io)))
 	{
-		if(result)
-			string_format_append(result, "no such I/O %u", io);
+		result += std::format("no such I/O {:d}", io);
 		return(false);
 	}
 
 	return(io_read_x(result, dataptr, pin, value));
 }
 
-bool io_write(string_t result, unsigned int io, unsigned int pin, unsigned int value)
+bool io_write(std::string &result, unsigned int io, unsigned int pin, unsigned int value)
 {
 	io_data_t *dataptr;
 
@@ -976,15 +959,14 @@ bool io_write(string_t result, unsigned int io, unsigned int pin, unsigned int v
 
 	if(!(dataptr = get_data(io)))
 	{
-		if(result)
-			string_format_append(result, "no such I/O %u", io);
+		result += std::format("no such I/O {:d}", io);
 		return(false);
 	}
 
 	return(io_write_x(result, dataptr, pin, value));
 }
 
-bool io_pin_info(string_t result, unsigned int io, unsigned int pin)
+bool io_pin_info(std::string &result, unsigned int io, unsigned int pin)
 {
 	io_data_t *dataptr;
 
@@ -992,15 +974,13 @@ bool io_pin_info(string_t result, unsigned int io, unsigned int pin)
 
 	if(!(dataptr = get_data(io)))
 	{
-		if(result)
-			string_format_append(result, "no such I/O %u", io);
+		result += std::format("no such I/O {:d}", io);
 		return(false);
 	}
 
 	if(pin >= dataptr->info->pins)
 	{
-		if(result)
-			string_format_append(result, "no such pin %u", pin);
+		result += std::format("no such pin {:d}", pin);
 		return(false);
 	}
 
@@ -1017,7 +997,6 @@ void command_io_dump(cli_command_call_t *call)
 	unsigned int address, sequence;
 	const char *name;
 	unsigned int pin;
-	string_auto(result_, 64); // FIXME
 
 	assert(inited);
 	assert(call->parameter_count == 0);
@@ -1030,12 +1009,11 @@ void command_io_dump(cli_command_call_t *call)
 
 	for(dataptr = data_root; dataptr; dataptr = dataptr->next)
 	{
-		call->result += (boost::format("\n[%u]: ") % sequence).str();
+		call->result += std::format("\n[{:d}]: ", sequence);
 
 		sequence++;
 
-		io_info_x(result_, dataptr);
-		call->result = string_cstr(result_);
+		io_info_x(call->result, dataptr);
 
 		switch(dataptr->info->bus)
 		{
@@ -1048,23 +1026,22 @@ void command_io_dump(cli_command_call_t *call)
 			case(io_bus_i2c):
 			{
 				i2c_get_slave_info(dataptr->i2c.slave, &module, &bus, &address, &name);
-				call->result += (boost::format("\nbus info\n- I2C device %s at %d/%d/%#x") % name % module % bus % address).str();
+				call->result += std::format("\nbus info\n- I2C device {} at {:d}/{:d}/{:#x}", name, static_cast<unsigned int>(module), static_cast<unsigned int>(bus), address);
 
 				break;
 			}
 
 			default:
 			{
-				call->result += (boost::format(" unknown IO type %d: %s") % dataptr->info->bus % dataptr->info->name).str();
+				call->result += std::format(" unknown IO type {:d}: {}", static_cast<unsigned int>(dataptr->info->bus), dataptr->info->name);
 			}
 		}
 		call->result += "\npins:";
 
 		for(pin = 0; pin < dataptr->info->pins; pin++)
 		{
-			call->result += (boost::format("\n- pin %u: ") % pin).str();
-			io_pin_info_x(result_, dataptr, pin);
-			call->result += string_cstr(result_); // FIXME
+			call->result += std::format("\n- pin {:d}: ", pin);
+			io_pin_info_x(call->result, dataptr, pin);
 		}
 	}
 
@@ -1078,34 +1055,34 @@ void command_io_stats(cli_command_call_t *call)
 
 	call->result = "IO STATS";
 	call->result += "\n- detecting";
-	call->result += (boost::format("\n-  skipped: %u") % stat_i2c_detect_skipped).str();
-	call->result += (boost::format("\n-  tried: %u") % stat_i2c_detect_tried).str();
-	call->result += (boost::format("\n-  found: %u") % stat_i2c_detect_found).str();
+	call->result += std::format("\n-  skipped: {:d}", stat_i2c_detect_skipped);
+	call->result += std::format("\n-  tried: {:d}", stat_i2c_detect_tried);
+	call->result += std::format("\n-  found: {:d}", stat_i2c_detect_found);
 }
 
 void command_io_read(cli_command_call_t *call)
 {
 	unsigned int value;
-	string_auto(result_, 64); // FIXME
+	std::string result;
 
 	assert(inited);
 	assert(call->parameter_count == 2);
 
-	if(io_read(result_, call->parameters[0].unsigned_int, call->parameters[1].unsigned_int, &value))
-		call->result = (boost::format("io-read %u/%u: %u OK") % call->parameters[0].unsigned_int % call->parameters[1].unsigned_int % value).str();
+	if(io_read(result, call->parameters[0].unsigned_int, call->parameters[1].unsigned_int, &value))
+		call->result = std::format("io-read {:d}/{:d}: {:d} OK", call->parameters[0].unsigned_int, call->parameters[1].unsigned_int, value);
 	else
-		call->result = (boost::format("io-read %u/%u: %u: %s") % call->parameters[0].unsigned_int % call->parameters[1].unsigned_int % value % string_cstr(result_)).str();
+		call->result = std::format("io-read {:d}/{:d}: {:d}: {}", call->parameters[0].unsigned_int, call->parameters[1].unsigned_int, value, result);
 }
 
 void command_io_write(cli_command_call_t *call)
 {
-	string_auto(result_, 64); // FIXME
+	std::string result;
 
 	assert(inited);
 	assert(call->parameter_count == 3);
 
-	if(io_write(result_, call->parameters[0].unsigned_int, call->parameters[1].unsigned_int, call->parameters[2].unsigned_int))
-		call->result = (boost::format("io-write %u/%u: %u OK") % call->parameters[0].unsigned_int % call->parameters[1].unsigned_int % call->parameters[2].unsigned_int).str();
+	if(io_write(result, call->parameters[0].unsigned_int, call->parameters[1].unsigned_int, call->parameters[2].unsigned_int))
+		call->result = std::format("io-write {:d}/{:d}: {:d} OK", call->parameters[0].unsigned_int, call->parameters[1].unsigned_int, call->parameters[2].unsigned_int);
 	else
-		call->result = (boost::format("io-write %u/%u: %u: %s") % call->parameters[0].unsigned_int % call->parameters[1].unsigned_int % call->parameters[2].unsigned_int % string_cstr(result_)).str();
+		call->result = std::format("io-write {:d}/{:d}: {:d}: {}", call->parameters[0].unsigned_int, call->parameters[1].unsigned_int, call->parameters[2].unsigned_int, result);
 }
