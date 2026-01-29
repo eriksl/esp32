@@ -27,12 +27,17 @@ extern uint64_t stat_util_time_memcpy_max;
 
 typedef enum
 {
+	ipv6_address_loopback,
 	ipv6_address_link_local,
+	ipv6_address_multicast,
+	ipv6_address_site_local,
+	ipv6_address_ipv4_mapped,
+	ipv6_address_unspecified,
 	ipv6_address_global_slaac,
 	ipv6_address_global_static,
 	ipv6_address_other,
 	ipv6_address_size,
-} ipv6_address_t;
+} ipv6_address_type_t;
 
 #define util_memory_alloc_spiram(amount) _util_memory_alloc_spiram(amount, __FILE__, __LINE__)
 #define util_memory_alloc_dma(amount) _util_memory_alloc_dma(amount, __FILE__, __LINE__)
@@ -40,13 +45,13 @@ typedef enum
 
 void util_sleep(unsigned int msec);
 unsigned int util_partition_to_slot(const esp_partition_t *partition);
-void util_esp_ipv4_addr_to_string(string_t dst, const esp_ip4_addr_t *src);
-void util_esp_ipv6_addr_to_string(string_t dst, const esp_ip6_addr_t *src);
-bool util_sin6_addr_is_ipv4(const void *data /* const struct sockaddr_in6 */);
-void util_sin6_addr_to_string(string_t dst, unsigned int length, const void *src /* const struct sockaddr_in6 */);
-ipv6_address_t util_ipv6_address_type(const void *);
-const char *util_ipv6_address_type_string(const void *);
-void util_mac_addr_to_string(string_t dst, const uint8_t mac[6], bool inverse);
+
+std::string util_ipv4_addr_to_string(const uint32_t *in /* sockaddr_in->sin_addr.in_addr = uint32_t */);
+std::string util_ipv6_addr_to_string(const uint8_t in[] /* sockaddr6_in->sin6_addr.in6_addr = uint8_t[16] */);
+std::string util_ipv6_address_type_string(const uint8_t in[] /* sockaddr6_in->sin6_addr.s6_addr = char[16] */);
+ipv6_address_type_t util_ipv6_address_type(const uint8_t in[] /* sockaddr6_in->sin6_addr.s6_addr = char[16] */);
+std::string util_mac_addr_to_string(const uint8_t mac[6], bool invert);
+
 void util_time_to_string(string_t dst, const time_t *ticks);
 void util_hash_to_string(string_t dst, unsigned int hash_size, const uint8_t *hash);
 void *_util_memory_alloc_spiram(unsigned int amount, const char *file, unsigned int line);

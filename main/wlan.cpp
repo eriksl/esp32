@@ -323,10 +323,9 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 		case(IP_EVENT_GOT_IP6):
 		{
 			const ip_event_got_ip6_t *event = (const ip_event_got_ip6_t *)event_data;
-			string_auto(ipv6_address_string, 64);
 			const char *address_type;
 
-			switch(util_ipv6_address_type(&event->ip6_info.ip))
+			switch(util_ipv6_address_type(reinterpret_cast<const uint8_t *>(&event->ip6_info.ip.addr)))
 			{
 				case(ipv6_address_link_local):
 				{
@@ -365,8 +364,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 				}
 			}
 
-			util_esp_ipv6_addr_to_string(ipv6_address_string, &event->ip6_info.ip);
-			log_format("wlan: %s ipv6: %s", address_type, string_cstr(ipv6_address_string));
+			log_format("wlan: %s ipv6: %s", address_type, util_ipv6_addr_to_string(reinterpret_cast<const uint8_t *>(&event->ip6_info.ip.addr[0])).c_str());
 
 			break;
 		}
@@ -612,9 +610,6 @@ void wlan_command_info(cli_command_call_t *call)
 	wifi_ap_record_t ap_info;
 	const char *hostname, *key;
 	uint8_t mac[6];
-	string_auto(mac_str, 32);
-	string_auto(ipv4_str, 32);
-	string_auto(ipv6_str, 64);
 	char ifname[16];
 	esp_ip6_addr_t esp_ip6_addr[8];
 	wifi_mode_t wlan_mode;
@@ -692,10 +687,7 @@ void wlan_command_info(cli_command_call_t *call)
 		call->result += "<unknown>";
 	}
 	else
-	{
-		util_mac_addr_to_string(mac_str, mac, false);
-		call->result += string_cstr(mac_str);
-	}
+		call->result += util_mac_addr_to_string(mac, false);
 
 	call->result += "\nipv4:";
 
@@ -708,15 +700,12 @@ void wlan_command_info(cli_command_call_t *call)
 	}
 	else
 	{
-		util_esp_ipv4_addr_to_string(ipv4_str, &ip_info.ip);
 		call->result += "\n- interface address: ";
-		call->result += string_cstr(ipv4_str);
+		call->result += util_ipv4_addr_to_string(&ip_info.ip.addr);
 		call->result += "\n- gateway address: ";
-		util_esp_ipv4_addr_to_string(ipv4_str, &ip_info.gw);
-		call->result += string_cstr(ipv4_str);
+		call->result += util_ipv4_addr_to_string(&ip_info.gw.addr);
 		call->result += "\n- netmask: ";
-		util_esp_ipv4_addr_to_string(ipv4_str, &ip_info.netmask);
-		call->result += string_cstr(ipv4_str);
+		call->result += util_ipv4_addr_to_string(&ip_info.netmask.addr);
 	}
 
 	call->result += "\nipv6:";
@@ -724,10 +713,9 @@ void wlan_command_info(cli_command_call_t *call)
 	rv = esp_netif_get_all_ip6(netif, esp_ip6_addr);
 
 	for(ix = 0; ix < rv; ix++)
-	{
-		util_esp_ipv6_addr_to_string(ipv6_str, &esp_ip6_addr[ix]);
-		call->result += (boost::format("\n- address %u: %s (%s)") % ix % string_cstr(ipv6_str) % util_ipv6_address_type_string(&esp_ip6_addr[ix])).str();
-	}
+		call->result += std::format("\n- address {:d}: {} ({})", ix,
+				util_ipv6_addr_to_string(reinterpret_cast<const uint8_t *>(&esp_ip6_addr[ix].addr)),
+				util_ipv6_address_type_string(reinterpret_cast<const uint8_t *>(&esp_ip6_addr[ix].addr)));
 
 	call->result += "\nhostname: ";
 
@@ -773,8 +761,7 @@ void wlan_command_info(cli_command_call_t *call)
 		}
 		else
 		{
-			util_mac_addr_to_string(mac_str, ap_info.bssid, false);
-			call->result += (boost::format("\n- access point: %s") % string_cstr(mac_str)).str();
+			call->result += (boost::format("\n- access point: %s") % util_mac_addr_to_string(ap_info.bssid, false)).str();
 			call->result += (boost::format("\n- SSID: %s") % ap_info.ssid).str();
 			call->result += "\n- ";
 

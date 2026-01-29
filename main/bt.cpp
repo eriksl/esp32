@@ -521,15 +521,10 @@ void bt_init(void)
 
 void bluetooth_command_info(cli_command_call_t *call)
 {
-	string_auto(string_addr, 32);
-
 	assert(call->parameter_count == 0);
 
-	util_mac_addr_to_string(string_addr, bt_host_address, true);
-
 	call->result = "bluetooth information";
-
-	call->result += (boost::format("\n  address: %s") % string_cstr(string_addr)).str();
+	call->result += (boost::format("\n  address: %s") % util_mac_addr_to_string(bt_host_address, true)).str();
 	call->result += "\n  data sent:";
 	call->result += (boost::format("\n  - packets: %u") % stats_sent_packets).str();
 	call->result += (boost::format("\n  - bytes: %u") % stats_sent_bytes).str();

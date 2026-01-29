@@ -3,7 +3,6 @@
 #include <string.h>
 #include <lwip/ip_addr.h>
 
-#include "string.h"
 #include "log.h"
 #include "util.h"
 
@@ -25,10 +24,15 @@ static bool inited;
 
 static const char *ipv6_address_type_strings[ipv6_address_size] =
 {
-	[ipv6_address_link_local] =		"link local",
-	[ipv6_address_global_slaac] =	"slaac",
-	[ipv6_address_global_static] =	"static",
-	[ipv6_address_other] =			"other",
+	[ipv6_address_loopback] = "loopback",
+	[ipv6_address_link_local] = "link local",
+	[ipv6_address_multicast] = "multicast",
+	[ipv6_address_site_local] = "site local",
+	[ipv6_address_ipv4_mapped] = "ipv4 mapped",
+	[ipv6_address_unspecified] = "unspecified",
+	[ipv6_address_global_slaac] = "slaac",
+	[ipv6_address_global_static] = "static",
+	[ipv6_address_other] = "other",
 };
 
 void util_init(void)
@@ -70,107 +74,87 @@ unsigned int util_partition_to_slot(const esp_partition_t *partition)
 	return(slot);
 }
 
-void util_esp_ipv4_addr_to_string(string_t dst, const esp_ip4_addr_t *src)
+std::string util_ipv4_addr_to_string(const uint32_t *in /* sockaddr_in->sin_addr.in_addr = uint32_t */)
 {
-	string_format(dst, IPSTR, IP2STR(src));
+	std::string dst;
+	const char *c_dst;
+
+	assert(in);
+
+	dst.resize(INET_ADDRSTRLEN);
+	c_dst = inet_ntop(AF_INET, reinterpret_cast<const void *>(in), dst.data(), dst.size());
+	dst.resize(strlen(c_dst));
+
+	return(dst);
 }
 
-void util_esp_ipv6_addr_to_string(string_t dst, const esp_ip6_addr_t *src)
+std::string util_ipv6_addr_to_string(const uint8_t in[] /* sockaddr6_in->sin6_addr.in6_addr = uint8_t[16] */)
 {
-	string_format(dst, "%s", ip6addr_ntoa((const ip6_addr_t *)src));
-	string_tolower(dst);
+	std::string dst;
+	const char *c_dst;
+	std::string::iterator it;
+
+	assert(in);
+
+	if((in[0] == 0) && (in[1] == 0) && (in[2] == 0) && (in[3] == 0) &&
+			(in[4] == 0) && (in[5] == 0) && (in[6] == 0) && (in[7] == 0) &&
+			(in[8] == 0) && (in[9] == 0) && (in[10] == 0xff) && (in[11] == 0xff))
+		return(std::format("{:d}.{:d}.{:d}.{:d}", in[12], in[13], in[14], in[15]));
+
+	dst.resize(INET6_ADDRSTRLEN);
+	c_dst = inet_ntop(AF_INET6, in, dst.data(), dst.size());
+	dst.resize(strlen(c_dst));
+
+	for(it = dst.begin(); it != dst.end(); it++)
+		switch(*it)
+		{
+			case('A'): { *it = 'a'; break; }
+			case('B'): { *it = 'b'; break; }
+			case('C'): { *it = 'c'; break; }
+			case('D'): { *it = 'd'; break; }
+			case('E'): { *it = 'e'; break; }
+			case('F'): { *it = 'f'; break; }
+			default: { break; }
+		}
+
+	return(dst);
 }
 
-bool util_sin6_addr_is_ipv4(const void *in)
+ipv6_address_type_t util_ipv6_address_type(const uint8_t in[] /* sockaddr6_in->sin6_addr.s6_addr = char[16] */)
 {
-	const struct sockaddr_in6 *sockaddr_in6 = (const struct sockaddr_in6 *)in;
-	const struct in6_addr *addr_in6;
-	const uint8_t *addr;
+	struct in6_addr s6addr;
 
-	if(sockaddr_in6->sin6_family == AF_INET)
-		return(true);
+	memcpy(&s6addr.s6_addr, in, sizeof(s6addr.s6_addr));
 
-	if(sockaddr_in6->sin6_family != AF_INET6)
-		return(false);
+	if(IN6_IS_ADDR_LOOPBACK(&s6addr))
+		return(ipv6_address_loopback);
 
-	addr_in6 = &sockaddr_in6->sin6_addr;
-	addr = &addr_in6->s6_addr[0];
-
-	if((addr[0] == 0) && (addr[1] == 0) && (addr[2] == 0) && (addr [3] == 0) &&
-			(addr[4] == 0) && (addr[5] == 0) && (addr[6] == 0) && (addr [7] == 0) &&
-			(addr[8] == 0) && (addr[9] == 0) && (addr[10] == 0xff) && (addr [11] == 0xff))
-		return(true);
-
-	return(false);
-}
-
-void util_sin6_addr_to_string(string_t dst, unsigned int length, const void *data)
-{
-	const struct sockaddr_in6 *addr_in6;
-	string_auto(address_string, 128);
-
-	if(length != sizeof(struct sockaddr_in6))
-	{
-		string_assign_cstr(dst, "invalid length");
-		return;
-	}
-
-	addr_in6 = (const struct sockaddr_in6 *)data;
-
-	if(util_sin6_addr_is_ipv4(addr_in6))
-		//util_esp_ipv4_addr_to_string(address_string, &addr_in6->sin6_addr.s6_addr[12]);
-		//string_assign_cstr(ipaddr_ntoa(&addr_in6->sin6_addr));
-		string_format(address_string, "%u.%u.%u.%u",
-				addr_in6->sin6_addr.s6_addr[12],
-				addr_in6->sin6_addr.s6_addr[13],
-				addr_in6->sin6_addr.s6_addr[14],
-				addr_in6->sin6_addr.s6_addr[15]);
-	else
-	{
-		string_assign_cstr(address_string, ip6addr_ntoa((const ip6_addr_t *)&addr_in6->sin6_addr));
-		string_tolower(address_string);
-	}
-
-	string_format(dst, "[address: %s, port %u]",
-			string_cstr(address_string),
-			addr_in6->sin6_port);
-}
-
-void util_mac_addr_to_string(string_t dst, const uint8_t mac[6], bool invert)
-{
-	if(invert)
-		string_format(dst, "%02x:%02x:%02x:%02x:%02x:%02x",
-				mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]);
-	else
-		string_format(dst, "%02x:%02x:%02x:%02x:%02x:%02x",
-				mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-}
-
-ipv6_address_t util_ipv6_address_type(const void *addr)
-{
-	const esp_ip6_addr_t *_addr = (const esp_ip6_addr_t *)addr;
-	unsigned int b[2];
-
-	if(ip6_addr_islinklocal(_addr))
+	if(IN6_IS_ADDR_LINKLOCAL(&s6addr))
 		return(ipv6_address_link_local);
 
-	if(!ip6_addr_isglobal(_addr))
-		return(ipv6_address_other);
+	if(IN6_IS_ADDR_MULTICAST(&s6addr))
+		return(ipv6_address_multicast);
 
-	b[0] = (htonl(_addr->addr[2]) & 0x000000ffUL) >> 0;
-	b[1] = (htonl(_addr->addr[3]) & 0xff000000UL) >> 24;
+	if(IN6_IS_ADDR_SITELOCAL(&s6addr))
+		return(ipv6_address_site_local);
 
-	if((b[0] == 0xff) && (b[1]== 0xfe))
+	if(IN6_IS_ADDR_V4MAPPED(&s6addr))
+		return(ipv6_address_ipv4_mapped);
+
+	if(IN6_IS_ADDR_UNSPECIFIED(&s6addr))
+		return(ipv6_address_unspecified);
+
+	if((in[11] == 0xff) && (in[12] == 0xfe))
 		return(ipv6_address_global_slaac);
 
 	return(ipv6_address_global_static);
 }
 
-const char *util_ipv6_address_type_string(const void *addr)
+std::string util_ipv6_address_type_string(const uint8_t in[] /* sockaddr6_in->sin6_addr.s6_addr = char[16] */)
 {
-	ipv6_address_t type;
+	ipv6_address_type_t type;
 
-	type = util_ipv6_address_type(addr);
+	type = util_ipv6_address_type(in);
 
 	if((type < 0) || (type >= ipv6_address_size))
 		return("<illegal>");
@@ -179,14 +163,23 @@ const char *util_ipv6_address_type_string(const void *addr)
 }
 
 void util_time_to_string(string_t dst, const time_t *ticks)
+std::string util_mac_addr_to_string(const uint8_t mac[6], bool invert)
 {
 	struct tm tm;
 	char timestring[64];
+	std::string dst;
 
 	localtime_r(ticks, &tm);
 	strftime(timestring, sizeof(timestring), "%Y/%m/%d %H:%M:%S", &tm);
+	if(invert)
+		dst = std::format("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+				mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]);
+	else
+		dst = std::format("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+				mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
 	string_assign_cstr(dst, timestring);
+	return(dst);
 }
 
 void util_hash_to_string(string_t dst, unsigned int hash_size, const uint8_t *hash)
