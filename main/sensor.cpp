@@ -4874,7 +4874,6 @@ void command_sensor_json(cli_command_call_t *call)
 	i2c_bus_t bus;
 	unsigned int address;
 	sensor_type_t type;
-	string_auto(time_string, 64);
 	bool first_sensor;
 	bool first_value;
 
@@ -4947,7 +4946,6 @@ void command_sensor_dump(cli_command_call_t *call)
 	unsigned int address;
 	sensor_type_t type;
 	unsigned int index;
-	string_auto(time_string, 64);
 
 	assert(call->parameter_count < 2);
 
@@ -4991,9 +4989,9 @@ void command_sensor_dump(cli_command_call_t *call)
 					if(dataptr->info->type & (1 << type))
 					{
 						std::string format_string = (boost::format(" %%s=%%.%uf [%%s]") % dataptr->info->precision).str();
-
-						util_time_to_string(time_string, &dataptr->values[type].stamp);
-						call->result += (boost::format(format_string) % sensor_type_info[type].type % dataptr->values[type].value % string_cstr(time_string)).str();
+						call->result += (boost::format(format_string) %
+								sensor_type_info[type].type % dataptr->values[type].value %
+								util_time_to_string(dataptr->values[type].stamp)).str();
 					}
 				}
 

@@ -18,7 +18,9 @@
 #include <netinet/in.h>
 
 #include <string>
-#include <boost/format.hpp>
+#include <format>
+#include <chrono>
+#include <boost/format.hpp> // FIXME
 
 static bool inited;
 
@@ -39,7 +41,7 @@ void util_init(void)
 {
 	assert(!inited);
 
-	setenv("TZ", "CEST-1CET,M3.5.0/2:00:00,M10.5.0/2:00:00", 1);
+	setenv("TZ", "CEST-1CET,M3.5.0/2:00:00,M10.5.0/2:00:00", 1); // FIXME
 	tzset();
 
 	inited = true;
@@ -162,15 +164,10 @@ std::string util_ipv6_address_type_string(const uint8_t in[] /* sockaddr6_in->si
 	return(ipv6_address_type_strings[type]);
 }
 
-void util_time_to_string(string_t dst, const time_t *ticks)
 std::string util_mac_addr_to_string(const uint8_t mac[6], bool invert)
 {
-	struct tm tm;
-	char timestring[64];
 	std::string dst;
 
-	localtime_r(ticks, &tm);
-	strftime(timestring, sizeof(timestring), "%Y/%m/%d %H:%M:%S", &tm);
 	if(invert)
 		dst = std::format("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
 				mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]);
@@ -178,8 +175,27 @@ std::string util_mac_addr_to_string(const uint8_t mac[6], bool invert)
 		dst = std::format("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
 				mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
-	string_assign_cstr(dst, timestring);
 	return(dst);
+}
+
+std::string util_time_to_string(std::string_view format, const time_t &stamp)
+{
+	// FIXME: timezone
+	std::chrono::zoned_time chrono_stamp{"Europe/Amsterdam", std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::from_time_t(stamp))};
+
+	try
+	{
+		return(std::vformat(format, std::make_format_args(chrono_stamp)));
+	}
+	catch(const std::format_error& e)
+	{
+		return(std::string("[util_time_to_string: ") + e.what() + ", format string: " + std::string(format) + "]");
+	}
+}
+
+std::string util_time_to_string(const time_t &stamp)
+{
+	return(util_time_to_string("{:%Y/%m/%d %H:%M:%S}", stamp));
 }
 
 void util_hash_to_string(string_t dst, unsigned int hash_size, const uint8_t *hash)

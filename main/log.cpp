@@ -319,7 +319,6 @@ void log_command_info(cli_command_call_t *call)
 
 void log_command_log(cli_command_call_t *call)
 {
-	string_auto(timestring, 64);
 	unsigned int entries, amount;
 
 	assert(inited);
@@ -343,11 +342,9 @@ void log_command_log(cli_command_call_t *call)
 
 	for(amount = 0; (amount < 24) && (amount < entries); amount++)
 	{
-		util_time_to_string(timestring, &log_buffer->entry[log_buffer->out].timestamp);
-
 		call->result += (boost::format("\n%3u %s %s") %
 				log_buffer->out %
-				string_cstr(timestring) %
+				util_time_to_string(log_buffer->entry[log_buffer->out].timestamp) %
 				log_buffer->entry[log_buffer->out].data).str();
 
 		if(++log_buffer->out >= log_buffer_entries)

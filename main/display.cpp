@@ -22,7 +22,6 @@
 #include <string>
 #include <deque>
 #include <vector>
-#include <chrono>
 #include <format>
 
 static_assert(sizeof(font_glyph_t) == 68);
@@ -176,20 +175,6 @@ static inline void page_data_mutex_give(void)
 {
 	assert(page_data_mutex);
 	xSemaphoreGive(page_data_mutex);
-}
-
-static std::string timestring(const time_t &stamp)
-{
-	// FIXME: timezone
-	std::chrono::zoned_time zone_stamp{"Europe/Amsterdam", std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::from_time_t(stamp))};
-	return(std::format("{:%H:%M:%S}", zone_stamp));
-}
-
-static std::string timedatestring(const time_t &stamp)
-{
-	// FIXME: timezone
-	std::chrono::zoned_time zone_stamp{"Europe/Amsterdam", std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::from_time_t(stamp))};
-	return(std::format("{:%d/%m %H:%M}", zone_stamp));
 }
 
 static unsigned int string_length_utf8(std::string_view in)
@@ -558,7 +543,8 @@ static void __attribute__((noreturn)) run_display_log(void *)
 		if(font_valid && log_mode && (display_type != dt_no_display) && info[display_type].write_fn)
 		{
 			log_get_entry(entry, &stamp, entry_text);
-			utf8_to_unicode(timestring(stamp) + " " + entry_text, unicode_buffer);
+			utf8_to_unicode(util_time_to_string("{:%H:%M:%S}", stamp) + " " + entry_text, unicode_buffer);
+
 			info[display_type].write_fn(font, dc_white, dc_black, 0, display_log_y, x_size - 1, display_log_y + font->net.height - 1, unicode_buffer);
 
 			display_log_y += font->net.height;
@@ -703,7 +689,7 @@ static void __attribute__((noreturn)) run_display_info(void *)
 			box(display_pages[current_page].colour,	0,										(y_size - 1) - (page_border_size - 1),	x_size - 1,				y_size - 1);
 			box(display_pages[current_page].colour,	0,										0,										page_border_size - 1,	y_size - 1);
 
-			stamp_string = timedatestring(time(nullptr));
+			stamp_string = util_time_to_string("{:%d/%m %H:%M}", time(nullptr));
 
 			if(stamp_string.length() > display_columns)
 			{
@@ -992,7 +978,7 @@ static void display_info(std::string &output)
 		for(page = 0; page < display_pages.size(); page++)
 		{
 			if(display_pages[page].expiry > 0)
-				datetime = timedatestring(display_pages[page].expiry);
+				datetime = util_time_to_string("{:%d/%m %H:%M}", display_pages[page].expiry);
 			else
 				datetime = "<infinite>";
 

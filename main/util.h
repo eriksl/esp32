@@ -52,7 +52,9 @@ std::string util_ipv6_address_type_string(const uint8_t in[] /* sockaddr6_in->si
 ipv6_address_type_t util_ipv6_address_type(const uint8_t in[] /* sockaddr6_in->sin6_addr.s6_addr = char[16] */);
 std::string util_mac_addr_to_string(const uint8_t mac[6], bool invert);
 
-void util_time_to_string(string_t dst, const time_t *ticks);
+std::string util_time_to_string(const time_t &stamp);
+std::string util_time_to_string(std::string_view format, const time_t &stamp);
+
 void util_hash_to_string(string_t dst, unsigned int hash_size, const uint8_t *hash);
 void *_util_memory_alloc_spiram(unsigned int amount, const char *file, unsigned int line);
 void *_util_memory_alloc_dma(unsigned int amount, const char *file, unsigned int line);

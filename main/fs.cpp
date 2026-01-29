@@ -85,8 +85,8 @@ void fs_command_list(cli_command_call_t *call)
 	struct stat statb;
 	string_auto(filename, 64);
 	bool option_long;
-	string_auto(ctime, 32);
-	string_auto(mtime, 32);
+	std::string ctime;
+	std::string mtime;
 	int inode, length, allocated;
 
 	assert(inited);
@@ -122,21 +122,21 @@ void fs_command_list(cli_command_call_t *call)
 			inode = -1;
 			length = -1;
 			allocated = -1;
-			string_clear(ctime);
-			string_clear(mtime);
+			mtime.clear();
+			ctime.clear();
 		}
 		else
 		{
 			inode = statb.st_ino;
 			length = statb.st_size;
 			allocated = (statb.st_blocks * 512UL) / 1024UL;
-			util_time_to_string(ctime, &statb.st_ctim.tv_sec);
-			util_time_to_string(mtime, &statb.st_mtim.tv_sec);
+			ctime = util_time_to_string(statb.st_ctim.tv_sec);
+			mtime = util_time_to_string(statb.st_mtim.tv_sec);
 		}
 
 		if(option_long)
 			call->result += (boost::format("\n%-20s %7d %4dk %19s %19s %11d") %
-					dirent->d_name % length % allocated % string_cstr(ctime) % string_cstr(mtime) % inode).str();
+					dirent->d_name % length % allocated % ctime % mtime % inode).str();
 		else
 			call->result += (boost::format("\n%3luk %-20s") % (length / 1024UL) % dirent->d_name).str();
 	}
