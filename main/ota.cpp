@@ -4,9 +4,8 @@
 #include "string.h"
 #include "log.h"
 #include "util.h"
+#include "encryption.h"
 #include "cli-command.h"
-
-#include <mbedtls/sha256.h>
 
 #include <esp_ota_ops.h>
 #include <esp_image_format.h>
@@ -18,8 +17,7 @@ static bool ota_handle_active = false;
 static const esp_partition_t *ota_partition = (const esp_partition_t *)0;
 static esp_ota_handle_t ota_handle;
 
-static bool ota_sha256_ctx_active = false;
-static mbedtls_sha256_context ota_sha256_ctx;
+static Encryption *encryption = nullptr;
 static unsigned int ota_length = 0;
 
 static void ota_abort(void)
@@ -28,14 +26,14 @@ static void ota_abort(void)
 	{
 		util_warn_on_esp_err("otacli: ota_abort: esp_ota_abort returns error", esp_ota_abort(ota_handle));
 
-		ota_partition = (const esp_partition_t *)0;
+		ota_partition = nullptr;
 		ota_handle_active = false;
 	}
 
-	if(ota_sha256_ctx_active)
+	if(encryption)
 	{
-		mbedtls_sha256_free(&ota_sha256_ctx);
-		ota_sha256_ctx_active = false;
+		delete encryption;
+		encryption = nullptr;
 	}
 
 	ota_length = 0;
@@ -69,7 +67,7 @@ void command_ota_start(cli_command_call_t *call)
 		return;
 	}
 
-	if(ota_handle_active || ota_sha256_ctx_active)
+	if(ota_handle_active || encryption)
 	{
 		log("otacli: ota-start: ota already active, first aborting session");
 		ota_abort();
@@ -83,12 +81,12 @@ void command_ota_start(cli_command_call_t *call)
 
 	ota_partition = partition;
 	ota_handle_active = true;
-
-	mbedtls_sha256_init(&ota_sha256_ctx);
-	mbedtls_sha256_starts(&ota_sha256_ctx, /* no SHA-224 */ 0);
-	ota_sha256_ctx_active = true;
-
 	ota_length = length;
+
+	assert(!encryption);
+
+	encryption = new Encryption;
+	encryption->sha256_init();
 
 	call->result = (boost::format("OK start write ota to partition %u/%s") % util_partition_to_slot(partition) % partition->label).str();
 }
@@ -103,9 +101,9 @@ void command_ota_write(cli_command_call_t *call)
 	length = call->parameters[0].unsigned_int;
 	checksum_chunk = call->parameters[1].unsigned_int;
 
-	if(!ota_sha256_ctx_active)
+	if(!encryption)
 	{
-		call->result = "ERROR: sha256 context not active";
+		call->result = "ERROR: hash context not active";
 		return(ota_abort());
 	}
 
@@ -134,7 +132,7 @@ void command_ota_write(cli_command_call_t *call)
 	}
 
 	if(!checksum_chunk)
-		mbedtls_sha256_update(&ota_sha256_ctx, reinterpret_cast<const uint8_t *>(call->oob.data()), call->oob.length());
+		encryption->sha256_update(call->oob);
 
 	call->result = "OK write ota";
 }
@@ -142,14 +140,12 @@ void command_ota_write(cli_command_call_t *call)
 void command_ota_finish(cli_command_call_t *call)
 {
 	unsigned int rv;
-	unsigned char ota_sha256_hash[32];
-	string_auto(ota_sha256_hash_text, (sizeof(ota_sha256_hash) * 2) + 1);
+	std::string hash;
+	std::string hash_text;
 
-	assert(call->parameter_count == 0);
-
-	if(!ota_sha256_ctx_active)
+	if(!encryption)
 	{
-		call->result = "ERROR: sha256 context not active";
+		call->result = "ERROR: hash context not active";
 		return(ota_abort());
 	}
 
@@ -159,10 +155,11 @@ void command_ota_finish(cli_command_call_t *call)
 		return(ota_abort());
 	}
 
-	mbedtls_sha256_finish(&ota_sha256_ctx, ota_sha256_hash);
-	mbedtls_sha256_free(&ota_sha256_ctx);
-	ota_sha256_ctx_active = false;
-	util_hash_to_string(ota_sha256_hash_text, sizeof(ota_sha256_hash), ota_sha256_hash);
+	hash = encryption->sha256_finish();
+	hash_text = util_hash_to_string(hash);
+
+	delete encryption;
+	encryption = nullptr;
 
 	if((rv = esp_ota_end(ota_handle)))
 	{
@@ -172,22 +169,22 @@ void command_ota_finish(cli_command_call_t *call)
 
 	ota_handle_active = false;
 
-	call->result = (boost::format("OK finish ota, checksum: %s") % string_cstr(ota_sha256_hash_text)).str();
+	call->result = (boost::format("OK finish ota, checksum: %s") % hash_text).str();
 }
 
 void command_ota_commit(cli_command_call_t *call)
 {
 	unsigned int rv;
-	unsigned char local_sha256_hash[32];
-	string_auto(local_sha256_hash_text, (sizeof(local_sha256_hash) * 2) + 1);
-	std::string remote_sha256_hash_text;
+	std::string local_hash;
+	std::string local_hash_text;
+	std::string remote_hash_text;
 	const esp_partition_t *boot_partition;
 	esp_partition_pos_t partition_pos;
 	esp_image_metadata_t image_metadata;
 
 	assert(call->parameter_count == 1);
 
-	remote_sha256_hash_text = call->parameters[0].str;
+	remote_hash_text = call->parameters[0].str;
 
 	if(!ota_partition)
 	{
@@ -195,17 +192,19 @@ void command_ota_commit(cli_command_call_t *call)
 		return;
 	}
 
-	if((rv = esp_partition_get_sha256(ota_partition, local_sha256_hash)))
+	local_hash.resize(32);
+
+	if((rv = esp_partition_get_sha256(ota_partition, reinterpret_cast<uint8_t *>(local_hash.data()))))
 	{
 		call->result = (boost::format("ERROR: esp_partition_get_sha256 failed: %u") % rv).str();
 		return;
 	}
 
-	util_hash_to_string(local_sha256_hash_text, sizeof(local_sha256_hash), local_sha256_hash);
+	local_hash_text = util_hash_to_string(local_hash);
 
-	if(remote_sha256_hash_text != string_cstr(local_sha256_hash_text))
+	if(remote_hash_text != local_hash_text)
 	{
-		call->result = (boost::format("ERROR: checksum mismatch: %s vs. %s") % remote_sha256_hash_text.c_str() % string_cstr(local_sha256_hash_text)).str();
+		call->result = (boost::format("ERROR: checksum mismatch: %s vs. %s") % remote_hash_text % local_hash_text).str();
 		return;
 	}
 
