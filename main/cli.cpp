@@ -732,6 +732,8 @@ static void run_receive_queue(void *)
 
 		try
 		{
+			call.parameter_count = 0;
+
 			if(data.length() == 0)
 				throw(CommandException("ERROR: empty line"));
 
@@ -763,8 +765,6 @@ static void run_receive_queue(void *)
 
 			if(count > parameters_size)
 				count = parameters_size;
-
-			call.parameter_count = 0;
 
 			for(current = 0; current < count; current++)
 			{
