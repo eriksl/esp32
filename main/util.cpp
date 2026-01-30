@@ -37,16 +37,6 @@ static const char *ipv6_address_type_strings[ipv6_address_size] =
 	[ipv6_address_other] = "other",
 };
 
-void util_init(void)
-{
-	assert(!inited);
-
-	setenv("TZ", "CEST-1CET,M3.5.0/2:00:00,M10.5.0/2:00:00", 1); // FIXME
-	tzset();
-
-	inited = true;
-}
-
 void util_sleep(unsigned int msec)
 {
 	unsigned int ticks;
@@ -198,31 +188,34 @@ std::string util_time_to_string(const time_t &stamp)
 	return(util_time_to_string("{:%Y/%m/%d %H:%M:%S}", stamp));
 }
 
-void util_hash_to_string(string_t dst, unsigned int hash_size, const uint8_t *hash)
+std::string util_hash_to_string(std::string_view hash)
 {
-	unsigned int in, out, value;
+	std::string dst;
+	std::string_view::const_iterator it;
+	int nibble;
+	unsigned int value;
 
-	assert(inited);
-	assert(dst);
-	assert(hash);
+	dst.reserve(65);
 
-	string_clear(dst);
-
-	for(in = 0, out = 0; in < hash_size; out++)
+	for(it = hash.begin(); it != hash.end(); it++)
 	{
-		if(out & 0x1)
+		for(nibble = 0; nibble < 2; nibble++)
 		{
-			value = (hash[in] & 0x0f) >> 0;
-			in++;
-		}
-		else
-			value = (hash[in] & 0xf0) >> 4;
+			value = static_cast<unsigned int>(*it) & 0xff;
 
-		if(value >= 0xa)
-			string_append(dst, (value - 10) + 'a');
-		else
-			string_append(dst, (value -  0) + '0');
+			if(nibble == 0)
+				value = (value & 0xf0) >> 4;
+			else
+				value = (value & 0x0f) >> 0;
+
+			if(value >= 0x0a)
+				dst.append(1, (value - 0x0a) + 'a');
+			else
+				dst.append(1, (value - 0x00) + '0');
+		}
 	}
+
+	return(dst);
 }
 
 void util_hexdump_cstr(string_t dst, unsigned int src_length, const uint8_t *src)
@@ -375,4 +368,14 @@ void _util_memcpy(void *to, const void *from, unsigned int length, const char *f
 	else
 		if(stat_util_time_memcpy_max < time_spent)
 			stat_util_time_memcpy_max = time_spent;
+}
+
+void util_init(void)
+{
+	assert(!inited);
+
+	setenv("TZ", "CEST-1CET,M3.5.0/2:00:00,M10.5.0/2:00:00", 1); // FIXME
+	tzset();
+
+	inited = true;
 }

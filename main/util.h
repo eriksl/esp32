@@ -55,7 +55,8 @@ std::string util_mac_addr_to_string(const uint8_t mac[6], bool invert);
 std::string util_time_to_string(const time_t &stamp);
 std::string util_time_to_string(std::string_view format, const time_t &stamp);
 
-void util_hash_to_string(string_t dst, unsigned int hash_size, const uint8_t *hash);
+std::string util_hash_to_string(std::string_view hash); // FIXME -> encryption
+
 void *_util_memory_alloc_spiram(unsigned int amount, const char *file, unsigned int line);
 void *_util_memory_alloc_dma(unsigned int amount, const char *file, unsigned int line);
 void _util_memcpy(void *to, const void *from, unsigned int length, const char *file, unsigned int line);
