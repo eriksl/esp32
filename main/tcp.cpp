@@ -140,6 +140,7 @@ void TCP::run()
 				util_abort("tcp ioctl error");
 			}
 
+			tcp_receive_buffer.clear();
 			tcp_receive_buffer.resize(length);
 
 			length = ::recv(this->socket_fd, tcp_receive_buffer.data(), tcp_receive_buffer.size(), 0);

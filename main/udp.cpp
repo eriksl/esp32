@@ -119,6 +119,7 @@ void UDP::run()
 			util_abort("udp ioctl error");
 		}
 
+		udp_receive_buffer.clear();
 		udp_receive_buffer.resize(length);
 
 		length = ::recvfrom(this->socket_fd, udp_receive_buffer.data(), udp_receive_buffer.size(), 0, reinterpret_cast<sockaddr *>(&si6_addr), &si6_addr_length);
