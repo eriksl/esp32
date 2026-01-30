@@ -112,8 +112,8 @@ void info_command_info_partitions(cli_command_call_t *call)
 	const esp_partition_t *boot_partition, *running_partition;
 	esp_ota_img_states_t ota_state;
 	const char *ota_state_text;
-	unsigned char sha256_hash[32];
-	string_auto(sha256_hash_text, (sizeof(sha256_hash) * 2) + 1);
+	std::string sha256_hash;
+	std::string sha256_hash_text;
 
 	assert(inited);
 	assert(call->parameter_count == 0);
@@ -227,10 +227,12 @@ void info_command_info_partitions(cli_command_call_t *call)
 				ota_state_text = "X";
 		}
 
-		if((rv = esp_partition_get_sha256(partition, sha256_hash)))
-			string_assign_cstr(sha256_hash_text, "<invalid>");
+		sha256_hash.resize(32);
+
+		if((rv = esp_partition_get_sha256(partition, reinterpret_cast<uint8_t *>(sha256_hash.data()))))
+			sha256_hash_text = "<invalid>";
 		else
-			util_hash_to_string(sha256_hash_text, sizeof(sha256_hash), sha256_hash);
+			sha256_hash_text = util_hash_to_string(sha256_hash);
 
 		call->result += (boost::format("%s  %2u %1s%1s%1s %-8s %06lx %4lu %-7s %-8s %-64s") %
 				((index > 0) ? "\n" : "") %
@@ -243,7 +245,7 @@ void info_command_info_partitions(cli_command_call_t *call)
 				(partition->size / 1024) %
 				type %
 				subtype %
-				string_cstr(sha256_hash_text)).str();
+				sha256_hash_text).str();
 	}
 
 	esp_partition_iterator_release(partition_iterator);
