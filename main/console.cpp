@@ -315,7 +315,7 @@ static void run_console(void *)
 			command_response_t *command_response = new command_response_t;
 
 			command_response->source = cli_source_console;
-			command_response->mtu = 0;
+			command_response->mtu = 32768;
 			command_response->packetised = 0;
 			command_response->packet = line[current_line];
 			cli_receive_queue_push(command_response);

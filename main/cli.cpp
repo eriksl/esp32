@@ -709,7 +709,7 @@ static void run_receive_queue(void *)
 	std::string::const_iterator			data_iterator;
 	std::string							oob_data;
 	std::string							command;
-	unsigned int						count, current, ix, max;
+	unsigned int						count, current, ix;
 	const cli_command_t					*cli_command;
 	cli_parameter_t						*parameter;
 	const cli_parameter_description_t	*parameter_description;
@@ -953,14 +953,13 @@ static void run_receive_queue(void *)
 			call.result_oob.clear();
 		}
 
-		max = command_response->mtu - Packet::packet_header_size();
+		if(call.result_oob.empty() && (call.result.size() > command_response->mtu))
+			call.result.resize(command_response->mtu);
 
-		if(call.result_oob.empty() && (call.result.size() > max))
-			call.result.resize(max);
-
-		if((call.result.size() + call.result_oob.size()) > max)
+		if(call.result_oob.size() > command_response->mtu)
 		{
-			call.result = "ERROR: packet mtu overflow";
+			call.result = std::format("ERROR: packet mtu overflow, payload: {:d}, oob: {:d}, packet overhead: {:d}, mtu: {:d}",
+					call.result.size(), call.result_oob.size(), Packet::packet_header_size(), command_response->mtu);
 			call.result_oob.clear();
 		}
 
