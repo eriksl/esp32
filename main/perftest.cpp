@@ -7,7 +7,6 @@
 
 #if defined(CONFIG_BUILD_NETPERF_CODE)
 
-#include "string.h"
 #include "log.h"
 #include "util.h"
 

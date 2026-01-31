@@ -4,7 +4,6 @@
 
 #include <lwip/netif.h>
 
-#include "string.h"
 #include "cli.h"
 #include "config.h"
 #include "log.h"

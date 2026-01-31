@@ -5,7 +5,6 @@
 #include <driver/ledc.h>
 #include <soc/soc.h>
 
-#include "string.h"
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"

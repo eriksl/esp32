@@ -5,7 +5,6 @@
 
 #include "cli.h"
 #include "log.h"
-#include "string.h"
 #include "config.h"
 #include "util.h"
 #include "cli-command.h"

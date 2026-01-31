@@ -7,7 +7,6 @@
 #include <esp_timer.h>
 #include <esp_random.h>
 
-#include "string.h"
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"

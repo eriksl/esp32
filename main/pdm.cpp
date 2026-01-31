@@ -3,7 +3,6 @@
 #include <string.h>
 
 #include "log.h"
-#include "string.h"
 #include "util.h"
 #include "cli-command.h"
 #include "pdm.h"

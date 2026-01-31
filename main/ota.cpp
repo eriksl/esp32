@@ -1,7 +1,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "string.h"
 #include "log.h"
 #include "util.h"
 #include "encryption.h"

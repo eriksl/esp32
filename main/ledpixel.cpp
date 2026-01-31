@@ -2,7 +2,6 @@
 #include <stdbool.h>
 #include <sdkconfig.h>
 
-#include "string.h"
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"

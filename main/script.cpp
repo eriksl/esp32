@@ -5,7 +5,6 @@
 #include <fstream>
 #include <thread>
 
-#include "string.h"
 #include "cli-command.h"
 #include "log.h"
 #include "script.h"

@@ -28,7 +28,6 @@ idf_component_register(
 		"process.cpp"
 		"ramdisk.cpp"
 		"script.cpp"
-		"string.cpp"
 		"sensor.cpp"
 		"tcp.cpp"
 		"udp.cpp"

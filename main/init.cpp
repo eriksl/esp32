@@ -11,7 +11,6 @@ __attribute__((noreturn)) void app_main(void);
 #include "config.h"
 #include "command.h"
 
-#include "string.h"
 #include "cli.h"
 #include "log.h"
 #include "alias.h"
@@ -50,7 +49,6 @@ void app_main(void)
 		notify(notify_sys_booting);
 		info_init();
 		process_init();
-		string_module_init();
 		log_init();
 		Config config("config");
 		Command command;

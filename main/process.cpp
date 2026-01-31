@@ -8,7 +8,6 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-#include "string.h"
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"

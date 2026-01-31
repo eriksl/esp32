@@ -6,7 +6,6 @@
 #include <thread>
 #include <esp_pthread.h>
 
-#include "string.h"
 #include "cli.h"
 #include "log.h"
 #include "util.h"

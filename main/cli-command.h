@@ -85,8 +85,6 @@ void command_ota_finish(cli_command_call_t *call);
 void command_ota_commit(cli_command_call_t *call);
 void command_ota_confirm(cli_command_call_t *call);
 
-void string_command_info(cli_command_call_t *call);
-
 void wlan_command_client_config(cli_command_call_t *call);
 void wlan_command_info(cli_command_call_t *call);
 void wlan_command_ipv6_static(cli_command_call_t *call);

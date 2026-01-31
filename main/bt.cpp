@@ -4,7 +4,6 @@
 
 #include <esp_log.h>
 
-#include "string.h"
 #include "cli.h"
 #include "log.h"
 #include "util.h"

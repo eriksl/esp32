@@ -2,9 +2,7 @@
 #include <stdbool.h>
 #include <errno.h>
 
-#include "string.h"
 #include "cli.h"
-#include "string.h"
 #include "config.h"
 #include "log.h"
 #include "util.h"
@@ -576,7 +574,6 @@ static const cli_command_t cli_commands[] =
 
 	{ "sensor-json", "sj", "sensors values in json layout", command_sensor_json, {}},
 	{ "sensor-stats", "ss", "sensors statistics", command_sensor_stats, {}},
-	{ "string-info", "sti", "show information about all strings", string_command_info, {}},
 	{ "tcp-info", "ti", "show information about tcp", net_tcp_command_info, {}},
 	{ "udp-info", "ui", "show information about udp", net_udp_command_info, {}},
 

@@ -3,7 +3,6 @@
 
 #include "log.h"
 
-#include "string.h"
 #include "util.h"
 #include "cli-command.h"
 #include "mcpwm.h"

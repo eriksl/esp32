@@ -5,7 +5,6 @@
 #include <driver/spi_master.h>
 #include <driver/gpio.h>
 
-#include "string.h"
 #include "log.h"
 #include "util.h"
 #include "ledpwm.h"

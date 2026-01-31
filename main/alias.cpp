@@ -1,7 +1,6 @@
 #include <string>
 #include <map>
 
-#include "string.h"
 #include "cli-command.h"
 #include "log.h"
 #include "alias.h"

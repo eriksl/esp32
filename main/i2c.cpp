@@ -2,7 +2,6 @@
 #include <stdbool.h>
 #include <string.h>
 
-#include "string.h"
 #include "info.h"
 #include "log.h"
 #include "util.h"
