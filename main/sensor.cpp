@@ -4679,8 +4679,7 @@ static void run_sensors(void *parameters)
 
 			stat_sensors_found[module]++;
 
-			new_data = static_cast<data_t*>(util_memory_alloc_spiram(sizeof(*new_data)));
-			assert(new_data);
+			new_data = new data_t;
 
 			for(type = sensor_type_first; type < sensor_type_size; type = static_cast<sensor_type_t>(type + 1))
 			{
@@ -4696,7 +4695,7 @@ static void run_sensors(void *parameters)
 			new_data->next = nullptr;
 
 			if(infoptr->private_data_size > 0)
-				new_data->private_data = util_memory_alloc_spiram(infoptr->private_data_size);
+				new_data->private_data = malloc(infoptr->private_data_size);
 
 			if(detected == sensor_disabled)
 				stat_sensors_disabled[module]++;
@@ -4710,7 +4709,7 @@ static void run_sensors(void *parameters)
 					i2c_unregister_slave(&slave);
 					if(new_data->private_data)
 						free(new_data->private_data);
-					free(new_data);
+					delete new_data;
 					continue;
 				}
 

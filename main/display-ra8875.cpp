@@ -783,7 +783,7 @@ bool display_ra8875_init(const display_init_parameters_t *parameters)
 
 	pixel_buffer_size = max_transaction_length;
 	pixel_buffer_length = 0;
-	pixel_buffer = static_cast<uint8_t *>(util_memory_alloc_dma(pixel_buffer_size));
+	pixel_buffer = static_cast<uint8_t *>(heap_caps_malloc(pixel_buffer_size, MALLOC_CAP_DMA));
 
 	inited = true;
 

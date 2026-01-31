@@ -440,7 +440,7 @@ static bool load_font(std::string_view fontname)
 	}
 
 	if(!font)
-		font = static_cast<font_t *>(util_memory_alloc_spiram(sizeof(font_t)));
+		font = new font_t;
 
 	if(read(fd, font, sizeof(*font)) != sizeof(*font))
 	{
@@ -480,7 +480,10 @@ error:
 		close(fd);
 
 	if(font)
-		free(font);
+	{
+		delete font;
+		font = nullptr;
+	}
 
 	display_columns = 0;
 	display_rows = 0;
@@ -561,16 +564,17 @@ static void __attribute__((noreturn)) run_display_log(void *)
 
 static png_voidp user_png_malloc(png_structp struct_ptr, png_alloc_size_t size)
 {
-	png_voidp p;
+	png_voidp ptr;
 
-	p = util_memory_alloc_spiram(size);
+	ptr = malloc(size);
 
-	return(p);
+	return(ptr);
 }
 
 static void user_png_free(png_structp png_ptr, png_voidp ptr)
 {
-	free(ptr);
+	if(ptr)
+		free(ptr);
 }
 
 static void user_read_data(png_structp png_ptr, png_bytep data, size_t length)
@@ -848,8 +852,7 @@ static void __attribute__((noreturn)) run_display_info(void *)
 					image_y_size = png_get_image_height(png_ptr, info_ptr);
 					row_bytes = png_get_rowbytes(png_ptr, info_ptr);
 					assert(row_bytes == (image_x_size * 3));
-					row_pointer = (png_bytep)util_memory_alloc_spiram(row_bytes);
-					assert(row_pointer);
+					row_pointer = static_cast<png_bytep>(new uint8_t[row_bytes]);
 
 					for(row = 0; row < image_y_size; row++)
 					{
@@ -875,7 +878,7 @@ abort:
 
 					if(row_pointer)
 					{
-						free(row_pointer);
+						delete [] row_pointer;
 						row_pointer = nullptr;
 					}
 

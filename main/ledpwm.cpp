@@ -102,8 +102,7 @@ void ledpwm_init(void)
 	timer_config.timer_num = static_cast<ledc_timer_t>(timer_120hz);
 	util_abort_on_esp_err("ledc_timer_config", ledc_timer_config(&timer_config));
 
-	channels = (channel_t *)util_memory_alloc_spiram(sizeof(channel_t[lpt_size]));
-	assert(channels);
+	channels = new channel_t[lpt_size];
 
 	for(handle = lpt_first; handle < lpt_size; handle = static_cast<ledpwm_t>(handle + 1))
 	{

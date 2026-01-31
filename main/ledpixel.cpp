@@ -81,8 +81,7 @@ void ledpixel_init(void)
 
 	assert(!inited);
 
-	channels = (channel_t *)util_memory_alloc_spiram(sizeof(channel_t[lp_size]));
-	assert(channels);
+	channels = new channel_t[lp_size];
 
 	for(handle = lp_first; handle < lp_size; handle = static_cast<lp_t>(handle + 1))
 	{

@@ -75,8 +75,7 @@ void pdm_init(void)
 
 	assert(!inited);
 
-	channels = (channel_t *)util_memory_alloc_spiram(sizeof(channel_t[pdm_size]));
-	assert(channels);
+	channels = new channel_t[pdm_size];
 
 	for(handle = pdm_first; handle < pdm_size; handle = static_cast<pdm_t>(handle + 1))
 	{

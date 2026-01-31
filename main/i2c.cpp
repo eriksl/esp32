@@ -673,8 +673,7 @@ void i2c_init(void)
 		assert(module_mutex[module]);
 	}
 
-	module_data = static_cast<module_data_t *>(util_memory_alloc_spiram(sizeof(*data) * i2c_module_size));
-	assert(module_data);
+	module_data = new module_data_t[i2c_module_size];
 
 	for(module = i2c_module_first; module < i2c_module_size; module = static_cast<i2c_module_t>(module + 1))
 	{
@@ -796,8 +795,7 @@ void i2c_init(void)
 
 		for(bus = i2c_bus_first; bus < data->buses; bus = static_cast<i2c_bus_t>(bus + 1))
 		{
-			bus_ptr = static_cast<bus_t *>(util_memory_alloc_spiram(sizeof(*bus_ptr)));
-			assert(bus_ptr);
+			bus_ptr = new bus_t;
 			bus_ptr->id = bus;
 			bus_ptr->slaves = nullptr;
 			data->bus[bus] = bus_ptr;
@@ -831,7 +829,7 @@ i2c_slave_t i2c_register_slave(const char *name, i2c_module_t module, i2c_bus_t 
 	assert(bus < data->buses);
 	assert(info->available);
 
-	new_slave = static_cast<slave_t *>(util_memory_alloc_spiram(sizeof(*new_slave)));
+	new_slave = new slave_t;
 	new_slave->name = name;
 	new_slave->module = module;
 	new_slave->bus = bus;

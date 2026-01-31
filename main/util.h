@@ -1,29 +1,10 @@
 #pragma once
 
-#include <stdint.h>
-#include <sys/time.h>
-
-#include "string.h"
 #include "log.h"
 
+#include <stdint.h>
 #include <esp_ota_ops.h>
-#include <esp_netif_ip_addr.h>
-
 #include <string>
-
-#if 0 // FIXME
-#pragma GCC poison strcpy
-#pragma GCC poison strcat
-#pragma GCC poison strncpy
-#pragma GCC poison strncat
-#pragma GCC poison printf
-#pragma GCC poison sprintf
-#endif
-
-extern uint64_t stat_util_time_malloc_min;
-extern uint64_t stat_util_time_malloc_max;
-extern uint64_t stat_util_time_memcpy_min;
-extern uint64_t stat_util_time_memcpy_max;
 
 typedef enum
 {
@@ -39,10 +20,6 @@ typedef enum
 	ipv6_address_size,
 } ipv6_address_type_t;
 
-#define util_memory_alloc_spiram(amount) _util_memory_alloc_spiram(amount, __FILE__, __LINE__)
-#define util_memory_alloc_dma(amount) _util_memory_alloc_dma(amount, __FILE__, __LINE__)
-#define util_memcpy(to, from, length) do { _util_memcpy(to, from, length, __FILE__, __LINE__); } while(0)
-
 void util_sleep(unsigned int msec);
 unsigned int util_partition_to_slot(const esp_partition_t *partition);
 
@@ -56,12 +33,6 @@ std::string util_time_to_string(const time_t &stamp);
 std::string util_time_to_string(std::string_view format, const time_t &stamp);
 
 std::string util_hash_to_string(std::string_view hash); // FIXME -> encryption
-
-void *_util_memory_alloc_spiram(unsigned int amount, const char *file, unsigned int line);
-void *_util_memory_alloc_dma(unsigned int amount, const char *file, unsigned int line);
-void _util_memcpy(void *to, const void *from, unsigned int length, const char *file, unsigned int line);
-void util_hexdump_cstr(string_t dst, unsigned int src_length, const uint8_t *src);
-void util_hexdump(string_t dst, const const_string_t src);
 
 static inline void util_abort_on_esp_err(const char *what, unsigned int rv)
 {

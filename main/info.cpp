@@ -278,11 +278,6 @@ void info_command_info_memory(cli_command_call_t *call)
 	call->result += (boost::format("\n- total: %6.3f MB")			% (initial_free_total / (1024.0 * 1024.0))).str();
 	call->result += (boost::format("\n- used:  %6.3f MB %4.1f%%")	% ((initial_free_total - free_total) / (1024.0 * 1024.0)) % ((100.0 * (initial_free_total - free_total)) / initial_free_total)).str();
 	call->result += (boost::format("\n- free:  %6.3f MB %4.1f%%")	% (free_total / (1024.0 * 1024.0)) % ((100.0 * free_total) / initial_free_total)).str();
-	call->result += "\ntimings:";
-	call->result += (boost::format("\n- malloc min time: %llu microseconds")	% stat_util_time_malloc_min).str();
-	call->result += (boost::format("\n- malloc max time: %llu microseconds")	% stat_util_time_malloc_max).str();
-	call->result += (boost::format("\n- memcpy min time: %llu microseconds")	% stat_util_time_memcpy_min).str();
-	call->result += (boost::format("\n- memcpy max time: %llu microseconds")	% stat_util_time_memcpy_max).str();
 }
 
 void info_init(void)

@@ -709,8 +709,7 @@ void io_init(void)
 				if(infoptr->detect_fn && !infoptr->detect_fn(infoptr, 0, 0, 0))
 					continue;
 
-				dataptr = (io_data_t *)util_memory_alloc_spiram(sizeof(*dataptr));
-				assert(dataptr);
+				dataptr = new io_data_t;
 
 				dataptr->id = id;
 				dataptr->info = infoptr;
@@ -764,8 +763,7 @@ void io_init(void)
 							continue;
 						}
 
-						dataptr = (io_data_t *)util_memory_alloc_spiram(sizeof(*dataptr));
-						assert(dataptr);
+						dataptr = new io_data_t;
 
 						dataptr->id = id;
 						dataptr->i2c.slave = slave;

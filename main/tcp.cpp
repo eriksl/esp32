@@ -232,7 +232,7 @@ void TCP::run()
 			static_assert(sizeof(command_response->ip.address.sin6_addr) >= sizeof(struct sockaddr_in));
 			static_assert(sizeof(command_response->ip.address.sin6_addr) >= sizeof(struct sockaddr_in6));
 
-			util_memcpy(&command_response->ip.address.sin6_addr, &si6_addr, si6_addr_length);
+			memcpy(&command_response->ip.address.sin6_addr, &si6_addr, si6_addr_length);
 			command_response->ip.address.sin6_length = si6_addr_length;
 			command_response->source = cli_source_wlan_tcp;
 			command_response->mtu = this->mtu;

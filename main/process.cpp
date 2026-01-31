@@ -54,7 +54,7 @@ void command_process_list(cli_command_call_t *call)
 		requested_core = -1;
 
 	processes = uxTaskGetNumberOfTasks();
-	process_info = (TaskStatus_t *)util_memory_alloc_spiram(sizeof(*process_info) * processes);
+	process_info = new TaskStatus_t[processes];
 	assert(uxTaskGetSystemState(process_info, processes, &runtime) == processes);
 
 	total_delta_idle = 0;
@@ -172,7 +172,7 @@ void command_process_list(cli_command_call_t *call)
 		}
 	}
 
-	free(process_info);
+	delete [] process_info;
 }
 
 void command_process_kill(cli_command_call_t *call)
@@ -197,7 +197,7 @@ void command_process_kill(cli_command_call_t *call)
 	}
 
 	processes = uxTaskGetNumberOfTasks();
-	process_info = (TaskStatus_t *)util_memory_alloc_spiram(sizeof(*process_info) * processes);
+	process_info = new TaskStatus_t[processes];
 	assert(uxTaskGetSystemState(process_info, processes, &runtime) == processes);
 
 	for(ix = 0, found = false; ix < processes; ix++)
@@ -239,7 +239,7 @@ void command_process_kill(cli_command_call_t *call)
 			log_format("process #%u not found", target_task_id);
 	}
 
-	free(process_info);
+	delete [] process_info;
 }
 
 void process_init(void)
@@ -249,8 +249,7 @@ void process_init(void)
 
 	assert(!inited);
 
-	task_info_cache = (task_info_cache_t *)util_memory_alloc_spiram(sizeof(task_info_cache_t[task_id_size]));
-	assert(task_info_cache);
+	task_info_cache = new task_info_cache_t[task_id_size];
 
 	for(ix = 0; ix < task_id_size; ix++)
 	{

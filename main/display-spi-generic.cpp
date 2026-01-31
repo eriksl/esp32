@@ -612,7 +612,7 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 
 	util_abort_on_esp_err("spi_bus_get_max_transaction_len", spi_bus_get_max_transaction_len(static_cast<spi_host_device_t>(spi_signal->esp_host), &max_transaction_length));
 	pixel_buffer_size = max_transaction_length;
-	pixel_buffer = static_cast<uint8_t *>(util_memory_alloc_dma(pixel_buffer_size));
+	pixel_buffer = static_cast<uint8_t *>(heap_caps_malloc(pixel_buffer_size, MALLOC_CAP_DMA));
 	pixel_buffer_rgb = (display_rgb_t *)pixel_buffer;
 	pixel_buffer_rgb_size = pixel_buffer_size / sizeof(display_rgb_t);
 	pixel_buffer_rgb_length = 0;

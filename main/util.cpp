@@ -1,26 +1,15 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-#include <lwip/ip_addr.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 #include "log.h"
 #include "util.h"
 
-#include <freertos/FreeRTOS.h>
-
-#include <esp_timer.h>
-#include <esp_netif.h>
-#include <esp_netif_ip_addr.h>
-
-#include <stddef.h>
-#include <sys/time.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-
 #include <string>
 #include <format>
 #include <chrono>
-#include <boost/format.hpp> // FIXME
 
 static bool inited;
 
@@ -216,158 +205,6 @@ std::string util_hash_to_string(std::string_view hash)
 	}
 
 	return(dst);
-}
-
-void util_hexdump_cstr(string_t dst, unsigned int src_length, const uint8_t *src)
-{
-	unsigned int current, nibble, value, nibble_value;
-
-	assert(inited);
-	assert(src);
-	assert(dst);
-
-	string_clear(dst);
-
-	for(current = 0; current < src_length; current++)
-	{
-		value = src[current];
-
-		if((value > ' ') && (value <= '~'))
-			string_append(dst, value);
-		else
-		{
-			string_append_cstr(dst, "[0x");
-			for(nibble = 0; nibble < 2; nibble++)
-			{
-				nibble_value = nibble ? (value & 0x0f) >> 0 : (value & 0xf0) >> 4;
-
-				assert(nibble_value < 16);
-
-				if(nibble_value >= 10)
-					string_append(dst, (nibble_value - 10) + 'a');
-				else
-					string_append(dst, (nibble_value -  0) + '0');
-			}
-			string_append_cstr(dst, "]");
-		}
-	}
-}
-
-void util_hexdump(string_t dst, const const_string_t src)
-{
-	assert(src);
-
-	util_hexdump_cstr(dst, string_length(src), string_data(src));
-}
-
-uint64_t stat_util_time_malloc_min = 0;
-uint64_t stat_util_time_malloc_max = 0;
-uint64_t stat_util_time_memcpy_min = 0;
-uint64_t stat_util_time_memcpy_max = 0;
-
-void *_util_memory_alloc_spiram(unsigned int amount, const char *file, unsigned int line)
-{
-	uint64_t time_start, time_spent;
-	void *memory;
-
-	time_start = esp_timer_get_time();
-
-	if(amount == 0)		// heap_caps_malloc returns NULL when 0 bytes are requested
-		amount = 1;
-
-	memory = heap_caps_malloc(amount, MALLOC_CAP_SPIRAM);
-
-	if(!memory)
-	{
-		log_format("util_memory_alloc_spiram: out of memory, called from: %s:%u", file, line);
-		abort();
-	}
-
-	time_spent = esp_timer_get_time() - time_start;
-
-	if(stat_util_time_malloc_min == 0)
-		stat_util_time_malloc_min = time_spent;
-	else
-		if(stat_util_time_malloc_min > time_spent)
-			stat_util_time_malloc_min = time_spent;
-
-	if(stat_util_time_malloc_max == 0)
-		stat_util_time_malloc_max = time_spent;
-	else
-		if(stat_util_time_malloc_max < time_spent)
-			stat_util_time_malloc_max = time_spent;
-
-	return(memory);
-}
-
-void *_util_memory_alloc_dma(unsigned int amount, const char *file, unsigned int line)
-{
-	uint64_t time_start, time_spent;
-	void *memory;
-
-	time_start = esp_timer_get_time();
-
-	if(amount == 0)		// heap_caps_malloc returns NULL when 0 bytes are requested
-		amount = 1;
-
-	memory = heap_caps_malloc(amount, MALLOC_CAP_DMA);
-
-	if(!memory)
-	{
-		log_format("util_memory_alloc_dma: out of memory, called from: %s:%u", file, line);
-		abort();
-	}
-
-	time_spent = esp_timer_get_time() - time_start;
-
-	if(stat_util_time_malloc_min == 0)
-		stat_util_time_malloc_min = time_spent;
-	else
-		if(stat_util_time_malloc_min > time_spent)
-			stat_util_time_malloc_min = time_spent;
-
-	if(stat_util_time_malloc_max == 0)
-		stat_util_time_malloc_max = time_spent;
-	else
-		if(stat_util_time_malloc_max < time_spent)
-			stat_util_time_malloc_max = time_spent;
-
-	return(memory);
-}
-
-void _util_memcpy(void *to, const void *from, unsigned int length, const char *file, unsigned int line)
-{
-	uint64_t time_start, time_spent;
-
-	time_start = esp_timer_get_time();
-
-	if(!to)
-	{
-		log_format("util_memcpy: to is NULL, called from: %s:%u", file, line);
-		abort();
-	}
-
-	if(!from)
-	{
-		log_format("util_memcpy: from is NULL, called from: %s:%u", file, line);
-		abort();
-	}
-
-	memcpy(to, from, length);
-
-	time_spent = esp_timer_get_time() - time_start;
-
-	if(stat_util_time_memcpy_min == 0)
-		stat_util_time_memcpy_min = time_spent;
-	else
-		if(stat_util_time_memcpy_min > time_spent)
-			stat_util_time_memcpy_min = time_spent;
-
-	if(stat_util_time_memcpy_max == 0)
-		stat_util_time_memcpy_max = time_spent;
-	else
-		if(stat_util_time_memcpy_max < time_spent)
-			stat_util_time_memcpy_max = time_spent;
 }
 
 void util_init(void)

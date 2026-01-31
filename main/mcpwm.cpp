@@ -186,11 +186,8 @@ void mcpwm_init(void)
 
 	assert(!inited);
 
-	tree = (mcpwm_tree_t *)util_memory_alloc_spiram(sizeof(mcpwm_tree_t));
-	assert(tree);
-
-	channels = (channel_t *)util_memory_alloc_spiram(sizeof(channel_t[mpt_size]));
-	assert(channels);
+	tree = new mcpwm_tree_t;
+	channels = new channel_t[mpt_size];
 
 	for(handle = mpt_first; handle < mpt_size; handle = static_cast<mcpwm_t>(handle + 1))
 	{
