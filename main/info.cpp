@@ -103,7 +103,7 @@ void info_command_info_board(cli_command_call_t *call)
 
 void info_command_info_partitions(cli_command_call_t *call)
 {
-	int rv;
+	int rv, match_partition = -1;
 	esp_partition_iterator_t partition_iterator;
 	const esp_partition_t *partition;
 	const char *type, *subtype;
@@ -115,7 +115,9 @@ void info_command_info_partitions(cli_command_call_t *call)
 	std::string sha256_hash_text;
 
 	assert(inited);
-	assert(call->parameter_count == 0);
+
+	if(call->parameter_count == 1)
+		match_partition = call->parameters[0].unsigned_int;
 
 	if(!(boot_partition = esp_ota_get_boot_partition()))
 	{
@@ -135,10 +137,13 @@ void info_command_info_partitions(cli_command_call_t *call)
 		return;
 	}
 
-	call->result = "Partitions:\n";
+	call->result = "Partitions:";
 
 	for(index = 0; partition_iterator; index++, partition_iterator = esp_partition_next(partition_iterator))
 	{
+		if((match_partition >= 0) && (match_partition != index))
+			continue;
+
 		if(!(partition = esp_partition_get(partition_iterator)))
 		{
 			call->result = "ERROR: esp_partition_get failed";
@@ -233,8 +238,7 @@ void info_command_info_partitions(cli_command_call_t *call)
 		else
 			sha256_hash_text = util_hash_to_string(sha256_hash);
 
-		call->result += (boost::format("%s  %2u %1s%1s%1s %-8s %06lx %4lu %-7s %-8s %-64s") %
-				((index > 0) ? "\n" : "") %
+		call->result += (boost::format("\n  %2u %1s%1s%1s %-8s %06lx %4lu %-7s %-8s %-64s") %
 				index %
 				ota_state_text %
 				((partition->address == boot_partition->address) ? "b" : " ") %

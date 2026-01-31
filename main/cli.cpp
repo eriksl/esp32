@@ -439,7 +439,13 @@ static const cli_command_t cli_commands[] =
 	{ "info", (const char *)0, "show some generic information", info_command_info, {}},
 	{ "info-board", "ib", "BSP info", info_command_info_board, {}},
 	{ "info-cli", "ic", "show information about the cli", command_info_cli, {}},
-	{ "info-partitions", "ip", "show information about partitions", info_command_info_partitions, {}},
+	{ "info-partitions", "ip", "show information about partitions", info_command_info_partitions,
+		{	1,
+			{
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "partition #", { .unsigned_int = { 0, 16 }}},
+			},
+		}
+	},
 	{ "info-memory", "im", "show information about memory", info_command_info_memory, {}},
 	{ "io-dump", "iod", "dump everything known about found IOs", command_io_dump, {}},
 
