@@ -1,7 +1,4 @@
-#include <stdint.h>
-#include <stdbool.h>
-
-#include <exception>
+#include "exception.h"
 
 extern "C"
 {
