@@ -1,11 +1,4 @@
-#include <stdbool.h>
-#include <stdint.h>
-#include <string.h>
-
-#include "config.h"
 #include "command.h"
-
-#include <esp_err.h>
 
 #include <string>
 #include <format>
@@ -17,7 +10,7 @@ Command::Command(Config &config_in) :
 		config(config_in)
 {
 	if(singleton)
-		throw(hard_exception("Command: already constructed"));
+		throw(hard_exception("Command: already activated"));
 
 	::singleton = &*this;
 	::config_ = &config;
@@ -28,10 +21,12 @@ std::string Command::make_exception_text(std::string_view fn, std::string_view m
 	return(std::format("{}: {}{}", fn, message1, message2));
 }
 
-
 void Command::config_info(cli_command_call_t *call)
 {
 	nvs_stats_t stats;
+
+	if(!singleton)
+		throw(hard_exception("Command: not activated"));
 
 	if(nvs_get_stats(nullptr, &stats) != ESP_OK)
 		throw(hard_exception("Command::config_info:nvs_get_stats error"));
@@ -51,7 +46,7 @@ void Command::config_set_int(cli_command_call_t *call)
 	std::string type;
 
 	if(!singleton)
-		throw(hard_exception("Command: not constructed"));
+		throw(hard_exception("Command: not activated"));
 
 	try
 	{
@@ -74,7 +69,7 @@ void Command::config_set_string(cli_command_call_t *call)
 	std::string type;
 
 	if(!singleton)
-		throw(hard_exception("Command: not constructed"));
+		throw(hard_exception("Command: not activated"));
 
 	try
 	{
@@ -94,7 +89,7 @@ void Command::config_set_string(cli_command_call_t *call)
 void Command::config_erase(cli_command_call_t *call)
 {
 	if(!singleton)
-		throw(hard_exception("Command: not constructed"));
+		throw(hard_exception("Command: not activated"));
 
 	try
 	{
@@ -114,10 +109,16 @@ void Command::config_erase(cli_command_call_t *call)
 
 void Command::config_dump(cli_command_call_t *call)
 {
+	if(!singleton)
+		throw(hard_exception("Command: not activated"));
+
 	config_->dump(call->result, "*");
 }
 
 void Command::config_show(cli_command_call_t *call)
 {
+	if(!singleton)
+		throw(hard_exception("Command: not activated"));
+
 	config_->dump(call->result);
 }

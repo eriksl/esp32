@@ -6,7 +6,7 @@
 
 #include <string>
 
-class Command
+class Command final
 {
 	public:
 
