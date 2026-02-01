@@ -6,13 +6,13 @@ __attribute__((noreturn)) void app_main(void);
 }
 
 #include "config.h"
+#include "console.h"
 #include "command.h"
 
 #include "cli.h"
 #include "log.h"
 #include "alias.h"
 #include "bt.h"
-#include "console.h"
 #include "display.h"
 #include "fs.h"
 #include "i2c.h"
@@ -39,9 +39,9 @@ void app_main(void)
 {
 	try
 	{
-		console_init_1();
 		Config config("config");
-		Command command(config);
+		Console console(config);
+		Command command(config, console);
 		ledpixel_init();
 		ledpwm_init();
 		notify_init();
@@ -61,12 +61,12 @@ void app_main(void)
 		net_udp_init();
 		net_tcp_init();
 		perftest_init();
-		console_init_2();
 		display_init();
 		i2c_init();
 		io_init();
 		sensor_init();
 		notify(notify_sys_booting_finished);
+		console.run();
 		vTaskSuspend(NULL);
 		throw("vTaskSuspend returned");
 	}

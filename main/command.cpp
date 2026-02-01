@@ -5,15 +5,17 @@
 
 static Command *singleton = nullptr;
 static Config *config_ = nullptr; // FIXME
+static Console *console_ = nullptr; // FIXME
 
-Command::Command(Config &config_in) :
-		config(config_in)
+Command::Command(Config &config_in, Console &console_in) :
+		config(config_in), console(console_in)
 {
 	if(singleton)
 		throw(hard_exception("Command: already activated"));
 
 	::singleton = &*this;
 	::config_ = &config;
+	::console_ = &console;
 }
 
 std::string Command::make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2)
@@ -121,4 +123,14 @@ void Command::config_show(cli_command_call_t *call)
 		throw(hard_exception("Command: not activated"));
 
 	config_->dump(call->result);
+}
+
+void Command::console_info(cli_command_call_t *call)
+{
+	const std::map<std::string, int> &stats = console_->statistics();
+
+	call->result = "CONSOLE STATISTICS";
+
+	for(std::map<std::string, int>::const_iterator it = stats.begin(); it != stats.end(); it++)
+		call->result += std::format("\n- {:<16} {:d}", it->first, it->second);
 }

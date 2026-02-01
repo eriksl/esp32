@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include "console.h"
 #include "exception.h"
 #include "cli-command.h"
 
@@ -10,7 +11,7 @@ class Command final
 {
 	public:
 
-		Command(Config &);
+		Command(Config &, Console &);
 		Command() = delete;
 		Command(const Command &) = delete;
 
@@ -25,6 +26,7 @@ class Command final
 	private:
 
 		Config &config;
+		Console &console;
 
 		std::string make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2);
 };

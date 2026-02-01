@@ -279,7 +279,7 @@ static const cli_command_t cli_commands[] =
 	},
 
 	{ "config-show", "cs", "show config", Command::config_show, {}},
-	{ "console-info", "coni", "show information about the console", console_command_info, {}},
+	{ "console-info", "coni", "show information about the console", Command::console_info, {}},
 
 	{ "display-brightness", "db", "display brightness", command_display_brightness,
 		{	1,
@@ -997,7 +997,7 @@ static void run_send_queue(void *)
 
 			case(cli_source_console):
 			{
-				console_send(command_response);
+				Console::get().send(*command_response);
 				break;
 			}
 

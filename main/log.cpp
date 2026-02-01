@@ -116,15 +116,15 @@ static void _log_cstr(bool append_strerror, const char *string)
 		if(monitor)
 		{
 			if(strlen(string) >= sizeof(entry->data))
-				console_write_line(string);
+				Console::get().write(string);
 			else
-				console_write_line(entry->data);
+				Console::get().write(entry->data);
 		}
 
 		log_signal_display(current);
 	}
 	else
-		console_write_line(string);
+		Console::get().write(string);
 }
 
 void log_cstr(const char *line)
@@ -175,12 +175,12 @@ static void _log_format(bool append_strerror, const char *fmt, va_list ap)
 		data_mutex_give();
 
 		if(monitor)
-			console_write_line(entry->data);
+			Console::get().write(entry->data);
 
 		log_signal_display(current);
 	}
 	else
-		console_write_line(fmt);
+		Console::get().write(fmt);
 }
 
 #pragma GCC diagnostic pop
