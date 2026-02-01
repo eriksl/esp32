@@ -9,7 +9,7 @@ idf_component_register(
 		"display.cpp"
 		"display-spi-generic.cpp"
 		"display-ra8875.cpp"
-		"esp32-common/encryption.cpp"
+		"esp32-common/crypt.cpp"
 		"esp32-common/exception.cpp"
 		"fs.cpp"
         "i2c.cpp"

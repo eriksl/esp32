@@ -10,7 +10,7 @@
 #include "packet.h"
 #include "config.h"
 #include "cli-command.h"
-#include "encryption.h"
+#include "crypt.h"
 #include "exception.h"
 
 #include <freertos/FreeRTOS.h>
@@ -383,7 +383,7 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 
 	try
 	{
-		decrypt_buffer = Encryption::aes256_decrypt(Encryption::password_to_aes256_key(encryption_key), receive_buffer);
+		decrypt_buffer = Crypt::aes256(false, Crypt::password_to_aes256_key(encryption_key), receive_buffer);
 	}
 	catch(const hard_exception &e)
 	{
@@ -432,7 +432,7 @@ void net_bt_send(const command_response_t *command_response)
 
 	try
 	{
-		encrypt_buffer = Encryption::aes256_encrypt(Encryption::password_to_aes256_key(encryption_key), command_response->packet);
+		encrypt_buffer = Crypt::aes256(true, Crypt::password_to_aes256_key(encryption_key), command_response->packet);
 	}
 	catch(const hard_exception &e)
 	{

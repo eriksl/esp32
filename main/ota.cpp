@@ -3,7 +3,7 @@
 
 #include "log.h"
 #include "util.h"
-#include "encryption.h"
+#include "crypt.h"
 #include "cli-command.h"
 
 #include <esp_ota_ops.h>
@@ -16,7 +16,8 @@ static bool ota_handle_active = false;
 static const esp_partition_t *ota_partition = (const esp_partition_t *)0;
 static esp_ota_handle_t ota_handle;
 
-static Encryption *encryption = nullptr;
+static Crypt::SHA256 md;
+static bool md_active = false;
 static unsigned int ota_length = 0;
 
 static void ota_abort(void)
@@ -27,12 +28,6 @@ static void ota_abort(void)
 
 		ota_partition = nullptr;
 		ota_handle_active = false;
-	}
-
-	if(encryption)
-	{
-		delete encryption;
-		encryption = nullptr;
 	}
 
 	ota_length = 0;
@@ -66,7 +61,7 @@ void command_ota_start(cli_command_call_t *call)
 		return;
 	}
 
-	if(ota_handle_active || encryption)
+	if(ota_handle_active || md_active)
 	{
 		log("otacli: ota-start: ota already active, first aborting session");
 		ota_abort();
@@ -82,10 +77,8 @@ void command_ota_start(cli_command_call_t *call)
 	ota_handle_active = true;
 	ota_length = length;
 
-	assert(!encryption);
-
-	encryption = new Encryption;
-	encryption->sha256_init();
+	md.init();
+	md_active = true;
 
 	call->result = (boost::format("OK start write ota to partition %u/%s") % util_partition_to_slot(partition) % partition->label).str();
 }
@@ -100,7 +93,7 @@ void command_ota_write(cli_command_call_t *call)
 	length = call->parameters[0].unsigned_int;
 	checksum_chunk = call->parameters[1].unsigned_int;
 
-	if(!encryption)
+	if(!md_active)
 	{
 		call->result = "ERROR: hash context not active";
 		return(ota_abort());
@@ -131,7 +124,7 @@ void command_ota_write(cli_command_call_t *call)
 	}
 
 	if(!checksum_chunk)
-		encryption->sha256_update(call->oob);
+		md.update(call->oob);
 
 	call->result = "OK write ota";
 }
@@ -142,7 +135,7 @@ void command_ota_finish(cli_command_call_t *call)
 	std::string hash;
 	std::string hash_text;
 
-	if(!encryption)
+	if(!md_active)
 	{
 		call->result = "ERROR: hash context not active";
 		return(ota_abort());
@@ -154,11 +147,10 @@ void command_ota_finish(cli_command_call_t *call)
 		return(ota_abort());
 	}
 
-	hash = encryption->sha256_finish();
+	hash = md.finish();
 	hash_text = util_hash_to_string(hash);
 
-	delete encryption;
-	encryption = nullptr;
+	md_active = false;
 
 	if((rv = esp_ota_end(ota_handle)))
 	{

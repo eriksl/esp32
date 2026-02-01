@@ -7,7 +7,7 @@
 #include "config.h"
 #include "cli-command.h"
 #include "display.h"
-#include "esp32-common/encryption.h"
+#include "crypt.h"
 
 #include <assert.h>
 #include <unistd.h>
@@ -462,7 +462,7 @@ static bool load_font(std::string_view fontname)
 	memcpy(their_hash.data(), font->checksum, their_hash.size());
 	memset(font->checksum, 0, sizeof(font->checksum));
 
-	our_hash = Encryption::sha256(std::string_view(reinterpret_cast<const char *>(font), sizeof(*font)));
+	our_hash = Crypt::sha256(std::string_view(reinterpret_cast<const char *>(font), sizeof(*font)));
 
 	if(our_hash != their_hash)
 	{

@@ -7,7 +7,7 @@
 #include "cli-command.h"
 #include "info.h"
 #include "ramdisk.h"
-#include "encryption.h"
+#include "crypt.h"
 #include "fs.h"
 
 #include <esp_littlefs.h>
@@ -258,8 +258,7 @@ void fs_command_rename(cli_command_call_t *call)
 void fs_command_checksum(cli_command_call_t *call)
 {
 	int length, fd;
-	Encryption encryption;
-	std::string hash;
+	Crypt::SHA256 md;
 	std::string hash_text;
 	std::string block;
 
@@ -269,21 +268,20 @@ void fs_command_checksum(cli_command_call_t *call)
 		return;
 	}
 
-	encryption.sha256_init();
+	md.init();
 
 	block.resize(4096);
 
 	while((length = ::read(fd, block.data(), block.size())) > 0)
 	{
 		block.resize(length);
-		encryption.sha256_update(block);
+		md.update(block);
 		block.resize(4096);
 	}
 
 	close(fd);
 
-	hash = encryption.sha256_finish();
-	hash_text = util_hash_to_string(hash);
+	hash_text = Crypt::hash_to_text(md.finish());
 
 	call->result = std::format("OK checksum: {}", hash_text);
 }
