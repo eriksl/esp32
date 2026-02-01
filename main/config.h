@@ -6,7 +6,7 @@
 
 #include <string>
 
-class Config
+class Config final
 {
 	public:
 
