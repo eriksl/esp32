@@ -366,7 +366,7 @@ void console_init_2(void) // FIXME
 
 	try
 	{
-		hostname = Config::get_string("hostname");
+		hostname = Config::get()->get_string("hostname");
 	}
 	catch(transient_exception &)
 	{
