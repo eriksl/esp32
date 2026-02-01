@@ -152,8 +152,6 @@ void Console::run_thread()
 								for(ix = this->lines.at(this->current_line).length(); ix > 0; ix--)
 									this->write_string(backspace_string);
 
-								this->lines.at(this->current_line).clear();
-
 								if(this->current_line > 0)
 									this->current_line--;
 								else
@@ -168,8 +166,6 @@ void Console::run_thread()
 							{
 								for(ix = this->lines.at(this->current_line).length(); ix > 0; ix--)
 									this->write_string(backspace_string);
-
-								this->lines.at(this->current_line).clear();
 
 								if((this->current_line + 1) < this->lines_amount)
 									this->current_line++;
