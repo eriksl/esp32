@@ -11,13 +11,16 @@
 #include <format>
 
 static Command *singleton = nullptr;
+static Config *config_ = nullptr; // FIXME
 
-Command::Command()
+Command::Command(Config &config_in) :
+		config(config_in)
 {
 	if(singleton)
 		throw(hard_exception("Command: already constructed"));
 
-	singleton = &*this;
+	::singleton = &*this;
+	::config_ = &config;
 }
 
 std::string Command::make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2)
@@ -52,8 +55,8 @@ void Command::config_set_int(cli_command_call_t *call)
 
 	try
 	{
-		Config::get()->set_int(call->parameters[0].str, call->parameters[1].signed_int);
-		value = Config::get()->get_int(call->parameters[0].str, &type);
+		config_->set_int(call->parameters[0].str, call->parameters[1].signed_int);
+		value = config_->get_int(call->parameters[0].str, &type);
 		call->result = std::format("{}[{}]={:d}", call->parameters[0].str, type, value);
 	}
 	catch(const e32if_exception &e)
@@ -75,8 +78,8 @@ void Command::config_set_string(cli_command_call_t *call)
 
 	try
 	{
-		Config::get()->set_string(call->parameters[0].str, call->parameters[1].str);
-		value = Config::get()->get_string(call->parameters[0].str, &type);
+		config_->set_string(call->parameters[0].str, call->parameters[1].str);
+		value = config_->get_string(call->parameters[0].str, &type);
 		call->result = std::format("{}[{}]={}", call->parameters[0].str, type, value);
 	}
 	catch(const e32if_exception &e)
@@ -96,9 +99,9 @@ void Command::config_erase(cli_command_call_t *call)
 	try
 	{
 		if(call->parameter_count == 2)
-			Config::get()->erase(call->parameters[0].str, call->parameters[1].str);
+			config_->erase(call->parameters[0].str, call->parameters[1].str);
 		else
-			Config::get()->erase(call->parameters[0].str);
+			config_->erase(call->parameters[0].str);
 	}
 	catch(const e32if_exception &e)
 	{
@@ -111,10 +114,10 @@ void Command::config_erase(cli_command_call_t *call)
 
 void Command::config_dump(cli_command_call_t *call)
 {
-	Config::get()->dump(call->result, "*");
+	config_->dump(call->result, "*");
 }
 
 void Command::config_show(cli_command_call_t *call)
 {
-	Config::get()->dump(call->result);
+	config_->dump(call->result);
 }

@@ -43,6 +43,8 @@ void app_main(void)
 	try
 	{
 		console_init_1();
+		Config config("config");
+		Command command(config);
 		ledpixel_init();
 		ledpwm_init();
 		notify_init();
@@ -50,8 +52,6 @@ void app_main(void)
 		info_init();
 		process_init();
 		log_init();
-		Config config("config");
-		Command command;
 		util_init();
 		pdm_init();
 		mcpwm_init();
