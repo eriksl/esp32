@@ -5,7 +5,7 @@
 #include "util.h"
 
 #include <esp_pthread.h>
-#include <freertos/FreeRTOS.h>
+#include <freertos/FreeRTOS.h> // for vTaskDelay
 #include <driver/usb_serial_jtag.h>
 
 #include <thread>
@@ -18,7 +18,6 @@ Console::Console(Config &config_in) :
 		current_line(0),
 		running(false)
 {
-	unsigned int ix;
 	esp_err_t rv;
 	usb_serial_jtag_driver_config_t usb_serial_jtag_config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
 
@@ -28,9 +27,6 @@ Console::Console(Config &config_in) :
 
 	if(singleton)
 		throw(hard_exception("Console: already active"));
-
-	for(ix = 0; ix < this->lines_amount; ix++)
-		this->line[ix].clear();
 
 	usb_serial_jtag_config.rx_buffer_size = this->usb_uart_rx_buffer_size;
 	usb_serial_jtag_config.tx_buffer_size = this->usb_uart_tx_buffer_size;
@@ -115,9 +111,9 @@ void Console::run_thread()
 		{
 			state = ess_inactive;
 
-			this->line[this->current_line].clear();
+			this->lines.at(this->current_line).clear();
 
-			while(this->line[this->current_line].length() < this->max_line_length)
+			while(this->lines.at(this->current_line).length() < this->max_line_length)
 			{
 				byte = this->read_byte();
 				this->stats["bytes_received"]++;
@@ -153,34 +149,34 @@ void Console::run_thread()
 						{
 							case('A'):
 							{
-								for(ix = this->line[this->current_line].length(); ix > 0; ix--)
+								for(ix = this->lines.at(this->current_line).length(); ix > 0; ix--)
 									this->write_string(backspace_string);
 
-								this->line[this->current_line].clear();
+								this->lines.at(this->current_line).clear();
 
 								if(this->current_line > 0)
 									this->current_line--;
 								else
 									this->current_line = this->lines_amount - 1;
 
-								this->write_string(this->line[this->current_line]);
+								this->write_string(this->lines.at(this->current_line));
 								state = ess_inactive;
 								continue;
 							}
 
 							case('B'):
 							{
-								for(ix = this->line[this->current_line].length(); ix > 0; ix--)
+								for(ix = this->lines.at(this->current_line).length(); ix > 0; ix--)
 									this->write_string(backspace_string);
 
-								this->line[this->current_line].clear();
+								this->lines.at(this->current_line).clear();
 
 								if((this->current_line + 1) < this->lines_amount)
 									this->current_line++;
 								else
 									this->current_line = 0;
 
-								this->write_string(this->line[this->current_line]);
+								this->write_string(this->lines.at(this->current_line));
 								state = ess_inactive;
 								continue;
 							}
@@ -201,9 +197,9 @@ void Console::run_thread()
 
 				if((byte == /* ^H */ 0x08) || (byte == /* DEL */ 0x7f))
 				{
-					if(this->line[this->current_line].length() > 0)
+					if(this->lines.at(this->current_line).length() > 0)
 					{
-						this->line[this->current_line].pop_back();
+						this->lines.at(this->current_line).pop_back();
 						this->write_string(backspace_string);
 					}
 
@@ -212,12 +208,12 @@ void Console::run_thread()
 
 				if(byte == /* ^W */ 0x17)
 				{
-					for(whitespace = false; this->line[this->current_line].length() > 0; this->line[this->current_line].pop_back())
+					for(whitespace = false; this->lines.at(this->current_line).length() > 0; this->lines.at(this->current_line).pop_back())
 					{
-						if(whitespace && (this->line[this->current_line].back() != ' '))
+						if(whitespace && (this->lines.at(this->current_line).back() != ' '))
 							break;
 
-						if(this->line[this->current_line].back() == ' ')
+						if(this->lines.at(this->current_line).back() == ' ')
 							whitespace = true;
 
 						this->write_string(backspace_string);
@@ -228,10 +224,10 @@ void Console::run_thread()
 
 				if(byte == /* ^U */ 0x15)
 				{
-					for(ix = this->line[this->current_line].length(); ix > 0; ix--)
+					for(ix = this->lines.at(this->current_line).length(); ix > 0; ix--)
 						this->write_string(backspace_string);
 
-					this->line[this->current_line].clear();
+					this->lines.at(this->current_line).clear();
 
 					continue;
 				}
@@ -240,14 +236,14 @@ void Console::run_thread()
 				{
 					this->write_string(reprint_string);
 					this->prompt();
-					this->write_string(this->line[this->current_line]);
+					this->write_string(this->lines.at(this->current_line));
 					continue;
 				}
 
 				if(byte == /* ^C */ 0x03)
 				{
 					this->write_string(interrupt_string);
-					this->line[this->current_line].clear();
+					this->lines.at(this->current_line).clear();
 					break;
 				}
 
@@ -256,13 +252,13 @@ void Console::run_thread()
 					this->write_string(history_string);
 
 					for(ix = this->current_line + 1; ix < this->lines_amount; ix++)
-						this->write_string(std::format("[{:d}] {}\n", ix, this->line[ix]));
+						this->write_string(std::format("[{:d}] {}\n", ix, this->lines.at(ix)));
 
 					for(ix = 0; ix < this->current_line; ix++)
-						this->write_string(std::format("[{:d}] {}\n", ix, this->line[ix]));
+						this->write_string(std::format("[{:d}] {}\n", ix, this->lines.at(ix)));
 
 					this->prompt();
-					this->write_string(this->line[this->current_line]);
+					this->write_string(this->lines.at(this->current_line));
 
 					continue;
 				}
@@ -271,16 +267,16 @@ void Console::run_thread()
 					continue;
 
 				this->write_string(std::string(1, byte));
-				this->line[this->current_line].append(1, byte);
+				this->lines.at(this->current_line).append(1, byte);
 			}
 
-			if((this->line[this->current_line].length() == 2) && (this->line[this->current_line].at(0) == '!'))
+			if((this->lines.at(this->current_line).length() == 2) && (this->lines.at(this->current_line).at(0) == '!'))
 			{
-				if((this->line[this->current_line].at(1) >= '0') && (this->line[this->current_line].at(1) <= '7')) // FIXME
-					this->current_line = this->line[this->current_line].at(1) - '0';
+				if((this->lines.at(this->current_line).at(1) >= '0') && (this->lines.at(this->current_line).at(1) <= '7')) // FIXME
+					this->current_line = this->lines.at(this->current_line).at(1) - '0';
 				else
 				{
-					if(this->line[this->current_line].at(1) == '!')
+					if(this->lines.at(this->current_line).at(1) == '!')
 					{
 						if(this->current_line > 0)
 							current_line--;
@@ -290,14 +286,14 @@ void Console::run_thread()
 				}
 			}
 
-			if(this->line[this->current_line].length() > 0)
+			if(this->lines.at(this->current_line).length() > 0)
 			{
 				command_response_t *command_response = new command_response_t;
 
 				command_response->source = cli_source_console;
 				command_response->mtu = 32768;
 				command_response->packetised = 0;
-				command_response->packet = this->line[this->current_line];
+				command_response->packet = this->lines.at(this->current_line);
 				cli_receive_queue_push(command_response);
 				command_response = nullptr;
 
@@ -306,7 +302,7 @@ void Console::run_thread()
 				else
 					this->current_line = 0;
 
-				this->line[this->current_line].clear();
+				this->lines.at(this->current_line).clear();
 
 				this->write_string(newline_string);
 			}

@@ -4,6 +4,7 @@
 #include "cli-command.h"
 
 #include <map>
+#include <array>
 #include <string>
 
 class Console final
@@ -41,7 +42,7 @@ class Console final
 		unsigned int current_line;
 		bool running;
 		std::string hostname;
-		std::string line[lines_amount]; // FIXME
+		std::array<std::string, lines_amount> lines;
 
 		char read_byte();
 		void write_string(std::string_view);
