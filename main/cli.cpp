@@ -172,15 +172,15 @@ static void command_hostname(cli_command_call_t *call)
 	{
 		description = call->parameters[1].str;
 		std::replace(description.begin(), description.end(), '_', ' ');
-		Config::set_string("hostname_desc", description);
+		Config::get().set_string("hostname_desc", description);
 	}
 
 	if(call->parameter_count > 0)
-		Config::set_string("hostname", call->parameters[0].str);
+		Config::get().set_string("hostname", call->parameters[0].str);
 
 	try
 	{
-		hostname = Config::get_string("hostname");
+		hostname = Config::get().get_string("hostname");
 	}
 	catch(const transient_exception &)
 	{
@@ -189,7 +189,7 @@ static void command_hostname(cli_command_call_t *call)
 
 	try
 	{
-		description = Config::get_string("hostname_desc");
+		description = Config::get().get_string("hostname_desc");
 	}
 	catch(const transient_exception &)
 	{

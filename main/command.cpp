@@ -52,8 +52,8 @@ void Command::config_set_int(cli_command_call_t *call)
 
 	try
 	{
-		Config::set_int(call->parameters[0].str, call->parameters[1].signed_int);
-		value = Config::get_int(call->parameters[0].str, &type);
+		Config::get()->set_int(call->parameters[0].str, call->parameters[1].signed_int);
+		value = Config::get()->get_int(call->parameters[0].str, &type);
 		call->result = std::format("{}[{}]={:d}", call->parameters[0].str, type, value);
 	}
 	catch(const e32if_exception &e)
@@ -75,8 +75,8 @@ void Command::config_set_string(cli_command_call_t *call)
 
 	try
 	{
-		Config::set_string(call->parameters[0].str, call->parameters[1].str);
-		value = Config::get_string(call->parameters[0].str, &type);
+		Config::get()->set_string(call->parameters[0].str, call->parameters[1].str);
+		value = Config::get()->get_string(call->parameters[0].str, &type);
 		call->result = std::format("{}[{}]={}", call->parameters[0].str, type, value);
 	}
 	catch(const e32if_exception &e)
@@ -96,9 +96,9 @@ void Command::config_erase(cli_command_call_t *call)
 	try
 	{
 		if(call->parameter_count == 2)
-			Config::erase(call->parameters[0].str, call->parameters[1].str);
+			Config::get()->erase(call->parameters[0].str, call->parameters[1].str);
 		else
-			Config::erase(call->parameters[0].str);
+			Config::get()->erase(call->parameters[0].str);
 	}
 	catch(const e32if_exception &e)
 	{
@@ -111,10 +111,10 @@ void Command::config_erase(cli_command_call_t *call)
 
 void Command::config_dump(cli_command_call_t *call)
 {
-	Config::dump(call->result, "*");
+	Config::get()->dump(call->result, "*");
 }
 
 void Command::config_show(cli_command_call_t *call)
 {
-	Config::dump(call->result);
+	Config::get()->dump(call->result);
 }

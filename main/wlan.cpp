@@ -390,16 +390,16 @@ void wlan_command_client_config(cli_command_call_t *call)
 	assert(call->parameter_count  < 3);
 
 	if(call->parameter_count > 1)
-		Config::set_string("wlan-passwd", call->parameters[1].str);
+		Config::get().set_string("wlan-passwd", call->parameters[1].str);
 
 	if(call->parameter_count > 0)
-		Config::set_string("wlan-ssid", call->parameters[0].str);
+		Config::get().set_string("wlan-ssid", call->parameters[0].str);
 
 	call->result = "client ssid: ";
 
 	try
 	{
-		call->result += Config::get_string("wlan-ssid");
+		call->result += Config::get().get_string("wlan-ssid");
 	}
 	catch(transient_exception &)
 	{
@@ -410,7 +410,7 @@ void wlan_command_client_config(cli_command_call_t *call)
 
 	try
 	{
-		call->result += Config::get_string("wlan-passwd");
+		call->result += Config::get().get_string("wlan-passwd");
 	}
 	catch(transient_exception &)
 	{
@@ -515,7 +515,7 @@ void wlan_command_ipv6_static(cli_command_call_t *call)
 		for(auto &c : ipv6_address_string)
 			c = std::tolower(c);
 
-		Config::set_string(key_ipv6_static_address, ipv6_address_string);
+		Config::get().set_string(key_ipv6_static_address, ipv6_address_string);
 
 		static_ipv6_address = ipv6_address;
 		static_ipv6_address_set = true;
@@ -525,7 +525,7 @@ void wlan_command_ipv6_static(cli_command_call_t *call)
 
 	try
 	{
-		call->result += Config::get_string(key_ipv6_static_address);
+		call->result += Config::get().get_string(key_ipv6_static_address);
 	}
 	catch(transient_exception &)
 	{
@@ -550,7 +550,7 @@ void wlan_init(void)
 
 	try
 	{
-		hostname = Config::get_string("hostname");
+		hostname = Config::get().get_string("hostname");
 	}
 	catch(transient_exception &e)
 	{
@@ -567,7 +567,7 @@ void wlan_init(void)
 
 	try
 	{
-		ipv6_address_string = Config::get_string(key_ipv6_static_address);
+		ipv6_address_string = Config::get().get_string(key_ipv6_static_address);
 		static_ipv6_address_set = esp_netif_str_to_ip6(ipv6_address_string.c_str(), &static_ipv6_address) == ESP_OK;
 	}
 	catch(transient_exception &)

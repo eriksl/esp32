@@ -20,7 +20,7 @@ Config::Config(std::string_view default_name_space_in) :
 	esp_err_t rv;
 
 	if(singleton)
-		throw(hard_exception("Config: already constructed"));
+		throw(hard_exception("Config: already activated"));
 
 	rv = nvs_flash_init();
 
@@ -38,8 +38,6 @@ Config::Config(std::string_view default_name_space_in) :
 	singleton = &*this;
 }
 
-// private
-
 std::string Config::make_exception_text(esp_err_t err,
 		std::string_view fn, std::string_view message1, std::string_view message2,
 		std::string_view key, std::string_view name_space)
@@ -48,7 +46,7 @@ std::string Config::make_exception_text(esp_err_t err,
 			fn, message1, message2, key, name_space, err, esp_err_to_name(err)));
 }
 
-void Config::set_value_(std::string_view key_in, std::string_view name_space_in, int64_t *int_value, const std::string *string_value)
+void Config::set_value(std::string_view key_in, std::string_view name_space_in, int64_t *int_value, const std::string *string_value)
 {
 	nvs_handle_t local_nvs_handle;
 	esp_err_t rv = ESP_OK;
@@ -89,7 +87,7 @@ void Config::set_value_(std::string_view key_in, std::string_view name_space_in,
 	nvs_close(local_nvs_handle);
 }
 
-void Config::get_value_(std::string_view key, std::string_view name_space,
+void Config::get_value(std::string_view key, std::string_view name_space,
 		int64_t *int_value_in, std::string *string_value_in, std::string *formatted_value_in, std::string *type_in,
 		const nvs_entry_info_t *their_info)
 {
@@ -386,7 +384,43 @@ void Config::get_value_(std::string_view key, std::string_view name_space,
 		*formatted_value_in = formatted_value;
 }
 
-void Config::erase_(const std::string &key, std::string_view name_space)
+Config &Config::get()
+{
+	if(!singleton)
+		throw(hard_exception("Config: not activated"));
+
+	return(*singleton);
+}
+
+void Config::set_int(const std::string &key, int64_t value, std::string_view name_space)
+{
+	this->set_value(key, name_space, &value, nullptr);
+}
+
+void Config::set_string(const std::string &key, const std::string &value, std::string_view name_space)
+{
+	this->set_value(key, name_space, nullptr, &value);
+}
+
+int64_t Config::get_int(const std::string &key, std::string *type, std::string_view name_space)
+{
+	int64_t value;
+
+	this->get_value(key, name_space, &value, nullptr, nullptr, type);
+
+	return(value);
+}
+
+std::string Config::get_string(const std::string &key, std::string *type, std::string_view name_space)
+{
+	std::string value;
+
+	this->get_value(key, name_space, nullptr, &value, nullptr, type);
+
+	return(value);
+}
+
+void Config::erase(const std::string &key, std::string_view name_space)
 {
 	esp_err_t rv = ESP_OK;
 	nvs_handle_t local_nvs_handle;
@@ -440,7 +474,7 @@ void Config::erase_(const std::string &key, std::string_view name_space)
 	nvs_close(local_nvs_handle);
 }
 
-void Config::erase_wildcard_(const std::string &key, std::string_view name_space)
+void Config::erase_wildcard(const std::string &key, std::string_view name_space)
 {
 	esp_err_t rv = ESP_OK;
 	nvs_handle_t local_nvs_handle;
@@ -507,7 +541,7 @@ void Config::erase_wildcard_(const std::string &key, std::string_view name_space
 	nvs_close(local_nvs_handle);
 }
 
-void Config::dump_(std::string &dst, std::string_view name_space)
+void Config::dump(std::string &dst, std::string_view name_space)
 {
 	esp_err_t rv = ESP_OK;
 	nvs_iterator_t nvs_iterator;
@@ -559,7 +593,7 @@ void Config::dump_(std::string &dst, std::string_view name_space)
 			key = info.key;
 			name_space_name = info.namespace_name;
 
-			this->get_value_(key, name_space_name, &int_value, &string_value, &formatted_value, &type, &info);
+			this->get_value(key, name_space_name, &int_value, &string_value, &formatted_value, &type, &info);
 
 			dst += std::format("\n- {:<16} {:<40} {:<6} {}", key, formatted_value, type, info.namespace_name);
 
@@ -577,90 +611,4 @@ void Config::dump_(std::string &dst, std::string_view name_space)
 	}
 
 	nvs_release_iterator(nvs_iterator);
-}
-
-void Config::set_int_(const std::string &key, int64_t value, std::string_view name_space)
-{
-	this->set_value_(key, name_space, &value, nullptr);
-}
-
-void Config::set_string_(const std::string &key, const std::string &value, std::string_view name_space)
-{
-	this->set_value_(key, name_space, nullptr, &value);
-}
-
-int64_t Config::get_int_(const std::string &key, std::string *type, std::string_view name_space)
-{
-	int64_t value;
-
-	this->get_value_(key, name_space, &value, nullptr, nullptr, type);
-
-	return(value);
-}
-
-std::string Config::get_string_(const std::string &key, std::string *type, std::string_view name_space)
-{
-	std::string value;
-
-	this->get_value_(key, name_space, nullptr, &value, nullptr, type);
-
-	return(value);
-}
-
-/// public
-
-void Config::set_int(const std::string &key, int64_t value, std::string_view name_space)
-{
-	if(!singleton)
-		throw(hard_exception("Config: not constructed"));
-
-	singleton->set_int_(key, value, name_space);
-}
-
-void Config::set_string(const std::string &key, const std::string &value, std::string_view name_space)
-{
-	if(!singleton)
-		throw(hard_exception("Config: not constructed"));
-
-	singleton->set_string_(key, value, name_space);
-}
-
-int64_t Config::get_int(const std::string &key, std::string *type, std::string_view name_space)
-{
-	if(!singleton)
-		throw(hard_exception("Config: not constructed"));
-
-	return(singleton->get_int_(key, type, name_space));
-}
-
-std::string Config::get_string(const std::string &key, std::string *type, std::string_view name_space)
-{
-	if(!singleton)
-		throw(hard_exception("Config: not constructed"));
-
-	return(singleton->get_string_(key, type, name_space));
-}
-
-void Config::erase(const std::string &key, std::string_view name_space)
-{
-	if(!singleton)
-		throw(hard_exception("Config: not constructed"));
-
-	singleton->erase_(key, name_space);
-}
-
-void Config::erase_wildcard(const std::string &key, std::string_view name_space)
-{
-	if(!singleton)
-		throw(hard_exception("Config: not constructed"));
-
-	singleton->erase_wildcard_(key, name_space);
-}
-
-void Config::dump(std::string &dst, std::string_view name_space)
-{
-	if(!singleton)
-		throw(hard_exception("Config: not constructed"));
-
-	singleton->dump_(dst, name_space);
 }

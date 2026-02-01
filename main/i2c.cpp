@@ -687,7 +687,7 @@ void i2c_init(void)
 
 		try
 		{
-			data->speed_khz = Config::get_int((boost::format("i2c.%u.speed") % module).str());
+			data->speed_khz = Config::get().get_int((boost::format("i2c.%u.speed") % module).str());
 		}
 		catch(const transient_exception &)
 		{
@@ -1279,7 +1279,7 @@ void command_i2c_speed(cli_command_call_t *call)
 		data = &module_data[module_index];
 		data->speed_khz = config_value = speed;
 
-		Config::set_int((boost::format("i2c.%d.speed") % module_index).str(), config_value);
+		Config::get().set_int((boost::format("i2c.%d.speed") % module_index).str(), config_value);
 
 		data_mutex_give();
 	}

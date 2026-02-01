@@ -944,7 +944,7 @@ static void display_info(std::string &output)
 	{
 		try
 		{
-			value = Config::get_int(display_variable[dv][1]);
+			value = Config::get().get_int(display_variable[dv][1]);
 			found++;
 			output += std::format("\n- {}: {:d}", display_variable[dv][0], value);
 		}
@@ -1088,10 +1088,10 @@ void command_display_configure(cli_command_call_t *call)
 		return;
 	}
 
-	Config::erase_wildcard("display.");
+	Config::get().erase_wildcard("display.");
 
 	for(ix = dv_start; (ix < dv_size) && (ix < call->parameter_count); ix = static_cast<dv_t>(ix + 1))
-		Config::set_int(display_variable[ix][1], call->parameters[ix].unsigned_int);
+		Config::get().set_int(display_variable[ix][1], call->parameters[ix].unsigned_int);
 
 	display_info(call->result);
 }
@@ -1100,7 +1100,7 @@ void command_display_erase(cli_command_call_t *call)
 {
 	assert(call->parameter_count == 0);
 
-	Config::erase_wildcard("display.");
+	Config::get().erase_wildcard("display.");
 
 	page_data_mutex_take();
 	display_info(call->result);
@@ -1180,7 +1180,7 @@ void display_init(void)
 
 	try
 	{
-		type = Config::get_int(display_variable[dv_type][1]);
+		type = Config::get().get_int(display_variable[dv_type][1]);
 	}
 	catch(const transient_exception &e)
 	{
@@ -1197,7 +1197,7 @@ void display_init(void)
 
 	try
 	{
-		display_init_parameters.interface_index = Config::get_int(display_variable[dv_if][1]);
+		display_init_parameters.interface_index = Config::get().get_int(display_variable[dv_if][1]);
 	}
 	catch(const transient_exception &)
 	{
@@ -1205,7 +1205,7 @@ void display_init(void)
 
 	try
 	{
-		display_init_parameters.x_size = x_size = Config::get_int(display_variable[dv_x_size][1]);
+		display_init_parameters.x_size = x_size = Config::get().get_int(display_variable[dv_x_size][1]);
 	}
 	catch(const transient_exception &)
 	{
@@ -1213,7 +1213,7 @@ void display_init(void)
 
 	try
 	{
-		display_init_parameters.y_size = y_size = Config::get_int(display_variable[dv_y_size][1]);
+		display_init_parameters.y_size = y_size = Config::get().get_int(display_variable[dv_y_size][1]);
 	}
 	catch(const transient_exception &)
 	{
@@ -1221,7 +1221,7 @@ void display_init(void)
 
 	try
 	{
-		display_init_parameters.flip = Config::get_int(display_variable[dv_flip][1]);
+		display_init_parameters.flip = Config::get().get_int(display_variable[dv_flip][1]);
 	}
 	catch(const transient_exception &)
 	{
@@ -1229,7 +1229,7 @@ void display_init(void)
 
 	try
 	{
-		display_init_parameters.invert = Config::get_int(display_variable[dv_invert][1]);
+		display_init_parameters.invert = Config::get().get_int(display_variable[dv_invert][1]);
 	}
 	catch(const transient_exception &)
 	{
@@ -1237,7 +1237,7 @@ void display_init(void)
 
 	try
 	{
-		display_init_parameters.rotate = Config::get_int(display_variable[dv_rotate][1]);
+		display_init_parameters.rotate = Config::get().get_int(display_variable[dv_rotate][1]);
 	}
 	catch(const transient_exception &)
 	{

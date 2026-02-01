@@ -481,7 +481,7 @@ void bt_init(void)
 
 	try
 	{
-		hostname = Config::get_string("hostname");
+		hostname = Config::get().get_string("hostname");
 	}
 	catch(transient_exception &)
 	{
@@ -490,7 +490,7 @@ void bt_init(void)
 
 	try
 	{
-		encryption_key = Config::get_string("bt.key");
+		encryption_key = Config::get().get_string("bt.key");
 	}
 	catch(transient_exception &)
 	{
@@ -550,7 +550,7 @@ void bluetooth_command_key(cli_command_call_t *call)
 		{
 			case(1):
 			{
-				Config::set_string("bt.key", call->parameters[0].str);
+				Config::get().set_string("bt.key", call->parameters[0].str);
 				encryption_key = call->parameters[0].str;
 				[[fallthrough]];
 			}
@@ -558,7 +558,7 @@ void bluetooth_command_key(cli_command_call_t *call)
 			{
 				try
 				{
-					key = Config::get_string("bt.key");
+					key = Config::get().get_string("bt.key");
 				}
 				catch(const transient_exception &)
 				{
