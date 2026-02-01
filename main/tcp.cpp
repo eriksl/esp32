@@ -69,11 +69,10 @@ TCP::TCP() :
 	thread_config.pin_to_core = 1;
 	thread_config.stack_size = 2 * 1024;
 	thread_config.prio = 1;
-	//thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM;
-	esp_pthread_set_cfg(&thread_config);
+	//thread_config.stack_alloc_caps = MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM;
+	util_abort_on_esp_err("esp_pthread_set_cfg", esp_pthread_set_cfg(&thread_config));
 
 	std::thread new_thread(TCP::run_wrapper, this);
-
 	new_thread.detach();
 }
 
