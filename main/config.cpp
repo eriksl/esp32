@@ -1,13 +1,8 @@
-#include <stdbool.h>
-#include <stdint.h>
-#include <string.h>
-
-#include "log.h"
-#include "util.h"
 #include "config.h"
 
-#include <freertos/FreeRTOS.h>
-#include <esp_err.h>
+#include <nvs_flash.h>
+
+#include <stdint.h>
 
 #include <string>
 #include <format>

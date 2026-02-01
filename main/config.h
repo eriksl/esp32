@@ -2,10 +2,9 @@
 
 #include "exception.h"
 
-#include <string>
-
 #include <nvs.h>
-#include <nvs_flash.h>
+
+#include <string>
 
 class Config
 {
