@@ -2,12 +2,14 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "i2c.h"
+
 #include "info.h"
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
 #include "config.h"
-#include "i2c.h"
+#include "exception.h"
 
 #include <driver/i2c_master.h>
 #include <freertos/FreeRTOS.h>

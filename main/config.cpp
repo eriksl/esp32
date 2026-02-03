@@ -1,10 +1,10 @@
 #include "config.h"
 
+#include "exception.h"
+
 #include <nvs_flash.h>
 
 #include <stdint.h>
-
-#include <string>
 #include <format>
 
 Config *Config::singleton = nullptr;

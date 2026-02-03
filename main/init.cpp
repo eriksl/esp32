@@ -7,6 +7,7 @@ __attribute__((noreturn)) void app_main(void);
 
 #include "config.h"
 #include "console.h"
+#include "ledpixel.h"
 #include "command.h"
 
 #include "cli.h"
@@ -18,7 +19,6 @@ __attribute__((noreturn)) void app_main(void);
 #include "i2c.h"
 #include "info.h"
 #include "io.h"
-#include "ledpixel.h"
 #include "ledpwm.h"
 #include "mcpwm.h"
 #include "notify.h"

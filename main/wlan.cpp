@@ -4,6 +4,8 @@
 
 #include <lwip/netif.h>
 
+#include "wlan.h"
+
 #include "cli.h"
 #include "config.h"
 #include "log.h"
@@ -11,7 +13,7 @@
 #include "packet.h"
 #include "cli-command.h"
 #include "notify.h"
-#include "wlan.h"
+#include "exception.h"
 
 #include <esp_event.h>
 #include <esp_wifi.h>

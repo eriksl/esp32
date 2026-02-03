@@ -1,7 +1,5 @@
 #pragma once
 
-#include "exception.h"
-
 #include <nvs.h>
 
 #include <string>
