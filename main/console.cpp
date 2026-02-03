@@ -102,6 +102,7 @@ void Console::run_thread()
 	char byte;
 	unsigned int ix;
 	bool whitespace;
+	std::string *line;
 
 	this->prompt();
 
@@ -111,9 +112,10 @@ void Console::run_thread()
 		{
 			state = ess_inactive;
 
-			this->lines.at(this->current_line).clear();
+			line = &lines[this->current_line];
+			line->clear();
 
-			while(this->lines.at(this->current_line).length() < this->max_line_length)
+			while(line->length() < this->max_line_length)
 			{
 				byte = this->read_byte();
 				this->stats["received bytes"]++;
@@ -149,7 +151,7 @@ void Console::run_thread()
 						{
 							case('A'):
 							{
-								for(ix = this->lines.at(this->current_line).length(); ix > 0; ix--)
+								for(ix = line->length(); ix > 0; ix--)
 									this->write_string(backspace_string);
 
 								if(this->current_line > 0)
@@ -157,14 +159,15 @@ void Console::run_thread()
 								else
 									this->current_line = this->lines_amount - 1;
 
-								this->write_string(this->lines.at(this->current_line));
+								line = &lines[this->current_line];
+								this->write_string(*line);
 								state = ess_inactive;
 								continue;
 							}
 
 							case('B'):
 							{
-								for(ix = this->lines.at(this->current_line).length(); ix > 0; ix--)
+								for(ix = line->length(); ix > 0; ix--)
 									this->write_string(backspace_string);
 
 								if((this->current_line + 1) < this->lines_amount)
@@ -172,7 +175,8 @@ void Console::run_thread()
 								else
 									this->current_line = 0;
 
-								this->write_string(this->lines.at(this->current_line));
+								line = &lines[this->current_line];
+								this->write_string(*line);
 								state = ess_inactive;
 								continue;
 							}
@@ -193,9 +197,9 @@ void Console::run_thread()
 
 				if((byte == /* ^H */ 0x08) || (byte == /* DEL */ 0x7f))
 				{
-					if(this->lines.at(this->current_line).length() > 0)
+					if(line->length() > 0)
 					{
-						this->lines.at(this->current_line).pop_back();
+						line->pop_back();
 						this->write_string(backspace_string);
 					}
 
@@ -204,12 +208,12 @@ void Console::run_thread()
 
 				if(byte == /* ^W */ 0x17)
 				{
-					for(whitespace = false; this->lines.at(this->current_line).length() > 0; this->lines.at(this->current_line).pop_back())
+					for(whitespace = false; line->length() > 0; line->pop_back())
 					{
-						if(whitespace && (this->lines.at(this->current_line).back() != ' '))
+						if(whitespace && (line->back() != ' '))
 							break;
 
-						if(this->lines.at(this->current_line).back() == ' ')
+						if(line->back() == ' ')
 							whitespace = true;
 
 						this->write_string(backspace_string);
@@ -220,10 +224,10 @@ void Console::run_thread()
 
 				if(byte == /* ^U */ 0x15)
 				{
-					for(ix = this->lines.at(this->current_line).length(); ix > 0; ix--)
+					for(ix = line->length(); ix > 0; ix--)
 						this->write_string(backspace_string);
 
-					this->lines.at(this->current_line).clear();
+					line->clear();
 
 					continue;
 				}
@@ -232,14 +236,14 @@ void Console::run_thread()
 				{
 					this->write_string(reprint_string);
 					this->prompt();
-					this->write_string(this->lines.at(this->current_line));
+					this->write_string(*line);
 					continue;
 				}
 
 				if(byte == /* ^C */ 0x03)
 				{
 					this->write_string(interrupt_string);
-					this->lines.at(this->current_line).clear();
+					line->clear();
 					break;
 				}
 
@@ -248,13 +252,13 @@ void Console::run_thread()
 					this->write_string(history_string);
 
 					for(ix = this->current_line + 1; ix < this->lines_amount; ix++)
-						this->write_string(std::format("[{:d}] {}\n", ix, this->lines.at(ix)));
+						this->write_string(std::format("[{:d}] {}\n", ix, this->lines[ix]));
 
 					for(ix = 0; ix < this->current_line; ix++)
-						this->write_string(std::format("[{:d}] {}\n", ix, this->lines.at(ix)));
+						this->write_string(std::format("[{:d}] {}\n", ix, this->lines[ix]));
 
 					this->prompt();
-					this->write_string(this->lines.at(this->current_line));
+					this->write_string(*line);
 
 					continue;
 				}
@@ -263,33 +267,35 @@ void Console::run_thread()
 					continue;
 
 				this->write_string(std::string(1, byte));
-				this->lines.at(this->current_line).append(1, byte);
+				line->append(1, byte);
 			}
 
-			if((this->lines.at(this->current_line).length() == 2) && (this->lines.at(this->current_line).at(0) == '!'))
+			if((line->length() == 2) && ((*line)[0] == '!'))
 			{
-				if((this->lines.at(this->current_line).at(1) >= '0') && (this->lines.at(this->current_line).at(1) <= '7')) // FIXME
-					this->current_line = this->lines.at(this->current_line).at(1) - '0';
+				if(((*line)[1] >= '0') && ((*line)[1] <= '7')) // FIXME
+					this->current_line = (*line)[1] - '0';
 				else
 				{
-					if(this->lines.at(this->current_line).at(1) == '!')
+					if((*line)[1] == '!')
 					{
 						if(this->current_line > 0)
 							current_line--;
 						else
 							this->current_line = this->lines_amount - 1;
+
+						line = &lines[this->current_line];
 					}
 				}
 			}
 
-			if(this->lines.at(this->current_line).length() > 0)
+			if(line->length() > 0)
 			{
 				command_response_t *command_response = new command_response_t;
 
 				command_response->source = cli_source_console;
 				command_response->mtu = 32768;
 				command_response->packetised = 0;
-				command_response->packet = this->lines.at(this->current_line);
+				command_response->packet = *line;
 				cli_receive_queue_push(command_response);
 				command_response = nullptr;
 
@@ -298,7 +304,8 @@ void Console::run_thread()
 				else
 					this->current_line = 0;
 
-				this->lines.at(this->current_line).clear();
+				line = &lines[this->current_line];
+				line->clear();
 
 				this->write_string(newline_string);
 			}
