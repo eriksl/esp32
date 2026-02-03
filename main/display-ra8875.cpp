@@ -302,7 +302,7 @@ typedef struct
 	unsigned int sck;
 	unsigned int mosi;
 	unsigned int miso;
-	ledpwm_t bl;
+	LedPWM::ledpwm_t bl;
 } spi_signal_t;
 
 typedef struct
@@ -320,7 +320,7 @@ static const spi_host_signal_t spi_host_signal =
 		.sck =		12,									/* IOMUX, fixed */
 		.mosi =		11,									/* IOMUX, fixed */
 		.miso =		13,									/* IOMUX, fixed */
-		.bl =		lpt_14bit_5khz_lcd_spi_2,
+		.bl =		LedPWM::lpt_14bit_5khz_lcd_spi_2,
 	},
 	.spi3 =
 	{
@@ -329,7 +329,7 @@ static const spi_host_signal_t spi_host_signal =
 		.sck =		CONFIG_BSP_SPI3_SCK,
 		.mosi =		CONFIG_BSP_SPI3_MOSI,
 		.miso =		CONFIG_BSP_SPI3_MISO,
-		.bl =		lpt_14bit_5khz_lcd_spi_3,
+		.bl =		LedPWM::lpt_14bit_5khz_lcd_spi_3,
 	},
 };
 

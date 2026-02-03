@@ -182,10 +182,10 @@ enum
 };
 
 static_assert((unsigned int)esp32_ledpwm_pin_size <= (unsigned int)io_int_value_size);
-static_assert((unsigned int)esp32_ledpwm_pin_0 == (unsigned int)lpt_14bit_5khz_notify);
-static_assert((unsigned int)esp32_ledpwm_pin_1 == (unsigned int)lpt_14bit_5khz_lcd_spi_2);
-static_assert((unsigned int)esp32_ledpwm_pin_2 == (unsigned int)lpt_14bit_5khz_lcd_spi_3);
-static_assert((unsigned int)esp32_ledpwm_pin_3 == (unsigned int)lpt_14bit_120hz);
+static_assert((unsigned int)esp32_ledpwm_pin_0 == (unsigned int)LedPWM::lpt_14bit_5khz_notify);
+static_assert((unsigned int)esp32_ledpwm_pin_1 == (unsigned int)LedPWM::lpt_14bit_5khz_lcd_spi_2);
+static_assert((unsigned int)esp32_ledpwm_pin_2 == (unsigned int)LedPWM::lpt_14bit_5khz_lcd_spi_3);
+static_assert((unsigned int)esp32_ledpwm_pin_3 == (unsigned int)LedPWM::lpt_14bit_120hz);
 
 static void esp32_ledpwm_info(const io_data_t *, std::string &)
 {
@@ -194,17 +194,28 @@ static void esp32_ledpwm_info(const io_data_t *, std::string &)
 
 static bool esp32_ledpwm_init(io_data_t *dataptr)
 {
-	ledpwm_t handle;
-	bool rv = false;
+	LedPWM::ledpwm_t handle;
 
 	assert(inited);
 	assert(dataptr);
 
-	for(handle = lpt_first; handle < lpt_size; handle = static_cast<ledpwm_t>(handle + 1))
-		if((dataptr->int_value[handle] = ledpwm_open(handle, "I/O LED-PWM")))
-			rv = true;
+	for(handle = LedPWM::lpt_first; handle < LedPWM::lpt_size; handle = static_cast<LedPWM::ledpwm_t>(handle + 1))
+	{
+		dataptr->int_value[handle] = 0;
 
-	return(rv);
+		try
+		{
+			LedPWM::get().open(handle, "I/O LED-PWM");
+		}
+		catch(const transient_exception &)
+		{
+			return(false);
+		}
+
+		dataptr->int_value[handle] = 1;
+	}
+
+	return(true);
 }
 
 static bool esp32_ledpwm_write(io_data_t *dataptr, unsigned int pin, unsigned int value)
@@ -212,13 +223,13 @@ static bool esp32_ledpwm_write(io_data_t *dataptr, unsigned int pin, unsigned in
 	assert(inited);
 	assert(dataptr);
 	assert(pin < dataptr->info->pins);
-	assert(pin < lpt_size);
+	assert(pin < LedPWM::lpt_size);
 	assert(value <= dataptr->info->max_value);
 
 	if(!dataptr->int_value[pin])
 		return(false);
 
-	ledpwm_set((ledpwm_t)pin, value);
+	LedPWM::get().set(static_cast<LedPWM::ledpwm_t>(pin), value);
 
 	return(true);
 }
@@ -231,7 +242,7 @@ static void esp32_ledpwm_pin_info(const io_data_t *dataptr, unsigned int pin, st
 	assert(pin < Ledpixel::lp_size);
 
 	if(dataptr->int_value[pin])
-		result += std::format("LED-PWM channel {:d} duty: {:d}", pin, ledpwm_get(static_cast<ledpwm_t>(pin)));
+		result += std::format("LED-PWM channel {:d} duty: {:d}", pin, LedPWM::get().get(static_cast<LedPWM::ledpwm_t>(pin)));
 	else
 		result += "pin unvailable on this board";
 }

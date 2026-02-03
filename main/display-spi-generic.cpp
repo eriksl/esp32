@@ -45,7 +45,7 @@ typedef struct
 	unsigned int mosi;
 	unsigned int miso;
 	unsigned int dc;
-	ledpwm_t bl;
+	LedPWM::ledpwm_t bl;
 } spi_signal_t;
 
 typedef struct
@@ -70,7 +70,7 @@ static const spi_host_signal_t spi_host_signal =
 		.mosi =		11,									/* IOMUX, fixed */
 		.miso =		13,									/* IOMUX, fixed */
 		.dc =		CONFIG_BSP_SPI2_DISPLAY_DC,
-		.bl =		lpt_14bit_5khz_lcd_spi_2,
+		.bl =		LedPWM::lpt_14bit_5khz_lcd_spi_2,
 	},
 	.spi3 =
 	{
@@ -80,7 +80,7 @@ static const spi_host_signal_t spi_host_signal =
 		.mosi =		CONFIG_BSP_SPI3_MOSI,
 		.miso =		CONFIG_BSP_SPI3_MISO,
 		.dc =		CONFIG_BSP_SPI3_DISPLAY_DC,
-		.bl =		lpt_14bit_5khz_lcd_spi_3,
+		.bl =		LedPWM::lpt_14bit_5khz_lcd_spi_3,
 	},
 };
 
@@ -91,7 +91,7 @@ static callback_data_t callback_data_gpio_on;
 static callback_data_t callback_data_gpio_off;
 static SemaphoreHandle_t spi_mutex;
 static unsigned int spi_pending;
-static ledpwm_t ledpwm_channel;
+static LedPWM::ledpwm_t ledpwm_channel;
 static unsigned int x_size, y_size;
 static unsigned int flip;
 static unsigned int rotate;
@@ -503,7 +503,6 @@ static void pre_callback(spi_transaction_t *transaction)
 bool display_spi_generic_init(const display_init_parameters_t *parameters)
 {
 	size_t max_transaction_length;
-	bool rv;
 
 	switch(parameters->interface_index)
 	{
@@ -617,8 +616,7 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 	pixel_buffer_rgb_length = 0;
 
 	ledpwm_channel = spi_signal->bl;
-	rv = ledpwm_open(ledpwm_channel, "backlight generic SPI LCD");
-	assert(rv);
+	LedPWM::get().open(ledpwm_channel, "backlight generic SPI LCD");
 
 	inited = true;
 
@@ -649,5 +647,5 @@ void display_spi_generic_bright(unsigned int percentage)
 {
 	assert(percentage <= 100);
 
-	ledpwm_set(ledpwm_channel, ((1UL << 14) * (100 - percentage)) / 100);
+	LedPWM::get().set(ledpwm_channel, ((1UL << 14) * (100 - percentage)) / 100);
 }

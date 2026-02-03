@@ -479,7 +479,7 @@ static const cli_command_t cli_commands[] =
 	},
 
 	{ "ledpixel-info", "lpxi", "info about LEDpixels channels", Command::ledpixel_info, {}},
-	{ "ledpwm-info", "lpi", "info about LED PWM channels and timers", command_ledpwm_info, {}},
+	{ "ledpwm-info", "lpi", "info about LED PWM channels and timers", Command::ledpwm_info, {}},
 
 	{ "log", "l", "show log", log_command_log,
 		{	1,

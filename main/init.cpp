@@ -8,6 +8,7 @@ __attribute__((noreturn)) void app_main(void);
 #include "config.h"
 #include "console.h"
 #include "ledpixel.h"
+#include "ledpwm.h"
 #include "command.h"
 
 #include "cli.h"
@@ -19,7 +20,6 @@ __attribute__((noreturn)) void app_main(void);
 #include "i2c.h"
 #include "info.h"
 #include "io.h"
-#include "ledpwm.h"
 #include "mcpwm.h"
 #include "notify.h"
 #include "perftest.h"
@@ -42,8 +42,8 @@ void app_main(void)
 		Config config("config");
 		Console console(config);
 		Ledpixel ledpixel;
-		Command command(config, console, ledpixel);
-		ledpwm_init();
+		LedPWM ledpwm;
+		Command command(config, console, ledpixel, ledpwm);
 		notify_init();
 		notify(notify_sys_booting);
 		info_init();

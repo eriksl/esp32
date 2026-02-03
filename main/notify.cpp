@@ -149,7 +149,7 @@ static void timer_handler(struct tmrTimerControl *)
 #endif
 
 #if (CONFIG_BSP_LEDPWM0 >= 0)
-	ledpwm_set(lpt_14bit_5khz_notify, (1UL << phase_ptr->duty_shift) - 1);
+	LedPWM::get().set(LedPWM::lpt_14bit_5khz_notify, (1UL << phase_ptr->duty_shift) - 1);
 #endif
 
 #if ((CONFIG_BSP_LEDPIXEL0 >= 0) || (CONFIG_BSP_LEDPWM0 >= 0))
@@ -164,11 +164,11 @@ void notify_init(void)
 	assert(!inited);
 
 #if (CONFIG_BSP_LEDPIXEL0 >= 0)
-	assert(ledpixel_open(lp_0_notify, "notification LED"));
+	assert(LedPixel::get().open(LedPixel::lp_0_notify, "notification LED"));
 #endif
 
 #if (CONFIG_BSP_LEDPWM0 >= 0)
-	assert(ledpwm_open(lpt_14bit_5khz_notify, "notification LED"));
+	LedPWM::get().open(LedPWM::lpt_14bit_5khz_notify, "notification LED");
 #endif
 
 	current_phase = -1;
