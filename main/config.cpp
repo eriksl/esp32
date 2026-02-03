@@ -4,7 +4,7 @@
 
 #include <nvs_flash.h>
 
-#include <stdint.h>
+#include <cstdint>
 #include <format>
 
 Config *Config::singleton = nullptr;
@@ -164,7 +164,7 @@ void Config::get_value(std::string_view key, std::string_view name_space,
 		{
 			case(NVS_TYPE_U8):
 			{
-				uint8_t raw_value;
+				std::uint8_t raw_value;
 
 				if((rv = nvs_get_u8(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
 					throw(transient_exception("nvs_get_u8"));
@@ -176,7 +176,7 @@ void Config::get_value(std::string_view key, std::string_view name_space,
 			}
 			case(NVS_TYPE_I8):
 			{
-				int8_t raw_value;
+				std::int8_t raw_value;
 
 				if((rv = nvs_get_i8(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
 					throw(transient_exception("nvs_get_i8"));
@@ -188,7 +188,7 @@ void Config::get_value(std::string_view key, std::string_view name_space,
 			}
 			case(NVS_TYPE_U16):
 			{
-				uint16_t raw_value;
+				std::uint16_t raw_value;
 
 				if((rv = nvs_get_u16(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
 					throw(transient_exception("nvs_get_u16"));
@@ -200,7 +200,7 @@ void Config::get_value(std::string_view key, std::string_view name_space,
 			}
 			case(NVS_TYPE_I16):
 			{
-				int16_t raw_value;
+				std::int16_t raw_value;
 
 				if((rv = nvs_get_i16(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
 					throw(transient_exception("nvs_get_i16"));
@@ -211,7 +211,7 @@ void Config::get_value(std::string_view key, std::string_view name_space,
 			}
 			case(NVS_TYPE_U32):
 			{
-				uint32_t raw_value;
+				std::uint32_t raw_value;
 
 				if((rv = nvs_get_u32(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
 					throw(transient_exception("nvs_get_u16"));
@@ -222,7 +222,7 @@ void Config::get_value(std::string_view key, std::string_view name_space,
 			}
 			case(NVS_TYPE_I32):
 			{
-				int32_t raw_value;
+				std::int32_t raw_value;
 
 				if((rv = nvs_get_i32(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
 					throw(transient_exception("nvs_get_i32"));
@@ -233,7 +233,7 @@ void Config::get_value(std::string_view key, std::string_view name_space,
 			}
 			case(NVS_TYPE_U64):
 			{
-				uint64_t raw_value;
+				std::uint64_t raw_value;
 
 				if((rv = nvs_get_u64(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
 					throw(transient_exception("nvs_get_u64"));
@@ -245,7 +245,7 @@ void Config::get_value(std::string_view key, std::string_view name_space,
 			}
 			case(NVS_TYPE_I64):
 			{
-				int64_t raw_value;
+				std::int64_t raw_value;
 
 				if((rv = nvs_get_i64(local_nvs_handle, info->key, &raw_value)) != ESP_OK)
 					throw(transient_exception("nvs_get_i64"));
