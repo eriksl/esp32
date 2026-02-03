@@ -58,7 +58,7 @@ typedef struct io_info_T
 		} i2c;
 		struct
 		{
-			lp_t instance;
+			Ledpixel::lp_t instance;
 		} ledpixel;
 	} instance;
 	void (*info_fn)(const struct io_data_T *data, std::string &result);
@@ -228,7 +228,7 @@ static void esp32_ledpwm_pin_info(const io_data_t *dataptr, unsigned int pin, st
 	assert(inited);
 	assert(dataptr);
 	assert(pin < dataptr->info->pins);
-	assert(pin < lp_size);
+	assert(pin < Ledpixel::lp_size);
 
 	if(dataptr->int_value[pin])
 		result += std::format("LED-PWM channel {:d} duty: {:d}", pin, ledpwm_get(static_cast<ledpwm_t>(pin)));
@@ -314,16 +314,23 @@ static void esp32_ledpixel_info(const io_data_t *, std::string &)
 
 static bool esp32_ledpixel_init(io_data_t *dataptr)
 {
-	bool rv;
-
 	assert(inited);
 	assert(dataptr);
 
-	rv = ledpixel_open(dataptr->info->instance.ledpixel.instance, "I/O ledpixel");
+	dataptr->int_value[esp32_ledpixel_int_value_open] = 0;
 
-	dataptr->int_value[esp32_ledpixel_int_value_open] = rv ? 1 : 0;
+	try
+	{
+		Ledpixel::get().open(dataptr->info->instance.ledpixel.instance, "I/O ledpixel");
+	}
+	catch(const transient_exception &)
+	{
+		return(false);
+	}
 
-	return(rv);
+	dataptr->int_value[esp32_ledpixel_int_value_open] = 1;
+
+	return(true);
 }
 
 static bool esp32_ledpixel_write(io_data_t *dataptr, unsigned int pin, unsigned int value)
@@ -336,8 +343,8 @@ static bool esp32_ledpixel_write(io_data_t *dataptr, unsigned int pin, unsigned 
 	if(!dataptr->int_value[esp32_ledpixel_int_value_open])
 		return(false);
 
-	ledpixel_set(dataptr->info->instance.ledpixel.instance, pin, (value & 0x00ff0000) >> 16, (value & 0x0000ff00) >> 8, (value & 0x000000ff) >> 0);
-	ledpixel_flush(dataptr->info->instance.ledpixel.instance);
+	Ledpixel::get().set(dataptr->info->instance.ledpixel.instance, pin, (value & 0x00ff0000) >> 16, (value & 0x0000ff00) >> 8, (value & 0x000000ff) >> 0);
+	Ledpixel::get().flush(dataptr->info->instance.ledpixel.instance);
 
 	return(true);
 }
@@ -492,14 +499,14 @@ static const io_info_t info[io_id_size] =
 		.id = io_id_esp32_ledpixel_0,
 		.name = "ESP32 LEDpixel 0",
 		.caps = static_cast<io_capabilities_t>((1 << io_cap_output)),
-		.pins = ledpixel_leds_size,
+		.pins = Ledpixel::ledpixel_leds_size,
 		.max_value = 0x00ffffff,
 		.bus = io_bus_apb,
 		.instance
 		{
 			.ledpixel =
 			{
-				.instance = lp_0_notify,
+				.instance = Ledpixel::lp_0_notify,
 			},
 		},
 		.info_fn = esp32_ledpixel_info,
@@ -514,14 +521,14 @@ static const io_info_t info[io_id_size] =
 		.id = io_id_esp32_ledpixel_1,
 		.name = "ESP32 LEDpixel 1",
 		.caps = static_cast<io_capabilities_t>((1 << io_cap_output)),
-		.pins = ledpixel_leds_size,
+		.pins = Ledpixel::ledpixel_leds_size,
 		.max_value = 0x00ffffff,
 		.bus = io_bus_apb,
 		.instance
 		{
 			.ledpixel
 			{
-				.instance = lp_1,
+				.instance = Ledpixel::lp_1,
 			},
 		},
 		.info_fn = esp32_ledpixel_info,
@@ -536,14 +543,14 @@ static const io_info_t info[io_id_size] =
 		.id = io_id_esp32_ledpixel_2,
 		.name = "ESP32 LEDpixel 2",
 		.caps = static_cast<io_capabilities_t>((1 << io_cap_output)),
-		.pins = ledpixel_leds_size,
+		.pins = Ledpixel::ledpixel_leds_size,
 		.max_value = 0x00ffffff,
 		.bus = io_bus_apb,
 		.instance
 		{
 			.ledpixel
 			{
-				.instance = lp_2,
+				.instance = Ledpixel::lp_2,
 			},
 		},
 		.info_fn = esp32_ledpixel_info,
@@ -558,14 +565,14 @@ static const io_info_t info[io_id_size] =
 		.id = io_id_esp32_ledpixel_3,
 		.name = "ESP32 LEDpixel 3",
 		.caps = static_cast<io_capabilities_t>((1 << io_cap_output)),
-		.pins = ledpixel_leds_size,
+		.pins = Ledpixel::ledpixel_leds_size,
 		.max_value = 0x00ffffff,
 		.bus = io_bus_apb,
 		.instance
 		{
 			.ledpixel
 			{
-				.instance = lp_3,
+				.instance = Ledpixel::lp_3,
 			},
 		},
 		.info_fn = esp32_ledpixel_info,

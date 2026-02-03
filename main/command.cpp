@@ -5,9 +5,10 @@
 Command *Command::singleton = nullptr;
 Config *Command::config_ = nullptr;
 Console *Command::console_ = nullptr;
+Ledpixel *Command::ledpixel_ = nullptr;
 
-Command::Command(Config &config_in, Console &console_in) :
-		config(config_in), console(console_in)
+Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in) :
+		config(config_in), console(console_in), ledpixel(ledpixel_in)
 {
 	if(this->singleton)
 		throw(hard_exception("Command: already activated"));
@@ -15,6 +16,7 @@ Command::Command(Config &config_in, Console &console_in) :
 	this->singleton = this;
 	this->config_ = &config;
 	this->console_ = &console;
+	this->ledpixel_ = &ledpixel;
 }
 
 std::string Command::make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2)
@@ -127,4 +129,14 @@ void Command::console_info(cli_command_call_t *call)
 	call->result = "CONSOLE STATISTICS\n";
 
 	Command::console_->info(call->result);
+}
+
+void Command::ledpixel_info(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	call->result = "LEDPIXEL INFO\n";
+
+	Command::ledpixel_->info(call->result);
 }

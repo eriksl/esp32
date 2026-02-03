@@ -57,4 +57,9 @@ static inline void util_abort(const char *what)
 	abort();
 }
 
+static inline std::string util_esp_string_error(esp_err_t e, const std::string &message)
+{
+	return(message + ": " + std::to_string(e) + "\"" + esp_err_to_name(e) + "\"");
+}
+
 void util_init(void);

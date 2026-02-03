@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "console.h"
+#include "ledpixel.h"
 #include "exception.h"
 #include "cli-command.h"
 
@@ -11,7 +12,7 @@ class Command final
 {
 	public:
 
-		Command(Config &, Console &);
+		Command(Config &, Console &, Ledpixel &);
 		Command() = delete;
 		Command(const Command &) = delete;
 
@@ -22,15 +23,18 @@ class Command final
 		static void config_dump(cli_command_call_t *call);
 		static void config_show(cli_command_call_t *call);
 		static void console_info(cli_command_call_t *call);
+		static void ledpixel_info(cli_command_call_t *call);
 
 	private:
 
 		Config &config;
 		Console &console;
+		Ledpixel &ledpixel;
 
 		static Command *singleton;
 		static Config *config_;
 		static Console *console_;
+		static Ledpixel *ledpixel_;
 
 		std::string make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2);
 };

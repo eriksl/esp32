@@ -41,8 +41,8 @@ void app_main(void)
 	{
 		Config config("config");
 		Console console(config);
-		Command command(config, console);
-		ledpixel_init();
+		Ledpixel ledpixel;
+		Command command(config, console, ledpixel);
 		ledpwm_init();
 		notify_init();
 		notify(notify_sys_booting);
