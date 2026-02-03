@@ -55,7 +55,7 @@ char Console::read_byte(void)
 		if(usb_serial_jtag_read_bytes(&byte, 1, ~0) == 1)
 			return(byte);
 
-		this->stats["receive_errors"]++;
+		this->stats["errors in receive"]++;
 		vTaskDelay(10 / portTICK_PERIOD_MS);
 	}
 }
@@ -78,7 +78,7 @@ void Console::write_string(std::string_view data)
 
 		if(!usb_serial_jtag_write_bytes(raw_data + offset, chunk, pdMS_TO_TICKS(this->usb_uart_tx_timeout_ms)))
 		{
-			this->stats["bytes_dropped"] += length - offset;
+			this->stats["errors in send"] += length - offset;
 			break;
 		}
 
@@ -116,7 +116,7 @@ void Console::run_thread()
 			while(this->lines.at(this->current_line).length() < this->max_line_length)
 			{
 				byte = this->read_byte();
-				this->stats["bytes_received"]++;
+				this->stats["received bytes"]++;
 
 				switch(state)
 				{
@@ -308,7 +308,7 @@ void Console::run_thread()
 				this->prompt();
 			}
 
-			this->stats["lines_received"]++;
+			this->stats["received lines"]++;
 		}
 	}
 	catch(const hard_exception &e)
@@ -387,8 +387,8 @@ void Console::send(const command_response_t &command_response)
 	if(this->running)
 		this->prompt();
 
-	this->stats["bytes_sent"] += command_response.packet.length();
-	this->stats["lines_sent"]++;
+	this->stats["sent bytes"] += command_response.packet.length();
+	this->stats["sent lines"]++;
 }
 
 void Console::info(std::string &dst)
