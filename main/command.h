@@ -28,5 +28,9 @@ class Command final
 		Config &config;
 		Console &console;
 
+		static Command *singleton;
+		static Config *config_;
+		static Console *console_;
+
 		std::string make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2);
 };

@@ -24,18 +24,20 @@ class Console final
 
 	private:
 
-		static constexpr unsigned int lines_amount = 8;
-		static constexpr unsigned int max_line_length = 64;
-		static constexpr unsigned int usb_uart_rx_buffer_size = 128;
-		static constexpr unsigned int usb_uart_tx_buffer_size = 256;
-		static constexpr unsigned int usb_uart_tx_timeout_ms = 100;
-
 		typedef enum : unsigned int
 		{
 			ess_inactive,
 			ess_esc_seen,
 			ess_bracket_seen,
 		} escape_sequence_state_t;
+
+		static constexpr unsigned int lines_amount = 8;
+		static constexpr unsigned int max_line_length = 64;
+		static constexpr unsigned int usb_uart_rx_buffer_size = 128;
+		static constexpr unsigned int usb_uart_tx_buffer_size = 256;
+		static constexpr unsigned int usb_uart_tx_timeout_ms = 100;
+
+		static Console *singleton;
 
 		std::map<std::string, int> stats;
 		Config &config;

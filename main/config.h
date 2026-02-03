@@ -26,6 +26,7 @@ class Config final
 	private:
 
 		std::string default_name_space;
+		static Config *singleton;
 
 		std::string make_exception_text(esp_err_t err,
 				std::string_view fn, std::string_view message1, std::string_view message2,

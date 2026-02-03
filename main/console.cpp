@@ -11,7 +11,7 @@
 #include <thread>
 #include <format>
 
-static Console *singleton = nullptr;
+Console *Console::singleton = nullptr;
 
 Console::Console(Config &config_in) :
 		config(config_in),
@@ -25,7 +25,7 @@ Console::Console(Config &config_in) :
 	static_assert(this->usb_uart_tx_buffer_size > 64); // required by driver
 	static_assert(pdMS_TO_TICKS(this->usb_uart_tx_timeout_ms) > 0);
 
-	if(singleton)
+	if(this->singleton)
 		throw(hard_exception("Console: already active"));
 
 	usb_serial_jtag_config.rx_buffer_size = this->usb_uart_rx_buffer_size;
@@ -43,7 +43,7 @@ Console::Console(Config &config_in) :
 		this->hostname = "esp32";
 	}
 
-	singleton = this;
+	this->singleton = this;
 }
 
 char Console::read_byte(void)
@@ -363,17 +363,17 @@ void Console::prompt(void)
 
 Console &Console::get()
 {
-	if(!singleton)
+	if(!Console::singleton)
 		throw(hard_exception("Console::get: not active"));
 
-	return(*singleton);
+	return(*Console::singleton);
 }
 
 #pragma GCC diagnostic pop
 
 void Console::write(std::string_view string)
 {
-	if(singleton)
+	if(Console::singleton)
 	{
 		this->write_string(string);
 		this->write_string("\n");

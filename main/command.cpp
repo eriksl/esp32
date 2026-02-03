@@ -3,19 +3,19 @@
 #include <string>
 #include <format>
 
-static Command *singleton = nullptr;
-static Config *config_ = nullptr; // FIXME
-static Console *console_ = nullptr; // FIXME
+Command *Command::singleton = nullptr;
+Config *Command::config_ = nullptr;
+Console *Command::console_ = nullptr;
 
 Command::Command(Config &config_in, Console &console_in) :
 		config(config_in), console(console_in)
 {
-	if(singleton)
+	if(this->singleton)
 		throw(hard_exception("Command: already activated"));
 
-	::singleton = &*this;
-	::config_ = &config;
-	::console_ = &console;
+	this->singleton = this;
+	this->config_ = &config;
+	this->console_ = &console;
 }
 
 std::string Command::make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2)
@@ -47,7 +47,7 @@ void Command::config_set_int(cli_command_call_t *call)
 	int64_t value;
 	std::string type;
 
-	if(!singleton)
+	if(!Command::singleton)
 		throw(hard_exception("Command: not activated"));
 
 	try
@@ -70,7 +70,7 @@ void Command::config_set_string(cli_command_call_t *call)
 	std::string value;
 	std::string type;
 
-	if(!singleton)
+	if(!Command::singleton)
 		throw(hard_exception("Command: not activated"));
 
 	try
@@ -90,7 +90,7 @@ void Command::config_set_string(cli_command_call_t *call)
 
 void Command::config_erase(cli_command_call_t *call)
 {
-	if(!singleton)
+	if(!Command::singleton)
 		throw(hard_exception("Command: not activated"));
 
 	try
@@ -111,7 +111,7 @@ void Command::config_erase(cli_command_call_t *call)
 
 void Command::config_dump(cli_command_call_t *call)
 {
-	if(!singleton)
+	if(!Command::singleton)
 		throw(hard_exception("Command: not activated"));
 
 	config_->dump(call->result, "*");
@@ -119,7 +119,7 @@ void Command::config_dump(cli_command_call_t *call)
 
 void Command::config_show(cli_command_call_t *call)
 {
-	if(!singleton)
+	if(!Command::singleton)
 		throw(hard_exception("Command: not activated"));
 
 	config_->dump(call->result);

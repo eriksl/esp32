@@ -7,14 +7,14 @@
 #include <string>
 #include <format>
 
-static Config *singleton = nullptr;
+Config *Config::singleton = nullptr;
 
 Config::Config(std::string_view default_name_space_in) :
 		default_name_space(default_name_space_in)
 {
 	esp_err_t rv;
 
-	if(singleton)
+	if(this->singleton)
 		throw(hard_exception("Config: already activated"));
 
 	rv = nvs_flash_init();
@@ -30,7 +30,7 @@ Config::Config(std::string_view default_name_space_in) :
 	if(rv != ESP_OK)
 		throw(hard_exception(std::format("Config::Config: nvs_flash_init failed: {} ({})", rv, esp_err_to_name(rv))));
 
-	singleton = &*this;
+	this->singleton = this;
 }
 
 std::string Config::make_exception_text(esp_err_t err,
@@ -381,10 +381,10 @@ void Config::get_value(std::string_view key, std::string_view name_space,
 
 Config &Config::get()
 {
-	if(!singleton)
+	if(!Config::singleton)
 		throw(hard_exception("Config: not activated"));
 
-	return(*singleton);
+	return(*Config::singleton);
 }
 
 void Config::set_int(const std::string &key, int64_t value, std::string_view name_space)
