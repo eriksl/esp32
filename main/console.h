@@ -18,7 +18,7 @@ class Console final
 		void send(const command_response_t &);
 		void write(std::string_view);
 		void run();
-		const std::map<std::string, int>& statistics();
+		void info(std::string &dst);
 
 		static Console &get();
 

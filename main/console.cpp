@@ -391,7 +391,17 @@ void Console::send(const command_response_t &command_response)
 	this->stats["lines_sent"]++;
 }
 
-const std::map<std::string, int>& Console::statistics()
+void Console::info(std::string &dst)
 {
-	return(this->stats);
+	bool not_first = false;
+
+	for(std::map<std::string, int>::const_iterator it = this->stats.begin(); it != this->stats.end(); it++)
+	{
+		if(not_first)
+			dst += "\n";
+
+		not_first = true;
+
+		dst += std::format("- {:<16} {:d}", it->first, it->second);
+	}
 }

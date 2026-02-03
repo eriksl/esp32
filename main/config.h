@@ -20,6 +20,7 @@ class Config final
 		void erase(const std::string &key, std::string_view name_space = "");
 		void erase_wildcard(const std::string &key, std::string_view name_space = "");
 		void dump(std::string &dst, std::string_view name_space = "");
+		void info(std::string &dst);
 
 	private:
 

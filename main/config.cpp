@@ -570,7 +570,7 @@ void Config::dump(std::string &dst, std::string_view name_space)
 
 	try
 	{
-		dst = std::format("SHOW CONFIG namespace {}", name_space_name);
+		dst += std::format("NAMESPACE {}", name_space_name);
 
 		if((rv = nvs_entry_find("nvs", name_space_ptr, NVS_TYPE_ANY, &nvs_iterator)) == ESP_ERR_NVS_NOT_FOUND)
 			return;
@@ -606,4 +606,22 @@ void Config::dump(std::string &dst, std::string_view name_space)
 	}
 
 	nvs_release_iterator(nvs_iterator);
+}
+
+void Config::info(std::string &dst)
+{
+	esp_err_t rv;
+	nvs_stats_t stats;
+
+	if((rv = nvs_get_stats(nullptr, &stats)) != ESP_OK)
+		dst += std::format("* nvs_get_stats failed: {} [{:d}]*", esp_err_to_name(rv), rv);
+	else
+	{
+		dst += "entries:";
+		dst += std::format("\n- used: {}", stats.used_entries);
+		dst += std::format("\n- free: {}", stats.free_entries);
+		dst += std::format("\n- available: {}", stats.available_entries);
+		dst += std::format("\n- total: {}", stats.total_entries);
+		dst += std::format("\n- namespaces: {}", stats.namespace_count);
+	}
 }

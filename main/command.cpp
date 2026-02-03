@@ -22,25 +22,6 @@ std::string Command::make_exception_text(std::string_view fn, std::string_view m
 	return(std::format("{}: {}{}", fn, message1, message2));
 }
 
-void Command::config_info(cli_command_call_t *call)
-{
-	nvs_stats_t stats;
-
-	if(!singleton)
-		throw(hard_exception("Command: not activated"));
-
-	if(nvs_get_stats(nullptr, &stats) != ESP_OK)
-		throw(hard_exception("Command::config_info:nvs_get_stats error"));
-
-	call->result = "CONFIG INFO";
-	call->result += "\nentries:";
-	call->result += std::format("\n- used: {}", stats.used_entries);
-	call->result += std::format("\n- free: {}", stats.free_entries);
-	call->result += std::format("\n- available: {}", stats.available_entries);
-	call->result += std::format("\n- total: {}", stats.total_entries);
-	call->result += std::format("\n- namespaces: {}", stats.namespace_count);
-}
-
 void Command::config_set_int(cli_command_call_t *call)
 {
 	int64_t value;
@@ -113,7 +94,9 @@ void Command::config_dump(cli_command_call_t *call)
 	if(!Command::singleton)
 		throw(hard_exception("Command: not activated"));
 
-	config_->dump(call->result, "*");
+	call->result = "ALL CONFIG entries\n";
+
+	Command::config_->dump(call->result, "*");
 }
 
 void Command::config_show(cli_command_call_t *call)
@@ -121,15 +104,27 @@ void Command::config_show(cli_command_call_t *call)
 	if(!Command::singleton)
 		throw(hard_exception("Command: not activated"));
 
-	config_->dump(call->result);
+	call->result = "CONFIG ENTRIES\n";
+
+	Command::config_->dump(call->result);
+}
+
+void Command::config_info(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	call->result = "CONFIG INFO\n";
+
+	Command::config_->info(call->result);
 }
 
 void Command::console_info(cli_command_call_t *call)
 {
-	const std::map<std::string, int> &stats = console_->statistics();
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
 
-	call->result = "CONSOLE STATISTICS";
+	call->result = "CONSOLE STATISTICS\n";
 
-	for(std::map<std::string, int>::const_iterator it = stats.begin(); it != stats.end(); it++)
-		call->result += std::format("\n- {:<16} {:d}", it->first, it->second);
+	Command::console_->info(call->result);
 }
