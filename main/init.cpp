@@ -9,6 +9,7 @@ __attribute__((noreturn)) void app_main(void);
 #include "console.h"
 #include "ledpixel.h"
 #include "ledpwm.h"
+#include "notify.h"
 #include "command.h"
 
 #include "cli.h"
@@ -21,7 +22,6 @@ __attribute__((noreturn)) void app_main(void);
 #include "info.h"
 #include "io.h"
 #include "mcpwm.h"
-#include "notify.h"
 #include "perftest.h"
 #include "pdm.h"
 #include "process.h"
@@ -43,9 +43,10 @@ void app_main(void)
 		Console console(config);
 		Ledpixel ledpixel;
 		LedPWM ledpwm;
-		Command command(config, console, ledpixel, ledpwm);
-		notify_init();
-		notify(notify_sys_booting);
+		Notify notify;
+		Command command(config, console, ledpixel, ledpwm, notify);
+		notify.run();
+		notify.notify(Notify::notify_sys_booting);
 		info_init();
 		process_init();
 		log_init();
@@ -65,7 +66,7 @@ void app_main(void)
 		i2c_init();
 		io_init();
 		sensor_init();
-		notify(notify_sys_booting_finished);
+		notify.notify(Notify::notify_sys_booting_finished);
 		console.run();
 		vTaskSuspend(NULL);
 		throw("vTaskSuspend returned");

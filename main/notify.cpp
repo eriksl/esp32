@@ -1,39 +1,16 @@
-#include <stdint.h>
-#include <stdbool.h>
-#include <sdkconfig.h>
-
 #include "notify.h"
-#include "info.h"
 
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
+#include "ledpixel.h"
+#include "ledpwm.h"
+#include "exception.h"
+#include "util.h"
 
-enum
-{
-	phase_size = 4
-};
+#include "format"
+#include "thread"
 
-typedef struct
-{
-	unsigned int r;
-	unsigned int g;
-	unsigned int b;
-} rgb_t;
+#include <esp_pthread.h>
 
-typedef struct
-{
-	unsigned int duty_shift;
-	unsigned int time_ms;
-	rgb_t colour;
-} phase_t;
-
-typedef struct
-{
-	phase_t phase[phase_size];
-} notification_info_t;
-
-#if ((CONFIG_BSP_LEDPIXEL0 >= 0) || (CONFIG_BSP_LEDPWM0 >= 0))
-static const notification_info_t notification_info[notify_size] =
+const Notify::notification_info_t Notify::notification_info[Notify::notify_size] =
 {
 	[notify_none] = {{
 		{ .duty_shift =  0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
@@ -108,91 +85,159 @@ static const notification_info_t notification_info[notify_size] =
 		{ .duty_shift = 12, .time_ms = 1200, .colour = { 0x00, 0x00, 0x00 }},
 	}},
 };
-#endif
 
-static bool inited = false;
-static notify_t current_notification;
-static int current_phase;
-static TimerHandle_t phase_timer;
+Notify *Notify::singleton = nullptr;
+
+Notify::Notify() :
+	running(false),
+	current_notification(notify_none),
+	current_phase(-1)
+{
+	if(this->singleton)
+		throw(hard_exception("Notify: already active"));
 
 #if (CONFIG_BSP_LEDPIXEL0 >= 0)
-#include "ledpixel.h"
-#endif
-#if (CONFIG_BSP_LEDPWM0 >= 0)
-#include "ledpwm.h"
+	this->using_ledpixel = true;
+#else
+	this->using_ledpixel = false;
 #endif
 
-static void timer_handler(struct tmrTimerControl *)
+#if (CONFIG_BSP_LEDPWM0 >= 0)
+	this->using_ledpwm = true;
+#else
+	this->using_ledpwm = false;
+#endif
+
+	if(this->using_ledpixel)
+	{
+		try
+		{
+			Ledpixel::get().open(Ledpixel::lp_0_notify, "notification LED");
+		}
+		catch(const e32if_exception &e)
+		{
+			throw(hard_exception(std::format("Notify: Ledpixel.open: {}", e.what())));
+		}
+	}
+
+	if(this->using_ledpwm)
+	{
+		try
+		{
+			LedPWM::get().open(LedPWM::lpt_14bit_5khz_notify, "notification LED");
+		}
+		catch(const e32if_exception &e)
+		{
+			throw(hard_exception(std::format("Notify: LedPWM.open: {}", e.what())));
+		}
+	}
+
+	this->singleton = this;
+}
+
+void Notify::run()
 {
-	if(!inited || (current_notification >= notify_size))
+	esp_err_t rv;
+	esp_pthread_cfg_t thread_config = esp_pthread_get_default_config();
+
+	if(this->running)
+		throw(hard_exception("Notify::run: already running"));
+
+	if(!this->using_ledpwm && !this->using_ledpixel)
 		return;
 
-	current_phase++;
+	thread_config.thread_name = "notify";
+	thread_config.pin_to_core = 1;
+	thread_config.stack_size = 1500;
+	thread_config.prio = 1;
+	thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
 
-	if((current_phase < 0) || (current_phase >= phase_size))
-		current_phase = 0;
+	if((rv = esp_pthread_set_cfg(&thread_config)) != ESP_OK)
+		throw(hard_exception(util_esp_string_error(rv, "Notify::run: esp_pthread_set_cfg")));
 
-#if ((CONFIG_BSP_LEDPIXEL0 >= 0) || (CONFIG_BSP_LEDPWM0 >= 0))
+	std::thread new_thread(this->run_thread_wrapper, this);
+	new_thread.detach();
+
+	this->running = true;
+}
+
+void __attribute__((noreturn)) Notify::run_thread_wrapper(void *this_)
+{
+	Notify *notify;
+
+	assert(this_);
+
+	notify = reinterpret_cast<Notify *>(this_);
+
+	notify->run_thread();
+}
+
+void __attribute__((noreturn)) Notify::run_thread()
+{
 	const notification_info_t *info_ptr;
 	const phase_t *phase_ptr;
+	int sleep_ms = 0;
 
-	info_ptr = &notification_info[current_notification];
-	phase_ptr = &info_ptr->phase[current_phase];
-#endif
+	for(;;)
+	{
+		std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
 
-#if (CONFIG_BSP_LEDPIXEL0 >= 0)
-	ledpixel_set(lp_0_notify, 0,
-			phase_ptr->colour.r,
-			phase_ptr->colour.g,
-			phase_ptr->colour.b);
-	ledpixel_flush(lp_0_notify);
-#endif
+		if(this->current_notification >= notify_size)
+		{
+			sleep_ms = 100;
+			continue;
+		}
 
-#if (CONFIG_BSP_LEDPWM0 >= 0)
-	LedPWM::get().set(LedPWM::lpt_14bit_5khz_notify, (1UL << phase_ptr->duty_shift) - 1);
-#endif
+		this->current_phase++;
 
-#if ((CONFIG_BSP_LEDPIXEL0 >= 0) || (CONFIG_BSP_LEDPWM0 >= 0))
-	if(phase_ptr->time_ms)
-		if(!xTimerChangePeriod(phase_timer, pdMS_TO_TICKS(phase_ptr->time_ms), pdMS_TO_TICKS(1000))) // this will start the timer as well
-			stat_notify_timer_failed++;
-#endif
+		if((this->current_phase < 0) || (this->current_phase >= this->phase_size))
+			this->current_phase = 0;
+
+		info_ptr = &this->notification_info[this->current_notification];
+		phase_ptr = &info_ptr->phase[this->current_phase];
+
+		if(this->using_ledpixel)
+		{
+			Ledpixel::get().set(Ledpixel::lp_0_notify, 0, phase_ptr->colour.r, phase_ptr->colour.g, phase_ptr->colour.b);
+			Ledpixel::get().flush(Ledpixel::lp_0_notify);
+		}
+
+		if(this->using_ledpwm)
+			LedPWM::get().set(LedPWM::lpt_14bit_5khz_notify, (1UL << phase_ptr->duty_shift) - 1);
+
+		sleep_ms = phase_ptr->time_ms ? : 100;
+	}
 }
 
-void notify_init(void)
+void Notify::notify(notify_t notification)
 {
-	assert(!inited);
-
-#if (CONFIG_BSP_LEDPIXEL0 >= 0)
-	assert(LedPixel::get().open(LedPixel::lp_0_notify, "notification LED"));
-#endif
-
-#if (CONFIG_BSP_LEDPWM0 >= 0)
-	LedPWM::get().open(LedPWM::lpt_14bit_5khz_notify, "notification LED");
-#endif
-
-	current_phase = -1;
-	current_notification = notify_none;
-	inited = true;
-
-	phase_timer = xTimerCreate("notify-phase", 1, pdFALSE, (void *)0, timer_handler);
-
-	assert(phase_timer);
-}
-
-void notify(notify_t notification)
-{
-	assert(inited);
-	assert(notification < notify_size);
+	if(notification >= notify_size)
+		throw(hard_exception("Notify::notify: notification out of bounds"));
 
 	if(notification == notify_none)
 		return;
 
-	current_notification = notification;
+	this->current_notification = notification;
+	this->current_phase = -1;
+}
 
-	current_phase = -1;
+Notify &Notify::get()
+{
+	if(!Notify::singleton)
+		throw(hard_exception("Notify::get: not active"));
 
-#if ((CONFIG_BSP_LEDPIXEL0 >= 0) || (CONFIG_BSP_LEDPWM0 >= 0))
-	xTimerChangePeriod(phase_timer, pdMS_TO_TICKS(100), pdMS_TO_TICKS(1000)); // this will start the timer as well
-#endif
+	return(*Notify::singleton);
+}
+
+void Notify::info(std::string &dst)
+{
+	dst += std::format("ledpixel enabled: {}\n", this->using_ledpixel ? "yes" : "no");
+	dst += std::format("ledpwm   enabled: {}\n", this->using_ledpwm   ? "yes" : "no");
+	dst += std::format("thread running: {}\n", this->running ? "yes" : "no");
+	dst += std::format("current notification: {:d}\n", static_cast<unsigned int>(this->current_notification));
+	dst += std::format("- duty: {:d}\n", (1UL << this->notification_info[this->current_notification].phase[this->current_phase].duty_shift) - 1);
+	dst += std::format("- sleep time: {:d} ms\n", (this->notification_info[this->current_notification].phase[this->current_phase].time_ms));
+	dst += std::format("- red   component: {:#04x}\n", this->notification_info[this->current_notification].phase[this->current_phase].colour.r);
+	dst += std::format("- green component: {:#04x}\n", this->notification_info[this->current_notification].phase[this->current_phase].colour.g);
+	dst += std::format("- blue  component: {:#04x}\n", this->notification_info[this->current_notification].phase[this->current_phase].colour.b);
 }

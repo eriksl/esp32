@@ -57,33 +57,33 @@ typedef struct
 {
 	uint32_t valid_transitions;
 	const char *name;
-	notify_t notification;
+	Notify::notify_t notification;
 } state_info_t;
 
 static const state_info_t state_info[ws_size] =
 {
 	[ws_invalid] =							{ (1 << ws_init),
-											"invalid", notify_none },
+											"invalid", Notify::notify_none },
 	[ws_init] =								{ (1 << ws_init) | (1 << ws_associating),
-											"init", notify_none },
+											"init", Notify::notify_none },
 	[ws_associating] =						{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_associated)  | (1 << ws_rescue_ap_mode_idle) | (1 << ws_rescue_ap_mode_associated),
-											"associating", notify_net_associating },
+											"associating", Notify::notify_net_associating },
 	[ws_associated] =						{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv4_address_acquired) | (1 << ws_ipv6_link_local_address_acquired),
-											"associated", notify_net_associating_finished },
+											"associated", Notify::notify_net_associating_finished },
 	[ws_ipv4_address_acquired] =			{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv6_link_local_address_acquired),
-											"ipv4 address acquired", notify_net_ipv4_acquired },
+											"ipv4 address acquired", Notify::notify_net_ipv4_acquired },
 	[ws_ipv6_link_local_address_acquired] =	{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv4_address_acquired) | (1 << ws_ipv6_slaac_address_acquired) | (1 << ws_ipv6_static_address_active),
-											"ipv6 link local address acquired", notify_net_ipv6_ll_active },
+											"ipv6 link local address acquired", Notify::notify_net_ipv6_ll_active },
 	[ws_ipv6_slaac_address_acquired] =		{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv6_static_address_active),
-											"ipv6 autoconfig address acquired", notify_net_ipv6_slaac_acquired },
+											"ipv6 autoconfig address acquired", Notify::notify_net_ipv6_slaac_acquired },
 	[ws_ipv6_static_address_active] =		{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv6_slaac_address_acquired) | (1 << ws_ipv6_static_address_active),
-											"ipv6 static address set", notify_net_ipv6_static_active },
+											"ipv6 static address set", Notify::notify_net_ipv6_static_active },
 	[ws_rescue_ap_mode_init] =				{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_rescue_ap_mode_idle) | (1 << ws_rescue_ap_mode_associated),
-											"rescue access point mode init", notify_net_ap_mode_init },
+											"rescue access point mode init", Notify::notify_net_ap_mode_init },
 	[ws_rescue_ap_mode_idle] =				{ (1 << ws_rescue_ap_mode_init) | (1 << ws_rescue_ap_mode_associated),
-											"rescue access point mode idle", notify_net_ap_mode_idle },
+											"rescue access point mode idle", Notify::notify_net_ap_mode_idle },
 	[ws_rescue_ap_mode_associated] =		{ (1 << ws_rescue_ap_mode_idle),
-											"rescue access point mode associated", notify_net_ap_mode_associated },
+											"rescue access point mode associated", Notify::notify_net_ap_mode_associated },
 };
 
 static const char *wlan_state_to_cstr(wlan_state_t state_in)
@@ -146,7 +146,7 @@ static void set_state(wlan_state_t state_new)
 
 	state = state_new;
 
-	notify(state_info[state].notification);
+	Notify::get().notify(state_info[state].notification);
 }
 
 static void state_callback(TimerHandle_t handle)
