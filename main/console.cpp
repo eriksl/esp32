@@ -345,6 +345,7 @@ void Console::run_thread_wrapper(void *this_)
 
 void Console::run(void)
 {
+	esp_err_t rv;
 	esp_pthread_cfg_t thread_config = esp_pthread_get_default_config();
 
 	if(this->running)
@@ -355,7 +356,9 @@ void Console::run(void)
 	thread_config.stack_size = 3 * 1024;
 	thread_config.prio = 1;
 	thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
-	util_abort_on_esp_err("esp_pthread_set_cfg", esp_pthread_set_cfg(&thread_config));
+
+	if((rv = esp_pthread_set_cfg(&thread_config)) != ESP_OK)
+		throw(hard_exception(util_esp_string_error(rv, "Console::run: esp_pthread_set_cfg")));
 
 	std::thread new_thread(this->run_thread_wrapper, this);
 	new_thread.detach();
