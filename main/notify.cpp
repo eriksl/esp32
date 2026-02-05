@@ -112,7 +112,7 @@ Notify::Notify() :
 	{
 		try
 		{
-			Ledpixel::get().open(Ledpixel::lp_0_notify, "notification LED");
+			Ledpixel::get().open(Ledpixel::Channel::channel_0_notify, "notification LED");
 		}
 		catch(const e32if_exception &e)
 		{
@@ -198,8 +198,8 @@ void __attribute__((noreturn)) Notify::run_thread()
 
 		if(this->using_ledpixel)
 		{
-			Ledpixel::get().set(Ledpixel::lp_0_notify, 0, phase_ptr->colour.r, phase_ptr->colour.g, phase_ptr->colour.b);
-			Ledpixel::get().flush(Ledpixel::lp_0_notify);
+			Ledpixel::get().set(Ledpixel::Channel::channel_0_notify, 0, phase_ptr->colour.r, phase_ptr->colour.g, phase_ptr->colour.b);
+			Ledpixel::get().flush(Ledpixel::Channel::channel_0_notify);
 		}
 
 		if(this->using_ledpwm)
