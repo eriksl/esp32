@@ -106,6 +106,7 @@ set(CFLAGS
 )
 
 set(CXXFLAGS
+		-std=gnu++23
 )
 
 #		-Wctor-dtor-privacy // breaks boost::format
