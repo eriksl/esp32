@@ -1,11 +1,13 @@
 #pragma once
 
 #include "config.h"
-#include "cli-command.h"
+#include "cli.h"
 
 #include <map>
 #include <array>
 #include <string>
+
+#include <freertos/FreeRTOS.h> // for vTaskDelay
 
 class Console final
 {
@@ -24,12 +26,12 @@ class Console final
 
 	private:
 
-		typedef enum : unsigned int
+		enum class escape_sequence_state_t : unsigned int
 		{
 			ess_inactive,
 			ess_esc_seen,
 			ess_bracket_seen,
-		} escape_sequence_state_t;
+		};
 
 		static constexpr unsigned int lines_amount = 8;
 		static constexpr unsigned int max_line_length = 64;
@@ -50,5 +52,9 @@ class Console final
 		void write_string(std::string_view);
 		void prompt();
 		void run_thread();
-		static void run_thread_wrapper(void *this_);
+		static void run_thread_wrapper(void *);
+
+		static_assert(usb_uart_rx_buffer_size > 64); // required by driver
+		static_assert(usb_uart_tx_buffer_size > 64); // required by driver
+		static_assert(pdMS_TO_TICKS(usb_uart_tx_timeout_ms) > 0);
 };

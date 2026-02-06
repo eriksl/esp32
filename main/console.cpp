@@ -1,11 +1,9 @@
 #include "console.h"
 
 #include "exception.h"
-#include "cli.h"
 #include "util.h"
 
 #include <esp_pthread.h>
-#include <freertos/FreeRTOS.h> // for vTaskDelay
 #include <driver/usb_serial_jtag.h>
 
 #include <thread>
@@ -20,10 +18,6 @@ Console::Console(Config &config_in) :
 {
 	esp_err_t rv;
 	usb_serial_jtag_driver_config_t usb_serial_jtag_config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
-
-	static_assert(this->usb_uart_rx_buffer_size > 64); // required by driver
-	static_assert(this->usb_uart_tx_buffer_size > 64); // required by driver
-	static_assert(pdMS_TO_TICKS(this->usb_uart_tx_timeout_ms) > 0);
 
 	if(this->singleton)
 		throw(hard_exception("Console: already active"));
@@ -110,7 +104,7 @@ void Console::run_thread()
 	{
 		for(;;)
 		{
-			state = ess_inactive;
+			state = escape_sequence_state_t::ess_inactive;
 
 			line = &lines[this->current_line];
 			line->clear();
@@ -122,30 +116,30 @@ void Console::run_thread()
 
 				switch(state)
 				{
-					case(ess_inactive):
+					case(escape_sequence_state_t::ess_inactive):
 					{
 						if(byte == 0x1b)
 						{
-							state = ess_esc_seen;
+							state = escape_sequence_state_t::ess_esc_seen;
 							continue;
 						}
 
 						break;
 					}
 
-					case(ess_esc_seen):
+					case(escape_sequence_state_t::ess_esc_seen):
 					{
 						if(byte == '[')
 						{
-							state = ess_bracket_seen;
+							state = escape_sequence_state_t::ess_bracket_seen;
 							continue;
 						}
 
-						state = ess_inactive;
+						state = escape_sequence_state_t::ess_inactive;
 						break;
 					}
 
-					case(ess_bracket_seen):
+					case(escape_sequence_state_t::ess_bracket_seen):
 					{
 						switch(byte)
 						{
@@ -161,7 +155,7 @@ void Console::run_thread()
 
 								line = &lines[this->current_line];
 								this->write_string(*line);
-								state = ess_inactive;
+								state = escape_sequence_state_t::ess_inactive;
 								continue;
 							}
 
@@ -177,7 +171,7 @@ void Console::run_thread()
 
 								line = &lines[this->current_line];
 								this->write_string(*line);
-								state = ess_inactive;
+								state = escape_sequence_state_t::ess_inactive;
 								continue;
 							}
 
@@ -187,7 +181,7 @@ void Console::run_thread()
 							}
 						}
 
-						state = ess_inactive;
+						state = escape_sequence_state_t::ess_inactive;
 						break;
 					}
 				}
@@ -336,7 +330,8 @@ void Console::run_thread_wrapper(void *this_)
 {
 	Console *console;
 
-	assert(this_);
+	if(!this_)
+		throw(hard_exception("Console::run_thread_wrapper: nullptr passed"));
 
 	console = reinterpret_cast<Console *>(this_);
 
@@ -404,14 +399,17 @@ void Console::send(const command_response_t &command_response)
 void Console::info(std::string &dst)
 {
 	bool not_first = false;
+	std::string key;
 
-	for(std::map<std::string, int>::const_iterator it = this->stats.begin(); it != this->stats.end(); it++)
+	for(const auto &one_stat : this->stats)
 	{
 		if(not_first)
 			dst += "\n";
 
 		not_first = true;
 
-		dst += std::format("- {:<16} {:d}", it->first, it->second);
+		key = one_stat.first + ":";
+
+		dst += std::format("- {} {:d}", key, one_stat.second);
 	}
 }
