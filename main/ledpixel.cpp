@@ -130,44 +130,44 @@ void Ledpixel::open(Channel channel, std::string_view owner)
 	}
 }
 
-void Ledpixel::set(Channel channel, int index, int red, int green, int blue)
+void Ledpixel::set(Channel channel, int led, int red, int green, int blue)
 {
 	esp_err_t rv;
 	handle_t *handle;
 	rgb_t *rgb;
 
 	assert(static_cast<unsigned int>(channel) < this->channels_size);
-	assert((index >= 0) && (index < this->leds_size));
+	assert((led >= 0) && (led < this->leds_size));
 
 	handle = &handles[static_cast<unsigned int>(channel)];
 
 	if(!handle->open)
 		throw(transient_exception("Ledpixel::set: channel not open"));
 
-	rgb = &handle->rgbvalue[index];
+	rgb = &handle->rgbvalue[led];
 
 	rgb->r = red;
 	rgb->g = green;
 	rgb->b = blue;
 
-	if((rv = led_strip_set_pixel(handle->handle, index, rgb->r, rgb->g, rgb->b)) != ESP_OK)
+	if((rv = led_strip_set_pixel(handle->handle, led, rgb->r, rgb->g, rgb->b)) != ESP_OK)
 		throw(hard_exception(util_esp_string_error(rv, "Ledpixel::set: led_strip_set_pixel")));
 }
 
-void Ledpixel::get(Channel channel, int index, int &red, int &green, int &blue)
+void Ledpixel::get(Channel channel, int led, int &red, int &green, int &blue)
 {
 	const handle_t *handle;
 	const rgb_t *rgb;
 
 	assert(static_cast<unsigned int>(channel) < this->channels_size);
-	assert((index >= 0) && (index < this->leds_size));
+	assert((led >= 0) && (led < this->leds_size));
 
 	handle = &handles[static_cast<unsigned int>(channel)];
 
 	if(!handle->open)
 		throw(transient_exception("Ledpixel::get: channel not open"));
 
-	rgb = &handle->rgbvalue[index];
+	rgb = &handle->rgbvalue[led];
 
 	red = rgb->r;
 	green = rgb->g;

@@ -1,3 +1,6 @@
 [submodule "main/esp32-common"]
 	path = main/esp32-common
 	url = git@github.com:eriksl/esp32-common.git
+[submodule "main/magic_enum"]
+	path = main/magic_enum
+	url = https://github.com/Neargye/magic_enum.git

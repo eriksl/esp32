@@ -28,8 +28,8 @@ class Ledpixel final
 		Ledpixel(const Ledpixel &) = delete;
 
 		void open(Channel channel, std::string_view owner);
-		void set(Channel channel, int instance, int red, int green, int blue);
-		void get(Channel channel, int instance, int &red, int &green, int &blue);
+		void set(Channel channel, int led, int red, int green, int blue);
+		void get(Channel channel, int led, int &red, int &green, int &blue);
 		void flush(Channel channel);
 		void info(std::string &dst);
 
