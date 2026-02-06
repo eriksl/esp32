@@ -37,6 +37,7 @@ idf_component_register(
 		"")
 
 include_directories(esp32-common)
+include_directories(magic_enum/include)
 
 #		-Wtrailing-whitespace=any
 #		-Wleading-whitespace=tabs

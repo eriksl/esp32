@@ -9,6 +9,8 @@
 
 #include <format>
 
+#include <magic_enum/magic_enum.hpp>
+
 Ledpixel *Ledpixel::singleton = nullptr;
 
 const Ledpixel::channel_to_gpio_t Ledpixel::channel_to_gpio[Ledpixel::channels_size] =
@@ -44,20 +46,19 @@ Ledpixel::Ledpixel()
 	};
 
 	esp_err_t rv;
-	Channel channel;
 	handle_t *handle;
 	const channel_to_gpio_t *channel_to_gpio_ptr;
 
 	if(this->singleton)
 		throw(hard_exception("Ledpixel: already active"));
 
-	for(channel = this->Channel::first; static_cast<unsigned int>(channel) < this->channels_size; channel = static_cast<Channel>(static_cast<unsigned int>(channel) + 1))
+	for(const auto &channel : magic_enum::enum_values<Channel>())
 	{
-		channel_to_gpio_ptr = &this->channel_to_gpio[static_cast<unsigned int>(channel)];
+		channel_to_gpio_ptr = &this->channel_to_gpio[magic_enum::enum_integer(channel)];
 
 		assert(channel_to_gpio_ptr->channel == channel);
 
-		handle = &handles[static_cast<unsigned int>(channel)];
+		handle = &this->handles[magic_enum::enum_integer(channel)];
 		handle->handle = nullptr;
 		handle->owner = "";
 		handle->available = 0;
@@ -103,9 +104,10 @@ void Ledpixel::open(Channel channel, std::string_view owner)
 	handle_t *handle;
 	unsigned int ix;
 
-	assert(static_cast<unsigned int>(channel) < this->channels_size);
+	if(!magic_enum::enum_contains<Channel>(channel))
+		throw(hard_exception("Ledpixel::open: invalid channel"));
 
-	handle = &handles[static_cast<unsigned int>(channel)];
+	handle = &this->handles[magic_enum::enum_integer(channel)];
 
 	if(!handle->available)
 		throw(transient_exception("Ledpixel::open: channel unavailable"));
@@ -136,10 +138,13 @@ void Ledpixel::set(Channel channel, int led, int red, int green, int blue)
 	handle_t *handle;
 	rgb_t *rgb;
 
-	assert(static_cast<unsigned int>(channel) < this->channels_size);
-	assert((led >= 0) && (led < this->leds_size));
+	if(!magic_enum::enum_contains<Channel>(channel))
+		throw(hard_exception("Ledpixel::set: invalid channel"));
 
-	handle = &handles[static_cast<unsigned int>(channel)];
+	if((led < 0) || (led >= this->leds_size))
+		throw(hard_exception("Ledpixel::set: invalid led"));
+
+	handle = &this->handles[magic_enum::enum_integer(channel)];
 
 	if(!handle->open)
 		throw(transient_exception("Ledpixel::set: channel not open"));
@@ -159,10 +164,13 @@ void Ledpixel::get(Channel channel, int led, int &red, int &green, int &blue)
 	const handle_t *handle;
 	const rgb_t *rgb;
 
-	assert(static_cast<unsigned int>(channel) < this->channels_size);
-	assert((led >= 0) && (led < this->leds_size));
+	if(!magic_enum::enum_contains<Channel>(channel))
+		throw(hard_exception("Ledpixel::get: invalid channel"));
 
-	handle = &handles[static_cast<unsigned int>(channel)];
+	if((led < 0) || (led >= this->leds_size))
+		throw(hard_exception("Ledpixel::set: invalid led"));
+
+	handle = &this->handles[magic_enum::enum_integer(channel)];
 
 	if(!handle->open)
 		throw(transient_exception("Ledpixel::get: channel not open"));
@@ -179,9 +187,10 @@ void Ledpixel::flush(Channel channel)
 	esp_err_t rv;
 	handle_t *handle;
 
-	assert((static_cast<unsigned int>(channel) >= 0) && (static_cast<unsigned int>(channel) < this->channels_size));
+	if(!magic_enum::enum_contains<Channel>(channel))
+		throw(hard_exception("Ledpixel::flush: invalid channel"));
 
-	handle = &this->handles[static_cast<unsigned int>(channel)];
+	handle = &this->handles[magic_enum::enum_integer(channel)];
 
 	if(!handle->open)
 		throw(transient_exception("Ledpixel::flush: channel not open"));
@@ -192,17 +201,16 @@ void Ledpixel::flush(Channel channel)
 
 void Ledpixel::info(std::string &dst)
 {
-	Channel channel;
 	const handle_t *handle;
 	const rgb_t *rgb;
 	unsigned int ix;
 
-	dst += std::format("- channels available: {:d}", static_cast<unsigned int>(this->channels_size));
+	dst += std::format("- channels available: {:d}", magic_enum::enum_count<Channel>());
 	dst += "\nchannels:";
 
-	for(channel = this->Channel::first; static_cast<unsigned int>(channel) < this->channels_size; channel = static_cast<Channel>(static_cast<unsigned int>(channel) + 1))
+	for(const auto &entry : magic_enum::enum_entries<Channel>())
 	{
-		handle = &handles[static_cast<unsigned int>(channel)];
+		handle = &this->handles[magic_enum::enum_integer(entry.first)];
 
 		if(handle->available)
 		{
@@ -212,8 +220,9 @@ void Ledpixel::info(std::string &dst)
 			if(handle->owner.empty())
 				throw(hard_exception("Ledpixel::dump: channel has no owner"));
 
-			dst += std::format("\n- channel {:d}: gpio {:2d} is {}, owned by: {}\n   rgbvalues:",
-					static_cast<unsigned int>(channel),
+			dst += std::format("\n- {:d}: {}: gpio {:2d} is {}, owned by: {}\n   rgbvalues:",
+					magic_enum::enum_integer(entry.first),
+					entry.second,
 					handle->gpio,
 					handle->open ? "open" : "not open",
 					handle->open ? handle->owner : "<none>");
@@ -225,7 +234,8 @@ void Ledpixel::info(std::string &dst)
 			}
 		}
 		else
-			dst += std::format("\n- channel {:d}: unavailable", static_cast<unsigned int>(channel));
-
+			dst += std::format("\n- channel {:d}: {}: unavailable",
+					magic_enum::enum_integer(entry.first),
+					entry.second);
 	}
 }
