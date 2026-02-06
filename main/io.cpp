@@ -19,6 +19,8 @@
 
 #include <freertos/FreeRTOS.h>
 
+#include "magic_enum/magic_enum.hpp"
+
 typedef enum
 {
 	io_bus_none = 0,
@@ -182,10 +184,10 @@ enum
 };
 
 static_assert((unsigned int)esp32_ledpwm_pin_size <= (unsigned int)io_int_value_size);
-static_assert((unsigned int)esp32_ledpwm_pin_0 == (unsigned int)LedPWM::lpt_14bit_5khz_notify);
-static_assert((unsigned int)esp32_ledpwm_pin_1 == (unsigned int)LedPWM::lpt_14bit_5khz_lcd_spi_2);
-static_assert((unsigned int)esp32_ledpwm_pin_2 == (unsigned int)LedPWM::lpt_14bit_5khz_lcd_spi_3);
-static_assert((unsigned int)esp32_ledpwm_pin_3 == (unsigned int)LedPWM::lpt_14bit_120hz);
+static_assert((unsigned int)esp32_ledpwm_pin_0 == (unsigned int)LedPWM::Channel::channel_14bit_5khz_notify);
+static_assert((unsigned int)esp32_ledpwm_pin_1 == (unsigned int)LedPWM::Channel::channel_14bit_5khz_lcd_spi_2);
+static_assert((unsigned int)esp32_ledpwm_pin_2 == (unsigned int)LedPWM::Channel::channel_14bit_5khz_lcd_spi_3);
+static_assert((unsigned int)esp32_ledpwm_pin_3 == (unsigned int)LedPWM::Channel::channel_14bit_120hz);
 
 static void esp32_ledpwm_info(const io_data_t *, std::string &)
 {
@@ -194,25 +196,23 @@ static void esp32_ledpwm_info(const io_data_t *, std::string &)
 
 static bool esp32_ledpwm_init(io_data_t *dataptr)
 {
-	LedPWM::ledpwm_t handle;
-
 	assert(inited);
 	assert(dataptr);
 
-	for(handle = LedPWM::lpt_first; handle < LedPWM::lpt_size; handle = static_cast<LedPWM::ledpwm_t>(handle + 1))
+	for(const auto &channel : magic_enum::enum_values<LedPWM::Channel>())
 	{
-		dataptr->int_value[handle] = 0;
+		dataptr->int_value[magic_enum::enum_integer(channel)] = 0;
 
 		try
 		{
-			LedPWM::get().open(handle, "I/O LED-PWM");
+			LedPWM::get().open(channel, "I/O LED-PWM");
 		}
 		catch(const transient_exception &)
 		{
 			return(false);
 		}
 
-		dataptr->int_value[handle] = 1;
+		dataptr->int_value[magic_enum::enum_integer(channel)] = 1;
 	}
 
 	return(true);
@@ -220,29 +220,41 @@ static bool esp32_ledpwm_init(io_data_t *dataptr)
 
 static bool esp32_ledpwm_write(io_data_t *dataptr, unsigned int pin, unsigned int value)
 {
+	auto channel = magic_enum::enum_cast<LedPWM::Channel>(pin);
+
 	assert(inited);
 	assert(dataptr);
 	assert(pin < dataptr->info->pins);
-	assert(pin < LedPWM::lpt_size);
 	assert(value <= dataptr->info->max_value);
+
+	if(!channel.has_value())
+		return(false);
 
 	if(!dataptr->int_value[pin])
 		return(false);
 
-	LedPWM::get().set(static_cast<LedPWM::ledpwm_t>(pin), value);
+	LedPWM::get().set(channel.value(), value);
 
 	return(true);
 }
 
 static void esp32_ledpwm_pin_info(const io_data_t *dataptr, unsigned int pin, std::string &result)
 {
+	auto channel = magic_enum::enum_cast<LedPWM::Channel>(pin);
+
 	assert(inited);
 	assert(dataptr);
 	assert(pin < dataptr->info->pins);
 	assert(pin < Ledpixel::leds_size);
 
+	if(!channel.has_value())
+		return;
+
 	if(dataptr->int_value[pin])
-		result += std::format("LED-PWM channel {:d} duty: {:d}", pin, LedPWM::get().get(static_cast<LedPWM::ledpwm_t>(pin)));
+		result += std::format("LED-PWM channel {:d}: {}, duty: {:d}",
+			pin,
+			magic_enum::enum_name<LedPWM::Channel>(channel.value()),
+			LedPWM::get().get(channel.value()));
 	else
 		result += "pin unvailable on this board";
 }

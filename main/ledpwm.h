@@ -7,47 +7,42 @@ class LedPWM final
 {
 	public:
 
-		typedef enum : unsigned int
+		static constexpr unsigned int channels_size = 4;
+
+		enum class Channel : unsigned int
 		{
-			lpt_14bit_5khz_notify = 0,
-			lpt_first = lpt_14bit_5khz_notify,
-			lpt_14bit_5khz_lcd_spi_2,
-			lpt_14bit_5khz_lcd_spi_3,
-			lpt_14bit_120hz,
-			lpt_size,
-			lpt_error = lpt_size,
-		} ledpwm_t;
+			channel_14bit_5khz_notify = 0,
+			channel_14bit_5khz_lcd_spi_2,
+			channel_14bit_5khz_lcd_spi_3,
+			channel_14bit_120hz,
+		};
 
 		LedPWM();
 		LedPWM(const LedPWM &) = delete;
 
 		static LedPWM& get();
 
-		void open(ledpwm_t handle, std::string_view owner);
-		void set(ledpwm_t handle, int duty);
-		int get(ledpwm_t handle);
+		void open(Channel channel, std::string_view owner);
+		void set(Channel channel, int duty);
+		int get(Channel channel);
 		void info(std::string &dst);
 
 	private:
 
-		enum : unsigned int
-		{
-			ledpwm_resolution = 14,
-			ledpwm_max_duty = (1U << ledpwm_resolution) - 1,
-		};
+		static constexpr unsigned int resolution = 14;
+		static constexpr unsigned int max_duty = (1U << resolution) - 1;
 
-		enum : unsigned int
+		enum class timer_t : unsigned int
 		{
-			timer_5khz = 0,
+			timer_5khz,
 			timer_120hz,
-			timer_size,
 		};
 
-		typedef struct
+		struct handle_t
 		{
 			int gpio;
-			unsigned int timer;
-			unsigned int handle;
+			timer_t timer;
+			Channel channel;
 			unsigned int frequency;
 			std::string owner;
 			struct
@@ -55,18 +50,19 @@ class LedPWM final
 				unsigned int available;
 				unsigned int open;
 			};
-		} channel_t;
+		};
 
-		typedef struct
+		struct channel_to_gpio_t
 		{
+			Channel channel;
 			int gpio;
-			unsigned int timer;
+			timer_t timer;
 			unsigned int frequency;
-		} handle_to_gpio_t;
+		};
 
-		static const LedPWM::handle_to_gpio_t handle_to_gpio[lpt_size];
+		static const LedPWM::channel_to_gpio_t channel_to_gpio[channels_size];
 
 		static LedPWM *singleton;
 
-		std::array<channel_t, lpt_size> channels;
+		std::array<handle_t, channels_size> handles;
 };

@@ -215,10 +215,10 @@ void Ledpixel::info(std::string &dst)
 		if(handle->available)
 		{
 			if(!handle->open)
-				throw(hard_exception("Ledpixel::dump: channel not open"));
+				throw(hard_exception("Ledpixel::info: channel not open"));
 
 			if(handle->owner.empty())
-				throw(hard_exception("Ledpixel::dump: channel has no owner"));
+				throw(hard_exception("Ledpixel::info: channel has no owner"));
 
 			dst += std::format("\n- {:d}: {}: gpio {:2d} is {}, owned by: {}\n   rgbvalues:",
 					magic_enum::enum_integer(entry.first),

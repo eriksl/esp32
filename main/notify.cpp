@@ -124,7 +124,7 @@ Notify::Notify() :
 	{
 		try
 		{
-			LedPWM::get().open(LedPWM::lpt_14bit_5khz_notify, "notification LED");
+			LedPWM::get().open(LedPWM::Channel::channel_14bit_5khz_notify, "notification LED");
 		}
 		catch(const e32if_exception &e)
 		{
@@ -203,7 +203,7 @@ void __attribute__((noreturn)) Notify::run_thread()
 		}
 
 		if(this->using_ledpwm)
-			LedPWM::get().set(LedPWM::lpt_14bit_5khz_notify, (1UL << phase_ptr->duty_shift) - 1);
+			LedPWM::get().set(LedPWM::Channel::channel_14bit_5khz_notify, (1UL << phase_ptr->duty_shift) - 1);
 
 		sleep_ms = phase_ptr->time_ms ? : 100;
 	}

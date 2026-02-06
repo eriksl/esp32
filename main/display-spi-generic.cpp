@@ -45,7 +45,7 @@ typedef struct
 	unsigned int mosi;
 	unsigned int miso;
 	unsigned int dc;
-	LedPWM::ledpwm_t bl;
+	LedPWM::Channel bl;
 } spi_signal_t;
 
 typedef struct
@@ -70,7 +70,7 @@ static const spi_host_signal_t spi_host_signal =
 		.mosi =		11,									/* IOMUX, fixed */
 		.miso =		13,									/* IOMUX, fixed */
 		.dc =		CONFIG_BSP_SPI2_DISPLAY_DC,
-		.bl =		LedPWM::lpt_14bit_5khz_lcd_spi_2,
+		.bl =		LedPWM::Channel::channel_14bit_5khz_lcd_spi_2,
 	},
 	.spi3 =
 	{
@@ -80,7 +80,7 @@ static const spi_host_signal_t spi_host_signal =
 		.mosi =		CONFIG_BSP_SPI3_MOSI,
 		.miso =		CONFIG_BSP_SPI3_MISO,
 		.dc =		CONFIG_BSP_SPI3_DISPLAY_DC,
-		.bl =		LedPWM::lpt_14bit_5khz_lcd_spi_3,
+		.bl =		LedPWM::Channel::channel_14bit_5khz_lcd_spi_3,
 	},
 };
 
@@ -91,7 +91,7 @@ static callback_data_t callback_data_gpio_on;
 static callback_data_t callback_data_gpio_off;
 static SemaphoreHandle_t spi_mutex;
 static unsigned int spi_pending;
-static LedPWM::ledpwm_t ledpwm_channel;
+static LedPWM::Channel ledpwm_channel;
 static unsigned int x_size, y_size;
 static unsigned int flip;
 static unsigned int rotate;
