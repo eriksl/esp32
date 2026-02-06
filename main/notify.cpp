@@ -165,7 +165,8 @@ void __attribute__((noreturn)) Notify::run_thread_wrapper(void *this_)
 {
 	Notify *notify;
 
-	assert(this_);
+	if(!this_)
+		throw(hard_exception("Notify::run_thread_wrapper: nullptr passed"));
 
 	notify = reinterpret_cast<Notify *>(this_);
 

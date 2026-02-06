@@ -37,24 +37,22 @@ class Notify final
 
 		static constexpr unsigned int phase_size = 4;
 
-		typedef struct
-		{
-			unsigned int r;
-			unsigned int g;
-			unsigned int b;
-		} rgb_t;
-
-		typedef struct
+		struct phase_t
 		{
 			unsigned int duty_shift;
 			unsigned int time_ms;
-			rgb_t colour;
-		} phase_t;
+			struct
+			{
+				unsigned int r;
+				unsigned int g;
+				unsigned int b;
+			} colour;
+		};
 
-		typedef struct
+		struct notification_info_t
 		{
 			phase_t phase[phase_size];
-		} notification_info_t;
+		};
 
 		static const notification_info_t notification_info[notify_size];
 		static Notify *singleton;
