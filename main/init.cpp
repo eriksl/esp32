@@ -46,7 +46,7 @@ void app_main(void)
 		Notify notify;
 		Command command(config, console, ledpixel, ledpwm, notify);
 		notify.run();
-		notify.notify(Notify::notify_sys_booting);
+		notify.notify(Notify::Notification::sys_booting);
 		info_init();
 		process_init();
 		log_init();
@@ -66,8 +66,8 @@ void app_main(void)
 		i2c_init();
 		io_init();
 		sensor_init();
-		notify.notify(Notify::notify_sys_booting_finished);
 		console.run();
+		notify.notify(Notify::Notification::sys_booting_finished);
 		vTaskSuspend(NULL);
 		throw("vTaskSuspend returned");
 	}

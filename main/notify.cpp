@@ -8,91 +8,143 @@
 #include "format"
 #include "thread"
 
+#include "magic_enum/magic_enum.hpp"
+
 #include <esp_pthread.h>
 
-const Notify::notification_info_t Notify::notification_info[Notify::notify_size] =
+const Notify::notification_info_t Notify::notification_info[Notify::notification_size] =
 {
-	[notify_none] = {{
-		{ .duty_shift =  0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
-		{ .duty_shift =  0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
-		{ .duty_shift =  0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
-		{ .duty_shift =  0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
-	}},
-	[notify_sys_booting] = {{
-		{ .duty_shift = 14, .time_ms =   50, .colour = { 0xff, 0x00, 0x00 }},
-		{ .duty_shift =  0, .time_ms =   50, .colour = { 0x00, 0x00, 0x00 }},
-		{ .duty_shift = 14, .time_ms =   50, .colour = { 0xff, 0x00, 0x00 }},
-		{ .duty_shift =  0, .time_ms =   50, .colour = { 0x00, 0x00, 0x00 }},
-	}},
-	[notify_sys_booting_finished] = {{
-		{ .duty_shift = 14, .time_ms =  300, .colour = { 0xff, 0x00, 0x00 }},
-		{ .duty_shift =  0, .time_ms =  300, .colour = { 0x00, 0x00, 0x00 }},
-		{ .duty_shift = 14, .time_ms =  300, .colour = { 0xff, 0x00, 0x00 }},
-		{ .duty_shift =  0, .time_ms =  300, .colour = { 0x00, 0x00, 0x00 }},
-	}},
-	[notify_net_associating] = {{
-		{ .duty_shift =  9, .time_ms =   50, .colour = { 0x00, 0x00, 0xff }},
-		{ .duty_shift =  0, .time_ms =   50, .colour = { 0x00, 0x00, 0x00 }},
-		{ .duty_shift =  9, .time_ms =   50, .colour = { 0x00, 0x00, 0xff }},
-		{ .duty_shift =  0, .time_ms =   50, .colour = { 0x00, 0x00, 0x00 }},
-	}},
-	[notify_net_associating_finished] = {{
-		{ .duty_shift =  9, .time_ms =  300, .colour = { 0x00, 0x00, 0xff }},
-		{ .duty_shift =  0, .time_ms =  300, .colour = { 0x00, 0x00, 0x00 }},
-		{ .duty_shift =  9, .time_ms =  300, .colour = { 0x00, 0x00, 0xff }},
-		{ .duty_shift =  0, .time_ms =  300, .colour = { 0x00, 0x00, 0x00 }},
-	}},
-	[notify_net_ipv4_acquired] = {{
-		{ .duty_shift =  9, .time_ms = 1000, .colour = { 0x01, 0x01, 0x00 }},
-		{ .duty_shift =  0, .time_ms = 1000, .colour = { 0x00, 0x00, 0x00 }},
-		{ .duty_shift =  9, .time_ms = 1000, .colour = { 0x01, 0x01, 0x00 }},
-		{ .duty_shift =  0, .time_ms = 1000, .colour = { 0x00, 0x00, 0x00 }},
-	}},
-	[notify_net_ipv6_ll_active] = {{
-		{ .duty_shift =  5, .time_ms =   50, .colour = { 0x00, 0x01, 0x00 }},
-		{ .duty_shift =  0, .time_ms =   50, .colour = { 0x00, 0x00, 0x00 }},
-		{ .duty_shift =  5, .time_ms =   50, .colour = { 0x00, 0x01, 0x00 }},
-		{ .duty_shift =  0, .time_ms =   50, .colour = { 0x00, 0x00, 0x00 }},
-	}},
-	[notify_net_ipv6_static_active] = {{
-		{ .duty_shift =  5, .time_ms =  300, .colour = { 0x00, 0x01, 0x00 }},
-		{ .duty_shift =  0, .time_ms =  300, .colour = { 0x00, 0x00, 0x00 }},
-		{ .duty_shift =  5, .time_ms =  300, .colour = { 0x00, 0x01, 0x00 }},
-		{ .duty_shift =  0, .time_ms =  300, .colour = { 0x00, 0x00, 0x00 }},
-	}},
-	[notify_net_ipv6_slaac_acquired] = {{
-		{ .duty_shift =  5, .time_ms = 1000, .colour = { 0x00, 0x01, 0x00 }},
-		{ .duty_shift =  0, .time_ms = 1000, .colour = { 0x00, 0x00, 0x00 }},
-		{ .duty_shift =  5, .time_ms = 1000, .colour = { 0x00, 0x01, 0x00 }},
-		{ .duty_shift =  0, .time_ms = 1000, .colour = { 0x00, 0x00, 0x00 }},
-	}},
-	[notify_net_ap_mode_init] = {{
-		{ .duty_shift = 14, .time_ms =  100, .colour = { 0xff, 0x00, 0xff }},
-		{ .duty_shift = 12, .time_ms =  100, .colour = { 0x00, 0x00, 0x00 }},
-		{ .duty_shift = 14, .time_ms =  100, .colour = { 0xff, 0xff, 0xff }},
-		{ .duty_shift = 12, .time_ms =  100, .colour = { 0x00, 0x00, 0xff }},
-	}},
-	[notify_net_ap_mode_idle] = {{
-		{ .duty_shift = 14, .time_ms =  500, .colour = { 0xff, 0x00, 0xff }},
-		{ .duty_shift = 12, .time_ms =  500, .colour = { 0x00, 0x00, 0x00 }},
-		{ .duty_shift = 14, .time_ms =  500, .colour = { 0xff, 0xff, 0xff }},
-		{ .duty_shift = 12, .time_ms =  500, .colour = { 0x00, 0x00, 0x00 }},
-	}},
-	[notify_net_ap_mode_associated] = {{
-		{ .duty_shift = 14, .time_ms = 1200, .colour = { 0xff, 0x00, 0xff }},
-		{ .duty_shift = 12, .time_ms = 1200, .colour = { 0x00, 0x00, 0x00 }},
-		{ .duty_shift = 14, .time_ms = 1200, .colour = { 0xff, 0xff, 0xff }},
-		{ .duty_shift = 12, .time_ms = 1200, .colour = { 0x00, 0x00, 0x00 }},
-	}},
+	{
+		.notification = Notify::Notification::none,
+		.phase =
+		{
+			{ .duty_shift =  0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
+			{ .duty_shift =  0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
+			{ .duty_shift =  0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
+			{ .duty_shift =  0, .time_ms =    0, .colour = { 0x00, 0x00, 0x00 }},
+		},
+	},
+	{
+		.notification = Notify::Notification::sys_booting,
+		.phase =
+		{
+			{ .duty_shift = 14, .time_ms =   50, .colour = { 0xff, 0x00, 0x00 }},
+			{ .duty_shift =  0, .time_ms =   50, .colour = { 0x00, 0x00, 0x00 }},
+			{ .duty_shift = 14, .time_ms =   50, .colour = { 0xff, 0x00, 0x00 }},
+			{ .duty_shift =  0, .time_ms =   50, .colour = { 0x00, 0x00, 0x00 }},
+		},
+	},
+	{
+		.notification = Notify::Notification::sys_booting_finished,
+		.phase =
+		{
+			{ .duty_shift = 14, .time_ms =  300, .colour = { 0xff, 0x00, 0x00 }},
+			{ .duty_shift =  0, .time_ms =  300, .colour = { 0x00, 0x00, 0x00 }},
+			{ .duty_shift = 14, .time_ms =  300, .colour = { 0xff, 0x00, 0x00 }},
+			{ .duty_shift =  0, .time_ms =  300, .colour = { 0x00, 0x00, 0x00 }},
+		},
+	},
+	{
+		.notification = Notify::Notification::net_associating,
+		.phase =
+		{
+			{ .duty_shift =  9, .time_ms =   50, .colour = { 0x00, 0x00, 0xff }},
+			{ .duty_shift =  0, .time_ms =   50, .colour = { 0x00, 0x00, 0x00 }},
+			{ .duty_shift =  9, .time_ms =   50, .colour = { 0x00, 0x00, 0xff }},
+			{ .duty_shift =  0, .time_ms =   50, .colour = { 0x00, 0x00, 0x00 }},
+		},
+	},
+	{
+		.notification = Notify::Notification::net_associating_finished,
+		.phase =
+		{
+			{ .duty_shift =  9, .time_ms =  300, .colour = { 0x00, 0x00, 0xff }},
+			{ .duty_shift =  0, .time_ms =  300, .colour = { 0x00, 0x00, 0x00 }},
+			{ .duty_shift =  9, .time_ms =  300, .colour = { 0x00, 0x00, 0xff }},
+			{ .duty_shift =  0, .time_ms =  300, .colour = { 0x00, 0x00, 0x00 }},
+		},
+	},
+	{
+		.notification = Notify::Notification::net_ipv4_acquired,
+		.phase =
+		{
+			{ .duty_shift =  9, .time_ms = 1000, .colour = { 0x01, 0x01, 0x00 }},
+			{ .duty_shift =  0, .time_ms = 1000, .colour = { 0x00, 0x00, 0x00 }},
+			{ .duty_shift =  9, .time_ms = 1000, .colour = { 0x01, 0x01, 0x00 }},
+			{ .duty_shift =  0, .time_ms = 1000, .colour = { 0x00, 0x00, 0x00 }},
+		},
+	},
+	{
+		.notification = Notify::Notification::net_ipv6_ll_active,
+		.phase =
+		{
+			{ .duty_shift =  5, .time_ms =   50, .colour = { 0x00, 0x01, 0x00 }},
+			{ .duty_shift =  0, .time_ms =   50, .colour = { 0x00, 0x00, 0x00 }},
+			{ .duty_shift =  5, .time_ms =   50, .colour = { 0x00, 0x01, 0x00 }},
+			{ .duty_shift =  0, .time_ms =   50, .colour = { 0x00, 0x00, 0x00 }},
+		},
+	},
+	{
+		.notification = Notify::Notification::net_ipv6_static_active,
+		.phase =
+		{
+			{ .duty_shift =  5, .time_ms =  300, .colour = { 0x00, 0x01, 0x00 }},
+			{ .duty_shift =  0, .time_ms =  300, .colour = { 0x00, 0x00, 0x00 }},
+			{ .duty_shift =  5, .time_ms =  300, .colour = { 0x00, 0x01, 0x00 }},
+			{ .duty_shift =  0, .time_ms =  300, .colour = { 0x00, 0x00, 0x00 }},
+		},
+	},
+	{
+		.notification = Notify::Notification::net_ipv6_slaac_acquired,
+		.phase =
+		{
+			{ .duty_shift =  5, .time_ms = 1000, .colour = { 0x00, 0x01, 0x00 }},
+			{ .duty_shift =  0, .time_ms = 1000, .colour = { 0x00, 0x00, 0x00 }},
+			{ .duty_shift =  5, .time_ms = 1000, .colour = { 0x00, 0x01, 0x00 }},
+			{ .duty_shift =  0, .time_ms = 1000, .colour = { 0x00, 0x00, 0x00 }},
+		},
+	},
+	{
+		.notification = Notify::Notification::net_ap_mode_init,
+		.phase =
+		{
+			{ .duty_shift = 14, .time_ms =  100, .colour = { 0xff, 0x00, 0xff }},
+			{ .duty_shift = 12, .time_ms =  100, .colour = { 0x00, 0x00, 0x00 }},
+			{ .duty_shift = 14, .time_ms =  100, .colour = { 0xff, 0xff, 0xff }},
+			{ .duty_shift = 12, .time_ms =  100, .colour = { 0x00, 0x00, 0xff }},
+		},
+	},
+	{
+		.notification = Notify::Notification::net_ap_mode_idle,
+		.phase =
+		{
+			{ .duty_shift = 14, .time_ms =  500, .colour = { 0xff, 0x00, 0xff }},
+			{ .duty_shift = 12, .time_ms =  500, .colour = { 0x00, 0x00, 0x00 }},
+			{ .duty_shift = 14, .time_ms =  500, .colour = { 0xff, 0xff, 0xff }},
+			{ .duty_shift = 12, .time_ms =  500, .colour = { 0x00, 0x00, 0x00 }},
+		},
+	},
+	{
+		.notification = Notify::Notification::net_ap_mode_associated,
+		.phase =
+		{
+			{ .duty_shift = 14, .time_ms = 1200, .colour = { 0xff, 0x00, 0xff }},
+			{ .duty_shift = 12, .time_ms = 1200, .colour = { 0x00, 0x00, 0x00 }},
+			{ .duty_shift = 14, .time_ms = 1200, .colour = { 0xff, 0xff, 0xff }},
+			{ .duty_shift = 12, .time_ms = 1200, .colour = { 0x00, 0x00, 0x00 }},
+		},
+	},
 };
 
 Notify *Notify::singleton = nullptr;
 
 Notify::Notify() :
 	running(false),
-	current_notification(notify_none),
+	current_notification(Notification::none),
 	current_phase(-1)
 {
+	static_assert(magic_enum::enum_count<Notification>() == this->notification_size);
+
 	if(this->singleton)
 		throw(hard_exception("Notify: already active"));
 
@@ -183,7 +235,7 @@ void __attribute__((noreturn)) Notify::run_thread()
 	{
 		std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
 
-		if(this->current_notification >= notify_size)
+		if(!magic_enum::enum_contains<Notification>(this->current_notification))
 		{
 			sleep_ms = 100;
 			continue;
@@ -194,7 +246,10 @@ void __attribute__((noreturn)) Notify::run_thread()
 		if((this->current_phase < 0) || (this->current_phase >= this->phase_size))
 			this->current_phase = 0;
 
-		info_ptr = &this->notification_info[this->current_notification];
+		info_ptr = &this->notification_info[magic_enum::enum_integer(this->current_notification)];
+
+		assert(info_ptr->notification == this->current_notification);
+
 		phase_ptr = &info_ptr->phase[this->current_phase];
 
 		if(this->using_ledpixel)
@@ -210,12 +265,12 @@ void __attribute__((noreturn)) Notify::run_thread()
 	}
 }
 
-void Notify::notify(notify_t notification)
+void Notify::notify(Notification notification)
 {
-	if(notification >= notify_size)
-		throw(hard_exception("Notify::notify: notification out of bounds"));
+	if(!magic_enum::enum_contains<Notification>(notification))
+		throw(hard_exception("Notify::notify:: invalid notification"));
 
-	if(notification == notify_none)
+	if(notification == Notification::none)
 		return;
 
 	this->current_notification = notification;
@@ -232,13 +287,19 @@ Notify &Notify::get()
 
 void Notify::info(std::string &dst)
 {
+	const notification_info_t *info_ptr;
+
+	info_ptr = &this->notification_info[magic_enum::enum_integer(this->current_notification)];
+
+	assert(info_ptr->notification == this->current_notification);
+
 	dst += std::format("ledpixel enabled: {}\n", this->using_ledpixel ? "yes" : "no");
 	dst += std::format("ledpwm   enabled: {}\n", this->using_ledpwm   ? "yes" : "no");
 	dst += std::format("thread running: {}\n", this->running ? "yes" : "no");
-	dst += std::format("current notification: {:d}\n", static_cast<unsigned int>(this->current_notification));
-	dst += std::format("- duty: {:d}\n", (1UL << this->notification_info[this->current_notification].phase[this->current_phase].duty_shift) - 1);
-	dst += std::format("- sleep time: {:d} ms\n", (this->notification_info[this->current_notification].phase[this->current_phase].time_ms));
-	dst += std::format("- red   component: {:#04x}\n", this->notification_info[this->current_notification].phase[this->current_phase].colour.r);
-	dst += std::format("- green component: {:#04x}\n", this->notification_info[this->current_notification].phase[this->current_phase].colour.g);
-	dst += std::format("- blue  component: {:#04x}\n", this->notification_info[this->current_notification].phase[this->current_phase].colour.b);
+	dst += std::format("current notification: {:d}: {}\n", magic_enum::enum_integer(this->current_notification), magic_enum::enum_name(this->current_notification));
+	dst += std::format("- duty: {:d}\n", (1UL << info_ptr->phase[this->current_phase].duty_shift) - 1);
+	dst += std::format("- sleep time: {:d} ms\n", info_ptr->phase[this->current_phase].time_ms);
+	dst += std::format("- red   component: {:#04x}\n", info_ptr->phase[this->current_phase].colour.r);
+	dst += std::format("- green component: {:#04x}\n", info_ptr->phase[this->current_phase].colour.g);
+	dst += std::format("- blue  component: {:#04x}\n", info_ptr->phase[this->current_phase].colour.b);
 }
