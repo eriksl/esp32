@@ -196,8 +196,12 @@ static void esp32_ledpwm_info(const io_data_t *, std::string &)
 
 static bool esp32_ledpwm_init(io_data_t *dataptr)
 {
+	int opened;
+
 	assert(inited);
 	assert(dataptr);
+
+	opened = 0;
 
 	for(const auto &channel : magic_enum::enum_values<LedPWM::Channel>())
 	{
@@ -209,13 +213,14 @@ static bool esp32_ledpwm_init(io_data_t *dataptr)
 		}
 		catch(const transient_exception &)
 		{
-			return(false);
+			continue;
 		}
 
+		opened++;
 		dataptr->int_value[magic_enum::enum_integer(channel)] = 1;
 	}
 
-	return(true);
+	return(opened > 0);
 }
 
 static bool esp32_ledpwm_write(io_data_t *dataptr, unsigned int pin, unsigned int value)
@@ -379,7 +384,7 @@ static void esp32_ledpixel_pin_info(const io_data_t *dataptr, unsigned int pin, 
 	assert(pin < dataptr->info->pins);
 
 	if(dataptr->int_value[esp32_ledpixel_int_value_open])
-		result += std::format("LEDpixel instance {:d}", static_cast<unsigned int>(dataptr->info->instance.ledpixel.channel));
+		result += std::format("LEDpixel channel {:d}, led {:d}", magic_enum::enum_integer(dataptr->info->instance.ledpixel.channel), pin);
 	else
 		result += "pin unvailable on this board";
 }
