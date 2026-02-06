@@ -22,7 +22,6 @@ __attribute__((noreturn)) void app_main(void);
 #include "info.h"
 #include "io.h"
 #include "mcpwm.h"
-#include "perftest.h"
 #include "pdm.h"
 #include "process.h"
 #include "ramdisk.h"
@@ -61,7 +60,6 @@ void app_main(void)
 		wlan_init();
 		net_udp_init();
 		net_tcp_init();
-		perftest_init();
 		display_init();
 		i2c_init();
 		io_init();

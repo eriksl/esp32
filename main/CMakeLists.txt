@@ -23,7 +23,6 @@ idf_component_register(
 		"notify.cpp"
 		"ota.cpp"
 		"esp32-common/packet.cpp"
-		"perftest.cpp"
 		"pdm.cpp"
 		"process.cpp"
 		"ramdisk.cpp"
