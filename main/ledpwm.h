@@ -1,7 +1,9 @@
 #pragma once
 
 #include <string>
-#include <array>
+
+#include "magic_enum/magic_enum.hpp"
+#include "magic_enum/magic_enum_containers.hpp"
 
 class LedPWM final
 {
@@ -64,5 +66,5 @@ class LedPWM final
 
 		static LedPWM *singleton;
 
-		std::array<handle_t, channels_size> handles;
+		magic_enum::containers::array<Channel, handle_t> handles;
 };

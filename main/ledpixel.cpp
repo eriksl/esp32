@@ -9,8 +9,6 @@
 
 #include <format>
 
-#include <magic_enum/magic_enum.hpp>
-
 Ledpixel *Ledpixel::singleton = nullptr;
 
 const Ledpixel::channel_to_gpio_t Ledpixel::channel_to_gpio[Ledpixel::channels_size] =
@@ -58,7 +56,7 @@ Ledpixel::Ledpixel()
 
 		assert(channel_to_gpio_ptr->channel == channel);
 
-		handle = &this->handles[magic_enum::enum_integer(channel)];
+		handle = &this->handles[channel];
 		handle->handle = nullptr;
 		handle->owner = "";
 		handle->available = 0;
@@ -107,7 +105,7 @@ void Ledpixel::open(Channel channel, std::string_view owner)
 	if(!magic_enum::enum_contains<Channel>(channel))
 		throw(hard_exception("Ledpixel::open: invalid channel"));
 
-	handle = &this->handles[magic_enum::enum_integer(channel)];
+	handle = &this->handles[channel];
 
 	if(!handle->available)
 		throw(transient_exception("Ledpixel::open: channel unavailable"));
@@ -144,7 +142,7 @@ void Ledpixel::set(Channel channel, int led, int red, int green, int blue)
 	if((led < 0) || (led >= this->leds_size))
 		throw(hard_exception("Ledpixel::set: invalid led"));
 
-	handle = &this->handles[magic_enum::enum_integer(channel)];
+	handle = &this->handles[channel];
 
 	if(!handle->open)
 		throw(transient_exception("Ledpixel::set: channel not open"));
@@ -170,7 +168,7 @@ void Ledpixel::get(Channel channel, int led, int &red, int &green, int &blue)
 	if((led < 0) || (led >= this->leds_size))
 		throw(hard_exception("Ledpixel::set: invalid led"));
 
-	handle = &this->handles[magic_enum::enum_integer(channel)];
+	handle = &this->handles[channel];
 
 	if(!handle->open)
 		throw(transient_exception("Ledpixel::get: channel not open"));
@@ -190,7 +188,7 @@ void Ledpixel::flush(Channel channel)
 	if(!magic_enum::enum_contains<Channel>(channel))
 		throw(hard_exception("Ledpixel::flush: invalid channel"));
 
-	handle = &this->handles[magic_enum::enum_integer(channel)];
+	handle = &this->handles[channel];
 
 	if(!handle->open)
 		throw(transient_exception("Ledpixel::flush: channel not open"));
@@ -210,7 +208,7 @@ void Ledpixel::info(std::string &dst)
 
 	for(const auto &entry : magic_enum::enum_entries<Channel>())
 	{
-		handle = &this->handles[magic_enum::enum_integer(entry.first)];
+		handle = &this->handles[entry.first];
 
 		if(handle->available)
 		{

@@ -2,14 +2,11 @@
 
 #include "log.h"
 #include "util.h"
-#include "cli-command.h"
 #include "exception.h"
 
 #include <driver/ledc.h>
 
 #include <format>
-
-#include "magic_enum/magic_enum.hpp"
 
 LedPWM *LedPWM::singleton = nullptr;
 
@@ -76,7 +73,7 @@ LedPWM::LedPWM()
 
 		assert(channel_to_gpio_ptr->channel == channel);
 
-		handle = &this->handles[magic_enum::enum_integer(channel)];
+		handle = &this->handles[channel];
 		handle->timer = channel_to_gpio_ptr->timer;
 		handle->channel = channel;
 		handle->frequency = channel_to_gpio_ptr->frequency;
@@ -120,7 +117,7 @@ void LedPWM::open(Channel channel, std::string_view owner)
 	if(!magic_enum::enum_contains<Channel>(channel))
 		throw(hard_exception("Ledpixel::open: invalid channel"));
 
-	handle = &this->handles[magic_enum::enum_integer(channel)];
+	handle = &this->handles[channel];
 
 	if(!handle->available)
 		throw(transient_exception("LedPWM::open: channel unavailable"));
@@ -143,7 +140,7 @@ void LedPWM::set(Channel channel, int duty)
 	if(!magic_enum::enum_contains<Channel>(channel))
 		throw(hard_exception("Ledpixel::open: invalid channel"));
 
-	handle = &this->handles[magic_enum::enum_integer(channel)];
+	handle = &this->handles[channel];
 
 	if(!handle->open)
 		throw(transient_exception("LedPWM::set: channel not open"));
@@ -165,7 +162,7 @@ int LedPWM::get(Channel channel)
 	if(!magic_enum::enum_contains<Channel>(channel))
 		throw(hard_exception("Ledpixel::open: invalid channel"));
 
-	handle = &this->handles[magic_enum::enum_integer(channel)];
+	handle = &this->handles[channel];
 
 	if(!handle->open)
 		throw(transient_exception("LedPWM::get: channel not open"));
@@ -184,7 +181,7 @@ void LedPWM::info(std::string &dst)
 
 	for(const auto &entry : magic_enum::enum_entries<Channel>())
 	{
-		handle = &this->handles[magic_enum::enum_integer(entry.first)];
+		handle = &this->handles[entry.first];
 
 		if(handle->available)
 		{

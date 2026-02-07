@@ -3,7 +3,9 @@
 #include <led_strip.h>
 
 #include <string>
-#include <array>
+
+#include "magic_enum/magic_enum.hpp"
+#include "magic_enum/magic_enum_containers.hpp"
 
 class Ledpixel final
 {
@@ -72,5 +74,5 @@ class Ledpixel final
 		static Ledpixel *singleton;
 
 		static const channel_to_gpio_t channel_to_gpio[channels_size];
-		std::array<handle_t, channels_size> handles;
+		magic_enum::containers::array<Channel, handle_t> handles;
 };
