@@ -81,9 +81,6 @@ void Console::write_string(std::string_view data)
 	}
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsuggest-attribute=noreturn"
-
 void Console::run_thread()
 {
 	static constexpr char backspace_string[] = { 0x08, 0x20, 0x08, 0x00 };
@@ -373,8 +370,6 @@ Console &Console::get()
 
 	return(*Console::singleton);
 }
-
-#pragma GCC diagnostic pop
 
 void Console::write(std::string_view string)
 {

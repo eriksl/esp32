@@ -528,7 +528,7 @@ static bool plot_line(unsigned int from_x, unsigned int from_y, unsigned int to_
 	return(true);
 }
 
-static void __attribute__((noreturn)) run_display_log(void *)
+static void run_display_log(void *)
 {
 	unsigned int entry;
 	std::string entry_text;
@@ -609,7 +609,7 @@ static void user_warning(png_structp png_ptr, png_const_charp msg)
 		log_format("warning in libpng: %s", msg);
 }
 
-static void __attribute__((noreturn)) run_display_info(void *)
+static void run_display_info(void *)
 {
 	// all static due to prevent clobbering by longjmp
 

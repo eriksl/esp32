@@ -213,7 +213,7 @@ void Notify::run()
 	this->running = true;
 }
 
-void __attribute__((noreturn)) Notify::run_thread_wrapper(void *this_)
+void Notify::run_thread_wrapper(void *this_)
 {
 	Notify *notify;
 
@@ -225,7 +225,7 @@ void __attribute__((noreturn)) Notify::run_thread_wrapper(void *this_)
 	notify->run_thread();
 }
 
-void __attribute__((noreturn)) Notify::run_thread()
+void Notify::run_thread()
 {
 	const notification_info_t *info_ptr;
 	const phase_t *phase_ptr;

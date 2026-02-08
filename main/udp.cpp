@@ -41,8 +41,8 @@ class UDP
 
 		void send(const command_response_t *command_response);
 		void command_info(cli_command_call_t *call);
-		__attribute__((noreturn)) static void run_wrapper(void *);
-		__attribute__((noreturn)) void run();
+		static void run_wrapper(void *);
+		void run();
 };
 
 UDP::UDP() :

@@ -2,7 +2,7 @@
 
 extern "C"
 {
-__attribute__((noreturn)) void app_main(void);
+void app_main(void);
 }
 
 #include "config.h"

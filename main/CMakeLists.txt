@@ -57,8 +57,6 @@ set(ALLFLAGS
 		-Wuninitialized
 		-Wstrict-overflow=2
 		-Wstringop-overflow=4
-		-Wsuggest-attribute=noreturn
-		-Wsuggest-attribute=format
 		-Walloc-size
 		-Walloc-zero
 		-Wcalloc-transposed-args
@@ -88,6 +86,8 @@ set(ALLFLAGS
 		-Wno-float-conversion
 		-Wno-sign-conversion
 		-Wno-vla
+		-Wno-suggest-attribute=noreturn
+		-Wno-suggest-attribute=format
 		-fno-strict-aliasing
 )
 
