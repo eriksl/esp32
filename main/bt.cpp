@@ -30,6 +30,8 @@
 #include <string>
 #include <exception>
 #include <boost/format.hpp>
+#include <thread>
+#include <chrono>
 
 extern "C" void ble_store_config_init(void);
 
@@ -460,7 +462,7 @@ void net_bt_send(const command_response_t *command_response)
 		else
 			Log::get() << "bt: HS_ENOMEM";
 
-		util_sleep(100);
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
 		Log::get() << "bt: send: retry";
 	}

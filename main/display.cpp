@@ -24,6 +24,8 @@
 #include <deque>
 #include <vector>
 #include <format>
+#include <thread>
+#include <chrono>
 
 static_assert(sizeof(font_glyph_t) == 68);
 static_assert(offsetof(font_t, basic_glyph) == 56);
@@ -917,7 +919,7 @@ skip:
 
 next:
 			page_data_mutex_give();
-			util_sleep(fastskip ? 100 : 8000);
+			std::this_thread::sleep_for(std::chrono::milliseconds(fastskip ? 100 : 8000));
 
 			current_page++;
 		}

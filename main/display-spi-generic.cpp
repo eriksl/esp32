@@ -14,6 +14,8 @@
 
 #include <string>
 #include <format>
+#include <thread>
+#include <chrono>
 
 enum
 {
@@ -625,9 +627,9 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 
 	send_command(cmd_dispoff);
 	send_command(cmd_swreset);
-	util_sleep(400);
+	std::this_thread::sleep_for(std::chrono::milliseconds(400));
 	send_command(cmd_sleepout);
-	util_sleep(100);
+	std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	send_command(cmd_noron);
 	send_command(cmd_dispon);
 	send_command_data_1(cmd_colmod, colmod_18bpp);

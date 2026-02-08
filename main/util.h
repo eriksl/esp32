@@ -23,7 +23,6 @@ typedef enum
 	ipv6_address_size,
 } ipv6_address_type_t;
 
-void util_sleep(unsigned int msec);
 unsigned int util_partition_to_slot(const esp_partition_t *partition);
 
 std::string util_ipv4_addr_to_string(const uint32_t *in /* sockaddr_in->sin_addr.in_addr = uint32_t */);

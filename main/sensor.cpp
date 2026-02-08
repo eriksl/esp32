@@ -12,6 +12,8 @@
 
 #include <string>
 #include <boost/format.hpp>
+#include <thread>
+#include <chrono>
 
 typedef struct
 {
@@ -4223,7 +4225,7 @@ static sensor_detect_t am2320_detect(i2c_slave_t slave)
 	}
 
 	i2c_probe_slave(module, bus, address);
-	util_sleep(50);
+	std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 	if(!i2c_probe_slave(module, bus, address))
 		return(sensor_not_found);
@@ -4751,7 +4753,7 @@ static void run_sensors(void *parameters)
 				else
 					Log::get() << std::format("sensor: error: no poll function for sensor {}", dataptr->info->name);
 
-		util_sleep(1000);
+		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 	}
 
 	util_abort("sensor: poll task returned");
@@ -4788,7 +4790,7 @@ void sensor_init(void)
 	{
 		if(i2c_module_available(thread))
 		{
-			util_sleep(100);
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
 			snprintf(name, sizeof(name), "sensors %d", thread);
 

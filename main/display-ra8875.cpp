@@ -12,6 +12,8 @@
 
 #include <cstdint>
 #include <format>
+#include <thread>
+#include <chrono>
 
 union rgb16_t
 {
@@ -479,7 +481,7 @@ static void box(unsigned int r, unsigned int g, unsigned int b, unsigned int fro
 	set_window(from_x, from_y, to_x, to_y);
 	bgcolour_set(r, g, b);
 	write_register_1(reg_mclr, reg_mclr_memory_clear_start | reg_mclr_memory_area_active_window);
-	util_sleep(50);
+	std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	set_window(0, 0, x_size - 1, y_size - 1);
 }
 
@@ -791,9 +793,9 @@ bool display_ra8875_init(const display_init_parameters_t *parameters)
 	// PLL
 
 	write_register_1(reg_pll_c1, reg_pllc1_value);
-	util_sleep(50);
+	std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	write_register_1(reg_pll_c2, reg_pllc2_value);
-	util_sleep(50);
+	std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 	util_abort_on_esp_err("spi_bus_remove_device", spi_bus_remove_device(spi_device_handle));
 	device.clock_speed_hz = spi_speed_normal;

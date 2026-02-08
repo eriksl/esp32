@@ -26,17 +26,6 @@ static const char *ipv6_address_type_strings[ipv6_address_size] =
 	[ipv6_address_other] = "other",
 };
 
-void util_sleep(unsigned int msec)
-{
-	unsigned int ticks;
-
-	ticks = msec / portTICK_PERIOD_MS;
-
-	assert(ticks > 0);
-
-	vTaskDelay(ticks);
-}
-
 unsigned int util_partition_to_slot(const esp_partition_t *partition)
 {
 	unsigned int slot;

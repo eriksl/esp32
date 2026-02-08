@@ -4,6 +4,7 @@
 #include <deque>
 #include <fstream>
 #include <thread>
+#include <chrono>
 
 #include "cli-command.h"
 #include "log.h"
@@ -196,7 +197,7 @@ static void script_run(ThreadState *initial_thread_state)
 					}
 
 					if(sleep_msec >= 10)
-						util_sleep(sleep_msec);
+						std::this_thread::sleep_for(std::chrono::milliseconds(sleep_msec));
 
 					continue;
 				}
@@ -214,7 +215,7 @@ static void script_run(ThreadState *initial_thread_state)
 						else
 						{
 							thread_state->file.seekg(0);
-							util_sleep(100);
+							std::this_thread::sleep_for(std::chrono::milliseconds(100));
 						}
 					}
 					else
@@ -237,7 +238,7 @@ static void script_run(ThreadState *initial_thread_state)
 						thread_state->repeat.current = 1;
 						thread_state->repeat.active = true;
 						thread_state->file.seekg(0);
-						util_sleep(100);
+						std::this_thread::sleep_for(std::chrono::milliseconds(100));
 					}
 
 					continue;

@@ -15,6 +15,8 @@
 
 #include <string>
 #include <boost/format.hpp>
+#include <thread>
+#include <chrono>
 
 class UDP
 {
@@ -126,7 +128,7 @@ void UDP::run()
 		if(length < 0)
 		{
 			this->receive_errors++;
-			util_sleep(100);
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 			continue;
 		}
 
@@ -134,7 +136,7 @@ void UDP::run()
 		{
 			this->receive_errors++;
 			Log::get() << "udp: zero packet received";
-			util_sleep(100);
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 			continue;
 		}
 
