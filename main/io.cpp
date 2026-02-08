@@ -6,7 +6,6 @@
 #include "pdm.h"
 #include "ledpixel.h"
 #include "io.h"
-#include "info.h"
 #include "i2c.h"
 #include "exception.h"
 

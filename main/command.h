@@ -6,6 +6,7 @@
 #include "ledpwm.h"
 #include "notify.h"
 #include "log.h"
+#include "system.h"
 #include "exception.h"
 #include "cli-command.h"
 
@@ -15,7 +16,7 @@ class Command final
 {
 	public:
 
-		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &);
+		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &);
 		Command() = delete;
 		Command(const Command &) = delete;
 
@@ -33,6 +34,12 @@ class Command final
 		static void log_log(cli_command_call_t *call);
 		static void log_clear(cli_command_call_t *call);
 		static void log_monitor(cli_command_call_t *call);
+		static void system_info(cli_command_call_t *call);
+		static void system_identify(cli_command_call_t *call);
+		static void system_partitions(cli_command_call_t *call);
+		static void system_memory(cli_command_call_t *call);
+		static void system_process_list(cli_command_call_t *call);
+		static void system_process_stop(cli_command_call_t *call);
 
 	private:
 
@@ -42,6 +49,7 @@ class Command final
 		LedPWM &ledpwm;
 		Notify &notify;
 		Log &log;
+		System &system;
 
 		static Command *singleton;
 		static Config *config_;
@@ -50,6 +58,7 @@ class Command final
 		static LedPWM *ledpwm_;
 		static Notify *notify_;
 		static Log *log_;
+		static System *system_;
 
 		std::string make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2);
 };

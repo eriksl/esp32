@@ -4,7 +4,6 @@
 
 #include "i2c.h"
 
-#include "info.h"
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"

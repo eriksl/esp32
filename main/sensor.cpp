@@ -4,7 +4,6 @@
 #include <math.h>
 #include <assert.h>
 
-#include "info.h"
 #include "log.h"
 #include "util.h"
 #include "i2c.h"

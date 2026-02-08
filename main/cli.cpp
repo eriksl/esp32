@@ -436,17 +436,17 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "info", (const char *)0, "show some generic information", info_command_info, {}},
-	{ "info-board", "ib", "BSP info", info_command_info_board, {}},
+	{ "info", (const char *)0, "show some generic information", Command::system_info, {}},
+	{ "info-board", "ib", "BSP info", Command::system_identify, {}},
 	{ "info-cli", "ic", "show information about the cli", command_info_cli, {}},
-	{ "info-partitions", "ip", "show information about partitions", info_command_info_partitions,
+	{ "info-partitions", "ip", "show information about partitions", Command::system_partitions,
 		{	1,
 			{
 				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "partition #", { .unsigned_int = { 0, 16 }}},
 			},
 		}
 	},
-	{ "info-memory", "im", "show information about memory", info_command_info_memory, {}},
+	{ "info-memory", "im", "show information about memory", Command::system_memory, {}},
 	{ "io-dump", "iod", "dump everything known about found IOs", command_io_dump, {}},
 
 	{ "io-read", "ior", "read from I/O pin", command_io_read,
@@ -534,7 +534,7 @@ static const cli_command_t cli_commands[] =
 
 	{ "pdm-info", "pin", "info about pdm channels", command_pdm_info, {}},
 
-	{ "process-list", "ps", "show information about running processes", command_process_list,
+	{ "process-list", "ps", "show information about running processes", Command::system_process_list,
 		{	1,
 			{
 				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "core id", { .unsigned_int = { 0, 1 }}},
@@ -542,10 +542,10 @@ static const cli_command_t cli_commands[] =
 		},
 	},
 
-	{ "process-stop", "kill", "stop running process", command_process_kill,
+	{ "process-stop", "kill", "stop running process", Command::system_process_stop,
 		{	1,
 			{
-				{ cli_parameter_string, 0, 1, 0, 0, "process", {}},
+				{ cli_parameter_string, 0, 1, 0, 0, "process name or id", {}},
 			}
 		},
 	},

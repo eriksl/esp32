@@ -5,7 +5,6 @@
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
-#include "info.h"
 #include "ramdisk.h"
 #include "crypt.h"
 #include "fs.h"

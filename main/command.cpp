@@ -11,10 +11,11 @@ Ledpixel *Command::ledpixel_ = nullptr;
 LedPWM *Command::ledpwm_ = nullptr;
 Notify *Command::notify_ = nullptr;
 Log *Command::log_ = nullptr;
+System *Command::system_ = nullptr;
 
-Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, LedPWM &ledpwm_in, Notify &notify_in, Log &log_in) :
+Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, LedPWM &ledpwm_in, Notify &notify_in, Log &log_in, System &system_in) :
 		config(config_in), console(console_in), ledpixel(ledpixel_in), ledpwm(ledpwm_in),
-		notify(notify_in), log(log_in)
+		notify(notify_in), log(log_in), system(system_in)
 {
 	if(this->singleton)
 		throw(hard_exception("Command: already activated"));
@@ -26,6 +27,7 @@ Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, 
 	this->ledpwm_ = &ledpwm;
 	this->notify_ = &notify;
 	this->log_ = &log;
+	this->system_ = &system;
 }
 
 std::string Command::make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2)
@@ -218,4 +220,58 @@ void Command::log_monitor(cli_command_call_t *call)
 	monitor = Command::log_->getmonitor();
 
 	call->result = std::format("log monitor: {}", yesno(monitor));
+}
+
+void Command::system_info(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	Command::system_->info(call->result);
+}
+
+void Command::system_memory(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	Command::system_->memory(call->result);
+}
+
+void Command::system_identify(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	Command::system_->identify(call->result, call->mtu);
+}
+
+void Command::system_partitions(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	if(call->parameter_count == 0)
+		Command::system_->partitions(call->result);
+	else
+		Command::system_->partitions(call->result, call->parameters[0].unsigned_int);
+}
+
+void Command::system_process_list(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	if(call->parameter_count == 0)
+		Command::system_->process_list(call->result);
+	else
+		Command::system_->process_list(call->result, call->parameters[0].unsigned_int);
+}
+
+void Command::system_process_stop(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	Command::system_->process_list(call->result, call->parameters[0].unsigned_int);
 }

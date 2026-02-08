@@ -11,6 +11,7 @@ void app_main(void);
 #include "ledpwm.h"
 #include "notify.h"
 #include "log.h"
+#include "system.h"
 #include "command.h"
 
 #include "cli.h"
@@ -19,11 +20,9 @@ void app_main(void);
 #include "display.h"
 #include "fs.h"
 #include "i2c.h"
-#include "info.h"
 #include "io.h"
 #include "mcpwm.h"
 #include "pdm.h"
-#include "process.h"
 #include "ramdisk.h"
 #include "sensor.h"
 #include "tcp.h"
@@ -46,14 +45,13 @@ void app_main(void)
 		notify.run();
 		notify.notify(Notify::Notification::sys_booting);
 		Log log(console);
-		Command command(config, console, ledpixel, ledpwm, notify, log);
-		info_init();
-		process_init();
+		System system(log);
+		Command command(config, console, ledpixel, ledpwm, notify, log, system);
 		util_init();
 		pdm_init();
 		mcpwm_init();
 		fs_init();
-		ramdisk_init(initial_free_spiram / 2);
+		ramdisk_init(system.get_initial_free_spiram() / 2);
 		alias_init();
 		cli_init();
 		bt_init();
