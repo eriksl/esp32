@@ -10,10 +10,10 @@ void app_main(void);
 #include "ledpixel.h"
 #include "ledpwm.h"
 #include "notify.h"
+#include "log.h"
 #include "command.h"
 
 #include "cli.h"
-#include "log.h"
 #include "alias.h"
 #include "bt.h"
 #include "display.h"
@@ -43,12 +43,12 @@ void app_main(void)
 		Ledpixel ledpixel;
 		LedPWM ledpwm;
 		Notify notify;
-		Command command(config, console, ledpixel, ledpwm, notify);
 		notify.run();
 		notify.notify(Notify::Notification::sys_booting);
+		Log log(console);
+		Command command(config, console, ledpixel, ledpwm, notify, log);
 		info_init();
 		process_init();
-		log_init();
 		util_init();
 		pdm_init();
 		mcpwm_init();

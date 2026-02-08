@@ -102,19 +102,19 @@ void UDP::run()
 
 		if(rv < 0)
 		{
-			log_errno("udp: poll error");
+			Log::get().log_errno(errno, "udp: poll error");
 			continue;
 		}
 
 		if(!(pfd.revents & POLLIN))
 		{
-			log_errno("udp: socket error");
+			Log::get().log_errno(errno, "udp: socket error");
 			util_abort("udp socket error");
 		}
 
 		if(ioctl(this->socket_fd, FIONREAD, &length))
 		{
-			log_errno("udp: ioctl");
+			Log::get().log_errno(errno, "udp: ioctl");
 			util_abort("udp ioctl error");
 		}
 
@@ -133,7 +133,7 @@ void UDP::run()
 		if(length == 0)
 		{
 			this->receive_errors++;
-			log("udp: zero packet received");
+			Log::get() << "udp: zero packet received";
 			util_sleep(100);
 			continue;
 		}

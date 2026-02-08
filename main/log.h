@@ -1,21 +1,93 @@
 #pragma once
 
-#include <sys/time.h>
-#include <freertos/FreeRTOS.h>
+#include <time.h>
 
+#include "console.h"
+
+#include <cstdint>
 #include <string>
 
-#define log(s) do { log_cstr(s); } while(0)
+#include <freertos/FreeRTOS.h> // for QueueHandle_t and SemaphoreHandle_t
+//#include <esp_err.h>
 
-void log_cstr(const char *string);
-void log_errno(const char *string);
-void log_cstr_errno(const char *string);
+#include <sdkconfig.h>
 
-void log_format(const char *f, ...) __attribute__ ((format (printf, 1, 2)));
-void log_format_errno(const char *f, ...) __attribute__ ((format (printf, 1, 2)));
-void log_setmonitor(bool val);
+class Log final
+{
+	public:
 
-QueueHandle_t log_get_display_queue(void);
-void log_get_entry(unsigned int entry, time_t *stamp, std::string &dst);
+		Log() = delete;
+		Log(const Log &) = delete;
+		Log(Console &);
 
-void log_init(void);
+		void log(std::string_view);
+		void log_esperr(esp_err_t, std::string_view);
+		void log_errno(int /*errno*/, std::string_view);
+		Log &operator << (std::string_view in)
+		{
+			Log::log(in);
+			return(*this);
+		}
+
+		void clear();
+		void setmonitor(bool);
+		bool getmonitor();
+		QueueHandle_t get_display_queue();
+		void get_entry(int entry, time_t &, std::string &);
+		void info(std::string &);
+		void command_log(std::string &, int);
+
+		static Log &get();
+
+	private:
+
+		static constexpr unsigned int log_buffer_size = 8192 - 32 - CONFIG_ULP_COPROC_RESERVE_MEM;
+		static constexpr unsigned int log_buffer_entries = 62;
+		static constexpr unsigned int log_buffer_data_size = 120;
+		static constexpr unsigned int log_buffer_magic_word = 0x4afbcafe;
+
+		struct log_entry_t
+		{
+			time_t timestamp;
+			char data[log_buffer_data_size];
+		};
+
+		typedef struct
+		{
+			std::uint32_t magic_word;
+			std::uint32_t random_salt;
+			std::uint32_t magic_word_salted;
+			int entries;
+			int in;
+			int out;
+			log_entry_t entry[log_buffer_entries];
+		} log_t;
+
+		static Log *singleton;
+
+		static char rtc_slow_memory[log_buffer_size];
+
+		Console &console;
+		bool monitor;
+		log_t *log_buffer;
+		QueueHandle_t display_queue;
+		SemaphoreHandle_t data_mutex;
+
+		static_assert(sizeof(log_entry_t) == 128);
+		static_assert(sizeof(log_t) == 7960);
+		static_assert(sizeof(log_t) < log_buffer_size);
+
+		void data_mutex_take(void)
+		{
+			xSemaphoreTake(data_mutex, portMAX_DELAY);
+		}
+
+		void data_mutex_give(void)
+		{
+			xSemaphoreGive(data_mutex);
+		}
+
+		static int idf_logging_function(const char *fmt, va_list ap);
+
+		void signal_display(int item);
+};

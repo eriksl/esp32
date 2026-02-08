@@ -251,7 +251,7 @@ static bool bh1750_init(data_t *data)
 
 	if(!i2c_send_1(data->slave, bh1750_opcode_poweron))
 	{
-		log("bh1750: init error");
+		Log::get() << "bh1750: init error";
 		return(false);
 	}
 
@@ -278,7 +278,7 @@ static bool bh1750_poll(data_t *data)
 		{
 			if(!i2c_send_1(data->slave, bh1750_opcode_reset))
 			{
-				log("bh1750: poll: error 1");
+				Log::get() << "bh1750: poll: error 1";
 				return(false);
 			}
 
@@ -292,19 +292,19 @@ static bool bh1750_poll(data_t *data)
 		{
 			if(!i2c_send_1(data->slave, bh1750_opcode_change_meas_hi | ((bh1750_autoranging_data[pdata->scaling].data[1] >> 5) & 0b0000'0111)))
 			{
-				log("bh1750: poll error 2");
+				Log::get() << "bh1750: poll error 2";
 				return(false);
 			}
 
 			if(!i2c_send_1(data->slave, bh1750_opcode_change_meas_lo | ((bh1750_autoranging_data[pdata->scaling].data[1] >> 0) & 0b0001'1111)))
 			{
-				log("bh1750: poll error 2");
+				Log::get() << "bh1750: poll error 2";
 				return(false);
 			}
 
 			if(!i2c_send_1(data->slave, bh1750_autoranging_data[pdata->scaling].data[0]))
 			{
-				log("bh1750: poll error 3");
+				Log::get() << "bh1750: poll error 3";
 				return(false);
 			}
 
@@ -319,7 +319,7 @@ static bool bh1750_poll(data_t *data)
 
 			if(!i2c_receive(data->slave, sizeof(buffer), buffer))
 			{
-				log("bh1750: poll: warning: error in receive data");
+				Log::get() << "bh1750: poll: warning: error in receive data";
 				return(false);
 			}
 
@@ -410,7 +410,7 @@ static bool tmp75_init(data_t *data)
 
 	if(buffer[0] != tmp75_reg_conf_res_12)
 	{
-		log_format("tmp75: init: config: %x", buffer[0]);
+		Log::get() << std::format("tmp75: init: config: {:#x}", buffer[0]);
 		return(false);
 	}
 
@@ -427,7 +427,7 @@ static bool tmp75_poll(data_t *data)
 
 	if(!i2c_send_1_receive(data->slave, tmp75_reg_temp, sizeof(buffer), buffer))
 	{
-		log("sensor: error in poll tmp75");
+		Log::get() << "sensor: error in poll tmp75";
 		return(false);
 	}
 
@@ -556,7 +556,7 @@ static bool opt3001_init(data_t *data)
 
 	if(!opt3001_start_measurement(data))
 	{
-		log("opt3001: init error 1");
+		Log::get() << "opt3001: init error 1";
 		return(false);
 	}
 
@@ -567,7 +567,7 @@ static bool opt3001_init(data_t *data)
 
 	if(read_config != opt3001_config)
 	{
-		log("opt3001: init error 2");
+		Log::get() << "opt3001: init error 2";
 		return(false);
 	}
 
@@ -589,7 +589,7 @@ static bool opt3001_poll(data_t *data)
 		{
 			if(!opt3001_start_measurement(data))
 			{
-				log("opt3001: poll error 3");
+				Log::get() << "opt3001: poll error 3";
 				return(false);
 			}
 
@@ -602,7 +602,7 @@ static bool opt3001_poll(data_t *data)
 		{
 			if(!i2c_send_1_receive(data->slave, opt3001_reg_conf, sizeof(buffer), buffer))
 			{
-				log("opt3001 poll: error 1");
+				Log::get() << "opt3001 poll: error 1";
 				return(false);
 			}
 
@@ -621,7 +621,7 @@ static bool opt3001_poll(data_t *data)
 
 			if(!i2c_send_1_receive(data->slave, opt3001_reg_result, sizeof(buffer), buffer))
 			{
-				log("opt3001 poll: error 2");
+				Log::get() << "opt3001 poll: error 2";
 				return(false);
 			}
 
@@ -738,19 +738,19 @@ static bool max44009_init(data_t *data)
 
 	if(!i2c_send_2(data->slave, max44009_reg_conf, max44009_conf_cont))
 	{
-		log("sensors: max44009: init error 1");
+		Log::get() << "sensors: max44009: init error 1";
 		return(false);
 	}
 
 	if(!i2c_send_1_receive(data->slave, max44009_reg_conf, sizeof(buffer), buffer))
 	{
-		log("sensors: max44009: init error 2");
+		Log::get() << "sensors: max44009: init error 2";
 		return(false);
 	}
 
 	if((buffer[0] & (max44009_conf_cont | max44009_conf_manual)) != max44009_conf_cont)
 	{
-		log("sensors: max44009: init error 3");
+		Log::get() << "sensors: max44009: init error 3";
 		return(false);
 	}
 
@@ -766,7 +766,7 @@ static bool max44009_poll(data_t *data)
 
 	if(!i2c_send_1_receive(data->slave, max44009_reg_data_msb, sizeof(buffer), buffer))
 	{
-		log("sensors: max44009: poll error 1");
+		Log::get() << "sensors: max44009: poll error 1";
 		return(false);
 	}
 
@@ -865,7 +865,7 @@ static bool asair_init_chip(data_t *data)
 	}
 
 	pdata->type = 0;
-	log("asair_init: unknown device type");
+	Log::get() << "asair_init: unknown device type";
 
 	return(false);
 }
@@ -899,7 +899,7 @@ static bool asair_init(data_t *data)
 	{
 		if(!asair_init_chip(data))
 		{
-			log("asair_init: unknown device type");
+			Log::get() << "asair_init: unknown device type";
 			return(false);
 		}
 
@@ -924,7 +924,7 @@ static bool asair_poll(data_t *data)
 			{
 				if(!asair_init_chip(data))
 				{
-					log("asair_init: unknown device type");
+					Log::get() << "asair_init: unknown device type";
 					return(false);
 				}
 
@@ -939,13 +939,13 @@ static bool asair_poll(data_t *data)
 		{
 			if(!i2c_send_1_receive(data->slave, asair_cmd_get_status, 1, buffer))
 			{
-				log("sensors: asair: poll error 1");
+				Log::get() << "sensors: asair: poll error 1";
 				return(false);
 			}
 
 			if((buffer[0] & asair_status_busy) || !(buffer[0] & asair_status_ready))
 			{
-				log("sensors: asair: poll error 2");
+				Log::get() << "sensors: asair: poll error 2";
 				return(false);
 			}
 
@@ -959,19 +959,19 @@ static bool asair_poll(data_t *data)
 		{
 			if(!i2c_send_1_receive(data->slave, asair_cmd_get_status, 1, buffer))
 			{
-				log("sensors: asair: poll error 3");
+				Log::get() << "sensors: asair: poll error 3";
 				return(false);
 			}
 
 			if(buffer[0] & asair_status_busy)
 			{
-				log("sensors: asair: poll error 4");
+				Log::get() << "sensors: asair: poll error 4";
 				return(false);
 			}
 
 			if(!i2c_send_3(data->slave, asair_cmd_measure_0, asair_cmd_measure_1, asair_cmd_measure_2))
 			{
-				log("sensors: asair: poll error 5");
+				Log::get() << "sensors: asair: poll error 5";
 				pdata->valid = false;
 				return(false);
 			}
@@ -992,14 +992,14 @@ static bool asair_poll(data_t *data)
 		{
 			if(!i2c_send_1_receive(data->slave, asair_cmd_get_status, sizeof(buffer), buffer))
 			{
-				log("sensors: asair: poll error 6");
+				Log::get() << "sensors: asair: poll error 6";
 				pdata->valid = false;
 				return(false);
 			}
 
 			if(buffer[0] & asair_status_busy)
 			{
-				log("sensors: asair: poll error 7");
+				Log::get() << "sensors: asair: poll error 7";
 				pdata->valid = false;
 				return(false);
 			}
@@ -1197,25 +1197,25 @@ static bool tsl2561_init(data_t *data)
 
 	if(!tsl2561_write_check(data->slave, tsl2561_reg_interrupt, 0x00))
 	{
-		log("tsl2561: init: error 1");
+		Log::get() << "tsl2561: init: error 1";
 		return(false);
 	}
 
 	if(!tsl2561_write_byte(data->slave, tsl2561_reg_control, tsl2561_ctrl_power_on))
 	{
-		log("tsl2561: init: error 2");
+		Log::get() << "tsl2561: init: error 2";
 		return(false);
 	}
 
 	if(!tsl2561_read_byte(data->slave, tsl2561_reg_control, &regval))
 	{
-		log("tsl2561: init: error 3");
+		Log::get() << "tsl2561: init: error 3";
 		return(false);
 	}
 
 	if((regval & 0x0f) != tsl2561_ctrl_power_on)
 	{
-		log("tsl2561: init: error 4");
+		Log::get() << "tsl2561: init: error 4";
 		return(false);
 	}
 
@@ -1237,7 +1237,7 @@ static bool tsl2561_poll(data_t *data)
 		{
 			if(!tsl2561_write_check(data->slave, tsl2561_reg_timeint, tsl2561_autoranging_data[pdata->scaling].data[0] | tsl2561_autoranging_data[pdata->scaling].data[1]))
 			{
-				log("tsl2561: poll: error 1");
+				Log::get() << "tsl2561: poll: error 1";
 				return(false);
 			}
 
@@ -1256,13 +1256,13 @@ static bool tsl2561_poll(data_t *data)
 
 			if(!tsl2561_read_word(data->slave, tsl2561_reg_data0, &pdata->channel[0]))
 			{
-				log("tsl2561: poll: error 2");
+				Log::get() << "tsl2561: poll: error 2";
 				return(false);
 			}
 
 			if(!tsl2561_read_word(data->slave, tsl2561_reg_data1, &pdata->channel[1]))
 			{
-				log("tsl2561: poll: error 3");
+				Log::get() << "tsl2561: poll: error 3";
 				return(false);
 			}
 
@@ -1423,7 +1423,7 @@ static bool hdc1080_init(data_t *data)
 
 	if(!hdc1080_write_word(data->slave, hdc1080_reg_conf, hdc1080_conf_rst))
 	{
-		log("hdc1080: init failed");
+		Log::get() << "hdc1080: init failed";
 		return(false);
 	}
 
@@ -1450,7 +1450,7 @@ static bool hdc1080_poll(data_t *data)
 	{
 		case(hdc1080_state_init):
 		{
-			log("hdc1080: invalid state");
+			Log::get() << "hdc1080: invalid state";
 			pdata->state = hdc1080_state_reset;
 			break;
 		}
@@ -1459,19 +1459,19 @@ static bool hdc1080_poll(data_t *data)
 		{
 			if(!i2c_send_1_receive(data->slave, hdc1080_reg_conf, 2, buffer))
 			{
-				log("hdc1080: poll error 1");
+				Log::get() << "hdc1080: poll error 1";
 				return(false);
 			}
 
 			if(unsigned_16_le(buffer) & hdc1080_conf_rst)
 			{
-				log("hdc1080: poll error 2");
+				Log::get() << "hdc1080: poll error 2";
 				return(false);
 			}
 
 			if(!hdc1080_write_word(data->slave, hdc1080_reg_conf, conf))
 			{
-				log("hdc1080: poll error 3");
+				Log::get() << "hdc1080: poll error 3";
 				return(false);
 			}
 
@@ -1487,7 +1487,7 @@ static bool hdc1080_poll(data_t *data)
 
 			if(!i2c_send_1(data->slave, hdc1080_reg_data_temp))
 			{
-				log("hdc1080: poll error 4");
+				Log::get() << "hdc1080: poll error 4";
 				return(false);
 			}
 
@@ -1502,7 +1502,7 @@ static bool hdc1080_poll(data_t *data)
 
 			if(!i2c_receive(data->slave, sizeof(buffer), buffer))
 			{
-				log("hdc1080 poll error 5");
+				Log::get() << "hdc1080 poll error 5";
 				return(false);
 			}
 
@@ -1634,7 +1634,7 @@ static bool sht3x_send_command(i2c_slave_t slave, unsigned int cmd)
 
 	if(!i2c_send(slave, sizeof(cmd_bytes), cmd_bytes))
 	{
-		log("sht3x: sht3x_send_command: error");
+		Log::get() << "sht3x: sht3x_send_command: error";
 		return(false);
 	}
 
@@ -1652,7 +1652,7 @@ static bool sht3x_receive_command(i2c_slave_t slave, sht3x_cmd_t cmd, unsigned i
 
 	if(!i2c_send_receive(slave, sizeof(cmd_bytes), cmd_bytes, sizeof(buffer), buffer))
 	{
-		log("sht3x: sht3x_receive_command: error");
+		Log::get() << "sht3x: sht3x_receive_command: error";
 		return(false);
 	}
 
@@ -1661,7 +1661,7 @@ static bool sht3x_receive_command(i2c_slave_t slave, sht3x_cmd_t cmd, unsigned i
 
 	if(crc_local != crc_remote)
 	{
-		log("sht3x: sht3x_receive_command: invalid crc");
+		Log::get() << "sht3x: sht3x_receive_command: invalid crc";
 		return(false);
 	}
 
@@ -1681,7 +1681,7 @@ static bool sht3x_fetch_data(i2c_slave_t slave, unsigned int *result1, unsigned 
 
 	if(!i2c_send_receive(slave, sizeof(cmd_bytes), cmd_bytes, sizeof(buffer), buffer))
 	{
-		log("sht3x: sht3x_fetch_data: error");
+		Log::get() << "sht3x: sht3x_fetch_data: error";
 		return(false);
 	}
 
@@ -1690,7 +1690,7 @@ static bool sht3x_fetch_data(i2c_slave_t slave, unsigned int *result1, unsigned 
 
 	if(crc_local != crc_remote)
 	{
-		log("sht3x: sht3x_fetch_data: invalid crc [0]");
+		Log::get() << "sht3x: sht3x_fetch_data: invalid crc [0]";
 		return(false);
 	}
 
@@ -1699,7 +1699,7 @@ static bool sht3x_fetch_data(i2c_slave_t slave, unsigned int *result1, unsigned 
 
 	if(crc_local != crc_remote)
 	{
-		log("sht3x: sht3x_fetch_data: invalid crc [1]");
+		Log::get() << "sht3x: sht3x_fetch_data: invalid crc [1]";
 		return(false);
 	}
 
@@ -1713,7 +1713,7 @@ static sensor_detect_t sht3x_detect(i2c_slave_t slave)
 {
 	if(!sht3x_send_command(slave, sht3x_cmd_break))
 	{
-		log("sht3x: detect error");
+		Log::get() << "sht3x: detect error";
 		return(sensor_not_found);
 	}
 
@@ -1747,7 +1747,7 @@ static bool sht3x_poll(data_t *data)
 		{
 			if(!sht3x_send_command(data->slave, sht3x_cmd_reset))
 			{
-				log("sht3x: poll error 1");
+				Log::get() << "sht3x: poll error 1";
 				return(false);
 			}
 
@@ -1760,19 +1760,19 @@ static bool sht3x_poll(data_t *data)
 		{
 			if(!sht3x_receive_command(data->slave, sht3x_cmd_read_status, &result))
 			{
-				log("sht3x: poll error 2");
+				Log::get() << "sht3x: poll error 2";
 				return(false);
 			}
 
 			if((result & (sht3x_status_write_checksum | sht3x_status_command_status)) != 0x00)
 			{
-				log("sht3x: poll error 3");
+				Log::get() << "sht3x: poll error 3";
 				return(false);
 			}
 
 			if(!sht3x_send_command(data->slave, sht3x_cmd_clear_status))
 			{
-				log("sht3x: poll error 4");
+				Log::get() << "sht3x: poll error 4";
 				return(false);
 			}
 
@@ -1785,13 +1785,13 @@ static bool sht3x_poll(data_t *data)
 		{
 			if(!sht3x_receive_command(data->slave, sht3x_cmd_read_status, &result))
 			{
-				log("sht3x: poll error 5");
+				Log::get() << "sht3x: poll error 5";
 				return(false);
 			}
 
 			if((result & (sht3x_status_write_checksum | sht3x_status_command_status | sht3x_status_reset_detected)) != 0x00)
 			{
-				log("sht3x: poll error 6");
+				Log::get() << "sht3x: poll error 6";
 				return(false);
 			}
 
@@ -1806,7 +1806,7 @@ static bool sht3x_poll(data_t *data)
 
 			if(!sht3x_send_command(data->slave, sht3x_cmd_single_meas_noclock_high))
 			{
-				log("sht3x: poll error 7");
+				Log::get() << "sht3x: poll error 7";
 				return(false);
 			}
 
@@ -1821,7 +1821,7 @@ static bool sht3x_poll(data_t *data)
 
 			if(!sht3x_fetch_data(data->slave, &results[0], &results[1]))
 			{
-				log("sht3x: poll error 8");
+				Log::get() << "sht3x: poll error 8";
 				return(false);
 			}
 
@@ -1992,7 +1992,7 @@ static bool bmx280_read_otp(data_t *data)
 
 	if(!i2c_send_1_receive(data->slave, bmx280_reg_id, sizeof(buffer), buffer))
 	{
-		log("bmx280: error read otp data 1");
+		Log::get() << "bmx280: error read otp data 1";
 		return(false);
 	}
 
@@ -2000,7 +2000,7 @@ static bool bmx280_read_otp(data_t *data)
 
 	if(!i2c_send_1_receive(data->slave, bmx280_cal_base, sizeof(cal_data), cal_data))
 	{
-		log("bmx280: error read otp data 2");
+		Log::get() << "bmx280: error read otp data 2";
 		return(false);
 	}
 
@@ -2063,19 +2063,19 @@ static bool bmx280_init(data_t *data)
 
 	if(!i2c_send_2(data->slave, bmx280_reg_reset, bmx280_reg_reset_value))
 	{
-		log("bmx280: init error 1");
+		Log::get() << "bmx280: init error 1";
 		return(false);
 	}
 
 	if(!i2c_send_1_receive(data->slave, bmx280_reg_reset, sizeof(buffer), buffer))
 	{
-		log("bmx280: init error 2");
+		Log::get() << "bmx280: init error 2";
 		return(false);
 	}
 
 	if(buffer[0] != 0x00)
 	{
-		log("bmx280: init error 3");
+		Log::get() << "bmx280: init error 3";
 		return(false);
 	}
 
@@ -2096,7 +2096,7 @@ static bool bmx280_poll(data_t *data)
 	{
 		case(bmx280_state_init):
 		{
-			log("bmx280: poll: invalid state");
+			Log::get() << "bmx280: poll: invalid state";
 			pdata->state = bmx280_state_reset;
 
 			return(false);
@@ -2106,7 +2106,7 @@ static bool bmx280_poll(data_t *data)
 		{
 			if(!bmx280_read_otp(data))
 			{
-				log("bmx280_init: cannot read OTP data");
+				Log::get() << "bmx280_init: cannot read OTP data";
 				return(false);
 			}
 
@@ -2121,31 +2121,31 @@ static bool bmx280_poll(data_t *data)
 		{
 			if(!i2c_send_1_receive(data->slave, bmx280_reg_ctrl_meas, 1, buffer))
 			{
-				log("bmx280: poll error 1");
+				Log::get() << "bmx280: poll error 1";
 				return(false);
 			}
 
 			if((buffer[0] & bmx280_reg_ctrl_meas_mode_mask) != bmx280_reg_ctrl_meas_mode_sleep)
 			{
-				log("bmx280: poll error 2");
+				Log::get() << "bmx280: poll error 2";
 				return(false);
 			}
 
 			if(!i2c_send_2(data->slave, bmx280_reg_ctrl_hum, bmx280_reg_ctrl_hum_osrs_h_16))
 			{
-				log("bmx280: poll error 3");
+				Log::get() << "bmx280: poll error 3";
 				return(false);
 			}
 
 			if(!i2c_send_2(data->slave, bmx280_reg_config, bmx280_reg_config_filter_2))
 			{
-				log("bmx280: poll error 4");
+				Log::get() << "bmx280: poll error 4";
 				return(false);
 			}
 
 			if(!i2c_send_2(data->slave, bmx280_reg_ctrl_meas, bmx280_reg_ctrl_meas_osrs_t_16 | bmx280_reg_ctrl_meas_osrs_p_16 | bmx280_reg_ctrl_meas_mode_forced))
 			{
-				log("bmx280: poll error 5");
+				Log::get() << "bmx280: poll error 5";
 				return(false);
 			}
 
@@ -2158,7 +2158,7 @@ static bool bmx280_poll(data_t *data)
 		{
 			if(!i2c_send_1_receive(data->slave, bmx280_reg_adc, sizeof(buffer), buffer))
 			{
-				log("bmx280: poll error 6");
+				Log::get() << "bmx280: poll error 6";
 				return(false);
 			}
 
@@ -2337,7 +2337,7 @@ static bool htu21_get_data(data_t *data, unsigned int *result)
 
 	if(!i2c_receive(data->slave, sizeof(buffer), buffer))
 	{
-		log("htu21_get_data: error\n");
+		Log::get() << "htu21_get_data: error\n";
 		return(false);
 	}
 
@@ -2346,7 +2346,7 @@ static bool htu21_get_data(data_t *data, unsigned int *result)
 
 	if(crc1 != crc2)
 	{
-		log("htu21_get_data: crc invalid\n");
+		Log::get() << "htu21_get_data: crc invalid\n";
 		return(false);
 	}
 
@@ -2404,7 +2404,7 @@ static bool htu21_poll(data_t *data)
 		{
 			if((!i2c_send_1_receive(data->slave, htu21_cmd_read_user, 1, &cmd[1])))
 			{
-				log("htu21: poll: error 1");
+				Log::get() << "htu21: poll: error 1";
 				break;
 			}
 
@@ -2414,13 +2414,13 @@ static bool htu21_poll(data_t *data)
 
 			if(!i2c_send(data->slave, sizeof(cmd), cmd))
 			{
-				log("htu21: poll: error 2");
+				Log::get() << "htu21: poll: error 2";
 				break;
 			}
 
 			if(!i2c_send_1_receive(data->slave, htu21_cmd_read_user, sizeof(buffer), buffer))
 			{
-				log("htu21: poll: error 3");
+				Log::get() << "htu21: poll: error 3";
 				break;
 			}
 
@@ -2428,7 +2428,7 @@ static bool htu21_poll(data_t *data)
 
 			if(buffer[0] != (htu21_user_reg_rh11_temp11 | htu21_user_reg_otp_reload_disable))
 			{
-				log("htu21: poll: error 4");
+				Log::get() << "htu21: poll: error 4";
 				data->state = sensor_disabled;
 				break;
 			}
@@ -2443,7 +2443,7 @@ static bool htu21_poll(data_t *data)
 		{
 			if(!i2c_send_1(data->slave, htu21_cmd_meas_temp_no_hold_master))
 			{
-				log("htu21 poll: error 5");
+				Log::get() << "htu21 poll: error 5";
 				break;
 			}
 
@@ -2467,7 +2467,7 @@ static bool htu21_poll(data_t *data)
 		{
 			if(!i2c_send_1(data->slave, htu21_cmd_meas_hum_no_hold_master))
 			{
-				log("htu21: poll: error 6");
+				Log::get() << "htu21: poll: error 6";
 				break;
 			}
 
@@ -2646,7 +2646,7 @@ static bool veml7700_poll(data_t *data)
 
 			if(!i2c_send(data->slave, sizeof(buffer), buffer))
 			{
-				log("veml7700: poll: error 1");
+				Log::get() << "veml7700: poll: error 1";
 				break;
 			}
 
@@ -2664,7 +2664,7 @@ static bool veml7700_poll(data_t *data)
 
 			if(!i2c_send_1_receive(data->slave, veml7700_reg_white, sizeof(buffer), buffer))
 			{
-				log("veml7700: poll: error 2");
+				Log::get() << "veml7700: poll: error 2";
 				break;
 			}
 
@@ -2672,7 +2672,7 @@ static bool veml7700_poll(data_t *data)
 
 			if(!i2c_send_1_receive(data->slave, veml7700_reg_als, sizeof(buffer), buffer))
 			{
-				log("veml7700: poll: error 3");
+				Log::get() << "veml7700: poll: error 3";
 				break;
 			}
 
@@ -2952,19 +2952,19 @@ static bool bme680_poll(data_t *data)
 		{
 			if(!i2c_send_1_receive(data->slave, bme680_reg_meas_status_0, 1, buffer))
 			{
-				log("sensors: bme680: poll error 1");
+				Log::get() << "sensors: bme680: poll error 1";
 				return(false);
 			}
 
 			if(buffer[0] & bme680_reg_meas_status_0_measuring)
 			{
-				log("sensors: bme680: sensor not ready");
+				Log::get() << "sensors: bme680: sensor not ready";
 				return(true);
 			}
 
 			if(!i2c_send_1_receive(data->slave, bme680_reg_temp, sizeof(buffer), buffer))
 			{
-				log("sensors: bme680: poll error 2");
+				Log::get() << "sensors: bme680: poll error 2";
 				return(false);
 			}
 
@@ -2972,7 +2972,7 @@ static bool bme680_poll(data_t *data)
 
 			if(!i2c_send_1_receive(data->slave, bme680_reg_press, sizeof(buffer), buffer))
 			{
-				log("sensors: bme680: poll error 3");
+				Log::get() << "sensors: bme680: poll error 3";
 				return(false);
 			}
 
@@ -2980,7 +2980,7 @@ static bool bme680_poll(data_t *data)
 
 			if(!i2c_send_1_receive(data->slave, bme680_reg_hum, sizeof(buffer), buffer))
 			{
-				log("sensors: bme680: poll error 4");
+				Log::get() << "sensors: bme680: poll error 4";
 				return(false);
 			}
 
@@ -3046,13 +3046,13 @@ static bool bme680_poll(data_t *data)
 		{
 			if(!i2c_send_2(data->slave, bme680_reg_ctrl_hum, bme680_reg_ctrl_hum_osrh_h_16))
 			{
-				log("sensors: bme680: poll error 5");
+				Log::get() << "sensors: bme680: poll error 5";
 				return(false);
 			}
 
 			if(!i2c_send_2(data->slave, bme680_reg_ctrl_meas, bme680_reg_ctrl_meas_osrs_t_16 | bme680_reg_ctrl_meas_osrs_p_8 | bme680_reg_ctrl_meas_forced))
 			{
-				log("sensors: bme680: poll error 6");
+				Log::get() << "sensors: bme680: poll error 6";
 				return(false);
 			}
 
@@ -3295,7 +3295,7 @@ static bool apds9930_init(data_t *data)
 
 		default:
 		{
-			log("apds9930: invalid id");
+			Log::get() << "apds9930: invalid id";
 			return(false);
 		}
 	}
@@ -3350,31 +3350,31 @@ static bool apds9930_poll(data_t *data)
 
 			if(!apds9930_write_register(data->slave, apds9930_reg_enable, apds9930_enable_poff))
 			{
-				log("apds9930: poll: error 1");
+				Log::get() << "apds9930: poll: error 1";
 				return(false);
 			}
 
 			if(!apds9930_write_register(data->slave, apds9930_reg_atime, atime))
 			{
-				log("apds9930: poll: error 2");
+				Log::get() << "apds9930: poll: error 2";
 				return(false);
 			}
 
 			if(!apds9930_write_register(data->slave, apds9930_reg_config, reg_config))
 			{
-				log("apds9930: poll: error 3");
+				Log::get() << "apds9930: poll: error 3";
 				return(false);
 			}
 
 			if(!apds9930_write_register(data->slave, apds9930_reg_control, apds9930_ctrl_pdrive_100 | apds9930_ctrl_pdiode_ch1 | again))
 			{
-				log("apds9930: poll: error 4");
+				Log::get() << "apds9930: poll: error 4";
 				return(false);
 			}
 
 			if(!apds9930_write_register(data->slave, apds9930_reg_enable, apds9930_enable_aen | apds9930_enable_pon))
 			{
-				log("apds9930: poll: error 5");
+				Log::get() << "apds9930: poll: error 5";
 				return(false);
 			}
 
@@ -3389,7 +3389,7 @@ static bool apds9930_poll(data_t *data)
 
 			if(!apds9930_read_register(data->slave, apds9930_reg_status, &value))
 			{
-				log("apds9930: poll: error 6");
+				Log::get() << "apds9930: poll: error 6";
 				return(false);
 			}
 
@@ -3401,7 +3401,7 @@ static bool apds9930_poll(data_t *data)
 
 			if(!apds9930_read_register_2x2(data->slave, apds9930_reg_c0data, pdata->raw_channel))
 			{
-				log("apds9930: poll: error 2");
+				Log::get() << "apds9930: poll: error 2";
 				return(false);
 			}
 
@@ -3639,19 +3639,19 @@ static bool apds9960_init(data_t *data)
 
 	if(!apds9960_read_register(data->slave, apds9960_reg_id, &id))
 	{
-		log("apds9960: init: error 1");
+		Log::get() << "apds9960: init: error 1";
 		return(false);
 	}
 
 	if(!apds9960_write_register(data->slave, apds9960_reg_config1, apds9960_config1_no_wlong))
 	{
-		log("apds9960: init: error 2");
+		Log::get() << "apds9960: init: error 2";
 		return(false);
 	}
 
 	if(!apds9960_write_register(data->slave, apds9960_reg_config2, apds9960_config2_none))
 	{
-		log("apds9960: init: error 3");
+		Log::get() << "apds9960: init: error 3";
 		return(false);
 	}
 
@@ -3689,25 +3689,25 @@ static bool apds9960_poll(data_t *data)
 
 			if(!apds9960_write_register(data->slave, apds9960_reg_enable, apds9960_enable_poff))
 			{
-				log("apds9960: poll: error 1");
+				Log::get() << "apds9960: poll: error 1";
 				return(false);
 			}
 
 			if(!apds9960_write_register(data->slave, apds9960_reg_atime, atime))
 			{
-				log("apds9960: poll: error 2");
+				Log::get() << "apds9960: poll: error 2";
 				return(false);
 			}
 
 			if(!apds9960_write_register(data->slave, apds9960_reg_control, again))
 			{
-				log("apds9960: poll: error 3");
+				Log::get() << "apds9960: poll: error 3";
 				return(false);
 			}
 
 			if(!apds9960_write_register(data->slave, apds9960_reg_enable, apds9960_enable_aen | apds9960_enable_pon))
 			{
-				log("apds9960: poll: error 4");
+				Log::get() << "apds9960: poll: error 4";
 				return(false);
 			}
 
@@ -3724,13 +3724,13 @@ static bool apds9960_poll(data_t *data)
 
 			if(!apds9960_read_register(data->slave, apds9960_reg_status, &value))
 			{
-				log("apds9960: poll: error 1");
+				Log::get() << "apds9960: poll: error 1";
 				return(false);
 			}
 
 			if(!(value & apds9960_status_avalid))
 			{
-				log("apds9960: poll: error 2");
+				Log::get() << "apds9960: poll: error 2";
 				pdata->not_readys++;
 				return(false);
 			}
@@ -3750,7 +3750,7 @@ static bool apds9960_poll(data_t *data)
 
 			if(!i2c_send_1_receive(data->slave, apds9960_reg_cdata, sizeof(buffer), buffer))
 			{
-				log("apds9960: poll: error 3");
+				Log::get() << "apds9960: poll: error 3";
 				return(false);
 			}
 
@@ -4031,7 +4031,7 @@ static bool tsl2591_poll(data_t *data)
 		{
 			if(!tsl2591_write_check(data->slave, tsl2591_reg_enable, tsl2591_enable_aen | tsl2591_enable_pon))
 			{
-				log("tsl2591: poll: error 1");
+				Log::get() << "tsl2591: poll: error 1";
 				break;
 			}
 
@@ -4047,7 +4047,7 @@ static bool tsl2591_poll(data_t *data)
 
 			if(!tsl2591_write_check(data->slave, tsl2591_reg_control, control_opcode))
 			{
-				log("tsl2591: poll: error 2");
+				Log::get() << "tsl2591: poll: error 2";
 				break;
 			}
 
@@ -4065,7 +4065,7 @@ static bool tsl2591_poll(data_t *data)
 
 			if(!i2c_send_1_receive(data->slave, tsl2591_cmd_cmd | static_cast<unsigned int>(tsl2591_reg_c0datal), sizeof(buffer), buffer))
 			{
-				log("tsl2591: poll: error 3");
+				Log::get() << "tsl2591: poll: error 3";
 				break;
 			}
 
@@ -4219,7 +4219,7 @@ static sensor_detect_t am2320_detect(i2c_slave_t slave)
 
 	if(!i2c_get_slave_info(slave, &module, &bus, &address, &name))
 	{
-		log("am2320: detect: get_slave_info failed");
+		Log::get() << "am2320: detect: get_slave_info failed";
 		return(sensor_not_found);
 	}
 
@@ -4272,7 +4272,7 @@ static bool am2320_poll(data_t *data)
 
 	if(!i2c_get_slave_info(data->slave, &module, &bus, &address, &name))
 	{
-		log("am2320: poll: get_slave_info failed");
+		Log::get() << "am2320: poll: get_slave_info failed";
 		return(sensor_not_found);
 	}
 
@@ -4298,13 +4298,13 @@ static bool am2320_poll(data_t *data)
 
 			if(!i2c_receive(data->slave, sizeof(buffer), buffer))
 			{
-				log("am2320: poll error 1");
+				Log::get() << "am2320: poll error 1";
 				return(false);
 			}
 
 			if((buffer[0] != am2320_command_read_register) || (buffer[1] != am2320_register_values_length))
 			{
-				log("am2320: poll error 2");
+				Log::get() << "am2320: poll error 2";
 				return(false);
 			}
 
@@ -4313,7 +4313,7 @@ static bool am2320_poll(data_t *data)
 
 			if(crc1 != crc2)
 			{
-				log("am2320: poll error 3");
+				Log::get() << "am2320: poll error 3";
 				return(false);
 			}
 
@@ -4662,7 +4662,7 @@ static void run_sensors(void *parameters)
 
 			if(!(slave = i2c_register_slave(infoptr->name, module, bus, infoptr->address)))
 			{
-				log_format("sensor: warning: cannot register sensor %s", infoptr->name);
+				Log::get() << std::format("sensor: warning: cannot register sensor {}", infoptr->name);
 				continue;
 			}
 
@@ -4704,7 +4704,7 @@ static void run_sensors(void *parameters)
 
 				if(!infoptr->init_fn(new_data))
 				{
-					log_format("sensor: warning: failed to init sensor %s on bus %d", infoptr->name, bus);
+					Log::get() << std::format("sensor: warning: failed to init sensor {} on bus {:d}", infoptr->name, static_cast<unsigned int>(bus));
 					i2c_unregister_slave(&slave);
 					if(new_data->private_data)
 						free(new_data->private_data);
@@ -4750,7 +4750,7 @@ static void run_sensors(void *parameters)
 					else
 						stat_poll_error[module]++;
 				else
-					log_format("sensor: error: no poll function for sensor %s", dataptr->info->name);
+					Log::get() << std::format("sensor: error: no poll function for sensor {}", dataptr->info->name);
 
 		util_sleep(1000);
 	}

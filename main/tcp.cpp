@@ -122,19 +122,19 @@ void TCP::run()
 
 			if(rv < 0)
 			{
-				log_errno("tcp: poll error");
+				Log::get().log_errno(errno, "tcp: poll error");
 				continue;
 			}
 
 			if(!(pfd.revents & POLLIN))
 			{
-				log_errno("tcp: socket error");
+				Log::get().log_errno(errno, "tcp: socket error");
 				util_abort("tcp socket error");
 			}
 
 			if(ioctl(this->socket_fd, FIONREAD, &length))
 			{
-				log_errno("tcp: ioctl");
+				Log::get().log_errno(errno, "tcp: ioctl");
 				util_abort("tcp ioctl error");
 			}
 
@@ -145,7 +145,7 @@ void TCP::run()
 
 			if(length < 0)
 			{
-				log_format_errno("tcp: receive error: %d", length);
+				Log::get() << std::format("tcp: receive error: {:d}", length);
 				receive_errors++;
 				break;
 			}
@@ -181,19 +181,19 @@ void TCP::run()
 
 					if(rv < 0)
 					{
-						log_errno("tcp: poll error (2)");
+						Log::get().log_errno(errno, "tcp: poll error (2)");
 						break;
 					}
 
 					if(rv == 0)
 					{
-						log("tcp: timeout");
+						Log::get() << "tcp: timeout";
 						break;
 					}
 
 					if(!(pfd.revents & POLLIN))
 					{
-						log_errno("tcp: socket error (2)");
+						Log::get().log_errno(errno, "tcp: socket error (2)");
 						util_abort("tcp socket error (2)");
 					}
 
@@ -204,7 +204,7 @@ void TCP::run()
 
 					if(length < 0)
 					{
-						log_format_errno("tcp: receive error (2): %d", length);
+						Log::get() << std::format("tcp: receive error (2): {:d}", length);
 						receive_errors++;
 						break;
 					}
@@ -215,7 +215,7 @@ void TCP::run()
 
 				if(!Packet::complete(tcp_receive_buffer))
 				{
-					log("tcp: packet incomplete");
+					Log::get() << "tcp: packet incomplete";
 					receive_incomplete_packets++;
 					continue;
 				}

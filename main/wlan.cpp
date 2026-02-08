@@ -107,23 +107,26 @@ static void set_state(wlan_state_t state_new)
 	state_new_string = wlan_state_to_cstr(state_new);
 
 #if 0
-	log_format("wlan: state from %s to %s", state_string, state_new_string);
+	Log::get << std::format("wlan: state from {} to {}", state_string, state_new_string);
 #endif
 
 	if((state_new == ws_associating) || (!(state_info[state].valid_transitions & (1 << state_new))))
 	{
 		if(!(state_info[state].valid_transitions & (1 << state_new)))
-			log_format("wlan: invalid state transition from %s (%d) to %s (%d), %x, reassociating", state_string, state, state_new_string, state_new, (unsigned int)state_info[state].valid_transitions);
+			Log::get() << std::format("wlan: invalid state transition from {} ({:d}) to {} ({:d}), {:#x}, reassociating",
+					state_string, static_cast<unsigned int>(state),
+					state_new_string, static_cast<unsigned int>(state_new),
+					state_info[state].valid_transitions);
 		else
 			if((state != ws_init) && (state != ws_associating))
-				log_format("wlan: reassociate, switch from %s to %s", state_string, state_new_string);
+				Log::get() << std::format("wlan: reassociate, switch from {} to {}", state_string, state_new_string);
 
 		wlan_mode = WIFI_MODE_STA;
 		util_warn_on_esp_err("esp_wifi_get_mode", esp_wifi_get_mode(&wlan_mode));
 
 		if(wlan_mode == WIFI_MODE_AP)
 		{
-			log("wlan: switch from AP mode to STA mode");
+			Log::get() << "wlan: switch from AP mode to STA mode";
 			util_warn_on_esp_err("esp_wifi_deauth_sta", esp_wifi_deauth_sta(0));
 			util_warn_on_esp_err("esp_wifi_stop", esp_wifi_stop());
 			util_warn_on_esp_err("esp_wifi_set_mode", esp_wifi_set_mode(WIFI_MODE_STA));
@@ -132,7 +135,7 @@ static void set_state(wlan_state_t state_new)
 		else
 			if((state != ws_init) && (state != ws_associating))
 			{
-				log("wlan: start disconnect");
+				Log::get() << "wlan: start disconnect";
 				util_warn_on_esp_err("esp_wifi_disconnect", esp_wifi_disconnect());
 			}
 
@@ -192,8 +195,9 @@ static void state_callback(TimerHandle_t handle)
 		snprintf((char *)config_ap.ap.password, sizeof(config_ap.ap.password), "rescue-%02x:%02x:%02x:%02x:%02x:%02x",
 				mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
 
-		log_format("wlan: switching to rescue access point mode (ssid: %s, password: %s)", config_ap.ap.ssid, config_ap.ap.password);
-		log_format("wlan: after %u seconds of disassociation", state_time);
+		Log::get() << std::format("wlan: switching to rescue access point mode (ssid: {}, password: {})",
+				reinterpret_cast<const char *>(config_ap.ap.ssid), reinterpret_cast<const char *>(config_ap.ap.password));
+		Log::get() << std::format("wlan: after {:d} seconds of disassociation", state_time);
 
 		util_warn_on_esp_err("esp_wifi_disconnect", esp_wifi_disconnect());
 		util_warn_on_esp_err("esp_wifi_stop", esp_wifi_stop());
@@ -208,7 +212,7 @@ static void state_callback(TimerHandle_t handle)
 
 	if(((state == ws_rescue_ap_mode_init) || (state == ws_rescue_ap_mode_idle) || (state == ws_rescue_ap_mode_associated)) && (state_time > 300))
 	{
-		log_format("wlan: resetting after %u seconds in rescue mode", state_time);
+		Log::get() << std::format("wlan: resetting after {} seconds in rescue mode", state_time);
 		esp_restart();
 	}
 }
@@ -221,13 +225,13 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 	{
 		case(WIFI_EVENT_STA_START): /* 2 */
 		{
-			log("wlan: associating");
+			Log::get() << "wlan: associating";
 			set_state(ws_associating);
 			break;
 		}
 		case(WIFI_EVENT_STA_STOP): /* 3 */
 		{
-			log("wlan: stop");
+			Log::get() << "wlan: stop";
 			set_state(ws_init);
 			break;
 		}
@@ -242,7 +246,7 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 				lwip_netif->ip6_autoconfig_enabled = 0;
 			}
 
-			log("wlan: associated");
+			Log::get() << "wlan: associated";
 
 			set_state(ws_associated);
 			break;
@@ -250,52 +254,52 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 		case(WIFI_EVENT_STA_DISCONNECTED): /* 5 */
 		{
 			wifi_event_sta_disconnected_t *event = (wifi_event_sta_disconnected_t *)event_data;
-			log_format("wlan: disconnected: reason: %x", event->reason);
+			Log::get() << std::format("wlan: disconnected: reason: {:#x}", event->reason);
 			set_state(ws_associating);
 			break;
 		}
 		case(WIFI_EVENT_AP_START):
 		{
-			log("wlan: start access point");
+			Log::get() << "wlan: start access point";
 			set_state(ws_rescue_ap_mode_idle);
 			break;
 		}
 		case(WIFI_EVENT_AP_STOP):
 		{
-			log("wlan: stop access point");
+			Log::get() << "wlan: stop access point";
 			set_state(ws_rescue_ap_mode_init);
 			break;
 		}
 		case(WIFI_EVENT_AP_STACONNECTED):
 		{
-			log("wlan: access point associated");
+			Log::get() << "wlan: access point associated";
 			set_state(ws_rescue_ap_mode_associated);
 			break;
 		}
 		case(WIFI_EVENT_AP_STADISCONNECTED):
 		{
-			log("wlan: access point deassociated");
+			Log::get() << "wlan: access point deassociated";
 			set_state(ws_rescue_ap_mode_idle);
 			break;
 		}
 		case(WIFI_EVENT_AP_PROBEREQRECVED):
 		{
-			log("wlan: ap probe received");
+			Log::get() << "wlan: ap probe received";
 			break;
 		}
 		case(WIFI_EVENT_STA_BEACON_TIMEOUT): /* 21 */
 		{
-			log("wlan: beacon timeout");
+			Log::get() << "wlan: beacon timeout";
 			break;
 		}
 		case(WIFI_EVENT_HOME_CHANNEL_CHANGE): /* 40 */
 		{
-			log("wlan: home channel change");
+			Log::get() << "wlan: home channel change";
 			break;
 		}
 		default:
 		{
-			log_format("wlan: unknown event: %ld", event_id);
+			Log::get() << std::format("wlan: unknown event: {:#x}", event_id);
 			break;
 		}
 	}
@@ -313,8 +317,10 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 
 			util_abort_on_esp_err("esp_netif_sntp_start", esp_netif_sntp_start());
 
-			log_format("wlan: ipv4: " IPSTR " (mask: " IPSTR ", gw: " IPSTR ")",
-					IP2STR(&event->ip_info.ip), IP2STR(&event->ip_info.netmask), IP2STR(&event->ip_info.gw));
+			Log::get() << std::format("wlan: ipv4: {} (mask: {}, gw: {})",
+					util_ipv4_addr_to_string(&event->ip_info.ip.addr),
+					util_ipv4_addr_to_string(&event->ip_info.gw.addr),
+					util_ipv4_addr_to_string(&event->ip_info.netmask.addr));
 
 			set_state(ws_ipv4_address_acquired);
 
@@ -359,26 +365,26 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 				{
 					address_type = "invalid";
 
-					log("wlan: invalid IPv6 address received");
+					Log::get() << "wlan: invalid IPv6 address received";
 
 					break;
 				}
 			}
 
-			log_format("wlan: %s ipv6: %s", address_type, util_ipv6_addr_to_string(reinterpret_cast<const uint8_t *>(&event->ip6_info.ip.addr[0])).c_str());
+			Log::get() << std::format("wlan: {} ipv6: {}", address_type, util_ipv6_addr_to_string(reinterpret_cast<const uint8_t *>(&event->ip6_info.ip.addr[0])));
 
 			break;
 		}
 
 		case(IP_EVENT_STA_LOST_IP):
 		{
-			log("ip event: lost ipv4");
+			Log::get() << "ip event: lost ipv4";
 			break;
 		}
 
 		default:
 		{
-			log_format("ip event: unknown event: %ld", event_id);
+			Log::get() << std::format("ip event: unknown event: {:#x}", event_id);
 			break;
 		}
 	}

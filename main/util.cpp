@@ -207,6 +207,14 @@ std::string util_hash_to_string(std::string_view hash)
 	return(dst);
 }
 
+std::string_view yesno(bool yesno_)
+{
+	static const char *no = "no";
+	static const char *yes = "yes";
+
+	return(yesno_ ? yes : no);
+}
+
 void util_init(void)
 {
 	assert(!inited);

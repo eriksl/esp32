@@ -2,6 +2,9 @@
 
 #include "log.h"
 
+#include <string>
+#include <format>
+
 #include <stdint.h>
 #include <esp_ota_ops.h>
 #include <string>
@@ -34,26 +37,50 @@ std::string util_time_to_string(std::string_view format, const time_t &stamp);
 
 std::string util_hash_to_string(std::string_view hash); // FIXME -> encryption
 
-static inline void util_abort_on_esp_err(const char *what, unsigned int rv)
+std::string_view yesno(bool);
+
+static inline void util_warn_on_esp_err(std::string_view what, unsigned int rv)
 {
-	if(rv)
+	if(rv == ESP_OK)
+		return;
+
+	try
 	{
-		log_setmonitor(true);
-		log_format("abort: %s (%s) [0x%x]", what, esp_err_to_name(rv), rv);
-		abort();
+		Log::get().log_esperr(rv, what);
+	}
+	catch(...)
+	{
 	}
 }
 
-static inline void util_warn_on_esp_err(const char *what, unsigned int rv)
+static inline void util_abort_on_esp_err(std::string_view what, int rv)
 {
-	if(rv)
-		log_format("warning: %s (%s) [0x%x]", what, esp_err_to_name(rv), rv);
+	if(rv == ESP_OK)
+		return;
+
+	try
+	{
+		Log::get().setmonitor(true);
+		util_warn_on_esp_err(what, rv);
+	}
+	catch(...)
+	{
+	}
+
+	abort();
 }
 
-static inline void util_abort(const char *what)
+static inline void util_abort(std::string_view what)
 {
-	log_setmonitor(true);
-	log_format("abort: %s", what);
+	try
+	{
+		Log::get().setmonitor(true);
+		Log::get().log(std::format("abort: %s", what));
+	}
+	catch(...)
+	{
+	}
+
 	abort();
 }
 

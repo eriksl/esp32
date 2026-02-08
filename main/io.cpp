@@ -1,7 +1,3 @@
-#include <stdint.h>
-#include <stdbool.h>
-#include <assert.h>
-
 #include "log.h"
 #include "util.h"
 #include "cli-command.h"
@@ -14,6 +10,9 @@
 #include "i2c.h"
 #include "exception.h"
 
+#include <assert.h>
+
+#include <cstdint>
 #include <string>
 #include <format>
 
@@ -421,7 +420,7 @@ static bool pcf8574_init(io_data_t *dataptr)
 
 	if(!i2c_send_1(dataptr->i2c.slave, 0xff))
 	{
-		log("io pcf8574 init: i2c send failed");
+		Log::get() << "io pcf8574 init: i2c send failed";
 		return(false);
 	}
 
@@ -430,7 +429,7 @@ static bool pcf8574_init(io_data_t *dataptr)
 
 static bool pcf8574_read(io_data_t *dataptr, unsigned int pin, unsigned int *value)
 {
-	uint8_t buffer[1];
+	std::uint8_t buffer[1];
 
 	assert(inited);
 
@@ -704,7 +703,7 @@ static io_data_t *find_io(io_bus_t bus, unsigned int parameter_1, unsigned int p
 
 			default:
 			{
-				log_format("io: find_io: bus %d unknown", dataptr->info->bus);
+				Log::get() << std::format("io: find_io: bus {:d} unknown", static_cast<unsigned int>(dataptr->info->bus));
 				break;
 			}
 		}
@@ -795,7 +794,7 @@ void io_init(void)
 
 						if(!(slave = i2c_register_slave(infoptr->name, module, bus, infoptr->instance.i2c.address)))
 						{
-							log_format("io: warning: cannot register io %s", infoptr->name);
+							Log::get() << std::format("io: warning: cannot register io {}", infoptr->name);
 							continue;
 						}
 
@@ -810,7 +809,7 @@ void io_init(void)
 
 						if(!infoptr->init_fn(dataptr))
 						{
-							log_format("io: init %s failed", infoptr->name);
+							Log::get() << std::format("io: init {} failed", infoptr->name);
 							continue;
 						}
 
@@ -840,7 +839,7 @@ void io_init(void)
 
 			case(io_bus_error):
 			{
-				log("io: invalid io type in info");
+				Log::get() << "io: invalid io type in info";
 				break;
 			}
 		}

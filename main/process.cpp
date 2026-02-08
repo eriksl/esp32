@@ -228,14 +228,14 @@ void command_process_kill(cli_command_call_t *call)
 		strlcpy(taskname, pip->pcTaskName, sizeof(taskname));
 
 		vTaskDelete(pip->xHandle);
-		log_format("process #%u: \"%s\" killed", target_task_id, taskname);
+		Log::get() << std::format("process #{:d}: \"{}\" killed", target_task_id, taskname);
 	}
 	else
 	{
 		if(target_task_id == ~0UL)
-			log_format("process \"%s\" not found", call->parameters[0].str.c_str());
+			Log::get() << std::format("process \"{}\" not found", call->parameters[0].str);
 		else
-			log_format("process #%u not found", target_task_id);
+			Log::get() << std::format("process #{:d} not found", target_task_id);
 	}
 
 	delete [] process_info;

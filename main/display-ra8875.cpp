@@ -1,4 +1,3 @@
-#include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 
@@ -10,6 +9,9 @@
 #include "display-ra8875.h"
 #include "ledpwm.h"
 #include "sdkconfig.h"
+
+#include <cstdint>
+#include <format>
 
 union rgb16_t
 {
@@ -339,7 +341,7 @@ static const spi_signal_t *spi_signal;
 static SemaphoreHandle_t spi_mutex;
 static unsigned int x_size, y_size;
 
-static uint8_t *pixel_buffer = nullptr;
+static std::uint8_t *pixel_buffer = nullptr;
 static unsigned int pixel_buffer_size = 0;
 static unsigned int pixel_buffer_length = 0;
 
@@ -371,10 +373,10 @@ static void rgb24_to_rgb16(const display_rgb_t &rgb24, rgb16_t &rgb16)
 	rgb16.b = b16;
 }
 
-static void write_register(unsigned int reg, unsigned int length, const uint8_t *data)
+static void write_register(unsigned int reg, unsigned int length, const std::uint8_t *data)
 {
 	spi_transaction_t transaction;
-	uint8_t reg_data;
+	std::uint8_t reg_data;
 
 	assert(inited);
 	assert(spi_device_handle);
@@ -409,7 +411,7 @@ static void write_register(unsigned int reg, unsigned int length, const uint8_t 
 
 static void write_register_1(unsigned int reg, unsigned int data)
 {
-	uint8_t data_byte = static_cast<uint8_t>(data);
+	std::uint8_t data_byte = static_cast<std::uint8_t>(data);
 
 	write_register(reg, 1, &data_byte);
 }
@@ -558,9 +560,9 @@ void display_ra8875_clear(display_colour_t bg)
 void display_ra8875_write(const font_t *font, display_colour_t fg_colour, display_colour_t bg_colour,
 		unsigned int from_x, unsigned int from_y,
 		unsigned int to_x, unsigned int to_y,
-		const std::deque<uint32_t> &unicode_line)
+		const std::deque<std::uint32_t> &unicode_line)
 {
-	std::deque<uint32_t>::const_iterator unicode_it;
+	std::deque<std::uint32_t>::const_iterator unicode_it;
 	const font_glyph_t *glyph;
 	int col, row, bit;
 	unsigned current_glyph;
@@ -602,7 +604,7 @@ void display_ra8875_write(const font_t *font, display_colour_t fg_colour, displa
 			ix = (*unicode_it - 0xf800);
 
 			if(ix >= dc_size)
-				log_format("display-spi-generic: foreground colour out of range: %u", ix);
+				Log::get() << std::format("display-spi-generic: foreground colour out of range: {:d}", ix);
 			else
 				fg_rgb = &display_colour_map[ix];
 		}
@@ -613,7 +615,7 @@ void display_ra8875_write(const font_t *font, display_colour_t fg_colour, displa
 				ix = (*unicode_it - 0xf808);
 
 				if(ix >= dc_size)
-					log_format("display-spi-generic: background colour out of range: %u", ix);
+					Log::get() << std::format("display-spi-generic: background colour out of range: {:d}", ix);
 				else
 					bg_rgb = &display_colour_map[ix];
 			}
@@ -720,14 +722,14 @@ bool display_ra8875_init(const display_init_parameters_t *parameters)
 
 		default:
 		{
-			log_format("init display ra8875: unknown spi interface %d, use 0 for SPI2 or 1 for SPI3", parameters->interface_index);
+			Log::get() << std::format("init display ra8875: unknown spi interface {:d}, use 0 for SPI2 or 1 for SPI3", parameters->interface_index);
 			return(false);
 		}
 	}
 
 	if((parameters->x_size < 0) || (parameters->y_size < 0))
 	{
-		log("init display ra8875: display dimensions required");
+		Log::get() << "init display ra8875: display dimensions required";
 		return(false);
 	}
 
@@ -782,7 +784,7 @@ bool display_ra8875_init(const display_init_parameters_t *parameters)
 
 	pixel_buffer_size = max_transaction_length;
 	pixel_buffer_length = 0;
-	pixel_buffer = static_cast<uint8_t *>(heap_caps_malloc(pixel_buffer_size, MALLOC_CAP_DMA));
+	pixel_buffer = static_cast<std::uint8_t *>(heap_caps_malloc(pixel_buffer_size, MALLOC_CAP_DMA));
 
 	inited = true;
 

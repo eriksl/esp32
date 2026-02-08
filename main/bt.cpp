@@ -89,7 +89,7 @@ static int gatt_value_event(uint16_t connection_handle, uint16_t attribute_handl
 
 		default:
 		{
-			log_format("bt: gatt_value_event: default callback: 0x%x", context->op);
+			Log::get() << std::format("bt: gatt_value_event: default callback: {:#x}", context->op);
 			break;
 		}
 	}
@@ -191,7 +191,7 @@ static void server_advertise(void)
 
 static void callback_reset(int reason)
 {
-	log_format("bt: resetting state, reason: 0x%x", (unsigned int)reason);
+	Log::get() << std::format("bt: resetting state, reason: {:#x}", reason);
 }
 
 static void callback_sync(void)
@@ -226,7 +226,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
 		case(BLE_GAP_EVENT_ADV_COMPLETE):
 		{
-			log("bt: gap event complete");
+			Log::get() << "bt: gap event complete";
 
 			server_advertise();
 
@@ -235,19 +235,19 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
 		case(BLE_GAP_EVENT_REPEAT_PAIRING):
 		{
-			log("bt: GAP EVENT repeat pairing");
+			Log::get() << "bt: GAP EVENT repeat pairing";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_PASSKEY_ACTION):
 		{
-			log("bt: GAP EVENT passkey action");
+			Log::get() << "bt: GAP EVENT passkey action";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_NOTIFY_TX):
 		{
-			//log("BLE_GAP_EVENT_NOTIFY_TX");
+			//Log::get() << "BLE_GAP_EVENT_NOTIFY_TX";
 
 			/* NOTE: this event doesn't mean the notification is actually sent! */
 			/* it's just called synchronously from within ble_gatts_indicate_custom */
@@ -257,73 +257,73 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
 		case(BLE_GAP_EVENT_CONN_UPDATE):
 		{
-			log("BLE_GAP_EVENT_CONN_UPDATE");
+			Log::get() << "BLE_GAP_EVENT_CONN_UPDATE";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_ENC_CHANGE):
 		{
-			log("BLE_GAP_EVENT_ENC_CHANGE");
+			Log::get() << "BLE_GAP_EVENT_ENC_CHANGE";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_SUBSCRIBE):
 		{
-			//log("BLE_GAP_EVENT_SUBSCRIBE");
+			Log::get() << "BLE_GAP_EVENT_SUBSCRIBE";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_MTU):
 		{
-			//log("BLE_GAP_EVENT_MTU");
+			Log::get() << "BLE_GAP_EVENT_MTU";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_AUTHORIZE):
 		{
-			log("BLE_GAP_EVENT_AUTHORIZE");
+			Log::get() << "BLE_GAP_EVENT_AUTHORIZE";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_TRANSMIT_POWER):
 		{
-			log("BLE_GAP_EVENT_TRANSMIT_POWER");
+			Log::get() << "BLE_GAP_EVENT_TRANSMIT_POWER";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_PATHLOSS_THRESHOLD):
 		{
-			log("BLE_GAP_EVENT_PATHLOSS_THRESHOLD");
+			Log::get() << "BLE_GAP_EVENT_PATHLOSS_THRESHOLD";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_PHY_UPDATE_COMPLETE):
 		{
-			log("BLE_GAP_EVENT_PHY_UPDATE_COMPLETE");
+			Log::get() << "BLE_GAP_EVENT_PHY_UPDATE_COMPLETE";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_PARING_COMPLETE):
 		{
-			log("BLE_GAP_EVENT_PARING_COMPLETE");
+			Log::get() << "BLE_GAP_EVENT_PARING_COMPLETE";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_DATA_LEN_CHG):
 		{
-			//log("BLE_GAP_EVENT_DATA_LEN_CHG");
+			Log::get() << "BLE_GAP_EVENT_DATA_LEN_CHG";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_LINK_ESTAB):
 		{
-			//log("BLE_GAP_EVENT_LINK_ESTAB");
+			//Log::get() << "BLE_GAP_EVENT_LINK_ESTAB";
 			break;
 		}
 
 		default:
 		{
-			log_format("bt: gap event unknown: 0x%x", event->type);
+			Log::get() << std::format("bt: gap event unknown: {:#x}", event->type);
 
 			break;
 		}
@@ -348,7 +348,7 @@ static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *context, void *a
 
 		default:
 		{
-			log_format("bt: gatt event unknown: 0x%x", context->op);
+			Log::get() << std::format("bt: gatt event unknown: {:#x}", context->op);
 			abort();
 
 			break;
@@ -387,7 +387,7 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 	}
 	catch(const hard_exception &e)
 	{
-		log_format("bt_received: %s", e.what());
+		Log::get() << std::format("bt_received: {}", e.what());
 		stats_received_decryption_failed++;
 		return;
 	}
@@ -436,7 +436,7 @@ void net_bt_send(const command_response_t *command_response)
 	}
 	catch(const hard_exception &e)
 	{
-		log_format("bt_send: %s", e.what());
+		Log::get() << std::format("bt_send: {}", e.what());
 		stats_sent_encryption_failed++;
 		return;
 	}
@@ -454,15 +454,15 @@ void net_bt_send(const command_response_t *command_response)
 		if(rv != BLE_HS_ENOMEM)
 		{
 			stats_indication_error++;
-			log_format("bt: send error: %d", rv);
+			Log::get() << std::format("bt: send error: {:#x}", rv);
 			return;
 		}
 		else
-			log("bt: HS_ENOMEM");
+			Log::get() << "bt: HS_ENOMEM";
 
 		util_sleep(100);
 
-		log("bt: send: retry");
+		Log::get() << "bt: send: retry";
 	}
 
 	if(attempt == 0)

@@ -177,7 +177,7 @@ static bool slave_check(slave_t *slave) // FIXME
 
 	if(!slave)
 	{
-		log("i2c: check slave: slave address NULL");
+		Log::get() << "i2c: check slave: slave address NULL";
 		return(false);
 	}
 
@@ -185,7 +185,7 @@ static bool slave_check(slave_t *slave) // FIXME
 
 	if(slave->module >= i2c_module_size)
 	{
-		log_format("i2c: check slave: module id in slave struct out of bounds: %d", slave->module);
+		Log::get() << std::format("i2c: check slave: module id in slave struct out of bounds: {:d}", static_cast<unsigned int>(slave->module));
 		return(false);
 	}
 
@@ -196,43 +196,43 @@ static bool slave_check(slave_t *slave) // FIXME
 
 	if(!info)
 	{
-		log("i2c: check slave: module address NULL");
+		Log::get() << "i2c: check slave: module address NULL";
 		return(false);
 	}
 
 	if(slave->bus >= data->buses)
 	{
-		log_format("i2c: check slave: bus id in slave struct out of bounds: %d", slave->bus);
+		Log::get() << std::format("i2c: check slave: bus id in slave struct out of bounds: {:d}", static_cast<unsigned int>(slave->bus));
 		return(false);
 	}
 
 	if(info->id >= i2c_module_size)
 	{
-		log_format("i2c: check slave: module id out of bounds: %d", info->id);
+		Log::get() << std::format("i2c: check slave: module id out of bounds: {:d}", static_cast<unsigned int>(info->id));
 		return(false);
 	}
 
 	if(!(bus = data->bus[slave->bus]))
 	{
-		log_format("i2c: check slave: bus unknown %d", slave->bus);
+		Log::get() << std::format("i2c: check slave: bus unknown {:d}", static_cast<unsigned int>(slave->bus));
 		goto finish;
 	}
 
 	if(bus->id >= data->buses)
 	{
-		log_format("i2c: check slave: bus id out of bounds: %d", bus->id);
+		Log::get() << std::format("i2c: check slave: bus id out of bounds: {:d}", static_cast<unsigned int>(bus->id));
 		return(false);
 	}
 
 	if(bus->id != slave->bus)
 	{
-		log_format("i2c: check slave: bus->bus %d != slave->bus %d", slave->bus, bus->id);
+		Log::get() << std::format("i2c: check slave: bus->bus {:d} != slave->bus {:d}", static_cast<unsigned int>(slave->bus), static_cast<unsigned int>(bus->id));
 		goto finish;
 	}
 
 	if(!bus->slaves)
 	{
-		log_format("i2c: check slave: no slaves on this bus: %d", slave->bus);
+		Log::get() << std::format("i2c: check slave: no slaves on this bus: {:d}", static_cast<unsigned int>(slave->bus));
 		goto finish;
 	}
 
@@ -240,13 +240,14 @@ static bool slave_check(slave_t *slave) // FIXME
 		if(search_slave->address == slave->address)
 			goto found;
 
-	log_format("i2c: check slave: slave %#x not found", slave->address);
+	Log::get() << std::format("i2c: check slave: slave {:#x} not found", static_cast<unsigned int>(slave->address));
 	goto finish;
 
 found:
 	if(search_slave != slave)
 	{
-		log_format("i2c: check slave: slave address incorrect (2): %p vs %p", search_slave, slave);
+		Log::get() << std::format("i2c: check slave: slave address incorrect (2): {:p} vs {:p}",
+				static_cast<const void *>(search_slave), static_cast<const void *>(slave));
 		goto finish;
 	}
 
@@ -269,7 +270,7 @@ static bool ll_ulp_send(unsigned int address, unsigned int size, const uint8_t *
 	if(size == 0)
 	{
 		if(verbose)
-			log_format("ll ulp send: address: 0x%02x: cannot send 0 bytes using ULP I2C", address);
+			Log::get() << std::format("ll ulp send: address: {:#x}: cannot send 0 bytes using ULP I2C", address);
 
 		return(false);
 	}
@@ -290,7 +291,7 @@ static bool ll_ulp_send(unsigned int address, unsigned int size, const uint8_t *
 		// instead write one byte, then read one (dummy) byte, which it can do
 
 		if(verbose)
-			log_format("ll ulp send: address: 0x%02x, emulating one byte write by a write/read cycle", address);
+			Log::get() << std::format("ll ulp send: address: {:#x}, emulating one byte write by a write/read cycle", address);
 
 		rv = ulp_riscv_i2c_master_read_from_device(dummy, sizeof(dummy));
 
@@ -304,7 +305,7 @@ static bool ll_ulp_send(unsigned int address, unsigned int size, const uint8_t *
 static bool ll_ulp_receive(unsigned int address, unsigned int receive_buffer_size, uint8_t *receive_buffer, bool verbose)
 {
 	if(verbose)
-		log_format("ll ulp receive: address 0x%02x: ULP I2C does not support reading without writing", address);
+		Log::get() << std::format("ll ulp receive: address {:#x}: ULP I2C does not support reading without writing", address);
 
 	return(false);
 }
@@ -316,7 +317,7 @@ static bool ll_ulp_send_receive(unsigned int address, unsigned int send_buffer_l
 
 	if(send_buffer_length != 1)
 	{
-		log_format("ll ulp send receive: address 0x%02x: ULP I2C can only send one byte in write/read transaction", address);
+		Log::get() << std::format("ll ulp send receive: address {:#x}: ULP I2C can only send one byte in write/read transaction", address);
 		return(false);
 	}
 
@@ -327,7 +328,7 @@ static bool ll_ulp_send_receive(unsigned int address, unsigned int send_buffer_l
 
 	if(verbose && (rv != ESP_OK))
 	{
-		log_format("ll ulp send_receive: address 0x%02x:", address);
+		Log::get() << std::format("ll ulp send_receive: address {:#x}:", address);
 		util_warn_on_esp_err("ll ulp send receive: ulp_riscv_i2c_master_read_from_device", rv);
 	}
 
@@ -394,7 +395,7 @@ static bool ll_main_receive(const module_info_t *info, module_data_t *data, unsi
 	if((receive_buffer_size == 0) || !receive_buffer)
 	{
 		if(verbose)
-			log_format("ll main receive: address 0x%02x: main I2C module cannot handle zero byte reads", address_in);
+			Log::get() << std::format("ll main receive: address {:#x}: main I2C module cannot handle zero byte reads", address_in);
 
 		return(false);
 	}
@@ -839,7 +840,7 @@ i2c_slave_t i2c_register_slave(const char *name, i2c_module_t module, i2c_bus_t 
 
 	if(!(bus_ptr = data->bus[bus]))
 	{
-		log_format("i2c register slave: bus %d doesn't exist", bus);
+		Log::get() << std::format("i2c register slave: bus {:d} doesn't exist", static_cast<unsigned int>(bus));
 		goto error;
 	}
 
@@ -860,7 +861,11 @@ i2c_slave_t i2c_register_slave(const char *name, i2c_module_t module, i2c_bus_t 
 
 	if(!slave_check(new_slave))
 	{
-		log_format("failed to register slave %d/%d/%#x:%s", new_slave->module, new_slave->bus, new_slave->address, new_slave->name);
+		Log::get() << std::format("failed to register slave {:d}/{:d}/{:#04x}:{}",
+				static_cast<unsigned int>(new_slave->module),
+				static_cast<unsigned int>(new_slave->bus),
+				new_slave->address,
+				new_slave->name);
 		i2c_unregister_slave((i2c_slave_t *)&new_slave);
 		goto finish;
 	}
@@ -903,19 +908,20 @@ bool i2c_unregister_slave(i2c_slave_t *slave)
 
 	if(!(bus = data->bus[(**_slave).bus]))
 	{
-		log_format("i2c unregister slave: bus unknown %d", (**_slave).bus);
+		Log::get() << std::format("i2c unregister slave: bus unknown {:d}", static_cast<unsigned int>((**_slave).bus));
 		goto finish;
 	}
 
 	if(bus->id != (**_slave).bus)
 	{
-		log_format("i2c unregister slave: bus->bus %d != slave->bus %d", (**_slave).bus, bus->id);
+		Log::get() << std::format("i2c unregister slave: bus->bus {:d} != slave->bus {:d}", static_cast<unsigned int>((**_slave).bus),
+				static_cast<unsigned int>(bus->id));
 		goto finish;
 	}
 
 	if(!bus->slaves)
 	{
-		log_format("i2c: unregister slave: no slaves on this bus: %d", (**_slave).bus);
+		Log::get() << std::format("i2c: unregister slave: no slaves on this bus: {:d}", static_cast<unsigned int>((**_slave).bus));
 		goto finish;
 	}
 
@@ -923,7 +929,9 @@ bool i2c_unregister_slave(i2c_slave_t *slave)
 	{
 		if(bus->slaves != *_slave)
 		{
-			log_format("i2c unregister slave: slave address incorrect (1): %p vs %p", bus->slaves, *_slave);
+			Log::get() << std::format("i2c unregister slave: slave address incorrect (1): {:p} vs {:p}",
+					static_cast<const void *>(bus->slaves),
+					static_cast<const void *>(*_slave));
 			goto finish;
 		}
 
@@ -936,13 +944,15 @@ bool i2c_unregister_slave(i2c_slave_t *slave)
 		if(slaveptr->next->address == (**_slave).address)
 			goto found;
 
-	log_format("i2c unregister slave: slave %#x not found", (**_slave).address);
+	Log::get() << std::format("i2c unregister slave: slave {:#x} not found", (**_slave).address);
 	goto finish;
 
 found:
 	if(slaveptr->next != *_slave)
 	{
-		log_format("i2c unregister slave: slave address incorrect (2): %p vs %p", slaveptr->next, *_slave);
+		Log::get() << std::format("i2c unregister slave: slave address incorrect (2): {:p} vs {:p}",
+				static_cast<const void *>(slaveptr->next),
+				static_cast<const void *>(*_slave));
 		goto finish;
 	}
 
@@ -1001,7 +1011,7 @@ bool i2c_send(i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t 
 
 	if(!slave_check(_slave)) // FIXME
 	{
-		log("i2c send: slave_check failed");
+		Log::get() << "i2c send: slave_check failed";
 		return(false);
 	}
 

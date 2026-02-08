@@ -1,73 +1,64 @@
-#include <string.h>
-#include <stdint.h>
-#include <stdbool.h>
 #include <errno.h>
 
-#include <esp_log.h>
-#include <esp_timer.h>
-#include <esp_random.h>
-
 #include "log.h"
+
 #include "util.h"
-#include "cli-command.h"
 #include "console.h"
-#include "cli.h"
+#include "exception.h"
 
 #include <string>
-#include <boost/format.hpp>
+#include <format>
 
-enum
+#include <esp_log.h> // for log function
+#include <esp_random.h> // for esp_random
+
+Log *Log::singleton = nullptr;
+
+RTC_NOINIT_ATTR char Log::rtc_slow_memory[Log::log_buffer_size];
+
+Log::Log(Console &console_in) :
+		console(console_in)
 {
-	log_buffer_size = 8192 - 32 - CONFIG_ULP_COPROC_RESERVE_MEM,
-	log_buffer_entries = 62,
-	log_buffer_data_size = 120,
-	log_buffer_magic_word = 0x4afbcafe,
-};
+	if(this->singleton)
+		throw(hard_exception("Log: already active"));
 
-typedef struct
-{
-	time_t timestamp;
-	char data[log_buffer_data_size];
-} log_entry_t;
+	this->monitor = false;
 
-static_assert(sizeof(log_entry_t) == 128);
+	this->log_buffer = reinterpret_cast<log_t *>(reinterpret_cast<void *>(rtc_slow_memory));
 
-typedef struct
-{
-	uint32_t magic_word;
-	uint32_t random_salt;
-	uint32_t magic_word_salted;
-	unsigned int entries;
-	unsigned int in;
-	unsigned int out;
-	log_entry_t entry[log_buffer_entries];
-} log_t;
+	if(!(this->data_mutex = xSemaphoreCreateMutex()))
+		throw(hard_exception("Log: cannot create semaphore"));
 
-static_assert(sizeof(log_t) == 7960);
-static_assert(sizeof(log_t) < log_buffer_size);
+	if(!(display_queue = xQueueCreate(log_buffer_entries, sizeof(int))))
+		throw(hard_exception("Log: cannot create queue"));
 
-RTC_NOINIT_ATTR static char rtc_slow_memory[log_buffer_size];
-static bool inited = false;
-static bool monitor = false;
-static log_t *log_buffer = (log_t *)0;
-static QueueHandle_t log_display_queue = (QueueHandle_t)0;
-static SemaphoreHandle_t data_mutex;
+	if((this->log_buffer->magic_word != this->log_buffer_magic_word) ||
+		(this->log_buffer->magic_word_salted != (this->log_buffer_magic_word ^ this->log_buffer->random_salt)))
+	{
+		this->clear();
+		this->log("log: log buffer corrupt, reinit");
+	}
 
-static inline void data_mutex_take(void)
-{
-	xSemaphoreTake(data_mutex, portMAX_DELAY);
+	this->singleton = this;
+
+	esp_log_set_vprintf(idf_logging_function);
+
+	this->log("boot");
 }
 
-static inline void data_mutex_give(void)
+Log &Log::get()
 {
-	xSemaphoreGive(data_mutex);
+	if(!Log::singleton)
+		throw(hard_exception("Log: not active"));
+
+	return(*Log::singleton);
 }
 
-static void log_clear(void)
+void Log::clear(void)
 {
-	uint32_t random_value;
+	std::uint32_t random_value;
 
-	random_value = esp_random();
+	random_value = esp_random(); // FIXME -> mbedtls
 
 	data_mutex_take();
 
@@ -81,139 +72,57 @@ static void log_clear(void)
 	data_mutex_give();
 }
 
-static void log_signal_display(unsigned int item)
+void Log::log(std::string_view in)
 {
-	if(log_display_queue)
-		xQueueSend(log_display_queue, &item, (TickType_t)0);
-}
-
-static void _log_cstr(bool append_strerror, const char *string)
-{
-	unsigned int current;
+	int current, ix;
 	log_entry_t *entry;
 
-	if(inited)
+	this->data_mutex_take();
+
+	current = this->log_buffer->in;
+	entry = &this->log_buffer->entry[current];
+
+	entry->timestamp = time(nullptr);
+
+	ix = 0;
+
+	for(const auto ini : in)
 	{
-		data_mutex_take();
+		if((ix + 1) >= sizeof(entry->data))
+			break;
 
-		current = log_buffer->in;
-
-		entry = &log_buffer->entry[current];
-
-		entry->timestamp = time((time_t *)0);
-
-		if(append_strerror)
-			snprintf(entry->data, sizeof(entry->data), "%s: %s (%d)",
-				string, strerror(errno), errno);
-		else
-			snprintf(entry->data, sizeof(entry->data), "%s", string);
-
-		if(log_buffer->in++ >= log_buffer_entries)
-			log_buffer->in = 0;
-
-		data_mutex_give();
-
-		if(monitor)
-		{
-			if(strlen(string) >= sizeof(entry->data))
-				Console::get().write(string);
-			else
-				Console::get().write(entry->data);
-		}
-
-		log_signal_display(current);
+		entry->data[ix++] = ini;
 	}
-	else
-		Console::get().write(string);
+
+	entry->data[ix] = '\0';
+
+	if(++this->log_buffer->in >= this->log_buffer_entries)
+		this->log_buffer->in = 0;
+
+	this->data_mutex_give();
+
+	if(monitor)
+		this->console.write(in);
+
+	this->signal_display(current);
 }
 
-void log_cstr(const char *line)
+void Log::log_esperr(esp_err_t e, std::string_view in)
 {
-	_log_cstr(false, line);
+	this->log(std::format("{}: {} [{:#x}]", in, esp_err_to_name(e), e));
 }
 
-void log_errno(const char *line)
+void Log::log_errno(int e, std::string_view in)
 {
-	_log_cstr(true, line);
+	this->log(std::format("{}: {} [{:#x}]", in, strerror(e), e));
 }
 
-void log_cstr_errno(const char *line)
-{
-	_log_cstr(true, line);
-}
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsuggest-attribute=format"
-
-static void _log_format(bool append_strerror, const char *fmt, va_list ap)
-{
-	unsigned int offset, current;
-	log_entry_t *entry;
-
-	if(inited)
-	{
-		data_mutex_take();
-
-		current = log_buffer->in;
-
-		entry = &log_buffer->entry[current];
-
-		entry->timestamp = time((time_t *)0);
-
-		vsnprintf(entry->data, sizeof(entry->data), fmt, ap);
-
-		if(append_strerror)
-		{
-			offset = strlen(entry->data);
-			snprintf(entry->data + offset, sizeof(entry->data) - offset, ": %s (%d)",
-					strerror(errno), errno);
-		}
-
-		if(log_buffer->in++ >= log_buffer_entries)
-			log_buffer->in = 0;
-
-		data_mutex_give();
-
-		if(monitor)
-			Console::get().write(entry->data);
-
-		log_signal_display(current);
-	}
-	else
-		Console::get().write(fmt);
-}
-
-#pragma GCC diagnostic pop
-
-void log_format(const char *fmt, ...)
-{
-	va_list ap;
-
-	va_start(ap, fmt);
-	_log_format(false, fmt, ap);
-	va_end(ap);
-}
-
-void log_format_errno(const char *fmt, ...)
-{
-	va_list ap;
-
-	va_start(ap, fmt);
-	_log_format(true, fmt, ap);
-	va_end(ap);
-}
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsuggest-attribute=format"
-
-static int logging_function(const char *fmt, va_list ap)
+int Log::idf_logging_function(const char *fmt, va_list ap)
 {
 	char buffer[log_buffer_data_size];
 	char *start;
 	char *end;
 	int length;
-
-	assert(inited);
 
 	length = vsnprintf(buffer, sizeof(buffer), fmt, ap);
 
@@ -233,146 +142,101 @@ static int logging_function(const char *fmt, va_list ap)
 	*end = '\0';
 
 	if(start != end)
-		log_cstr(start);
+		Log::get().log(start);
 
 	return(length);
 }
 
-#pragma GCC diagnostic pop
-
-QueueHandle_t log_get_display_queue(void)
+QueueHandle_t Log::get_display_queue(void)
 {
-	return(log_display_queue);
+	return(display_queue);
 }
 
-void log_get_entry(unsigned int entry_index, time_t *stamp, std::string &text_buffer)
+void Log::get_entry(int entry_index, time_t &stamp, std::string &out)
 {
-	assert(inited);
-
 	const log_entry_t *entry;
 
-	*stamp = static_cast<time_t>(0);
+	stamp = static_cast<time_t>(0);
 
 	data_mutex_take();
 
-	if(entry_index >= log_buffer->entries)
-		goto exit;
-
-	entry = &log_buffer->entry[entry_index];
-
-	*stamp = entry->timestamp;
-
-	text_buffer.assign(entry->data);
-
-exit:
-	data_mutex_give();
-}
-
-void log_init(void)
-{
-	assert(!inited);
-
-	log_buffer = (log_t *)(void *)rtc_slow_memory;
-
-	data_mutex = xSemaphoreCreateMutex();
-	assert(data_mutex);
-
-	inited = true;
-
-	if((log_buffer->magic_word != log_buffer_magic_word) ||
-		(log_buffer->magic_word_salted != (log_buffer_magic_word ^ log_buffer->random_salt)))
+	if((entry_index >= 0) && (entry_index < this->log_buffer->entries))
 	{
-		log_clear();
-		log("log: log buffer corrupt, reinit");
+		entry = &log_buffer->entry[entry_index];
+
+		stamp = entry->timestamp;
+		out = entry->data;
 	}
 
-	esp_log_set_vprintf(logging_function);
-
-	log_display_queue = xQueueCreate(log_buffer_entries, sizeof(unsigned int));
-
-	log("boot");
-}
-
-void log_setmonitor(bool val)
-{
-	monitor = !!val;
-}
-
-void log_command_info(cli_command_call_t *call)
-{
-	assert(inited);
-
-	data_mutex_take();
-
-	call->result = "logging";
-	call->result += (boost::format("\n  buffer: 0x%08lx") % log_buffer).str();
-	call->result += (boost::format("\n  magic word: %08lx") % log_buffer->magic_word).str();
-	call->result += (boost::format("\n  random salt: %08lx") % log_buffer->random_salt).str();
-	call->result += (boost::format("\n  magic word salted: %08lx") % log_buffer->magic_word_salted).str();
-	call->result += (boost::format("\n  entries: %u") % log_buffer->entries).str();
-	call->result += (boost::format("\n  last entry added: %u") % log_buffer->in).str();
-	call->result += (boost::format("\n  last entry viewed: %u") % log_buffer->out).str();
-
 	data_mutex_give();
 }
 
-void log_command_log(cli_command_call_t *call)
+void Log::setmonitor(bool val)
+{
+	this->monitor = val;
+}
+
+bool Log::getmonitor()
+{
+	return(this->monitor);
+}
+
+void Log::signal_display(int item)
+{
+	assert((item >= 0) && (item < log_buffer_entries));
+
+	if(display_queue)
+		xQueueSend(this->display_queue, &item, static_cast<TickType_t>(0));
+}
+
+void Log::info(std::string &out)
+{
+	this->data_mutex_take();
+
+	out += std::format(  "  buffer: {:p}", static_cast<const void *>(this->log_buffer));
+	out += std::format("\n  magic word: {:#10x}", this->log_buffer->magic_word);
+	out += std::format("\n  random salt: {:#10x}", this->log_buffer->random_salt);
+	out += std::format("\n  magic word salted: {:#10x}", this->log_buffer->magic_word_salted);
+	out += std::format("\n  entries: {:d}", this->log_buffer->entries);
+	out += std::format("\n  last entry added: {:d}", this->log_buffer->in);
+	out += std::format("\n  last entry viewed: {:d}", this->log_buffer->out);
+
+	this->data_mutex_give();
+}
+
+void Log::command_log(std::string &out, int entry)
 {
 	unsigned int entries, amount;
 
-	assert(inited);
-	assert((call->parameter_count == 0) || (call->parameter_count == 1));
+	if(entry >= 0)
+		this->log_buffer->out = entry;
 
-	if(call->parameter_count == 1)
-		log_buffer->out = call->parameters[0].unsigned_int;
+	this->data_mutex_take();
 
-	data_mutex_take();
-
-	if(log_buffer->in > log_buffer->out)
-		entries = log_buffer->in - log_buffer->out;
+	if(this->log_buffer->in > this->log_buffer->out)
+		entries = this->log_buffer->in - this->log_buffer->out;
 	else
-		entries = log_buffer->in + (log_buffer_entries - log_buffer->out);
+		entries = this->log_buffer->in + (this->log_buffer_entries - this->log_buffer->out);
 
-	if(entries == log_buffer_entries)
+	if(entries == this->log_buffer_entries)
 		entries = 0;
 
-	call->result = (boost::format("LOG %u entries:") % entries).str();
+	out += std::format("LOG {:d} entries:", entries);
 	amount = 0;
 
 	for(amount = 0; (amount < 24) && (amount < entries); amount++)
 	{
-		call->result += (boost::format("\n%3u %s %s") %
-				log_buffer->out %
-				util_time_to_string(log_buffer->entry[log_buffer->out].timestamp) %
-				log_buffer->entry[log_buffer->out].data).str();
+		out += std::format("\n{:3d} {} {}",
+				this->log_buffer->out,
+				util_time_to_string(this->log_buffer->entry[this->log_buffer->out].timestamp),
+				this->log_buffer->entry[this->log_buffer->out].data);
 
-		if(++log_buffer->out >= log_buffer_entries)
-			log_buffer->out = 0;
+		if(++this->log_buffer->out >= this->log_buffer_entries)
+			this->log_buffer->out = 0;
 	}
 
-	data_mutex_give();
+	this->data_mutex_give();
 
 	if(amount != entries)
-		call->result += (boost::format("\n[%u more]") % (entries - amount)).str();
-}
-
-void log_command_log_clear(cli_command_call_t *call)
-{
-	assert(inited);
-
-	log_command_log(call);
-
-	log_clear();
-
-	call->result = "\nlog cleared";
-}
-
-void log_command_log_monitor(cli_command_call_t *call)
-{
-	assert(inited);
-
-	if(call->parameter_count == 1)
-		monitor = call->parameters[0].unsigned_int != 0;
-
-	call->result = (boost::format("log monitor: %s") % (monitor ? "yes" : "no")).str();
+		out += std::format("\n[{:d} more]", entries - amount);
 }

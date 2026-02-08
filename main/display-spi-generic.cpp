@@ -1,6 +1,6 @@
-#include <stdint.h>
-#include <stdbool.h>
-#include <string.h>
+#include <string.h> // for memset
+
+#include <cstdint>
 
 #include <driver/spi_master.h>
 #include <driver/gpio.h>
@@ -11,6 +11,9 @@
 #include "sdkconfig.h"
 
 #include "display-spi-generic.h"
+
+#include <string>
+#include <format>
 
 enum
 {
@@ -344,9 +347,9 @@ void display_spi_generic_clear(display_colour_t bg)
 void display_spi_generic_write(const font_t *font, display_colour_t fg_colour, display_colour_t bg_colour,
 		unsigned int from_x, unsigned int from_y,
 		unsigned int to_x, unsigned int to_y,
-		const std::deque<uint32_t> &unicode_line)
+		const std::deque<std::uint32_t> &unicode_line)
 {
-	std::deque<uint32_t>::const_iterator unicode_it;
+	std::deque<std::uint32_t>::const_iterator unicode_it;
 	const font_glyph_t *glyph;
 	int col, row, bit;
 	unsigned current_glyph;
@@ -383,7 +386,7 @@ void display_spi_generic_write(const font_t *font, display_colour_t fg_colour, d
 			ix = (*unicode_it - 0xf800);
 
 			if(ix >= dc_size)
-				log_format("display-spi-generic: foreground colour out of range: %u", ix);
+				Log::get() << std::format("display-spi-generic: foreground colour out of range: {:d}", ix);
 			else
 				fg_rgb = display_colour_map[ix];
 		}
@@ -394,7 +397,7 @@ void display_spi_generic_write(const font_t *font, display_colour_t fg_colour, d
 				ix = (*unicode_it - 0xf808);
 
 				if(ix >= dc_size)
-					log_format("display-spi-generic: background colour out of range: %u", ix);
+					Log::get() << std::format("display-spi-generic: background colour out of range: {:d}", ix);
 				else
 					bg_rgb = display_colour_map[ix];
 			}
@@ -520,14 +523,14 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 
 		default:
 		{
-			log_format("init display-lcd-spi: unknown spi interface %d, use 0 for SPI2 or 1 for SPI3", parameters->interface_index);
+			Log::get() << std::format("init display-lcd-spi: unknown spi interface {:d}, use 0 for SPI2 or 1 for SPI3", parameters->interface_index);
 			return(false);
 		}
 	}
 
 	if((parameters->x_size < 0) || (parameters->y_size < 0))
 	{
-		log("init display-lcd-spi: display dimensions required");
+		Log::get() << "init display-lcd-spi: display dimensions required";
 		return(false);
 	}
 

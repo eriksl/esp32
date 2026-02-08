@@ -481,7 +481,7 @@ static const cli_command_t cli_commands[] =
 	{ "ledpixel-info", "lpxi", "info about LEDpixels channels", Command::ledpixel_info, {}},
 	{ "ledpwm-info", "lpi", "info about LED PWM channels and timers", Command::ledpwm_info, {}},
 
-	{ "log", "l", "show log", log_command_log,
+	{ "log", "l", "show log", Command::log_log,
 		{	1,
 			{
 				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "start entry", { .unsigned_int = { 0, 128 }}},
@@ -489,10 +489,10 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "log-clear", "lc", "show log and clear it", log_command_log_clear, {}},
-	{ "log-info", "li", "show information about the log", log_command_info, {}},
+	{ "log-clear", "lc", "show log and clear it", Command::log_clear, {}},
+	{ "log-info", "li", "show information about the log", Command::log_info, {}},
 
-	{ "log-monitor", "lm", "enable/disable output log to console", log_command_log_monitor,
+	{ "log-monitor", "lm", "enable/disable output log to console", Command::log_monitor,
 		{	1,
 			{
 				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "activate", { .unsigned_int = { 0, 1 }}},
@@ -1021,14 +1021,14 @@ static void run_send_queue(void *)
 					command_response->packet.pop_back();
 
 				if(!command_response->packet.empty())
-					log_format("%s: %s", command_response->script.name, command_response->packet.c_str());
+					Log::get() << std::format("script: {}: {}", command_response->script.name, command_response->packet);
 
 				break;
 			}
 
 			default:
 			{
-				log_format("cli: invalid source type: %d", command_response->source);
+				Log::get() << std::format("cli: invalid source type: {:d}", static_cast<int>(command_response->source));
 				break;
 			}
 		}

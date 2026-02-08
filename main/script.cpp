@@ -118,7 +118,7 @@ static void script_run(ThreadState *initial_thread_state)
 
 				if(command == "stop")
 				{
-					log_format("%s: STOP", thread_state->script.c_str());
+					Log::get() << std::format("{}: STOP", thread_state->script);
 					break;
 				}
 
@@ -264,11 +264,11 @@ static void script_run(ThreadState *initial_thread_state)
 	}
 	catch(const std::string &cause)
 	{
-		log_format("run script: %s", cause.c_str());
+		Log::get() << std::format("run script: {}", cause);
 	}
 	catch(...)
 	{
-		log_format("run script: unknown exeception");
+		Log::get() << "run script: unknown exeception";
 	}
 }
 

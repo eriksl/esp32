@@ -236,7 +236,7 @@ static void utf8_to_unicode(std::string_view src, std::deque<uint32_t> &dst)
 						else
 							if((static_cast<unsigned int>(*src_it) & 0x80) == 0x80)
 							{
-								log_format("utf8 parser: invalid utf8, bit 7 set: %x %c\n", *src_it, *src_it);
+								Log::get() << std::format("utf8 parser: invalid utf8, bit 7 set: {:#x} '{:c}'\n", *src_it, *src_it);
 								unicode = '*';
 							}
 							else
@@ -258,7 +258,8 @@ static void utf8_to_unicode(std::string_view src, std::deque<uint32_t> &dst)
 				}
 				else
 				{
-					log_format("utf8 parser: invalid utf8, no prefix on following byte, state: %u: %x %c\n", static_cast<unsigned int>(state), *src_it, *src_it);
+					Log::get() << std::format("utf8 parser: invalid utf8, no prefix on following byte, state: {:d}: {:#x} {:c}\n",
+							static_cast<unsigned int>(state), *src_it, *src_it);
 					unicode = '*';
 				}
 
@@ -267,7 +268,7 @@ static void utf8_to_unicode(std::string_view src, std::deque<uint32_t> &dst)
 
 			default:
 			{
-				log_format("utf8 parser: invalid state %u\n", static_cast<unsigned int>(state));
+				Log::get() << std::format("utf8 parser: invalid state {:d}\n", static_cast<unsigned int>(state));
 				unicode = '*';
 			}
 		}
@@ -296,7 +297,7 @@ static void page_erase(int page)
 	assert((page >= 0) && (page < display_pages.size()));
 
 	if((display_pages[page].type == dpt_image) && unlink(display_pages[page].image.filename.c_str()))
-		log_format("display: page erase: unlink image %s failed", display_pages[page].image.filename.c_str());
+		Log::get() << std::format("display: page erase: unlink image {} failed", display_pages[page].image.filename);
 
 	display_pages.erase(display_pages.begin() + page);
 }
@@ -337,7 +338,7 @@ static bool page_add_text(std::string_view name, unsigned int lifetime, std::str
 	}
 	else
 		if((display_pages[page].type == dpt_image) && !display_pages[page].image.filename.empty() && unlink(display_pages[page].image.filename.c_str()))
-			log_format("display: page add text: unlink image %s failed", display_pages[page].image.filename.c_str());
+			Log::get() << std::format("display: page add text: unlink image {} failed", display_pages[page].image.filename);
 
 	page_ptr = &display_pages[page];
 
@@ -411,7 +412,7 @@ static bool page_add_image(std::string_view name, unsigned int lifetime, std::st
 					!display_pages[page].image.filename.empty() &&
 					(display_pages[page].image.filename != filename) &&
 					unlink(display_pages[page].image.filename.c_str()))
-			log_format("display: page add image: unlink image %s failed", display_pages[page].image.filename.c_str());
+			Log::get() << std::format("display: page add image: unlink image {} failed", display_pages[page].image.filename);
 
 	page_ptr = &display_pages[page];
 	page_init(*page_ptr);
@@ -436,7 +437,7 @@ static bool load_font(std::string_view fontname)
 
 	if((fd = open(pathfont.c_str(), O_RDONLY, 0)) < 0)
 	{
-		log_format("display: failed to open font %s", pathfont.c_str());
+		Log::get() << std::format("display: failed to open font {}", pathfont);
 		goto error;
 	}
 
@@ -445,7 +446,7 @@ static bool load_font(std::string_view fontname)
 
 	if(read(fd, font, sizeof(*font)) != sizeof(*font))
 	{
-		log_format("display: failed to read font %s", pathfont.c_str());
+		Log::get() << std::format("display: failed to read font {}", pathfont);
 		goto error;
 	}
 
@@ -454,7 +455,7 @@ static bool load_font(std::string_view fontname)
 
 	if(font->magic_word != font_magic_word)
 	{
-		log_format("display: font file magic word invalid: %x", font->magic_word);
+		Log::get() << std::format("display: font file magic word invalid: {:#x}", static_cast<unsigned int>(font->magic_word));
 		goto error;
 	}
 
@@ -467,7 +468,7 @@ static bool load_font(std::string_view fontname)
 
 	if(our_hash != their_hash)
 	{
-		log("display: font file invalid checksum");
+		Log::get() << "display: font file invalid checksum";
 		goto error;
 	}
 
@@ -539,14 +540,14 @@ static void run_display_log(void *)
 
 	for(;;)
 	{
-		if(!log_display_queue && !(log_display_queue = log_get_display_queue()))
+		if(!log_display_queue && !(log_display_queue = Log::get().get_display_queue()))
 			continue;
 
 		assert(xQueueReceive(log_display_queue, &entry, portMAX_DELAY));
 
 		if(font_valid && log_mode && (display_type != dt_no_display) && info[display_type].write_fn)
 		{
-			log_get_entry(entry, &stamp, entry_text);
+			Log::get().get_entry(entry, stamp, entry_text);
 			utf8_to_unicode(util_time_to_string("{:%H:%M:%S}", stamp) + " " + entry_text, unicode_buffer);
 
 			info[display_type].write_fn(font, dc_white, dc_black, 0, display_log_y, x_size - 1, display_log_y + font->net.height - 1, unicode_buffer);
@@ -592,21 +593,21 @@ static void user_read_data(png_structp png_ptr, png_bytep data, size_t length)
 
 	if(length != read_length)
 	{
-		log_format_errno("display: user_read_data: read error: requested: %u, received: %d, fd: %d", length, read_length, io_ptr->fd);
+		Log::get().log_errno(errno, std::format("display: user_read_data: read error: requested: {:d}, received: {:d}, fd: {:d}", length, read_length, io_ptr->fd));
 		png_error(png_ptr, "read error");
 	}
 }
 
 static void user_error(png_structp png_ptr, png_const_charp msg)
 {
-	log_format("fatal error in libpng: %s", msg);
+	Log::get() << std::format("fatal error in libpng: {}", msg);
 	png_longjmp(png_ptr, 1);
 }
 
 static void user_warning(png_structp png_ptr, png_const_charp msg)
 {
 	if(strcmp(msg, "IDAT: Too much image data"))
-		log_format("warning in libpng: %s", msg);
+		Log::get() << std::format("warning in libpng: {}", msg);
 }
 
 static void run_display_info(void *)
@@ -782,7 +783,7 @@ static void run_display_info(void *)
 
 					if(stat(display_pages[current_page].image.filename.c_str(), &statb))
 					{
-						log_format("display: cannot stat image file: %s", display_pages[current_page].image.filename.c_str());
+						Log::get() << std::format("display: cannot stat image file: {}", display_pages[current_page].image.filename);
 						fastskip = true;
 						goto skip;
 					}
@@ -796,7 +797,7 @@ static void run_display_info(void *)
 
 					if((fd = open(display_pages[current_page].image.filename.c_str(), O_RDONLY, 0)) < 0)
 					{
-						log_format("display: cannot open image file: %s", display_pages[current_page].image.filename.c_str());
+						Log::get() << std::format("display: cannot open image file: {}", display_pages[current_page].image.filename);
 						fastskip = true;
 						goto skip;
 					}
@@ -805,14 +806,14 @@ static void run_display_info(void *)
 
 					if(read(fd, libpng_buffer.data(), libpng_buffer.size()) != libpng_buffer.size())
 					{
-						log_format("display: cannot read signature: %s", display_pages[current_page].image.filename.c_str());
+						Log::get() << std::format("display: cannot read signature: {}", display_pages[current_page].image.filename);
 						fastskip = true;
 						goto skip;
 					}
 
 					if(png_sig_cmp(reinterpret_cast<png_const_bytep>(libpng_buffer.data()), 0, 8))
 					{
-						log_format("display: invalid PNG signature: %s", display_pages[current_page].image.filename.c_str());
+						Log::get() << std::format("display: invalid PNG signature: {}", display_pages[current_page].image.filename);
 						fastskip = true;
 						goto skip;
 					}
@@ -895,7 +896,7 @@ skip:
 
 				default:
 				{
-					log_format("display: unknown page type: %u", static_cast<unsigned int>(display_pages[current_page].type));
+					Log::get() << std::format("display: unknown page type: {:d}", static_cast<unsigned int>(display_pages[current_page].type));
 					break;
 				}
 			}
@@ -1190,7 +1191,7 @@ void display_init(void)
 
 	if((dt_type_first + type) >= dt_size)
 	{
-		log_format("display init: unknown display type: %u", (unsigned int)type);
+		Log::get() << std::format("display init: unknown display type: {:d}", static_cast<unsigned int>(type));
 		return;
 	}
 
@@ -1259,7 +1260,7 @@ void display_init(void)
 
 	if(!(font_valid = load_font("font_small")))
 	{
-		log("display: load font failed");
+		Log::get() << "display: load font failed";
 		return;
 	}
 

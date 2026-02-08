@@ -11,6 +11,7 @@
 
 #include <string>
 #include <boost/format.hpp>
+#include <format>
 
 static bool ota_handle_active = false;
 static const esp_partition_t *ota_partition = (const esp_partition_t *)0;
@@ -63,7 +64,7 @@ void command_ota_start(cli_command_call_t *call)
 
 	if(ota_handle_active || md_active)
 	{
-		log("otacli: ota-start: ota already active, first aborting session");
+		Log::get() << "otacli: ota-start: ota already active, first aborting session";
 		ota_abort();
 	}
 

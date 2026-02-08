@@ -1,7 +1,3 @@
-#include <string>
-#include <map>
-#include <stdexcept>
-
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -19,6 +15,10 @@
 #include <fcntl.h>
 #include <time.h>
 #include <sys/ioctl.h>
+
+#include <string>
+#include <map>
+#include <stdexcept>
 
 class File
 {
@@ -289,7 +289,7 @@ int File::read(unsigned int offset, unsigned int size, uint8_t *data) const
 
 	if(offset > length)
 	{
-		log_format("ramdisk::File::read: offset out of range: s:%u l:%u o:%u)", // FIXME
+		Log::get() << std::format("ramdisk::File::read: offset out of range: s:{:d} l:{:d} o:{:d})",
 				size, length, offset);
 
 		return(-EIO);
@@ -298,13 +298,13 @@ int File::read(unsigned int offset, unsigned int size, uint8_t *data) const
 	if((offset + size) > length)
 		size = length - offset;
 
-	try // FIXME
+	try
 	{
 		this->contents.copy(data, size, offset);
 	}
 	catch(const std::out_of_range &e)
 	{
-		log_format("ramdisk::File::read: out of range: s:%u/%u l:%u/%u o:%u", // FIXME
+		Log::get() << std::format("ramdisk::File::read: out of range: s:{:d}/{:d} l:{:d}/{:d} o:{:d}",
 				osize, size,
 				length, this->contents.length(),
 				offset);
@@ -826,10 +826,6 @@ DIR *Ramdisk::opendir(const std::string &path)
 
 	this->dirent_table.insert(std::pair(dirent->get_DIR(), dirent));
 
-	//DirentTable::iterator it;
-	//for(it = this->dirent_table.begin(); it != this->dirent_table.end(); it++) // FIXME debug
-		//log_format("dirent entries: %p -> %p", it->first, it->second);
-
 	return(dirent->get_DIR());
 }
 
@@ -904,7 +900,7 @@ int Ramdisk::open(const std::string &path, int fcntl_flags)
 	{
 		if(this->file_in_use(path, fcntl_flags))
 		{
-			log_format("open: file \"%s\" in use", path.c_str());
+			Log::get() << std::format("open: file \"{}\" in use", path.c_str());
 			errno = EBUSY;
 			return(-1);
 		}
@@ -1184,7 +1180,7 @@ int Ramdisk::unlink(const std::string &path)
 	const File *fp;
 	int rv;
 
-	log_format("unlink(\"%s\")", path.c_str()); // FIXME
+	Log::get() << std::format("unlink(\"{}\")", path.c_str()); // FIXME
 
 	if(!(fp = this->root.get_file_by_name_const(path)))
 	{
