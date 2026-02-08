@@ -177,36 +177,6 @@ std::string util_time_to_string(const time_t &stamp)
 	return(util_time_to_string("{:%Y/%m/%d %H:%M:%S}", stamp));
 }
 
-std::string util_hash_to_string(std::string_view hash)
-{
-	std::string dst;
-	std::string_view::const_iterator it;
-	int nibble;
-	unsigned int value;
-
-	dst.reserve(65);
-
-	for(it = hash.begin(); it != hash.end(); it++)
-	{
-		for(nibble = 0; nibble < 2; nibble++)
-		{
-			value = static_cast<unsigned int>(*it) & 0xff;
-
-			if(nibble == 0)
-				value = (value & 0xf0) >> 4;
-			else
-				value = (value & 0x0f) >> 0;
-
-			if(value >= 0x0a)
-				dst.append(1, (value - 0x0a) + 'a');
-			else
-				dst.append(1, (value - 0x00) + '0');
-		}
-	}
-
-	return(dst);
-}
-
 std::string_view yesno(bool yesno_)
 {
 	static const char *no = "no";

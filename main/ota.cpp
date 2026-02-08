@@ -149,7 +149,7 @@ void command_ota_finish(cli_command_call_t *call)
 	}
 
 	hash = md.finish();
-	hash_text = util_hash_to_string(hash);
+	hash_text = Crypt::hash_to_text(hash);
 
 	md_active = false;
 
@@ -192,7 +192,7 @@ void command_ota_commit(cli_command_call_t *call)
 		return;
 	}
 
-	local_hash_text = util_hash_to_string(local_hash);
+	local_hash_text = Crypt::hash_to_text(local_hash);
 
 	if(remote_hash_text != local_hash_text)
 	{
