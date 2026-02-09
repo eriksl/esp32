@@ -1,5 +1,10 @@
 #include "system.h"
 
+#include "log.h"
+#include "display.h"
+#include "exception.h"
+#include "crypt.h"
+
 #include <esp_chip_info.h>
 #include <esp_flash.h>
 #include <esp_system.h>
@@ -11,14 +16,25 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-#include "log.h"
-#include "display.h"
-#include "exception.h"
-#include "crypt.h"
-
 #include <format>
 
+#include <netinet/in.h>
+#include <sys/socket.h>
+
 System *System::singleton = nullptr;
+
+const System::ipv6_address_type_map_t System::ipv6_address_type_strings =
+{
+	{ IPV6AddressType::loopback,		"loopback"		},
+	{ IPV6AddressType::link_local,		"link local"	},
+	{ IPV6AddressType::multicast,		"multicast"		},
+	{ IPV6AddressType::site_local,		"site local"	},
+	{ IPV6AddressType::ipv4_mapped,		"ipv4 mapped"	},
+	{ IPV6AddressType::unspecified,		"unspecified"	},
+	{ IPV6AddressType::global_slaac,	"slaac"			},
+	{ IPV6AddressType::global_static,	"static"		},
+	{ IPV6AddressType::other,			"other"			},
+};
 
 System::System(Log &log_in) : log(log_in)
 {
@@ -533,4 +549,121 @@ int System::get_initial_free_total()
 int System::get_initial_free_rtcram()
 {
 	return(this->initial_free_rtcram);
+}
+
+std::string System::ipv4_addr_to_string(const uint32_t *in /* sockaddr_in->sin_addr.in_addr = uint32_t */)
+{
+	std::string dst;
+	const char *c_dst;
+
+	if(!in)
+		throw(hard_exception("System::ipv4_addr_to_string: nullptr"));
+
+	dst.resize(INET_ADDRSTRLEN);
+	c_dst = inet_ntop(AF_INET, reinterpret_cast<const void *>(in), dst.data(), dst.size());
+	dst.resize(strlen(c_dst));
+
+	return(dst);
+}
+
+System::IPV6AddressType System::ipv6_address_type(const void *in /* sockaddr6_in->sin6_addr.s6_addr = char[16] */)
+{
+	struct in6_addr *s6addr = reinterpret_cast<in6_addr *>(const_cast<void *>(in)); // UGLY
+	const uint8_t *byte = reinterpret_cast<const uint8_t *>(in);
+
+	if(!in)
+		throw(hard_exception("System::ipv6_address_type: nullptr"));
+
+	if(IN6_IS_ADDR_LOOPBACK(s6addr))
+		return(IPV6AddressType::loopback);
+
+	if(IN6_IS_ADDR_LINKLOCAL(s6addr))
+		return(IPV6AddressType::link_local);
+
+	if(IN6_IS_ADDR_MULTICAST(s6addr))
+		return(IPV6AddressType::multicast);
+
+	if(IN6_IS_ADDR_SITELOCAL(s6addr))
+		return(IPV6AddressType::site_local);
+
+	if(IN6_IS_ADDR_V4MAPPED(s6addr))
+		return(IPV6AddressType::ipv4_mapped);
+
+	if(IN6_IS_ADDR_UNSPECIFIED(s6addr))
+		return(IPV6AddressType::unspecified);
+
+	if((byte[11] == 0xff) && (byte[12] == 0xfe))
+		return(IPV6AddressType::global_slaac);
+
+	return(IPV6AddressType::global_static);
+}
+
+std::string System::ipv6_address_type_string(const void *in /* sockaddr6_in->sin6_addr.s6_addr = char[16] */)
+{
+	IPV6AddressType type;
+	std::string name;
+
+	if(!in)
+		throw(hard_exception("System::ipv6_address_type_string: nullptr"));
+
+	type = this->ipv6_address_type(in);
+
+	try
+	{
+		name = ipv6_address_type_strings.at(type);
+	}
+	catch(const std::out_of_range &)
+	{
+		name = "<illegal>";
+	}
+
+	return(name);
+}
+
+std::string System::ipv6_addr_to_string(const void *in /* sockaddr6_in->sin6_addr.in6_addr = uint8_t[16] */)
+{
+	std::string dst;
+	const char *c_dst;
+	std::string::iterator it;
+	const std::uint8_t *byte = reinterpret_cast<const uint8_t *>(in);
+
+	if(!in)
+		throw(hard_exception("System::ipv6_addr_to_string: nullptr"));
+
+	if((byte[0] == 0) && (byte[1] == 0) && (byte[2] == 0) && (byte[3] == 0) &&
+			(byte[4] == 0) && (byte[5] == 0) && (byte[6] == 0) && (byte[7] == 0) &&
+			(byte[8] == 0) && (byte[9] == 0) && (byte[10] == 0xff) && (byte[11] == 0xff))
+		return(std::format("{:d}.{:d}.{:d}.{:d}", byte[12], byte[13], byte[14], byte[15]));
+
+	dst.resize(INET6_ADDRSTRLEN);
+	c_dst = inet_ntop(AF_INET6, in, dst.data(), dst.size());
+	dst.resize(strlen(c_dst));
+
+	for(auto &c : dst)
+		switch(c)
+		{
+			case('A'): { c = 'a'; break; }
+			case('B'): { c = 'b'; break; }
+			case('C'): { c = 'c'; break; }
+			case('D'): { c = 'd'; break; }
+			case('E'): { c = 'e'; break; }
+			case('F'): { c = 'f'; break; }
+			default: { break; }
+		}
+
+	return(dst);
+}
+
+std::string System::mac_addr_to_string(std::string_view mac, bool invert)
+{
+	std::string dst;
+
+	if(invert)
+		dst = std::format("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+				mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]);
+	else
+		dst = std::format("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+				mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+	return(dst);
 }

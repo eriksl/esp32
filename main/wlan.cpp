@@ -13,6 +13,7 @@
 #include "packet.h"
 #include "cli-command.h"
 #include "notify.h"
+#include "system.h"
 #include "exception.h"
 
 #include <esp_event.h>
@@ -318,9 +319,9 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 			util_abort_on_esp_err("esp_netif_sntp_start", esp_netif_sntp_start());
 
 			Log::get() << std::format("wlan: ipv4: {} (mask: {}, gw: {})",
-					util_ipv4_addr_to_string(&event->ip_info.ip.addr),
-					util_ipv4_addr_to_string(&event->ip_info.gw.addr),
-					util_ipv4_addr_to_string(&event->ip_info.netmask.addr));
+					System::get().ipv4_addr_to_string(&event->ip_info.ip.addr),
+					System::get().ipv4_addr_to_string(&event->ip_info.gw.addr),
+					System::get().ipv4_addr_to_string(&event->ip_info.netmask.addr));
 
 			set_state(ws_ipv4_address_acquired);
 
@@ -332,9 +333,9 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 			const ip_event_got_ip6_t *event = (const ip_event_got_ip6_t *)event_data;
 			const char *address_type;
 
-			switch(util_ipv6_address_type(reinterpret_cast<const uint8_t *>(&event->ip6_info.ip.addr)))
+			switch(System::get().ipv6_address_type(reinterpret_cast<const uint8_t *>(&event->ip6_info.ip.addr)))
 			{
-				case(ipv6_address_link_local):
+				case(System::IPV6AddressType::link_local):
 				{
 					address_type = "link-local";
 
@@ -345,7 +346,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 
 					break;
 				}
-				case(ipv6_address_global_slaac):
+				case(System::IPV6AddressType::global_slaac):
 				{
 					address_type = "SLAAC";
 
@@ -353,7 +354,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 
 					break;
 				}
-				case(ipv6_address_global_static):
+				case(System::IPV6AddressType::global_static):
 				{
 					address_type = "static";
 
@@ -371,7 +372,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 				}
 			}
 
-			Log::get() << std::format("wlan: {} ipv6: {}", address_type, util_ipv6_addr_to_string(reinterpret_cast<const uint8_t *>(&event->ip6_info.ip.addr[0])));
+			Log::get() << std::format("wlan: {} ipv6: {}", address_type, System::get().ipv6_addr_to_string(&event->ip6_info.ip.addr[0]));
 
 			break;
 		}
@@ -694,7 +695,7 @@ void wlan_command_info(cli_command_call_t *call)
 		call->result += "<unknown>";
 	}
 	else
-		call->result += util_mac_addr_to_string(mac, false);
+		call->result += System::get().mac_addr_to_string(reinterpret_cast<const char *>(mac), false);
 
 	call->result += "\nipv4:";
 
@@ -708,11 +709,11 @@ void wlan_command_info(cli_command_call_t *call)
 	else
 	{
 		call->result += "\n- interface address: ";
-		call->result += util_ipv4_addr_to_string(&ip_info.ip.addr);
+		call->result += System::get().ipv4_addr_to_string(&ip_info.ip.addr);
 		call->result += "\n- gateway address: ";
-		call->result += util_ipv4_addr_to_string(&ip_info.gw.addr);
+		call->result += System::get().ipv4_addr_to_string(&ip_info.gw.addr);
 		call->result += "\n- netmask: ";
-		call->result += util_ipv4_addr_to_string(&ip_info.netmask.addr);
+		call->result += System::get().ipv4_addr_to_string(&ip_info.netmask.addr);
 	}
 
 	call->result += "\nipv6:";
@@ -721,8 +722,8 @@ void wlan_command_info(cli_command_call_t *call)
 
 	for(ix = 0; ix < rv; ix++)
 		call->result += std::format("\n- address {:d}: {} ({})", ix,
-				util_ipv6_addr_to_string(reinterpret_cast<const uint8_t *>(&esp_ip6_addr[ix].addr)),
-				util_ipv6_address_type_string(reinterpret_cast<const uint8_t *>(&esp_ip6_addr[ix].addr)));
+				System::get().ipv6_addr_to_string(&esp_ip6_addr[ix].addr),
+				System::get().ipv6_address_type_string(reinterpret_cast<const void *>(&esp_ip6_addr[ix].addr)));
 
 	call->result += "\nhostname: ";
 
@@ -768,7 +769,7 @@ void wlan_command_info(cli_command_call_t *call)
 		}
 		else
 		{
-			call->result += (boost::format("\n- access point: %s") % util_mac_addr_to_string(ap_info.bssid, false)).str();
+			call->result += (boost::format("\n- access point: %s") % System::get().mac_addr_to_string(reinterpret_cast<const char *>(ap_info.bssid), false)).str();
 			call->result += (boost::format("\n- SSID: %s") % ap_info.ssid).str();
 			call->result += "\n- ";
 

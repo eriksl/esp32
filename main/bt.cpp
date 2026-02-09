@@ -9,6 +9,7 @@
 #include "util.h"
 #include "packet.h"
 #include "config.h"
+#include "system.h"
 #include "cli-command.h"
 #include "crypt.h"
 #include "exception.h"
@@ -525,7 +526,7 @@ void bluetooth_command_info(cli_command_call_t *call)
 	assert(call->parameter_count == 0);
 
 	call->result = "bluetooth information";
-	call->result += (boost::format("\n  address: %s") % util_mac_addr_to_string(bt_host_address, true)).str();
+	call->result += (boost::format("\n  address: %s") % System::get().mac_addr_to_string(reinterpret_cast<const char *>(bt_host_address), true)).str();
 	call->result += "\n  data sent:";
 	call->result += (boost::format("\n  - packets: %u") % stats_sent_packets).str();
 	call->result += (boost::format("\n  - bytes: %u") % stats_sent_bytes).str();

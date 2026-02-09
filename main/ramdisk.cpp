@@ -1,10 +1,8 @@
-#include <string.h>
-#include <stdint.h>
-#include <stdbool.h>
+#include "ramdisk.h"
 
 #include "log.h"
 #include "util.h"
-#include "ramdisk.h"
+#include "exception.h"
 
 #include <freertos/FreeRTOS.h>
 #include <esp_vfs.h>
@@ -16,8 +14,8 @@
 #include <sys/ioctl.h>
 
 #include <string>
+#include <format>
 #include <map>
-#include <stdexcept>
 
 class File
 {
