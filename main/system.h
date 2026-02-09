@@ -14,7 +14,7 @@ class System final
 		explicit System(Log &);
 		explicit System(System &) = delete;
 
-		System& get();
+		static System& get();
 
 		void identify(std::string &out, int mtu);
 		void info(std::string &out);
