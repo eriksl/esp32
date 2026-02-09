@@ -33,11 +33,11 @@ class System final
 
 		static constexpr unsigned int task_id_size = 48;
 
-		typedef struct
+		struct task_info_cache_t
 		{
 			unsigned int task_id;
 			std::int64_t previous_runtime;
-		} task_info_cache_t;
+		};
 
 		static System *singleton;
 		Log &log;
