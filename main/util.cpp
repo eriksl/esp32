@@ -26,24 +26,6 @@ static const char *ipv6_address_type_strings[ipv6_address_size] =
 	[ipv6_address_other] = "other",
 };
 
-unsigned int util_partition_to_slot(const esp_partition_t *partition)
-{
-	unsigned int slot;
-
-	assert(partition);
-	assert(partition->type == ESP_PARTITION_TYPE_APP);
-
-	if(partition->subtype == ESP_PARTITION_SUBTYPE_APP_OTA_0)
-		slot = 0;
-	else
-		if(partition->subtype == ESP_PARTITION_SUBTYPE_APP_OTA_1)
-			slot = 1;
-		else
-			util_abort("util_partition_to_slot: unknown OTA partition type");
-
-	return(slot);
-}
-
 std::string util_ipv4_addr_to_string(const uint32_t *in /* sockaddr_in->sin_addr.in_addr = uint32_t */)
 {
 	std::string dst;

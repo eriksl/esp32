@@ -21,6 +21,24 @@ static Crypt::SHA256 md;
 static bool md_active = false;
 static unsigned int ota_length = 0;
 
+static int partition_to_slot(const esp_partition_t *partition)
+{
+	unsigned int slot = -1;
+
+	assert(partition);
+	assert(partition->type == ESP_PARTITION_TYPE_APP);
+
+	if(partition->subtype == ESP_PARTITION_SUBTYPE_APP_OTA_0)
+		slot = 0;
+	else
+		if(partition->subtype == ESP_PARTITION_SUBTYPE_APP_OTA_1)
+			slot = 1;
+		else
+			util_abort("partition_to_slot: unknown OTA partition type");
+
+	return(slot);
+}
+
 static void ota_abort(void)
 {
 	if(ota_handle_active)
@@ -81,7 +99,7 @@ void command_ota_start(cli_command_call_t *call)
 	md.init();
 	md_active = true;
 
-	call->result = (boost::format("OK start write ota to partition %u/%s") % util_partition_to_slot(partition) % partition->label).str();
+	call->result = (boost::format("OK start write ota to partition %u/%s") % partition_to_slot(partition) % partition->label).str();
 }
 
 void command_ota_write(cli_command_call_t *call)
