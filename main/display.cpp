@@ -538,32 +538,39 @@ static void run_display_log(void *)
 	time_t stamp;
 	std::deque<uint32_t> unicode_buffer;
 
-	display_log_y = 0;
-
-	for(;;)
+	try
 	{
-		if(!log_display_queue && !(log_display_queue = Log::get().get_display_queue()))
-			continue;
+		display_log_y = 0;
 
-		assert(xQueueReceive(log_display_queue, &entry, portMAX_DELAY));
-
-		if(font_valid && log_mode && (display_type != dt_no_display) && info[display_type].write_fn)
+		for(;;)
 		{
-			Log::get().get_entry(entry, stamp, entry_text);
-			utf8_to_unicode(util_time_to_string("{:%H:%M:%S}", stamp) + " " + entry_text, unicode_buffer);
+			if(!log_display_queue && !(log_display_queue = Log::get().get_display_queue()))
+				continue;
 
-			info[display_type].write_fn(font, dc_white, dc_black, 0, display_log_y, x_size - 1, display_log_y + font->net.height - 1, unicode_buffer);
+			assert(xQueueReceive(log_display_queue, &entry, portMAX_DELAY));
 
-			display_log_y += font->net.height;
+			if(font_valid && log_mode && (display_type != dt_no_display) && info[display_type].write_fn)
+			{
+				Log::get().get_entry(entry, stamp, entry_text);
+				utf8_to_unicode(Util::get().time_to_string(stamp, "{:%H:%M:%S}") + " " + entry_text, unicode_buffer);
 
-			if((display_log_y + font->net.height) > y_size)
-				display_log_y = 0;
+				info[display_type].write_fn(font, dc_white, dc_black, 0, display_log_y, x_size - 1, display_log_y + font->net.height - 1, unicode_buffer);
 
-			box(dc_black, 0, display_log_y, x_size - 1, display_log_y + font->net.height - 1);
+				display_log_y += font->net.height;
+
+				if((display_log_y + font->net.height) > y_size)
+					display_log_y = 0;
+
+				box(dc_black, 0, display_log_y, x_size - 1, display_log_y + font->net.height - 1);
+			}
 		}
 	}
+	catch(const e32if_exception &e)
+	{
+		Log::get().abort(std::format("run_display_log: uncaught exception: {}", e.what()));
+	}
 
-	util_abort("run_display_log returns");
+	Log::get().abort("run_display_log returns");
 }
 
 static png_voidp user_png_malloc(png_structp struct_ptr, png_alloc_size_t size)
