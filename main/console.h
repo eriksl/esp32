@@ -22,6 +22,8 @@ class Console final
 		void run();
 		void info(std::string &dst);
 
+		static void emergency_wall(std::string_view text);
+
 		static Console &get();
 
 	private:

@@ -391,6 +391,21 @@ void Console::send(const command_response_t &command_response)
 	this->stats["sent lines"]++;
 }
 
+void Console::emergency_wall(std::string_view text_in)
+{
+	std::string text;
+
+	text = text_in;
+	text += "\n";
+
+	usb_serial_jtag_driver_config_t usb_serial_jtag_config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
+	usb_serial_jtag_config.rx_buffer_size = 128;
+	usb_serial_jtag_config.tx_buffer_size = 128;
+	usb_serial_jtag_driver_install(&usb_serial_jtag_config);
+
+	usb_serial_jtag_write_bytes(text.c_str(), text.length(), -1);
+}
+
 void Console::info(std::string &dst)
 {
 	bool not_first = false;

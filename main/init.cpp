@@ -1,10 +1,9 @@
-#include "exception.h"
-
 extern "C"
 {
 void app_main(void);
 }
 
+#include "exception.h"
 #include "config.h"
 #include "console.h"
 #include "ledpixel.h"
@@ -35,6 +34,8 @@ void app_main(void);
 
 void app_main(void)
 {
+	std::string exception_text;
+
 	try
 	{
 		Config config("config");
@@ -69,39 +70,27 @@ void app_main(void)
 	}
 	catch(const hard_exception &e)
 	{
-		std::string text;
-
-		text = std::string("init: hard exception not handled: ") + e.what();
-		util_abort(text.c_str());
-		for(;;);
+		exception_text = std::string("init: hard exception not handled: ") + e.what();
 	}
 	catch(const transient_exception &e)
 	{
-		std::string text;
-
-		text = std::string("init: transient exception not handled: ") + e.what();
-		util_abort(text.c_str());
-		for(;;);
+		exception_text = std::string("init: transient exception not handled: ") + e.what();
 	}
 	catch(const std::exception &e)
 	{
-		std::string text;
-
-		text = std::string("init: std exception not handled: ") + e.what();
-		util_abort(text.c_str());
-		for(;;);
+		exception_text = std::string("init: std exception not handled: ") + e.what();
 	}
 	catch(const char *e)
 	{
-		std::string text;
-
-		text = std::string("init: char exception not handled: ") + e;
-		util_abort(text.c_str());
-		for(;;);
+		exception_text = std::string("init: char exception not handled: ") + e;
 	}
 	catch(...)
 	{
-		util_abort("init: default exception not handled");
-		for(;;);
+		exception_text = "init: default exception not handled";
 	}
+
+	Console::emergency_wall(exception_text);
+
+	vTaskSuspend(NULL);
+	for(;;);
 }
