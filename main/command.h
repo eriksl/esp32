@@ -20,26 +20,28 @@ class Command final
 		Command() = delete;
 		Command(const Command &) = delete;
 
-		static void config_info(cli_command_call_t *call);
-		static void config_set_int(cli_command_call_t *call);
-		static void config_set_string(cli_command_call_t *call);
-		static void config_erase(cli_command_call_t *call);
-		static void config_dump(cli_command_call_t *call);
-		static void config_show(cli_command_call_t *call);
-		static void console_info(cli_command_call_t *call);
-		static void ledpixel_info(cli_command_call_t *call);
-		static void ledpwm_info(cli_command_call_t *call);
-		static void notify_info(cli_command_call_t *call);
-		static void log_info(cli_command_call_t *call);
-		static void log_log(cli_command_call_t *call);
-		static void log_clear(cli_command_call_t *call);
-		static void log_monitor(cli_command_call_t *call);
-		static void system_info(cli_command_call_t *call);
-		static void system_identify(cli_command_call_t *call);
-		static void system_partitions(cli_command_call_t *call);
-		static void system_memory(cli_command_call_t *call);
-		static void system_process_list(cli_command_call_t *call);
-		static void system_process_stop(cli_command_call_t *call);
+		static void config_info(cli_command_call_t *);
+		static void config_set_int(cli_command_call_t *);
+		static void config_set_string(cli_command_call_t *);
+		static void config_erase(cli_command_call_t *);
+		static void config_dump(cli_command_call_t *);
+		static void config_show(cli_command_call_t *);
+		static void console_info(cli_command_call_t *);
+		static void ledpixel_info(cli_command_call_t *);
+		static void ledpwm_info(cli_command_call_t *);
+		static void notify_info(cli_command_call_t *);
+		static void log_info(cli_command_call_t *);
+		static void log_log(cli_command_call_t *);
+		static void log_clear(cli_command_call_t *);
+		static void log_monitor(cli_command_call_t *);
+		static void system_info(cli_command_call_t *);
+		static void system_identify(cli_command_call_t *);
+		static void system_partitions(cli_command_call_t *);
+		static void system_memory(cli_command_call_t *);
+		static void system_process_list(cli_command_call_t *);
+		static void system_process_stop(cli_command_call_t *);
+		static void util_info(cli_command_call_t *);
+		static void util_timezone(cli_command_call_t *);
 
 	private:
 
