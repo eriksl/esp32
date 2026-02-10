@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/zsh
 
 if [ -z "$IDF_PATH" ]; then
 	echo "set IDF_PATH environment variable to root of the IDF directory"
@@ -24,7 +24,17 @@ esac
 export IDF_BUILD="${PWD}/board/${IDF_BSP}/build"
 export IDF_DEFAULTS="SDKCONFIG_DEFAULTS=${PWD}/sdkconfig.defaults;${PWD}/board/${IDF_BSP}/sdkconfig.defaults"
 
-source $IDF_PATH/export.sh > /dev/null
+a=$(export)
+
+if [ ! -f environment ]; then
+	echo "*** No environment cache, running idf update"
+	touch environment
+	idf update
+fi
+
+while read line; do
+	export $line
+done < environment
 
 case "$1" in
 	build)
@@ -34,11 +44,20 @@ case "$1" in
 
 	monitor)
 		cd "$IDF_BUILD"
+		shift
 		exec ninja "$@"
 		;;
 
 	run)
 		exec idf.py -B "${IDF_BUILD}" -D "${IDF_DEFAULTS}" -p /dev/ttyACM0 app-flash monitor
+		;;
+
+	update)
+		rm -f /tmp/a /tmp/b
+		LOCALE="C" echo "$a" | sort -u > /tmp/a
+		zsh -c ". $IDF_PATH/export.sh; LOCALE="C"; export | sort -u > /tmp/b"
+		comm -3 /tmp/a /tmp/b | sed -e 's/^	//' -e '/SHLVL=/d' > environment
+		rm -f /tmp/a /tmp/b
 		;;
 
 	*)
