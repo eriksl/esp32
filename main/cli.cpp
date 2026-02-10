@@ -584,7 +584,14 @@ static const cli_command_t cli_commands[] =
 	{ "sensor-stats", "ss", "sensors statistics", command_sensor_stats, {}},
 	{ "tcp-info", "ti", "show information about tcp", net_tcp_command_info, {}},
 	{ "udp-info", "ui", "show information about udp", net_udp_command_info, {}},
-
+	{ "util-info", "uti", "show information about utils the module", Command::util_info, {}},
+	{ "util-tz", "ut", "get or set the timezone for date representation", Command::util_timezone,
+		{	1,
+			{
+				{ cli_parameter_string, 0, 0, 0, 0, "timezone", {}},
+			},
+		},
+	},
 	{ "wlan-client-config", "wcc", "set wireless ssid and password in client mode", wlan_command_client_config,
 		{	2,
 			{
@@ -1063,10 +1070,10 @@ void cli_init(void)
 	esp_pthread_cfg_t thread_config;
 
 	if(!(receive_queue_handle = xQueueCreate(receive_queue_size, sizeof(command_response_t *))))
-		util_abort("cli: xQueueCreateStatic receive queue init");
+		Log::get().abort("cli: xQueueCreateStatic receive queue init");
 
 	if(!(send_queue_handle = xQueueCreate(send_queue_size, sizeof(command_response_t *))))
-		util_abort("cli: xQueueCreateStatic send queue init");
+		Log::get().abort("cli: xQueueCreateStatic send queue init");
 
 	inited = true;
 

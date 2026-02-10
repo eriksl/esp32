@@ -704,7 +704,7 @@ static void run_display_info(void *)
 			box(display_pages[current_page].colour,	0,										(y_size - 1) - (page_border_size - 1),	x_size - 1,				y_size - 1);
 			box(display_pages[current_page].colour,	0,										0,										page_border_size - 1,	y_size - 1);
 
-			stamp_string = util_time_to_string("{:%d/%m %H:%M}", time(nullptr));
+			stamp_string = Util::get().time_to_string(time(nullptr), "{:%d/%m %H:%M}");
 
 			if(stamp_string.length() > display_columns)
 			{
@@ -932,7 +932,7 @@ next:
 		}
 	}
 
-	util_abort("run_display_info returns");
+	Log::get().abort("run_display_info returns");
 }
 
 static void display_info(std::string &output)
@@ -992,7 +992,7 @@ static void display_info(std::string &output)
 		for(page = 0; page < display_pages.size(); page++)
 		{
 			if(display_pages[page].expiry > 0)
-				datetime = util_time_to_string("{:%d/%m %H:%M}", display_pages[page].expiry);
+				datetime = Util::get().time_to_string(display_pages[page].expiry, "{:%d/%m %H:%M}");
 			else
 				datetime = "<infinite>";
 
@@ -1020,7 +1020,7 @@ static void display_info(std::string &output)
 
 				default:
 				{
-					util_abort("display_pages[page].type invalid");
+					Log::get().abort("display_pages[page].type invalid");
 				}
 			}
 		}
@@ -1277,8 +1277,8 @@ void display_init(void)
 	brightness(75);
 
 	if(xTaskCreatePinnedToCore(run_display_log, "display-log", 4 * 1024, nullptr, 1, (TaskHandle_t *)0, 1) != pdPASS)
-		util_abort("display: xTaskCreatePinnedToNode display log");
+		Log::get().abort("display: xTaskCreatePinnedToNode display log");
 
 	if(xTaskCreatePinnedToCore(run_display_info, "display-info", 5 * 1024, nullptr, 1, (TaskHandle_t *)0, 1) != pdPASS)
-		util_abort("display: xTaskCreatePinnedToNode display run");
+		Log::get().abort("display: xTaskCreatePinnedToNode display run");
 }

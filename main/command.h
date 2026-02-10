@@ -16,7 +16,7 @@ class Command final
 {
 	public:
 
-		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &);
+		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &, Util &);
 		Command() = delete;
 		Command(const Command &) = delete;
 
@@ -52,6 +52,7 @@ class Command final
 		Notify &notify;
 		Log &log;
 		System &system;
+		Util &util;
 
 		static Command *singleton;
 		static Config *config_;
@@ -61,6 +62,7 @@ class Command final
 		static Notify *notify_;
 		static Log *log_;
 		static System *system_;
+		static Util *util_;
 
 		std::string make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2);
 };

@@ -1,15 +1,16 @@
 #pragma once
 
-#include <time.h>
-
 #include "console.h"
+#include "util.h"
 
 #include <cstdint>
 #include <string>
 
 #include <freertos/FreeRTOS.h> // for QueueHandle_t and SemaphoreHandle_t
-//#include <esp_err.h>
 
+#include <time.h>
+
+#include <esp_err.h>
 #include <sdkconfig.h>
 
 class Log final
@@ -18,7 +19,7 @@ class Log final
 
 		Log() = delete;
 		Log(const Log &) = delete;
-		Log(Console &);
+		Log(Console &, Util &);
 
 		void log(std::string_view);
 		void log_esperr(esp_err_t, std::string_view);
@@ -28,6 +29,10 @@ class Log final
 			Log::log(in);
 			return(*this);
 		}
+		void warn_on_esp_err(std::string_view what, unsigned int rv);
+		void abort_on_esp_err(std::string_view what, int rv);
+		void abort(std::string_view what);
+		std::string esp_string_error(esp_err_t e, std::string_view message);
 
 		void clear();
 		void setmonitor(bool);
@@ -68,6 +73,8 @@ class Log final
 		static char rtc_slow_memory[log_buffer_size];
 
 		Console &console;
+		Util &util;
+
 		bool monitor;
 		log_t *log_buffer;
 		QueueHandle_t display_queue;

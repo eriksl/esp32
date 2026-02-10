@@ -1,36 +1,75 @@
 #include "util.h"
 
-#include "log.h"
-
-#include <sys/socket.h>
+#include "exception.h"
 
 #include <string>
 #include <format>
 #include <chrono>
 
-static bool inited;
+Util* Util::singleton = nullptr;
 
-std::string util_time_to_string(std::string_view format, const time_t &stamp)
+Util::Util(Config &config_in) : config(config_in)
 {
-	// FIXME: timezone
-	std::chrono::zoned_time chrono_stamp{"Europe/Amsterdam", std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::from_time_t(stamp))};
+	std::string tz;
+
+	if(this->singleton)
+		throw(hard_exception("Util::Util: already active"));
 
 	try
 	{
+		tz = this->config.get_string("timezone");
+	}
+	catch(const transient_exception &)
+	{
+		tz = "UTC";
+	}
+
+	this->timezone = tz;
+
+	this->singleton = this;
+}
+
+Util &Util::get()
+{
+	if(!Util::singleton)
+		throw(hard_exception("Util::get: not active"));
+
+	return(*Util::singleton);
+}
+
+std::string Util::time_to_string(const time_t &stamp, std::string_view format)
+{
+	try
+	{
+		std::chrono::zoned_time chrono_stamp{this->timezone, std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::from_time_t(stamp))};
 		return(std::vformat(format, std::make_format_args(chrono_stamp)));
 	}
-	catch(const std::format_error& e)
+	catch(const std::format_error &e)
 	{
 		return(std::string("[util_time_to_string: ") + e.what() + ", format string: " + std::string(format) + "]");
 	}
+	catch(...)
+	{
+	}
+
+	if(this->timezone != "UTC")
+	{
+		this->timezone = "UTC";
+
+		try
+		{
+			return(this->time_to_string(stamp, format));
+		}
+		catch(...)
+		{
+			return("***");
+		}
+	}
+
+	return("###");
 }
 
-std::string util_time_to_string(const time_t &stamp)
-{
-	return(util_time_to_string("{:%Y/%m/%d %H:%M:%S}", stamp));
-}
-
-std::string_view yesno(bool yesno_)
+std::string_view Util::yesno(bool yesno_)
 {
 	static const char *no = "no";
 	static const char *yes = "yes";
@@ -38,62 +77,18 @@ std::string_view yesno(bool yesno_)
 	return(yesno_ ? yes : no);
 }
 
-void util_warn_on_esp_err(std::string_view what, unsigned int rv)
+void Util::info(std::string &out)
 {
-	if(rv == ESP_OK)
-		return;
-
-	try
-	{
-		Log::get().log_esperr(rv, what);
-	}
-	catch(...)
-	{
-	}
+	out += std::format("- timezone: {}", this->timezone);
 }
 
-void util_abort_on_esp_err(std::string_view what, int rv)
+void Util::set_timezone(std::string_view in)
 {
-	if(rv == ESP_OK)
-		return;
-
-	try
-	{
-		Log::get().setmonitor(true);
-		util_warn_on_esp_err(what, rv);
-	}
-	catch(...)
-	{
-	}
-
-	abort();
+	this->timezone = in;
+	this->config.set_string("timezone", std::string(in));
 }
 
-void util_abort(std::string_view what)
+std::string Util::get_timezone()
 {
-	try
-	{
-		Log::get().setmonitor(true);
-		Log::get().log(std::format("abort: %s", what));
-	}
-	catch(...)
-	{
-	}
-
-	abort();
-}
-
-std::string util_esp_string_error(esp_err_t e, const std::string &message)
-{
-	return(message + ": " + std::to_string(e) + "\"" + esp_err_to_name(e) + "\"");
-}
-
-void util_init(void)
-{
-	assert(!inited);
-
-	setenv("TZ", "CEST-1CET,M3.5.0/2:00:00,M10.5.0/2:00:00", 1); // FIXME
-	tzset();
-
-	inited = true;
+	return(this->timezone);
 }

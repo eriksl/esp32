@@ -205,7 +205,7 @@ void Notify::run()
 	thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
 
 	if((rv = esp_pthread_set_cfg(&thread_config)) != ESP_OK)
-		throw(hard_exception(util_esp_string_error(rv, "Notify::run: esp_pthread_set_cfg")));
+		throw(hard_exception("Notify::run: esp_pthread_set_cfg"));
 
 	std::thread new_thread(this->run_thread_wrapper, this);
 	new_thread.detach();

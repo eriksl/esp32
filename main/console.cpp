@@ -2,6 +2,7 @@
 
 #include "exception.h"
 #include "util.h"
+#include "log.h"
 
 #include <esp_pthread.h>
 #include <driver/usb_serial_jtag.h>
@@ -311,15 +312,15 @@ void Console::run_thread()
 	}
 	catch(const hard_exception &e)
 	{
-		util_abort(std::format("console thread: hard exception: {}", e.what()).c_str());
+		Log::get().abort(std::format("console thread: hard exception: {}", e.what()).c_str());
 	}
 	catch(const transient_exception &e)
 	{
-		util_abort(std::format("console thread: transient exception: {}", e.what()).c_str());
+		Log::get().abort(std::format("console thread: transient exception: {}", e.what()).c_str());
 	}
 	catch(...)
 	{
-		util_abort("console thread: unknown exception");
+		Log::get().abort("console thread: unknown exception");
 	}
 }
 
@@ -350,7 +351,7 @@ void Console::run(void)
 	thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
 
 	if((rv = esp_pthread_set_cfg(&thread_config)) != ESP_OK)
-		throw(hard_exception(util_esp_string_error(rv, "Console::run: esp_pthread_set_cfg")));
+		throw(hard_exception(Log::get().esp_string_error(rv, "Console::run: esp_pthread_set_cfg")));
 
 	std::thread new_thread(this->run_thread_wrapper, this);
 	new_thread.detach();

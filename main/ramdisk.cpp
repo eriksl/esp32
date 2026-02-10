@@ -599,7 +599,7 @@ Ramdisk::Ramdisk(const std::string &mountpoint_in, unsigned int size_in)
 	this->mutex = xSemaphoreCreateMutex();
 	assert(this->mutex);
 
-	util_abort_on_esp_err("esp_vfs_register_fs", esp_vfs_register_fs(this->mountpoint.c_str(), &this->vfs_fs_ops, ESP_VFS_FLAG_CONTEXT_PTR | ESP_VFS_FLAG_STATIC, this));
+	Log::get().abort_on_esp_err("esp_vfs_register_fs", esp_vfs_register_fs(this->mountpoint.c_str(), &this->vfs_fs_ops, ESP_VFS_FLAG_CONTEXT_PTR | ESP_VFS_FLAG_STATIC, this));
 }
 
 bool Ramdisk::file_in_use(const std::string &filename, unsigned int fcntl_flags) const

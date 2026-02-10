@@ -4756,7 +4756,7 @@ static void run_sensors(void *parameters)
 		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 	}
 
-	util_abort("sensor: poll task returned");
+	Log::get().abort("sensor: poll task returned");
 }
 
 void sensor_init(void)
@@ -4795,7 +4795,7 @@ void sensor_init(void)
 			snprintf(name, sizeof(name), "sensors %d", thread);
 
 			if(xTaskCreatePinnedToCore(run_sensors, name, 3 * 1024, &run[thread], 1, nullptr, 1) != pdPASS)
-				util_abort("sensor: xTaskCreatePinnedToNode sensors thread");
+				Log::get().abort("sensor: xTaskCreatePinnedToNode sensors thread");
 		}
 	}
 }
@@ -4990,7 +4990,7 @@ void command_sensor_dump(cli_command_call_t *call)
 						std::string format_string = (boost::format(" %%s=%%.%uf [%%s]") % dataptr->info->precision).str();
 						call->result += (boost::format(format_string) %
 								sensor_type_info[type].type % dataptr->values[type].value %
-								util_time_to_string(dataptr->values[type].stamp)).str();
+								Util::get().time_to_string(dataptr->values[type].stamp)).str();
 					}
 				}
 

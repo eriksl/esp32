@@ -39,7 +39,7 @@ void fs_init(void)
 
 	assert(!inited);
 
-	util_abort_on_esp_err("esp_vfs_littlefs_register", esp_vfs_littlefs_register(&littlefs_parameters));
+	Log::get().abort_on_esp_err("esp_vfs_littlefs_register", esp_vfs_littlefs_register(&littlefs_parameters));
 
 	inited = true;
 }
@@ -52,7 +52,7 @@ void fs_command_info(cli_command_call_t *call)
 	assert(inited);
 	assert(call->parameter_count == 0);
 
-	util_abort_on_esp_err("esp_littlefs_info", esp_littlefs_info("littlefs", &total, &used));
+	Log::get().abort_on_esp_err("esp_littlefs_info", esp_littlefs_info("littlefs", &total, &used));
 	avail = total - used;
 	usedpct = (100 * used) / total;
 
@@ -130,8 +130,8 @@ void fs_command_list(cli_command_call_t *call)
 			inode = statb.st_ino;
 			length = statb.st_size;
 			allocated = (statb.st_blocks * 512UL) / 1024UL;
-			ctime = util_time_to_string(statb.st_ctim.tv_sec);
-			mtime = util_time_to_string(statb.st_mtim.tv_sec);
+			ctime = Util::get().time_to_string(statb.st_ctim.tv_sec);
+			mtime = Util::get().time_to_string(statb.st_mtim.tv_sec);
 		}
 
 		if(option_long)

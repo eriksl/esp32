@@ -39,16 +39,16 @@ void app_main(void)
 	try
 	{
 		Config config("config");
+		Util util(config);
 		Console console(config);
 		Ledpixel ledpixel;
 		LedPWM ledpwm;
 		Notify notify;
 		notify.run();
 		notify.notify(Notify::Notification::sys_booting);
-		Log log(console);
+		Log log(console, util);
 		System system(log);
-		Command command(config, console, ledpixel, ledpwm, notify, log, system);
-		util_init();
+		Command command(config, console, ledpixel, ledpwm, notify, log, system, util);
 		pdm_init();
 		mcpwm_init();
 		fs_init();

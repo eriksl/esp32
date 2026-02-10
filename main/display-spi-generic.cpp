@@ -128,7 +128,7 @@ static void send_command_data(bool send_cmd, unsigned int cmd, unsigned int leng
 	assert((length == 0) || (data != (const uint8_t *)0));
 
 	for(; spi_pending > 0; spi_pending--)
-		util_abort_on_esp_err("spi_device_get_trans_result", spi_device_get_trans_result(spi_device_handle, &transaction_result, portMAX_DELAY));
+		Log::get().abort_on_esp_err("spi_device_get_trans_result", spi_device_get_trans_result(spi_device_handle, &transaction_result, portMAX_DELAY));
 
 	if(cmd)
 	{
@@ -146,7 +146,7 @@ static void send_command_data(bool send_cmd, unsigned int cmd, unsigned int leng
 		transaction_ext->address_bits = 0;
 		transaction_ext->dummy_bits = 0;
 
-		util_abort_on_esp_err("spi_device_transmit", spi_device_transmit(spi_device_handle, transaction));
+		Log::get().abort_on_esp_err("spi_device_transmit", spi_device_transmit(spi_device_handle, transaction));
 	}
 
 	if(length > 0)
@@ -165,7 +165,7 @@ static void send_command_data(bool send_cmd, unsigned int cmd, unsigned int leng
 		transaction_ext->address_bits = 0;
 		transaction_ext->dummy_bits = 0;
 
-		util_abort_on_esp_err("spi_device_transmit", spi_device_transmit(spi_device_handle, transaction));
+		Log::get().abort_on_esp_err("spi_device_transmit", spi_device_transmit(spi_device_handle, transaction));
 	}
 
 	spi_mutex_give();
@@ -259,14 +259,14 @@ static void pixel_buffer_flush(int length, bool wait)
 		transaction_ext->dummy_bits = 0;
 
 		for(; spi_pending > 0; spi_pending--)
-			util_abort_on_esp_err("spi_device_get_trans_result", spi_device_get_trans_result(spi_device_handle, &transaction_result, portMAX_DELAY));
+			Log::get().abort_on_esp_err("spi_device_get_trans_result", spi_device_get_trans_result(spi_device_handle, &transaction_result, portMAX_DELAY));
 
-		util_abort_on_esp_err("spi_device_queue_trans", spi_device_queue_trans(spi_device_handle, transaction, portMAX_DELAY));
+		Log::get().abort_on_esp_err("spi_device_queue_trans", spi_device_queue_trans(spi_device_handle, transaction, portMAX_DELAY));
 		spi_pending++;
 
 		if(wait)
 			for(; spi_pending > 0; spi_pending--)
-				util_abort_on_esp_err("spi_device_get_trans_result", spi_device_get_trans_result(spi_device_handle, &transaction_result, portMAX_DELAY));
+				Log::get().abort_on_esp_err("spi_device_get_trans_result", spi_device_get_trans_result(spi_device_handle, &transaction_result, portMAX_DELAY));
 	}
 
 	spi_mutex_give();
@@ -608,12 +608,12 @@ bool display_spi_generic_init(const display_init_parameters_t *parameters)
 	assert(spi_mutex);
 	spi_pending = 0;
 
-	util_abort_on_esp_err("gpio_config", gpio_config(&gpio_pin_config));
+	Log::get().abort_on_esp_err("gpio_config", gpio_config(&gpio_pin_config));
 
-	util_abort_on_esp_err("spi_bus_initialize", spi_bus_initialize(static_cast<spi_host_device_t>(spi_signal->esp_host), &bus_config, SPI_DMA_CH_AUTO));
-	util_abort_on_esp_err("spi_bus_add_device", spi_bus_add_device(static_cast<spi_host_device_t>(spi_signal->esp_host), &device, &spi_device_handle));
+	Log::get().abort_on_esp_err("spi_bus_initialize", spi_bus_initialize(static_cast<spi_host_device_t>(spi_signal->esp_host), &bus_config, SPI_DMA_CH_AUTO));
+	Log::get().abort_on_esp_err("spi_bus_add_device", spi_bus_add_device(static_cast<spi_host_device_t>(spi_signal->esp_host), &device, &spi_device_handle));
 
-	util_abort_on_esp_err("spi_bus_get_max_transaction_len", spi_bus_get_max_transaction_len(static_cast<spi_host_device_t>(spi_signal->esp_host), &max_transaction_length));
+	Log::get().abort_on_esp_err("spi_bus_get_max_transaction_len", spi_bus_get_max_transaction_len(static_cast<spi_host_device_t>(spi_signal->esp_host), &max_transaction_length));
 	pixel_buffer_size = max_transaction_length;
 	pixel_buffer = static_cast<uint8_t *>(heap_caps_malloc(pixel_buffer_size, MALLOC_CAP_DMA));
 	pixel_buffer_rgb = (display_rgb_t *)pixel_buffer;

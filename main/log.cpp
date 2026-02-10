@@ -9,6 +9,8 @@
 #include <string>
 #include <format>
 
+#include <stdlib.h>
+
 #include <esp_log.h> // for log function
 #include <esp_random.h> // for esp_random
 
@@ -16,8 +18,8 @@ Log *Log::singleton = nullptr;
 
 RTC_NOINIT_ATTR char Log::rtc_slow_memory[Log::log_buffer_size];
 
-Log::Log(Console &console_in) :
-		console(console_in)
+Log::Log(Console &console_in, Util &util_in) :
+		console(console_in), util(util_in)
 {
 	if(this->singleton)
 		throw(hard_exception("Log: already active"));
@@ -228,7 +230,7 @@ void Log::command_log(std::string &out, int entry)
 	{
 		out += std::format("\n{:3d} {} {}",
 				this->log_buffer->out,
-				util_time_to_string(this->log_buffer->entry[this->log_buffer->out].timestamp),
+				this->util.time_to_string(this->log_buffer->entry[this->log_buffer->out].timestamp),
 				this->log_buffer->entry[this->log_buffer->out].data);
 
 		if(++this->log_buffer->out >= this->log_buffer_entries)
@@ -239,4 +241,62 @@ void Log::command_log(std::string &out, int entry)
 
 	if(amount != entries)
 		out += std::format("\n[{:d} more]", entries - amount);
+}
+
+void Log::warn_on_esp_err(std::string_view what, unsigned int rv)
+{
+	if(rv == ESP_OK)
+		return;
+
+	try
+	{
+		this->log_esperr(rv, what);
+	}
+	catch(...)
+	{
+	}
+}
+
+void Log::abort_on_esp_err(std::string_view what, int rv)
+{
+	if(rv == ESP_OK)
+		return;
+
+	try
+	{
+		this->setmonitor(true);
+	}
+	catch(...)
+	{
+	}
+
+	this->warn_on_esp_err(what, rv);
+
+	::abort();
+}
+
+void Log::abort(std::string_view what)
+{
+	try
+	{
+		this->setmonitor(true);
+	}
+	catch(...)
+	{
+	}
+
+	try
+	{
+		this->log(std::format("abort: %s", what));
+	}
+	catch(...)
+	{
+	}
+
+	::abort();
+}
+
+std::string Log::esp_string_error(esp_err_t e, std::string_view message)
+{
+	return(std::format("{}: {} [{:d}]", message, esp_err_to_name(e), e));
 }

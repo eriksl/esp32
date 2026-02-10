@@ -73,13 +73,13 @@ Ledpixel::Ledpixel()
 			led_strip_config.color_component_format.format.num_components = 3;
 
 			if((rv = led_strip_new_rmt_device(&led_strip_config, &rmt_config, &handle->handle)) != ESP_OK)
-				throw(hard_exception(util_esp_string_error(rv, "Ledpixel: led_strip_new_rmt_device")));
+				throw(hard_exception(Log::get().esp_string_error(rv, "Ledpixel: led_strip_new_rmt_device")));
 
 			if((rv = led_strip_clear(handle->handle)) != ESP_OK)
-				throw(hard_exception(util_esp_string_error(rv, "Ledpixel: led_strip_clear")));
+				throw(hard_exception(Log::get().esp_string_error(rv, "Ledpixel: led_strip_clear")));
 
 			if((rv = led_strip_refresh(handle->handle)) != ESP_OK)
-				throw(hard_exception(util_esp_string_error(rv, "Ledpixel: led_strip_flush")));
+				throw(hard_exception(Log::get().esp_string_error(rv, "Ledpixel: led_strip_flush")));
 
 			handle->available = 1;
 		}
@@ -117,10 +117,10 @@ void Ledpixel::open(Channel channel, std::string_view owner)
 	handle->open = 1;
 
 	if((rv = led_strip_clear(handle->handle)) != ESP_OK)
-		throw(hard_exception(util_esp_string_error(rv, "Ledpixel::open: led_strip_clear")));
+		throw(hard_exception(Log::get().esp_string_error(rv, "Ledpixel::open: led_strip_clear")));
 
 	if((rv = led_strip_refresh(handle->handle)) != ESP_OK)
-		throw(hard_exception(util_esp_string_error(rv, "Ledpixel::open: led_strip_flush")));
+		throw(hard_exception(Log::get().esp_string_error(rv, "Ledpixel::open: led_strip_flush")));
 
 	for(ix = 0; ix < this->leds_size; ix++)
 	{
@@ -154,7 +154,7 @@ void Ledpixel::set(Channel channel, int led, int red, int green, int blue)
 	rgb->b = blue;
 
 	if((rv = led_strip_set_pixel(handle->handle, led, rgb->r, rgb->g, rgb->b)) != ESP_OK)
-		throw(hard_exception(util_esp_string_error(rv, "Ledpixel::set: led_strip_set_pixel")));
+		throw(hard_exception(Log::get().esp_string_error(rv, "Ledpixel::set: led_strip_set_pixel")));
 }
 
 void Ledpixel::get(Channel channel, int led, int &red, int &green, int &blue)
@@ -194,7 +194,7 @@ void Ledpixel::flush(Channel channel)
 		throw(transient_exception("Ledpixel::flush: channel not open"));
 
 	if((rv = led_strip_refresh(handle->handle)) == ESP_OK)
-		throw(hard_exception(util_esp_string_error(rv, "Ledpixel::flush: led_strip_refresh")));
+		throw(hard_exception(Log::get().esp_string_error(rv, "Ledpixel::flush: led_strip_refresh")));
 }
 
 void Ledpixel::info(std::string &dst)

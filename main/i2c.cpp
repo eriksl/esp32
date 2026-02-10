@@ -282,7 +282,7 @@ static bool ll_ulp_send(unsigned int address, unsigned int size, const uint8_t *
 		rv = ulp_riscv_i2c_master_write_to_device(&data[1], size - 1);
 
 		if(verbose && (rv != ESP_OK))
-			util_warn_on_esp_err("ll ulp send: ulp_riscv_i2c_master_write_to_device", rv);
+			Log::get().warn_on_esp_err("ll ulp send: ulp_riscv_i2c_master_write_to_device", rv);
 	}
 	else
 	{
@@ -295,7 +295,7 @@ static bool ll_ulp_send(unsigned int address, unsigned int size, const uint8_t *
 		rv = ulp_riscv_i2c_master_read_from_device(dummy, sizeof(dummy));
 
 		if(verbose && (rv != ESP_OK))
-			util_warn_on_esp_err("ll ulp send: ulp_riscv_i2c_master_read_from_device", rv);
+			Log::get().warn_on_esp_err("ll ulp send: ulp_riscv_i2c_master_read_from_device", rv);
 	}
 
 	return(rv == ESP_OK);
@@ -328,7 +328,7 @@ static bool ll_ulp_send_receive(unsigned int address, unsigned int send_buffer_l
 	if(verbose && (rv != ESP_OK))
 	{
 		Log::get() << std::format("ll ulp send_receive: address {:#x}:", address);
-		util_warn_on_esp_err("ll ulp send receive: ulp_riscv_i2c_master_read_from_device", rv);
+		Log::get().warn_on_esp_err("ll ulp send receive: ulp_riscv_i2c_master_read_from_device", rv);
 	}
 
 	return(rv == ESP_OK);
@@ -367,7 +367,7 @@ static bool ll_main_send(const module_info_t *info, module_data_t *data, unsigne
 	rv = i2c_master_execute_defined_operations(data->device_handle, i2c_operations, current, 20);
 
 	if(verbose && (rv != ESP_OK))
-		util_warn_on_esp_err("ll main send: module i2c_master_execute_defined_operations", rv);
+		Log::get().warn_on_esp_err("ll main send: module i2c_master_execute_defined_operations", rv);
 
 	return(rv == ESP_OK);
 }
@@ -433,7 +433,7 @@ static bool ll_main_receive(const module_info_t *info, module_data_t *data, unsi
 	rv = i2c_master_execute_defined_operations(data->device_handle, i2c_operations, current, 500);
 
 	if(verbose && (rv != ESP_OK))
-		util_warn_on_esp_err("ll main receive: i2c_master_defined_operations", rv);
+		Log::get().warn_on_esp_err("ll main receive: i2c_master_defined_operations", rv);
 
 	return(rv == ESP_OK);
 }
@@ -494,7 +494,7 @@ static bool ll_main_send_receive(const module_info_t *info, module_data_t *data,
 	rv = i2c_master_execute_defined_operations(data->device_handle, i2c_operations, current, 500);
 
 	if(verbose && (rv != ESP_OK))
-		util_warn_on_esp_err("ll main send receive: i2c_master_defined_operations", rv);
+		Log::get().warn_on_esp_err("ll main send receive: i2c_master_defined_operations", rv);
 
 	return(rv == ESP_OK);
 }
@@ -753,7 +753,7 @@ void i2c_init(void)
 				ulp_i2c_module_config = &ulp_i2c_module_config_slow;
 			}
 
-			util_abort_on_esp_err("ulp riscv i2c master init", ulp_riscv_i2c_master_init(ulp_i2c_module_config));
+			Log::get().abort_on_esp_err("ulp riscv i2c master init", ulp_riscv_i2c_master_init(ulp_i2c_module_config));
 		}
 		else
 		{
@@ -769,9 +769,8 @@ void i2c_init(void)
 				}
 			};
 
-			util_abort_on_esp_err("i2c new master bus", i2c_new_master_bus(&main_i2c_module_config[module], &data->bus_handle));
-
-			util_warn_on_esp_err("i2c master bus add device", i2c_master_bus_add_device(data->bus_handle, &device_config, &data->device_handle));
+			Log::get().abort_on_esp_err("i2c new master bus", i2c_new_master_bus(&main_i2c_module_config[module], &data->bus_handle));
+			Log::get().warn_on_esp_err("i2c master bus add device", i2c_master_bus_add_device(data->bus_handle, &device_config, &data->device_handle));
 		}
 
 		data->has_mux = false;

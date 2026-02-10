@@ -12,10 +12,11 @@ LedPWM *Command::ledpwm_ = nullptr;
 Notify *Command::notify_ = nullptr;
 Log *Command::log_ = nullptr;
 System *Command::system_ = nullptr;
+Util *Command::util_ = nullptr;
 
-Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, LedPWM &ledpwm_in, Notify &notify_in, Log &log_in, System &system_in) :
+Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, LedPWM &ledpwm_in, Notify &notify_in, Log &log_in, System &system_in, Util &util_in) :
 		config(config_in), console(console_in), ledpixel(ledpixel_in), ledpwm(ledpwm_in),
-		notify(notify_in), log(log_in), system(system_in)
+		notify(notify_in), log(log_in), system(system_in), util(util_in)
 {
 	if(this->singleton)
 		throw(hard_exception("Command: already activated"));
@@ -28,6 +29,7 @@ Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, 
 	this->notify_ = &notify;
 	this->log_ = &log;
 	this->system_ = &system;
+	this->util_ = &util;
 }
 
 std::string Command::make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2)
@@ -219,7 +221,7 @@ void Command::log_monitor(cli_command_call_t *call)
 
 	monitor = Command::log_->getmonitor();
 
-	call->result = std::format("log monitor: {}", yesno(monitor));
+	call->result = std::format("log monitor: {}", Util::get().yesno(monitor));
 }
 
 void Command::system_info(cli_command_call_t *call)
@@ -274,4 +276,44 @@ void Command::system_process_stop(cli_command_call_t *call)
 		throw(hard_exception("Command: not activated"));
 
 	Command::system_->process_list(call->result, call->parameters[0].unsigned_int);
+}
+
+void Command::util_info(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	call->result = "UTIL INFO\n";
+
+	Command::util_->info(call->result);
+}
+
+void Command::util_timezone(cli_command_call_t *call)
+{
+	std::string tz;
+
+	if(call->parameter_count > 0)
+	{
+		try
+		{
+			util_->set_timezone(call->parameters[0].str);
+		}
+		catch(const transient_exception &e)
+		{
+			call->result = "set timezone: failed: %s", e.what();
+			return;
+		}
+	}
+
+	try
+	{
+		tz = util_->get_timezone();
+	}
+	catch(const transient_exception &e)
+	{
+		call->result = "get timezone: failed: %s", e.what();
+		return;
+	}
+
+	call->result = std::format("TZ: {}", tz);
 }

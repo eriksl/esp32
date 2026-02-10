@@ -90,13 +90,13 @@ void pdm_init(void)
 		if(handle_to_gpio_ptr->gpio >= 0)
 		{
 			gpio_pin_config.pin_bit_mask = (1ULL << handle_to_gpio_ptr->gpio);
-			util_abort_on_esp_err("gpio_reset_pin", gpio_reset_pin(static_cast<gpio_num_t>(handle_to_gpio_ptr->gpio)));
-			util_abort_on_esp_err("gpio_config", gpio_config(&gpio_pin_config));
+			Log::get().abort_on_esp_err("gpio_reset_pin", gpio_reset_pin(static_cast<gpio_num_t>(handle_to_gpio_ptr->gpio)));
+			Log::get().abort_on_esp_err("gpio_config", gpio_config(&gpio_pin_config));
 
 			sdm_config.gpio_num = handle_to_gpio_ptr->gpio;
-			util_abort_on_esp_err("sdm_new_channel", sdm_new_channel(&sdm_config, &channel->handle));
-			util_abort_on_esp_err("sdm_channel_enable", sdm_channel_enable(channel->handle));
-			util_abort_on_esp_err("sdm_channel_set_pulse_density", sdm_channel_set_pulse_density(channel->handle, channel->density - 128));
+			Log::get().abort_on_esp_err("sdm_new_channel", sdm_new_channel(&sdm_config, &channel->handle));
+			Log::get().abort_on_esp_err("sdm_channel_enable", sdm_channel_enable(channel->handle));
+			Log::get().abort_on_esp_err("sdm_channel_set_pulse_density", sdm_channel_set_pulse_density(channel->handle, channel->density - 128));
 
 			channel->available = 1;
 		}
@@ -142,7 +142,7 @@ void pdm_channel_set(pdm_t handle, unsigned int density)
 
 	channel->density = density;
 
-	util_abort_on_esp_err("sdm_channel_set_pulse_density", sdm_channel_set_pulse_density(channel->handle, (int)channel->density - 128));
+	Log::get().abort_on_esp_err("sdm_channel_set_pulse_density", sdm_channel_set_pulse_density(channel->handle, (int)channel->density - 128));
 }
 
 unsigned int pdm_channel_get(pdm_t handle)

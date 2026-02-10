@@ -123,24 +123,24 @@ static void set_state(wlan_state_t state_new)
 				Log::get() << std::format("wlan: reassociate, switch from {} to {}", state_string, state_new_string);
 
 		wlan_mode = WIFI_MODE_STA;
-		util_warn_on_esp_err("esp_wifi_get_mode", esp_wifi_get_mode(&wlan_mode));
+		Log::get().warn_on_esp_err("esp_wifi_get_mode", esp_wifi_get_mode(&wlan_mode));
 
 		if(wlan_mode == WIFI_MODE_AP)
 		{
 			Log::get() << "wlan: switch from AP mode to STA mode";
-			util_warn_on_esp_err("esp_wifi_deauth_sta", esp_wifi_deauth_sta(0));
-			util_warn_on_esp_err("esp_wifi_stop", esp_wifi_stop());
-			util_warn_on_esp_err("esp_wifi_set_mode", esp_wifi_set_mode(WIFI_MODE_STA));
-			util_warn_on_esp_err("esp_wifi_start", esp_wifi_start());
+			Log::get().warn_on_esp_err("esp_wifi_deauth_sta", esp_wifi_deauth_sta(0));
+			Log::get().warn_on_esp_err("esp_wifi_stop", esp_wifi_stop());
+			Log::get().warn_on_esp_err("esp_wifi_set_mode", esp_wifi_set_mode(WIFI_MODE_STA));
+			Log::get().warn_on_esp_err("esp_wifi_start", esp_wifi_start());
 		}
 		else
 			if((state != ws_init) && (state != ws_associating))
 			{
 				Log::get() << "wlan: start disconnect";
-				util_warn_on_esp_err("esp_wifi_disconnect", esp_wifi_disconnect());
+				Log::get().warn_on_esp_err("esp_wifi_disconnect", esp_wifi_disconnect());
 			}
 
-		util_warn_on_esp_err("esp_wifi_connect", esp_wifi_connect());
+		Log::get().warn_on_esp_err("esp_wifi_connect", esp_wifi_connect());
 
 		state_new = ws_associating;
 	}
@@ -190,7 +190,7 @@ static void state_callback(TimerHandle_t handle)
 
 	if(((state == ws_associating) || (state == ws_associated)) && (state_time > 30))
 	{
-		util_warn_on_esp_err("esp_wifi_get_mac", esp_wifi_get_mac(WIFI_IF_AP, mac_address));
+		Log::get().warn_on_esp_err("esp_wifi_get_mac", esp_wifi_get_mac(WIFI_IF_AP, mac_address));
 		snprintf((char *)config_ap.ap.ssid, sizeof(config_ap.ap.ssid), "esp32-%02x:%02x:%02x:%02x:%02x:%02x",
 				mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
 		snprintf((char *)config_ap.ap.password, sizeof(config_ap.ap.password), "rescue-%02x:%02x:%02x:%02x:%02x:%02x",
@@ -200,15 +200,15 @@ static void state_callback(TimerHandle_t handle)
 				reinterpret_cast<const char *>(config_ap.ap.ssid), reinterpret_cast<const char *>(config_ap.ap.password));
 		Log::get() << std::format("wlan: after {:d} seconds of disassociation", state_time);
 
-		util_warn_on_esp_err("esp_wifi_disconnect", esp_wifi_disconnect());
-		util_warn_on_esp_err("esp_wifi_stop", esp_wifi_stop());
-		util_warn_on_esp_err("esp_wifi_set_mode", esp_wifi_set_mode(WIFI_MODE_AP));
-		util_warn_on_esp_err("esp_wifi_set_config", esp_wifi_set_config(WIFI_IF_AP, &config_ap));
+		Log::get().warn_on_esp_err("esp_wifi_disconnect", esp_wifi_disconnect());
+		Log::get().warn_on_esp_err("esp_wifi_stop", esp_wifi_stop());
+		Log::get().warn_on_esp_err("esp_wifi_set_mode", esp_wifi_set_mode(WIFI_MODE_AP));
+		Log::get().warn_on_esp_err("esp_wifi_set_config", esp_wifi_set_config(WIFI_IF_AP, &config_ap));
 
 		state = ws_rescue_ap_mode_init;
 		state_time = 0;
 
-		util_warn_on_esp_err("esp_wifi_start", esp_wifi_start());
+		Log::get().warn_on_esp_err("esp_wifi_start", esp_wifi_start());
 	}
 
 	if(((state == ws_rescue_ap_mode_init) || (state == ws_rescue_ap_mode_idle) || (state == ws_rescue_ap_mode_associated)) && (state_time > 300))
@@ -238,7 +238,7 @@ static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 		}
 		case(WIFI_EVENT_STA_CONNECTED): /* 4 */
 		{
-			util_warn_on_esp_err("esp_netif_create_ip6_linklocal", esp_netif_create_ip6_linklocal(netif_sta));
+			Log::get().warn_on_esp_err("esp_netif_create_ip6_linklocal", esp_netif_create_ip6_linklocal(netif_sta));
 
 			if(static_ipv6_address_set) // ugly workaround, skip SLAAC because it also adds it's address as "preferred"
 			{
@@ -316,8 +316,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 		{
 			const ip_event_got_ip_t *event = (const ip_event_got_ip_t *)event_data;
 
-			util_abort_on_esp_err("esp_netif_sntp_start", esp_netif_sntp_start());
-
+			Log::get().abort_on_esp_err("esp_netif_sntp_start", esp_netif_sntp_start());
 			Log::get() << std::format("wlan: ipv4: {} (mask: {}, gw: {})",
 					System::get().ipv4_addr_to_string(&event->ip_info.ip.addr),
 					System::get().ipv4_addr_to_string(&event->ip_info.gw.addr),
@@ -342,7 +341,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 					set_state(ws_ipv6_link_local_address_acquired);
 
 					if(static_ipv6_address_set)
-						util_warn_on_esp_err("esp_netif_add_ip6_address", esp_netif_add_ip6_address(netif_sta, static_ipv6_address, true));
+						Log::get().warn_on_esp_err("esp_netif_add_ip6_address", esp_netif_add_ip6_address(netif_sta, static_ipv6_address, true));
 
 					break;
 				}
@@ -476,14 +475,14 @@ void wlan_command_client_config(cli_command_call_t *call)
 		wifi_mode_t wlan_mode;
 
 		wlan_mode = WIFI_MODE_STA;
-		util_warn_on_esp_err("esp_wifi_get_mode", esp_wifi_get_mode(&wlan_mode));
+		Log::get().warn_on_esp_err("esp_wifi_get_mode", esp_wifi_get_mode(&wlan_mode));
 
 		if(wlan_mode == WIFI_MODE_AP)
 		{
-			util_warn_on_esp_err("esp_wifi_deauth_sta", esp_wifi_deauth_sta(0));
-			util_warn_on_esp_err("esp_wifi_stop", esp_wifi_stop());
-			util_warn_on_esp_err("esp_wifi_set_mode", esp_wifi_set_mode(WIFI_MODE_STA));
-			util_warn_on_esp_err("esp_wifi_start", esp_wifi_start());
+			Log::get().warn_on_esp_err("esp_wifi_deauth_sta", esp_wifi_deauth_sta(0));
+			Log::get().warn_on_esp_err("esp_wifi_stop", esp_wifi_stop());
+			Log::get().warn_on_esp_err("esp_wifi_set_mode", esp_wifi_set_mode(WIFI_MODE_STA));
+			Log::get().warn_on_esp_err("esp_wifi_start", esp_wifi_start());
 		}
 
 		call->parameters[0].str.copy(reinterpret_cast<char *>(config_sta.sta.ssid), sizeof(config_sta.sta.ssid));
@@ -491,7 +490,7 @@ void wlan_command_client_config(cli_command_call_t *call)
 
 		rv = esp_wifi_set_config(WIFI_IF_STA, &config_sta);
 
-		util_warn_on_esp_err("esp_wifi_set_config", rv);
+		Log::get().warn_on_esp_err("esp_wifi_set_config", rv);
 
 		if(rv)
 		{
@@ -586,26 +585,26 @@ void wlan_init(void)
 
 	inited = true;
 
-	util_abort_on_esp_err("esp_event_loop_create_default", esp_event_loop_create_default());
+	Log::get().abort_on_esp_err("esp_event_loop_create_default", esp_event_loop_create_default());
 
-	util_abort_on_esp_err("esp_netif_init", esp_netif_init());
+	Log::get().abort_on_esp_err("esp_netif_init", esp_netif_init());
 	netif_sta = esp_netif_create_default_wifi_sta();
 	netif_ap = esp_netif_create_default_wifi_ap();
 
-	util_abort_on_esp_err("esp_event_handler_instance_register 1",
+	Log::get().abort_on_esp_err("esp_event_handler_instance_register 1",
 			esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wlan_event_handler, (void *)0, (esp_event_handler_instance_t *)0));
-	util_abort_on_esp_err("esp_event_handler_instance_register 2",
+	Log::get().abort_on_esp_err("esp_event_handler_instance_register 2",
 			esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID, ip_event_handler, (void *)0, (esp_event_handler_instance_t *)0));
 
-	util_abort_on_esp_err("esp_netif_sntp_init", esp_netif_sntp_init(&sntp_config));
-	util_abort_on_esp_err("esp_wifi_init", esp_wifi_init(&init_config));
-	util_abort_on_esp_err("esp_wifi_set_mode", esp_wifi_set_mode(WIFI_MODE_STA));
-	util_abort_on_esp_err("esp_wifi_config_11b_rate", esp_wifi_config_11b_rate(WIFI_IF_STA, true)); // FIXME
-	util_abort_on_esp_err("esp_wifi_config_11b_rate", esp_wifi_config_11b_rate(WIFI_IF_AP, true)); // FIXME
-	util_abort_on_esp_err("esp_wifi_start", esp_wifi_start());
+	Log::get().abort_on_esp_err("esp_netif_sntp_init", esp_netif_sntp_init(&sntp_config));
+	Log::get().abort_on_esp_err("esp_wifi_init", esp_wifi_init(&init_config));
+	Log::get().abort_on_esp_err("esp_wifi_set_mode", esp_wifi_set_mode(WIFI_MODE_STA));
+	Log::get().abort_on_esp_err("esp_wifi_config_11b_rate", esp_wifi_config_11b_rate(WIFI_IF_STA, true)); // FIXME
+	Log::get().abort_on_esp_err("esp_wifi_config_11b_rate", esp_wifi_config_11b_rate(WIFI_IF_AP, true)); // FIXME
+	Log::get().abort_on_esp_err("esp_wifi_start", esp_wifi_start());
 
-	util_abort_on_esp_err("esp_netif_set_hostname", esp_netif_set_hostname(netif_sta, hostname.c_str()));
-	util_abort_on_esp_err("esp_netif_set_hostname", esp_netif_set_hostname(netif_ap, hostname.c_str()));
+	Log::get().abort_on_esp_err("esp_netif_set_hostname", esp_netif_set_hostname(netif_sta, hostname.c_str()));
+	Log::get().abort_on_esp_err("esp_netif_set_hostname", esp_netif_set_hostname(netif_ap, hostname.c_str()));
 
 	xTimerStart(state_timer, portMAX_DELAY);
 }
@@ -632,7 +631,7 @@ void wlan_command_info(cli_command_call_t *call)
 
 	if((rv = esp_wifi_get_mode(&wlan_mode)))
 	{
-		util_warn_on_esp_err("esp_wifi_get_mode", rv);
+		Log::get().warn_on_esp_err("esp_wifi_get_mode", rv);
 		call->result += "no information";
 		return;
 	}
@@ -654,7 +653,7 @@ void wlan_command_info(cli_command_call_t *call)
 	call->result += (boost::format("\n- number of interfaces: %u") % esp_netif_get_nr_of_ifs()).str();
 	call->result += (boost::format("\n- index: %d") % esp_netif_get_netif_impl_index(netif)).str();
 
-	util_abort_on_esp_err("esp_netif_get_netif_impl_name", esp_netif_get_netif_impl_name(netif, ifname));
+	Log::get().abort_on_esp_err("esp_netif_get_netif_impl_name", esp_netif_get_netif_impl_name(netif, ifname));
 
 	call->result += (boost::format("\n- name: %s") % ifname).str();
 
@@ -691,7 +690,7 @@ void wlan_command_info(cli_command_call_t *call)
 
 	if((rv = esp_netif_get_mac(netif, mac)))
 	{
-		util_warn_on_esp_err("esp_netif_get_mac", rv);
+		Log::get().warn_on_esp_err("esp_netif_get_mac", rv);
 		call->result += "<unknown>";
 	}
 	else
@@ -701,7 +700,7 @@ void wlan_command_info(cli_command_call_t *call)
 
 	if((rv = esp_netif_get_ip_info(netif, &ip_info)))
 	{
-		util_warn_on_esp_err("esp_netif_get_ip_info", rv);
+		Log::get().warn_on_esp_err("esp_netif_get_ip_info", rv);
 		call->result += "\n- interface address: <unknown>";
 		call->result += "\n- gateway address: <unknown>";
 		call->result += "\n- netmask: <unknown>";
@@ -729,7 +728,7 @@ void wlan_command_info(cli_command_call_t *call)
 
 	if((rv = esp_netif_get_hostname(netif, &hostname)))
 	{
-		util_warn_on_esp_err("esp_netif_get_hostname", rv);
+		Log::get().warn_on_esp_err("esp_netif_get_hostname", rv);
 		call->result =+ "<unknown>";
 	}
 	else
@@ -737,7 +736,7 @@ void wlan_command_info(cli_command_call_t *call)
 
 	if((rv = esp_wifi_get_ps(&ps_type)))
 	{
-		util_warn_on_esp_err("esp_wifi_get_ps", rv);
+		Log::get().warn_on_esp_err("esp_wifi_get_ps", rv);
 		key = "<invalid>";
 	}
 	else
@@ -764,7 +763,7 @@ void wlan_command_info(cli_command_call_t *call)
 
 		if((rv = esp_wifi_sta_get_ap_info(&ap_info)))
 		{
-			util_warn_on_esp_err("esp_wifi_sta_get_ap_info", rv);
+			Log::get().warn_on_esp_err("esp_wifi_sta_get_ap_info", rv);
 			call->result += " <no info>";
 		}
 		else
@@ -851,7 +850,7 @@ void wlan_command_info(cli_command_call_t *call)
 
 		if((rv = esp_wifi_get_protocol(WIFI_IF_STA, &protocol_bitmap)))
 		{
-			util_warn_on_esp_err("esp_wifi_get_protocol", rv);
+			Log::get().warn_on_esp_err("esp_wifi_get_protocol", rv);
 			call->result += " <invalid>";
 		}
 		else
@@ -873,7 +872,7 @@ void wlan_command_info(cli_command_call_t *call)
 
 		if((rv = esp_wifi_get_bandwidth(WIFI_IF_STA, &wbw)))
 		{
-			util_warn_on_esp_err("esp_wifi_get_bandwidth", rv);
+			Log::get().warn_on_esp_err("esp_wifi_get_bandwidth", rv);
 			call->result += "<invalid>";
 		}
 		else
@@ -881,7 +880,7 @@ void wlan_command_info(cli_command_call_t *call)
 
 		if((rv = esp_wifi_sta_get_negotiated_phymode(&mode)))
 		{
-			util_warn_on_esp_err("esp_wifi_sta_get_negotiated_phymode", rv);
+			Log::get().warn_on_esp_err("esp_wifi_sta_get_negotiated_phymode", rv);
 			key = "<invalid>";
 		}
 		else
@@ -904,7 +903,7 @@ void wlan_command_info(cli_command_call_t *call)
 
 		if((rv = esp_wifi_get_inactive_time(WIFI_IF_STA, &timeout)))
 		{
-			util_warn_on_esp_err("esp_wifi_get_inactive_time", rv);
+			Log::get().warn_on_esp_err("esp_wifi_get_inactive_time", rv);
 			call->result += "<invalid>";
 		}
 		else
@@ -920,7 +919,7 @@ void wlan_command_info(cli_command_call_t *call)
 
 		if((rv = esp_wifi_get_channel(&channel, &secondary)))
 		{
-			util_warn_on_esp_err("esp_wifi_get_channel", rv);
+			Log::get().warn_on_esp_err("esp_wifi_get_channel", rv);
 			channel = 0;
 		}
 
@@ -929,7 +928,7 @@ void wlan_command_info(cli_command_call_t *call)
 
 		if((rv = esp_wifi_get_country(&country)))
 		{
-			util_warn_on_esp_err("esp_wifi_get_country", rv);
+			Log::get().warn_on_esp_err("esp_wifi_get_country", rv);
 			call->result += "<invalid>";
 		}
 		else

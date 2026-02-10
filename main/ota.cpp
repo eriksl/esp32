@@ -34,7 +34,7 @@ static int partition_to_slot(const esp_partition_t *partition)
 		if(partition->subtype == ESP_PARTITION_SUBTYPE_APP_OTA_1)
 			slot = 1;
 		else
-			util_abort("partition_to_slot: unknown OTA partition type");
+			Log::get().abort("partition_to_slot: unknown OTA partition type");
 
 	return(slot);
 }
@@ -43,7 +43,7 @@ static void ota_abort(void)
 {
 	if(ota_handle_active)
 	{
-		util_warn_on_esp_err("otacli: ota_abort: esp_ota_abort returns error", esp_ota_abort(ota_handle));
+		Log::get().warn_on_esp_err("otacli: ota_abort: esp_ota_abort returns error", esp_ota_abort(ota_handle));
 
 		ota_partition = nullptr;
 		ota_handle_active = false;

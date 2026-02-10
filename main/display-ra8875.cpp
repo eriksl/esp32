@@ -397,7 +397,7 @@ static void write_register(unsigned int reg, unsigned int length, const std::uin
 	transaction.rxlength = 0;
 	transaction.rx_buffer = nullptr;
 
-	util_abort_on_esp_err("spi_device_transmit 1a", spi_device_transmit(spi_device_handle, &transaction));
+	Log::get().abort_on_esp_err("spi_device_transmit 1a", spi_device_transmit(spi_device_handle, &transaction));
 
 	transaction.cmd = rs_write | rs_data;
 	transaction.addr = 0;
@@ -406,7 +406,7 @@ static void write_register(unsigned int reg, unsigned int length, const std::uin
 	transaction.rxlength = 0;
 	transaction.rx_buffer = nullptr;
 
-	util_abort_on_esp_err("spi_device_transmit 1b", spi_device_transmit(spi_device_handle, &transaction));
+	Log::get().abort_on_esp_err("spi_device_transmit 1b", spi_device_transmit(spi_device_handle, &transaction));
 
 	spi_mutex_give();
 }
@@ -779,10 +779,10 @@ bool display_ra8875_init(const display_init_parameters_t *parameters)
 	spi_mutex = xSemaphoreCreateMutex();
 	assert(spi_mutex);
 
-	util_abort_on_esp_err("spi_bus_initialize", spi_bus_initialize(spi_signal->esp_host, &bus_config, SPI_DMA_CH_AUTO));
-	util_abort_on_esp_err("spi_bus_add_device 1", spi_bus_add_device(spi_signal->esp_host, &device, &spi_device_handle));
+	Log::get().abort_on_esp_err("spi_bus_initialize", spi_bus_initialize(spi_signal->esp_host, &bus_config, SPI_DMA_CH_AUTO));
+	Log::get().abort_on_esp_err("spi_bus_add_device 1", spi_bus_add_device(spi_signal->esp_host, &device, &spi_device_handle));
 
-	util_abort_on_esp_err("spi_bus_get_max_transaction_len", spi_bus_get_max_transaction_len(spi_signal->esp_host, &max_transaction_length));
+	Log::get().abort_on_esp_err("spi_bus_get_max_transaction_len", spi_bus_get_max_transaction_len(spi_signal->esp_host, &max_transaction_length));
 
 	pixel_buffer_size = max_transaction_length;
 	pixel_buffer_length = 0;
@@ -797,9 +797,9 @@ bool display_ra8875_init(const display_init_parameters_t *parameters)
 	write_register_1(reg_pll_c2, reg_pllc2_value);
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-	util_abort_on_esp_err("spi_bus_remove_device", spi_bus_remove_device(spi_device_handle));
+	Log::get().abort_on_esp_err("spi_bus_remove_device", spi_bus_remove_device(spi_device_handle));
 	device.clock_speed_hz = spi_speed_normal;
-	util_abort_on_esp_err("spi_bus_add_device 2", spi_bus_add_device(spi_signal->esp_host, &device, &spi_device_handle));
+	Log::get().abort_on_esp_err("spi_bus_add_device 2", spi_bus_add_device(spi_signal->esp_host, &device, &spi_device_handle));
 
 	// interface
 

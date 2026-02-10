@@ -158,21 +158,21 @@ static const tree_comparator_t *setup(const handle_to_group_timer_t *mpt_ptr)
 	if(mpt_ptr->gpio < 0)
 		return((const tree_comparator_t *)0);
 
-	util_abort_on_esp_err("mcpwm_new_timer", mcpwm_new_timer(&timer_config, &timer->handle));
-	util_abort_on_esp_err("mcpwm_new_operator", mcpwm_new_operator(&operator_config, &operator_->handle));
-	util_abort_on_esp_err("mcpwm_operator_connect_timer", mcpwm_operator_connect_timer(operator_->handle, timer->handle));
-	util_abort_on_esp_err("mcpwm_new_comparator", mcpwm_new_comparator(operator_->handle, &comparator_config, &comparator->handle));
-	util_abort_on_esp_err("mcpwm_new_generator", mcpwm_new_generator(operator_->handle, &generator_config, &generator->handle));
+	Log::get().abort_on_esp_err("mcpwm_new_timer", mcpwm_new_timer(&timer_config, &timer->handle));
+	Log::get().abort_on_esp_err("mcpwm_new_operator", mcpwm_new_operator(&operator_config, &operator_->handle));
+	Log::get().abort_on_esp_err("mcpwm_operator_connect_timer", mcpwm_operator_connect_timer(operator_->handle, timer->handle));
+	Log::get().abort_on_esp_err("mcpwm_new_comparator", mcpwm_new_comparator(operator_->handle, &comparator_config, &comparator->handle));
+	Log::get().abort_on_esp_err("mcpwm_new_generator", mcpwm_new_generator(operator_->handle, &generator_config, &generator->handle));
 
-	util_abort_on_esp_err("mcpwm_generator_set_action_on_timer_event",
+	Log::get().abort_on_esp_err("mcpwm_generator_set_action_on_timer_event",
 			mcpwm_generator_set_action_on_timer_event(generator->handle, MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
 
-	util_abort_on_esp_err("mcpwm_generator_set_action_on_compare_event",
+	Log::get().abort_on_esp_err("mcpwm_generator_set_action_on_compare_event",
 			mcpwm_generator_set_action_on_compare_event(generator->handle, MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, comparator->handle, MCPWM_GEN_ACTION_LOW)));
 
-	util_abort_on_esp_err("mcpwm_comparator_set_compare_value", mcpwm_comparator_set_compare_value(comparator->handle, 0));
-	util_abort_on_esp_err("mcpwm_timer_enable", mcpwm_timer_enable(timer->handle));
-	util_abort_on_esp_err("mcpwm_timer_start_stop", mcpwm_timer_start_stop(timer->handle, MCPWM_TIMER_START_NO_STOP));
+	Log::get().abort_on_esp_err("mcpwm_comparator_set_compare_value", mcpwm_comparator_set_compare_value(comparator->handle, 0));
+	Log::get().abort_on_esp_err("mcpwm_timer_enable", mcpwm_timer_enable(timer->handle));
+	Log::get().abort_on_esp_err("mcpwm_timer_start_stop", mcpwm_timer_start_stop(timer->handle, MCPWM_TIMER_START_NO_STOP));
 
 	return(comparator);
 }
@@ -227,7 +227,7 @@ bool mcpwm_open(mcpwm_t handle, const char *owner)
 	channel->duty = 0;
 	channel->owner = owner;
 
-	util_abort_on_esp_err("mcpwm_comparator_set_compare_value", mcpwm_comparator_set_compare_value(channel->comparator->handle, channel->duty));
+	Log::get().abort_on_esp_err("mcpwm_comparator_set_compare_value", mcpwm_comparator_set_compare_value(channel->comparator->handle, channel->duty));
 
 	return(true);
 }
@@ -246,7 +246,7 @@ void mcpwm_set(mcpwm_t handle, unsigned int duty)
 
 	channel->duty = duty <= static_cast<unsigned int>(timer_ticks) ? duty : static_cast<unsigned int>(timer_ticks);
 
-	util_abort_on_esp_err("mcpwm_comparator_set_compare_value", mcpwm_comparator_set_compare_value(channel->comparator->handle, channel->duty));
+	Log::get().abort_on_esp_err("mcpwm_comparator_set_compare_value", mcpwm_comparator_set_compare_value(channel->comparator->handle, channel->duty));
 }
 
 unsigned int mcpwm_get(mcpwm_t handle)

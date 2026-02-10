@@ -74,7 +74,7 @@ TCP::TCP() :
 	thread_config.stack_size = 2 * 1024;
 	thread_config.prio = 1;
 	//thread_config.stack_alloc_caps = MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM;
-	util_abort_on_esp_err("esp_pthread_set_cfg", esp_pthread_set_cfg(&thread_config));
+	Log::get().abort_on_esp_err("esp_pthread_set_cfg", esp_pthread_set_cfg(&thread_config));
 
 	std::thread new_thread(TCP::run_wrapper, this);
 	new_thread.detach();
@@ -133,13 +133,13 @@ void TCP::run()
 			if(!(pfd.revents & POLLIN))
 			{
 				Log::get().log_errno(errno, "tcp: socket error");
-				util_abort("tcp socket error");
+				Log::get().abort("tcp socket error");
 			}
 
 			if(ioctl(this->socket_fd, FIONREAD, &length))
 			{
 				Log::get().log_errno(errno, "tcp: ioctl");
-				util_abort("tcp ioctl error");
+				Log::get().abort("tcp ioctl error");
 			}
 
 			tcp_receive_buffer.clear();
@@ -198,7 +198,7 @@ void TCP::run()
 					if(!(pfd.revents & POLLIN))
 					{
 						Log::get().log_errno(errno, "tcp: socket error (2)");
-						util_abort("tcp socket error (2)");
+						Log::get().abort("tcp socket error (2)");
 					}
 
 					length = ::recv(this->socket_fd, tcp_receive_buffer.data() + offset, pending, 0);

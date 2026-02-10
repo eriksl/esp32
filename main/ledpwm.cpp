@@ -60,12 +60,12 @@ LedPWM::LedPWM()
 	timer_config.timer_num = static_cast<ledc_timer_t>(magic_enum::enum_integer(timer_t::timer_5khz));
 
 	if((rv = ledc_timer_config(&timer_config)) != ESP_OK)
-		throw(hard_exception(util_esp_string_error(rv, "LedPWM: ledc_timer_config 4882")));
+		throw(hard_exception(Log::get().esp_string_error(rv, "LedPWM: ledc_timer_config 4882")));
 
 	timer_config.freq_hz = 120;
 	timer_config.timer_num = static_cast<ledc_timer_t>(magic_enum::enum_integer(timer_t::timer_120hz));
 	if((rv = ledc_timer_config(&timer_config)) != ESP_OK)
-		throw(hard_exception(util_esp_string_error(rv, "LedPWM: ledc_timer_config 120")));
+		throw(hard_exception(Log::get().esp_string_error(rv, "LedPWM: ledc_timer_config 120")));
 
 	for(const auto &channel : magic_enum::enum_values<Channel>())
 	{
@@ -89,14 +89,14 @@ LedPWM::LedPWM()
 			channel_config.timer_sel = static_cast<ledc_timer_t>(magic_enum::enum_integer(channel_to_gpio_ptr->timer));
 
 			if((rv = ledc_channel_config(&channel_config)) != ESP_OK)
-				throw(hard_exception(util_esp_string_error(rv, "LedPWM: ledc_channel_config")));
+				throw(hard_exception(Log::get().esp_string_error(rv, "LedPWM: ledc_channel_config")));
 
 			handle->available = 1;
 		}
 	}
 
 	if((rv = ledc_fade_func_install(0)) != ESP_OK)
-		throw(hard_exception(util_esp_string_error(rv, "LedPWM: ledc_fade_func_install")));
+		throw(hard_exception(Log::get().esp_string_error(rv, "LedPWM: ledc_fade_func_install")));
 
 	this->singleton = this;
 }
@@ -129,7 +129,7 @@ void LedPWM::open(Channel channel, std::string_view owner)
 	handle->owner = owner;
 
 	if((rv = ledc_set_duty_and_update(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(magic_enum::enum_integer(channel)), 0, 0)) != ESP_OK)
-		throw(hard_exception(util_esp_string_error(rv, "ledc_set_duty_and_update")));
+		throw(hard_exception(Log::get().esp_string_error(rv, "ledc_set_duty_and_update")));
 }
 
 void LedPWM::set(Channel channel, int duty)
@@ -152,7 +152,7 @@ void LedPWM::set(Channel channel, int duty)
 			duty = 0;
 
 	if((rv = ledc_set_duty_and_update(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(magic_enum::enum_integer(channel)), duty, 0)) != ESP_OK)
-		throw(hard_exception(util_esp_string_error(rv, "ledc_set_duty_and_update")));
+		throw(hard_exception(Log::get().esp_string_error(rv, "ledc_set_duty_and_update")));
 }
 
 int LedPWM::get(Channel channel)

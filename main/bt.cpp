@@ -180,7 +180,7 @@ static void server_advertise(void)
 	fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
 	fields.tx_pwr_lvl_is_present = 1;
 
-	util_abort_on_esp_err("ble_gap_adv_set_fields", ble_gap_adv_set_fields(&fields));
+	Log::get().abort_on_esp_err("ble_gap_adv_set_fields", ble_gap_adv_set_fields(&fields));
 
 	memset(&adv_params, 0, sizeof(adv_params));
 	adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
@@ -189,7 +189,7 @@ static void server_advertise(void)
 	rc = ble_gap_adv_start(own_addr_type, NULL, BLE_HS_FOREVER, &adv_params, gap_event, NULL);
 
 	if((rc != 0) && (rc != BLE_HS_EALREADY))
-		util_abort_on_esp_err("bt: ble_gap_adv_start", rc);
+		Log::get().abort_on_esp_err("bt: ble_gap_adv_start", rc);
 }
 
 static void callback_reset(int reason)
@@ -199,9 +199,9 @@ static void callback_reset(int reason)
 
 static void callback_sync(void)
 {
-	util_abort_on_esp_err("bt: ble_hs_util_ensure_addr", ble_hs_util_ensure_addr(0));
-	util_abort_on_esp_err("bt: ble_hs_id_infer_auto", ble_hs_id_infer_auto(0, &own_addr_type));
-	util_abort_on_esp_err("bt: ble_hId_copy_addr", ble_hs_id_copy_addr(own_addr_type, bt_host_address, NULL));
+	Log::get().abort_on_esp_err("bt: ble_hs_util_ensure_addr", ble_hs_util_ensure_addr(0));
+	Log::get().abort_on_esp_err("bt: ble_hs_id_infer_auto", ble_hs_id_infer_auto(0, &own_addr_type));
+	Log::get().abort_on_esp_err("bt: ble_hId_copy_addr", ble_hs_id_copy_addr(own_addr_type, bt_host_address, NULL));
 
 	server_advertise();
 }
@@ -500,7 +500,7 @@ void bt_init(void)
 		encryption_key = "default";
 	}
 
-	util_warn_on_esp_err("nimble_port_init", nimble_port_init());
+	Log::get().warn_on_esp_err("nimble_port_init", nimble_port_init());
 
 	inited = true;
 
@@ -515,8 +515,8 @@ void bt_init(void)
 	ble_hs_cfg.sm_our_key_dist  = 0;
 	ble_hs_cfg.sm_their_key_dist = 0;
 
-	util_abort_on_esp_err("gatt_init", gatt_init());
-	util_abort_on_esp_err("ble_svc_gap_device_name_set", ble_svc_gap_device_name_set(hostname.c_str()));
+	Log::get().abort_on_esp_err("gatt_init", gatt_init());
+	Log::get().abort_on_esp_err("ble_svc_gap_device_name_set", ble_svc_gap_device_name_set(hostname.c_str()));
 	ble_store_config_init();
 	nimble_port_freertos_init(nimble_port_task);
 }
@@ -573,7 +573,7 @@ void bluetooth_command_key(cli_command_call_t *call)
 			}
 			default:
 			{
-				util_abort("bluetooth-command-key: invalid parameter count");
+				Log::get().abort("bluetooth-command-key: invalid parameter count");
 				break;
 			}
 		}

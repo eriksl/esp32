@@ -66,7 +66,7 @@ UDP::UDP() :
 	thread_config.stack_size = 2 * 1024;
 	thread_config.prio = 1;
 	//thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
-	util_abort_on_esp_err("esp_pthread_set_cfg", esp_pthread_set_cfg(&thread_config));
+	Log::get().abort_on_esp_err("esp_pthread_set_cfg", esp_pthread_set_cfg(&thread_config));
 
 	std::thread new_thread(UDP::run_wrapper, this);
 
@@ -111,13 +111,13 @@ void UDP::run()
 		if(!(pfd.revents & POLLIN))
 		{
 			Log::get().log_errno(errno, "udp: socket error");
-			util_abort("udp socket error");
+			Log::get().abort("udp socket error");
 		}
 
 		if(ioctl(this->socket_fd, FIONREAD, &length))
 		{
 			Log::get().log_errno(errno, "udp: ioctl");
-			util_abort("udp ioctl error");
+			Log::get().abort("udp ioctl error");
 		}
 
 		udp_receive_buffer.clear();
