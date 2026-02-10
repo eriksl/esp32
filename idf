@@ -39,7 +39,17 @@ done < environment
 case "$1" in
 	build)
 		cd "$IDF_BUILD"
-		exec ninja
+		shift
+
+		args=()
+
+		for arg in "$@"; do
+			obj="${arg/.o/.cpp.obj}"
+			obj="${obj/.cpp/.cpp.obj}"
+			args+="esp-idf/main/CMakeFiles/__idf_main.dir/${obj}"
+		done
+
+		exec ninja ${args[*]}
 		;;
 
 	monitor)
