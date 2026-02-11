@@ -19,8 +19,8 @@ class LedPWM final
 			channel_14bit_120hz,
 		};
 
-		LedPWM();
-		LedPWM(const LedPWM &) = delete;
+		explicit LedPWM();
+		explicit LedPWM(const LedPWM &) = delete;
 
 		static LedPWM& get();
 
@@ -62,9 +62,8 @@ class LedPWM final
 			unsigned int frequency;
 		};
 
-		static const LedPWM::channel_to_gpio_t channel_to_gpio[channels_size];
-
 		static LedPWM *singleton;
 
+		static const LedPWM::channel_to_gpio_t channel_to_gpio[channels_size];
 		magic_enum::containers::array<Channel, handle_t> handles;
 };
