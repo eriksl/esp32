@@ -1,52 +1,22 @@
-#include <stdint.h>
-#include <stdbool.h>
-#include <string.h>
-
-#include "log.h"
-#include "util.h"
-#include "cli-command.h"
 #include "pdm.h"
 
-#include <string>
-#include <boost/format.hpp>
+#include "exception.h"
 
-#include "driver/sdm.h"
 #include "driver/gpio.h"
 
-enum
+#include <format>
+
+const std::map<PDM::Channel, int> PDM::channel_to_gpio
 {
-	pdm_sample_frequency = 80000000 / 256,
+	{ PDM::Channel::channel_8bit_150khz_0, CONFIG_BSP_PDM0 },
+	{ PDM::Channel::channel_8bit_150khz_1, CONFIG_BSP_PDM1 },
+	{ PDM::Channel::channel_8bit_150khz_2, CONFIG_BSP_PDM2 },
+	{ PDM::Channel::channel_8bit_150khz_3, CONFIG_BSP_PDM3 },
 };
 
-typedef struct
-{
-	const char *owner;
-	unsigned int density;
-	sdm_channel_handle_t handle;
-	struct
-	{
-		unsigned int available:1;
-		unsigned int open:1;
-	};
-} channel_t;
+PDM *PDM::singleton = nullptr;
 
-typedef struct
-{
-	int gpio;
-} handle_to_gpio_t;
-
-static const handle_to_gpio_t handle_to_gpio[pdm_size] =
-{
-	[pdm_8bit_150khz_0] = { .gpio = CONFIG_BSP_PDM0 },
-	[pdm_8bit_150khz_1] = { .gpio = CONFIG_BSP_PDM1 },
-	[pdm_8bit_150khz_2] = { .gpio = CONFIG_BSP_PDM2 },
-	[pdm_8bit_150khz_3] = { .gpio = CONFIG_BSP_PDM3 },
-};
-
-static bool inited = false;
-static channel_t *channels;
-
-void pdm_init(void)
+PDM::PDM(Log &log_in) : log(log_in)
 {
 	gpio_config_t gpio_pin_config =
 	{
@@ -68,122 +38,155 @@ void pdm_init(void)
 		},
 	};
 
-	pdm_t handle;
-	channel_t *channel;
-	const handle_to_gpio_t *handle_to_gpio_ptr;
+	handle_t *handle;
+	int gpio;
+	esp_err_t rv;
 
-	assert(!inited);
+	if(this->singleton)
+		throw(hard_exception("PDM::PDM already active"));
 
-	channels = new channel_t[pdm_size];
+	static_assert(magic_enum::enum_count<Channel>() == channels_size);
 
-	for(handle = pdm_first; handle < pdm_size; handle = static_cast<pdm_t>(handle + 1))
+	try
 	{
-		handle_to_gpio_ptr = &handle_to_gpio[handle];
-		channel = &channels[handle];
-
-		channel->owner = (const char *)0;
-		channel->density = 0;
-		channel->handle = (sdm_channel_handle_t)0;
-		channel->available = 0;
-		channel->open = 0;
-
-		if(handle_to_gpio_ptr->gpio >= 0)
+		for(const auto &channel : magic_enum::enum_values<Channel>())
 		{
-			gpio_pin_config.pin_bit_mask = (1ULL << handle_to_gpio_ptr->gpio);
-			Log::get().abort_on_esp_err("gpio_reset_pin", gpio_reset_pin(static_cast<gpio_num_t>(handle_to_gpio_ptr->gpio)));
-			Log::get().abort_on_esp_err("gpio_config", gpio_config(&gpio_pin_config));
+			handle = &this->handles[channel];
 
-			sdm_config.gpio_num = handle_to_gpio_ptr->gpio;
-			Log::get().abort_on_esp_err("sdm_new_channel", sdm_new_channel(&sdm_config, &channel->handle));
-			Log::get().abort_on_esp_err("sdm_channel_enable", sdm_channel_enable(channel->handle));
-			Log::get().abort_on_esp_err("sdm_channel_set_pulse_density", sdm_channel_set_pulse_density(channel->handle, channel->density - 128));
+			handle->owner = "";
+			handle->density = 0;
+			handle->handle = nullptr;
+			handle->available = 0;
+			handle->open = 0;
 
-			channel->available = 1;
+			gpio = this->channel_to_gpio.at(channel);
+
+			if(gpio >= 0)
+			{
+				handle->available = 1;
+
+				gpio_pin_config.pin_bit_mask = (1ULL << gpio);
+
+				if((rv = gpio_reset_pin(static_cast<gpio_num_t>(gpio))) != ESP_OK)
+					throw(hard_exception(log.esp_string_error(rv, "gpio_reset_pin")));
+
+				if((rv = gpio_config(&gpio_pin_config)) != ESP_OK)
+					throw(hard_exception(log.esp_string_error(rv, "gpio_pin_config")));
+
+				sdm_config.gpio_num = gpio;
+
+				if((rv = sdm_new_channel(&sdm_config, &handle->handle)) != ESP_OK)
+					throw(hard_exception(log.esp_string_error(rv, "sdm_config")));
+
+				if((rv = sdm_channel_enable(handle->handle)) != ESP_OK)
+					throw(hard_exception(log.esp_string_error(rv, "sdm_channel_enable")));
+
+				if((rv = sdm_channel_set_pulse_density(handle->handle, handle->density - 128)) != ESP_OK)
+					throw(hard_exception(log.esp_string_error(rv, "sdm_channel_set_pulse_density")));
+			}
 		}
 	}
-
-	inited = true;
-}
-
-bool pdm_channel_open(pdm_t handle, const char *owner)
-{
-	channel_t *channel;
-
-	assert(inited);
-	assert(handle < pdm_size);
-
-	channel = &channels[handle];
-
-	if(!channel->available)
-		return(false);
-
-	if(channel->open)
-		return(true);
-
-	channel->open = 1;
-	channel->owner = owner;
-
-	return(true);
-}
-
-void pdm_channel_set(pdm_t handle, unsigned int density)
-{
-	channel_t *channel;
-
-	assert(inited);
-	assert(handle < pdm_size);
-
-	channel = &channels[handle];
-
-	assert(channel->open);
-
-	if(density > 255)
-		density = 255;
-
-	channel->density = density;
-
-	Log::get().abort_on_esp_err("sdm_channel_set_pulse_density", sdm_channel_set_pulse_density(channel->handle, (int)channel->density - 128));
-}
-
-unsigned int pdm_channel_get(pdm_t handle)
-{
-	const channel_t *channel;
-
-	assert(inited);
-	assert(handle < pdm_size);
-
-	channel = &channels[handle];
-
-	return(channel->density);
-}
-
-void command_pdm_info(cli_command_call_t *call)
-{
-	pdm_t handle;
-	channel_t *channel;
-
-	assert(inited);
-	assert(call);
-	assert(call->parameter_count == 0);
-
-	call->result = "PDM INFO:";
-	call->result += (boost::format("\n- channels available: %u") % pdm_size).str();
-	call->result += "\nchannels:";
-
-	for(handle = pdm_first; handle < pdm_size; handle = static_cast<pdm_t>(handle + 1))
+	catch(const hard_exception &e)
 	{
-		channel = &channels[handle];
+		throw(hard_exception(std::format("PDM::PDM: {}", e.what())));
+	}
 
-		if(channel->available)
+	this->singleton = this;
+}
+
+PDM& PDM::get()
+{
+	if(!PDM::singleton)
+		throw(hard_exception("PDM::get: not active"));
+
+	return(*PDM::singleton);
+}
+
+void PDM::open(Channel channel, std::string_view owner)
+{
+	handle_t *handle;
+
+	if(!this->singleton)
+		throw(hard_exception("PDM::open not active"));
+
+	if(!magic_enum::enum_contains<Channel>(channel))
+		throw(hard_exception("PDM::open: invalid channel"));
+
+	handle = &this->handles[channel];
+
+	if(!handle->available)
+		throw(transient_exception("PDM::open: channel unavailable"));
+
+	if(handle->open)
+		throw(transient_exception("PDM::open: channel in use"));
+
+	handle->open = 1;
+	handle->owner = owner;
+}
+
+void PDM::set(Channel channel, int density)
+{
+	esp_err_t rv;
+	handle_t *handle;
+
+	if(!this->singleton)
+		throw(hard_exception("PDM::set not active"));
+
+	if(!magic_enum::enum_contains<Channel>(channel))
+		throw(hard_exception("PDM::set: invalid channel"));
+
+	handle = &handles[channel];
+
+	if(!handle->open)
+		throw(transient_exception("PDM::set: channel not open"));
+
+	if((density < 0) || (density > 255))
+		throw(hard_exception(std::format("PDM::set: value {:d} out of range", density)));
+
+	handle->density = density;
+
+	if((rv = sdm_channel_set_pulse_density(handle->handle, handle->density - 128)) != ESP_OK)
+		throw(hard_exception(log.esp_string_error(rv, "sdm_channel_set_pulse_density")));
+}
+
+int PDM::get(Channel channel)
+{
+	const handle_t *handle;
+
+	if(!this->singleton)
+		throw(hard_exception("PDM::get not active"));
+
+	if(!magic_enum::enum_contains<Channel>(channel))
+		throw(hard_exception("PDM::get: invalid channel"));
+
+	handle = &this->handles[channel];
+
+	return(handle->density);
+}
+
+void PDM::info(std::string &out)
+{
+	handle_t *handle;
+
+	if(!this->singleton)
+		throw(hard_exception("PDM::info: not active"));
+
+	out += std::format("- channels available: {:d}",  channels_size);
+	out += "\nchannels:";
+
+	for(const auto &entry : magic_enum::enum_entries<Channel>())
+	{
+		handle = &handles[entry.first];
+
+		if(handle->available)
 		{
-			assert(!channel->open || channel->owner);
-
-			call->result += (boost::format("\n- channel %u: 8 bits @ 150 kHz, gpio %2d is %s density: %3u, owned by: %s") %
-					handle %
-					handle_to_gpio[handle].gpio %
-					(channel->open ? "open" : "not open") %
-					channel->density %
-					(channel->open ? channel->owner : "<none>")).str();
+			out += std::format("\n- channel {:d}: {}: 8 bits @ 150 kHz, gpio {:2d} is {} density: {:3d}, owned by: {}",
+					magic_enum::enum_integer(entry.first),
+					entry.second,
+					channel_to_gpio.at(entry.first),
+					(handle->open ? "open" : "not open"),
+					handle->density,
+					(handle->open ? handle->owner : "<none>"));
 		}
 	}
 }

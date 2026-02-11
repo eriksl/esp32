@@ -13,10 +13,13 @@ Notify *Command::notify_ = nullptr;
 Log *Command::log_ = nullptr;
 System *Command::system_ = nullptr;
 Util *Command::util_ = nullptr;
+PDM *Command::pdm_ = nullptr;
 
-Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, LedPWM &ledpwm_in, Notify &notify_in, Log &log_in, System &system_in, Util &util_in) :
+Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, LedPWM &ledpwm_in,
+		Notify &notify_in, Log &log_in, System &system_in, Util &util_in, PDM &pdm_in)
+	:
 		config(config_in), console(console_in), ledpixel(ledpixel_in), ledpwm(ledpwm_in),
-		notify(notify_in), log(log_in), system(system_in), util(util_in)
+		notify(notify_in), log(log_in), system(system_in), util(util_in), pdm(pdm_in)
 {
 	if(this->singleton)
 		throw(hard_exception("Command: already activated"));
@@ -30,6 +33,7 @@ Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, 
 	this->log_ = &log;
 	this->system_ = &system;
 	this->util_ = &util;
+	this->pdm_ = &pdm;
 }
 
 std::string Command::make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2)
@@ -292,6 +296,9 @@ void Command::util_timezone(cli_command_call_t *call)
 {
 	std::string tz;
 
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
 	if(call->parameter_count > 0)
 	{
 		try
@@ -316,4 +323,14 @@ void Command::util_timezone(cli_command_call_t *call)
 	}
 
 	call->result = std::format("TZ: {}", tz);
+}
+
+void Command::pdm_info(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	call->result = "PDM INFO\n";
+
+	Command::pdm_->info(call->result);
 }

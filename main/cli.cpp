@@ -532,7 +532,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "pdm-info", "pin", "info about pdm channels", command_pdm_info, {}},
+	{ "pdm-info", "pin", "info about pdm channels", Command::pdm_info, {}},
 
 	{ "process-list", "ps", "show information about running processes", Command::system_process_list,
 		{	1,

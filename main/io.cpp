@@ -272,10 +272,10 @@ enum
 };
 
 static_assert((unsigned int)esp32_pdm_pin_size <= (unsigned int)io_int_value_size);
-static_assert((unsigned int)esp32_pdm_pin_0 == pdm_8bit_150khz_0);
-static_assert((unsigned int)esp32_pdm_pin_1 == pdm_8bit_150khz_1);
-static_assert((unsigned int)esp32_pdm_pin_2 == pdm_8bit_150khz_2);
-static_assert((unsigned int)esp32_pdm_pin_3 == pdm_8bit_150khz_3);
+static_assert(esp32_pdm_pin_0 == magic_enum::enum_integer(PDM::Channel::channel_8bit_150khz_0));
+static_assert(esp32_pdm_pin_1 == magic_enum::enum_integer(PDM::Channel::channel_8bit_150khz_1));
+static_assert(esp32_pdm_pin_2 == magic_enum::enum_integer(PDM::Channel::channel_8bit_150khz_2));
+static_assert(esp32_pdm_pin_3 == magic_enum::enum_integer(PDM::Channel::channel_8bit_150khz_3));
 
 static void esp32_pdm_info(const io_data_t *, std::string &)
 {
@@ -284,15 +284,25 @@ static void esp32_pdm_info(const io_data_t *, std::string &)
 
 static bool esp32_pdm_init(io_data_t *dataptr)
 {
-	pdm_t handle;
 	bool rv = false;
 
 	assert(inited);
 	assert(dataptr);
 
-	for(handle = pdm_first; handle < pdm_size; handle = static_cast<pdm_t>(handle + 1))
-		if((dataptr->int_value[handle] = pdm_channel_open(handle, "I/O PDM")))
-			rv = true;
+	for(const auto &channel : magic_enum::enum_values<PDM::Channel>())
+	{
+		try
+		{
+			PDM::get().open(channel, "I/O PDM");
+		}
+		catch(...)
+		{
+			continue;
+		}
+
+		dataptr->int_value[magic_enum::enum_integer(channel)] = magic_enum::enum_integer(channel);
+		rv = true;
+	}
 
 	return(rv);
 }
@@ -302,13 +312,15 @@ static bool esp32_pdm_write(io_data_t *dataptr, unsigned int pin, unsigned int v
 	assert(inited);
 	assert(dataptr);
 	assert(pin < dataptr->info->pins);
-	assert(pin < pdm_size);
 	assert(value <= dataptr->info->max_value);
+
+	if(!magic_enum::enum_contains<PDM::Channel>(pin))
+		throw(hard_exception(std::format("esp32_pdm_write: pin {:d} out of range", pin)));
 
 	if(!dataptr->int_value[pin])
 		return(false);
 
-	pdm_channel_set((pdm_t)pin, value);
+	PDM::get().set(magic_enum::enum_cast<PDM::Channel>(pin).value(), value);
 
 	return(true);
 }
@@ -318,10 +330,12 @@ static void esp32_pdm_pin_info(const io_data_t *dataptr, unsigned int pin, std::
 	assert(inited);
 	assert(dataptr);
 	assert(pin < dataptr->info->pins);
-	assert(pin < pdm_size);
+
+	if(!magic_enum::enum_contains<PDM::Channel>(pin))
+		throw(hard_exception(std::format("esp32_pdm_info: pin {:d} out of range", pin)));
 
 	if(dataptr->int_value[pin])
-		result += std::format("PDM channel {:d} density: {:d}", pin, pdm_channel_get(static_cast<pdm_t>(pin)));
+		result += std::format("PDM channel {:d} density: {:d}", pin, PDM::get().get(magic_enum::enum_cast<PDM::Channel>(pin).value()));
 	else
 		result += "pin unvailable on this board";
 }

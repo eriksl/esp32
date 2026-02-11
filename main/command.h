@@ -7,6 +7,7 @@
 #include "notify.h"
 #include "log.h"
 #include "system.h"
+#include "pdm.h"
 #include "exception.h"
 #include "cli-command.h"
 
@@ -16,7 +17,7 @@ class Command final
 {
 	public:
 
-		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &, Util &);
+		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &, Util &, PDM &);
 		Command() = delete;
 		Command(const Command &) = delete;
 
@@ -42,6 +43,7 @@ class Command final
 		static void system_process_stop(cli_command_call_t *);
 		static void util_info(cli_command_call_t *);
 		static void util_timezone(cli_command_call_t *);
+		static void pdm_info(cli_command_call_t *);
 
 	private:
 
@@ -53,6 +55,7 @@ class Command final
 		Log &log;
 		System &system;
 		Util &util;
+		PDM &pdm;
 
 		static Command *singleton;
 		static Config *config_;
@@ -63,6 +66,7 @@ class Command final
 		static Log *log_;
 		static System *system_;
 		static Util *util_;
+		static PDM *pdm_;
 
 		std::string make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2);
 };
