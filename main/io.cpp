@@ -117,10 +117,10 @@ enum
 };
 
 static_assert((unsigned int)esp32_mcpwm_pin_size <= (unsigned int)io_int_value_size);
-static_assert((unsigned int)esp32_mcpwm_pin_0 == (unsigned int)mpt_16bit_150hz_0);
-static_assert((unsigned int)esp32_mcpwm_pin_1 == (unsigned int)mpt_16bit_150hz_1);
-static_assert((unsigned int)esp32_mcpwm_pin_2 == (unsigned int)mpt_16bit_2400hz_0);
-static_assert((unsigned int)esp32_mcpwm_pin_3 == (unsigned int)mpt_16bit_2400hz_1);
+static_assert((unsigned int)esp32_mcpwm_pin_0 == magic_enum::enum_integer(MCPWM::Channel::channel_16bit_150hz_0));
+static_assert((unsigned int)esp32_mcpwm_pin_1 == magic_enum::enum_integer(MCPWM::Channel::channel_16bit_150hz_1));
+static_assert((unsigned int)esp32_mcpwm_pin_2 == magic_enum::enum_integer(MCPWM::Channel::channel_16bit_2400hz_0));
+static_assert((unsigned int)esp32_mcpwm_pin_3 == magic_enum::enum_integer(MCPWM::Channel::channel_16bit_2400hz_1));
 
 static void esp32_mcpwm_info(const io_data_t *dataptr, std::string &result)
 {
@@ -130,15 +130,25 @@ static void esp32_mcpwm_info(const io_data_t *dataptr, std::string &result)
 
 static bool esp32_mcpwm_init(io_data_t *dataptr)
 {
-	mcpwm_t handle;
 	bool rv = false;
 
 	assert(inited);
 	assert(dataptr);
 
-	for(handle = mpt_first; handle < mpt_size; handle = static_cast<mcpwm_t>(handle + 1))
-		if((dataptr->int_value[handle] = mcpwm_open(handle, "I/O MC-PWM")))
-			rv = true;
+	for(const auto &channel : magic_enum::enum_values<MCPWM::Channel>())
+	{
+		try
+		{
+			MCPWM::get().open(channel, "I/O MC-PWM");
+		}
+		catch(...)
+		{
+			continue;
+		}
+
+		dataptr->int_value[magic_enum::enum_integer(channel)] = 1;
+		rv = true;
+	}
 
 	return(rv);
 }
@@ -148,13 +158,15 @@ static bool esp32_mcpwm_write(io_data_t *dataptr, unsigned int pin, unsigned int
 	assert(inited);
 	assert(dataptr);
 	assert(pin < dataptr->info->pins);
-	assert(pin < mpt_size);
 	assert(value <= dataptr->info->max_value);
+
+	if(!magic_enum::enum_contains<MCPWM::Channel>(pin))
+		throw(hard_exception("esp32_mcpwm_write: invalid channel"));
 
 	if(!dataptr->int_value[pin])
 		return(false);
 
-	mcpwm_set((mcpwm_t)pin, value);
+	MCPWM::get().set(magic_enum::enum_cast<MCPWM::Channel>(pin).value(), value);
 
 	return(true);
 }
@@ -164,10 +176,15 @@ static void esp32_mcpwm_pin_info(const io_data_t *dataptr, unsigned int pin, std
 	assert(inited);
 	assert(dataptr);
 	assert(pin < dataptr->info->pins);
-	assert(pin < mpt_size);
+
+	if(!magic_enum::enum_contains<MCPWM::Channel>(pin))
+		throw(hard_exception("esp32_mcpwm_write: invalid channel"));
 
 	if(dataptr->int_value[pin])
-		result += std::format("MC-PWM channel {:d} duty: {:d}", pin, mcpwm_get(static_cast<mcpwm_t>(pin)));
+		result += std::format("MC-PWM channel {:d}: {}, duty: {:d}",
+				pin,
+				magic_enum::enum_name<MCPWM::Channel>(magic_enum::enum_cast<MCPWM::Channel>(pin).value()),
+				MCPWM::get().get(magic_enum::enum_cast<MCPWM::Channel>(pin).value()));
 	else
 		result += "pin unvailable on this board";
 }

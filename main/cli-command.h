@@ -85,8 +85,6 @@ void command_display_page_add_text(cli_command_call_t *call);
 void command_display_page_add_image(cli_command_call_t *call);
 void command_display_page_remove(cli_command_call_t *call);
 
-void command_mcpwm_info(cli_command_call_t *call);
-
 void command_i2c_info(cli_command_call_t *call);
 void command_i2c_speed(cli_command_call_t *call);
 

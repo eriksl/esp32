@@ -500,7 +500,7 @@ static const cli_command_t cli_commands[] =
 		},
 	},
 
-	{ "mcpwm-info", "mpi", "info about MCPWM channels and timers", command_mcpwm_info, {}},
+	{ "mcpwm-info", "mpi", "info about MCPWM channels and timers", Command::mcpwm_info, {}},
 
 	{ "notify-info", "ni", "notification system info", Command::notify_info, {}},
 

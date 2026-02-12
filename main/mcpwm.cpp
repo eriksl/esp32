@@ -1,110 +1,29 @@
-#include <stdint.h>
-#include <stdbool.h>
-
-#include "log.h"
-
-#include "util.h"
-#include "cli-command.h"
 #include "mcpwm.h"
 
-#include "driver/mcpwm_timer.h"
-#include "driver/mcpwm_oper.h"
-#include "driver/mcpwm_cmpr.h"
-#include "driver/mcpwm_gen.h"
-#include "driver/mcpwm_types.h"
-#include "soc/soc.h"
+#include "log.h"
+#include "exception.h"
 
-#include <string>
-#include <boost/format.hpp>
+#include <format>
 
-enum
+#include "magic_enum/magic_enum.hpp"
+
+const std::map<MCPWM::Channel, MCPWM::channel_to_group_timer_t> MCPWM::channel_to_group_timer
 {
-	base_clock = 160000000,
-	timer_frequency_150hz = base_clock / 16,
-	timer_frequency_2400hz = base_clock,
-	timer_resolution = 16,
-	timer_ticks = (1U << timer_resolution) - 1,
+	{ MCPWM::Channel::channel_16bit_150hz_0,	{ .gpio = CONFIG_BSP_MCPWM0, .group = 0, .timer = 0, .timer_frequency = timer_frequency_150hz,  .pwm_frequency = 150 }},
+	{ MCPWM::Channel::channel_16bit_150hz_1,	{ .gpio = CONFIG_BSP_MCPWM1, .group = 0, .timer = 1, .timer_frequency = timer_frequency_150hz,  .pwm_frequency = 150 }},
+	{ MCPWM::Channel::channel_16bit_2400hz_0,	{ .gpio = CONFIG_BSP_MCPWM2, .group = 1, .timer = 0, .timer_frequency = timer_frequency_2400hz, .pwm_frequency = 2400 }},
+	{ MCPWM::Channel::channel_16bit_2400hz_1,	{ .gpio = CONFIG_BSP_MCPWM3, .group = 1, .timer = 1, .timer_frequency = timer_frequency_2400hz, .pwm_frequency = 2400 }},
 };
 
-static_assert(mpt_size <= (SOC_MCPWM_GROUPS * SOC_MCPWM_TIMERS_PER_GROUP));
+MCPWM *MCPWM::singleton = nullptr;
 
-typedef struct
-{
-	mcpwm_cmpr_handle_t handle;
-} tree_comparator_t;
-
-typedef struct
-{
-	mcpwm_gen_handle_t handle;
-} tree_generator_t;
-
-typedef struct
-{
-	tree_comparator_t comparator;
-	tree_generator_t generator;
-	mcpwm_oper_handle_t handle;
-} tree_operator_t;
-
-typedef struct
-{
-	mcpwm_timer_handle_t handle;
-	tree_operator_t operator_;
-} tree_timer_t;
-
-typedef struct
-{
-	tree_timer_t timer[2];
-} tree_group_t;
-
-typedef struct
-{
-	tree_group_t group[2];
-} mcpwm_tree_t;
-
-typedef struct __attribute__((aligned(sizeof(uint32_t))))
-{
-	int gpio;
-	unsigned int group;
-	unsigned int timer;
-	unsigned int frequency;
-	const char *owner;
-	unsigned int duty;
-	const tree_comparator_t *comparator;
-	struct
-	{
-		unsigned int available;
-		unsigned int open;
-	};
-} channel_t;
-
-typedef struct
-{
-	int gpio;
-	unsigned int group;
-	unsigned int timer;
-	unsigned int timer_frequency;
-	unsigned int pwm_frequency;
-} handle_to_group_timer_t;
-
-static const handle_to_group_timer_t handle_to_group_timer[mpt_size] =
-{
-	[mpt_16bit_150hz_0] =	{ .gpio = CONFIG_BSP_MCPWM0, .group = 0, .timer = 0, .timer_frequency = timer_frequency_150hz,  .pwm_frequency = 150 },
-	[mpt_16bit_150hz_1] =	{ .gpio = CONFIG_BSP_MCPWM1, .group = 0, .timer = 1, .timer_frequency = timer_frequency_150hz,  .pwm_frequency = 150 },
-	[mpt_16bit_2400hz_0] =	{ .gpio = CONFIG_BSP_MCPWM2, .group = 1, .timer = 0, .timer_frequency = timer_frequency_2400hz, .pwm_frequency = 2400 },
-	[mpt_16bit_2400hz_1] =	{ .gpio = CONFIG_BSP_MCPWM3, .group = 1, .timer = 1, .timer_frequency = timer_frequency_2400hz, .pwm_frequency = 2400 },
-};
-
-static bool inited = false;
-static channel_t *channels;
-static mcpwm_tree_t *tree;
-
-static const tree_comparator_t *setup(const handle_to_group_timer_t *mpt_ptr)
+const MCPWM::tree_comparator_t* MCPWM::setup(const channel_to_group_timer_t *timer_ptr)
 {
 	const mcpwm_timer_config_t timer_config =
 	{
-		.group_id = static_cast<int>(mpt_ptr->group),
+		.group_id = static_cast<int>(timer_ptr->group),
 		.clk_src = MCPWM_TIMER_CLK_SRC_DEFAULT,
-		.resolution_hz = mpt_ptr->timer_frequency,
+		.resolution_hz = timer_ptr->timer_frequency,
 		.count_mode = MCPWM_TIMER_COUNT_MODE_UP,
 		.period_ticks = timer_ticks,
 		.intr_priority = 0,
@@ -117,13 +36,13 @@ static const tree_comparator_t *setup(const handle_to_group_timer_t *mpt_ptr)
 	};
 	const mcpwm_operator_config_t operator_config =
 	{
-		.group_id = static_cast<int>(mpt_ptr->group),
+		.group_id = static_cast<int>(timer_ptr->group),
 		.intr_priority = 0,
 		.flags = {},
 	};
 	const mcpwm_generator_config_t generator_config =
 	{
-		.gen_gpio_num = mpt_ptr->gpio,
+		.gen_gpio_num = timer_ptr->gpio,
 		.flags =
 		{
 			.invert_pwm = 0,
@@ -143,152 +62,187 @@ static const tree_comparator_t *setup(const handle_to_group_timer_t *mpt_ptr)
 			.update_cmp_on_sync = 0,
 		},
 	};
+	esp_err_t rv;
 
-	tree_group_t *group = &tree->group[mpt_ptr->group];
-	tree_timer_t *timer = &group->timer[mpt_ptr->timer];
+	static_assert(this->channels_size <= (SOC_MCPWM_GROUPS * SOC_MCPWM_TIMERS_PER_GROUP));
+
+	tree_group_t *group = &tree.group[timer_ptr->group];
+	tree_timer_t *timer = &group->timer[timer_ptr->timer];
 	tree_operator_t *operator_ = &timer->operator_;
 	tree_comparator_t *comparator = &operator_->comparator;
 	tree_generator_t *generator = &operator_->generator;
 
-	timer->handle = (mcpwm_timer_handle_t)0;
-	operator_->handle = (mcpwm_oper_handle_t)0;
-	comparator->handle = (mcpwm_cmpr_handle_t)0;
-	generator->handle = (mcpwm_gen_handle_t)0;
+	timer->handle = nullptr;
+	operator_->handle = nullptr;
+	comparator->handle = nullptr;
+	generator->handle = nullptr;
 
-	if(mpt_ptr->gpio < 0)
-		return((const tree_comparator_t *)0);
+	if(timer_ptr->gpio < 0)
+		return(nullptr);
 
-	Log::get().abort_on_esp_err("mcpwm_new_timer", mcpwm_new_timer(&timer_config, &timer->handle));
-	Log::get().abort_on_esp_err("mcpwm_new_operator", mcpwm_new_operator(&operator_config, &operator_->handle));
-	Log::get().abort_on_esp_err("mcpwm_operator_connect_timer", mcpwm_operator_connect_timer(operator_->handle, timer->handle));
-	Log::get().abort_on_esp_err("mcpwm_new_comparator", mcpwm_new_comparator(operator_->handle, &comparator_config, &comparator->handle));
-	Log::get().abort_on_esp_err("mcpwm_new_generator", mcpwm_new_generator(operator_->handle, &generator_config, &generator->handle));
+	if((rv = mcpwm_new_timer(&timer_config, &timer->handle)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "MCPWM::setup: mcpwm_new_timer")));
 
-	Log::get().abort_on_esp_err("mcpwm_generator_set_action_on_timer_event",
-			mcpwm_generator_set_action_on_timer_event(generator->handle, MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH)));
+	if((rv = mcpwm_new_operator(&operator_config, &operator_->handle)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "MCPWM::setup: mcpwm_new_operator")));
 
-	Log::get().abort_on_esp_err("mcpwm_generator_set_action_on_compare_event",
-			mcpwm_generator_set_action_on_compare_event(generator->handle, MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, comparator->handle, MCPWM_GEN_ACTION_LOW)));
+	if((rv = mcpwm_operator_connect_timer(operator_->handle, timer->handle)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "MCPWM::setup: mcpwm_operator_connect_timer")));
 
-	Log::get().abort_on_esp_err("mcpwm_comparator_set_compare_value", mcpwm_comparator_set_compare_value(comparator->handle, 0));
-	Log::get().abort_on_esp_err("mcpwm_timer_enable", mcpwm_timer_enable(timer->handle));
-	Log::get().abort_on_esp_err("mcpwm_timer_start_stop", mcpwm_timer_start_stop(timer->handle, MCPWM_TIMER_START_NO_STOP));
+	if((rv = mcpwm_new_comparator(operator_->handle, &comparator_config, &comparator->handle)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "MCPWM::setup: mcpwm_new_comparator")));
+
+	if((rv = mcpwm_new_generator(operator_->handle, &generator_config, &generator->handle)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "MCPWM::setup: mcpwm_new_generator")));
+
+	if((rv = mcpwm_generator_set_action_on_timer_event(generator->handle, MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH))) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "MCPWM::setup: mcpwm_generator_set_action_on_timer_event")));
+
+	if((rv = mcpwm_generator_set_action_on_compare_event(generator->handle, MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, comparator->handle, MCPWM_GEN_ACTION_LOW))) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "MCPWM::setup: mcpwm_generator_set_action_on_compare_event")));
+
+	if((rv = mcpwm_comparator_set_compare_value(comparator->handle, 0)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "MCPWM::setup: mcpwm_comparator_set_compare_value")));
+
+	if((rv = mcpwm_timer_enable(timer->handle)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "MCPWM::setup: mcpwm_timer_enable")));
+
+	if((rv = mcpwm_timer_start_stop(timer->handle, MCPWM_TIMER_START_NO_STOP)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "MCPWM::setup: mcpwm_timer_start_stop")));
 
 	return(comparator);
 }
 
-void mcpwm_init(void)
+MCPWM::MCPWM(Log &log_in) : log(log_in)
 {
-	mcpwm_t handle;
-	channel_t *channel;
-	const handle_to_group_timer_t *handle_to_group_timer_ptr;
+	handle_t *handle;
+	const channel_to_group_timer_t *channel_to_group_timer_ptr;
 
-	assert(!inited);
+	if(this->singleton)
+		throw(hard_exception("MCPWM: already active"));
 
-	tree = new mcpwm_tree_t;
-	channels = new channel_t[mpt_size];
-
-	for(handle = mpt_first; handle < mpt_size; handle = static_cast<mcpwm_t>(handle + 1))
+	for(const auto &channel : magic_enum::enum_values<Channel>())
 	{
-		handle_to_group_timer_ptr = &handle_to_group_timer[handle];
-		channel = &channels[handle];
+		channel_to_group_timer_ptr = &channel_to_group_timer.at(channel);
+		handle = &handles[channel];
 
-		channel->owner = (const char *)0;
-		channel->group = handle_to_group_timer_ptr->group;
-		channel->timer = handle_to_group_timer_ptr->timer;
-		channel->frequency = handle_to_group_timer_ptr->pwm_frequency;
-		channel->gpio = handle_to_group_timer_ptr->gpio;
-		channel->duty = 0;
-		channel->open = 0;
-		channel->available = !!(channel->comparator = setup(handle_to_group_timer_ptr));
+		handle->owner = "";
+		handle->group = channel_to_group_timer_ptr->group;
+		handle->timer = channel_to_group_timer_ptr->timer;
+		handle->frequency = channel_to_group_timer_ptr->pwm_frequency;
+		handle->gpio = channel_to_group_timer_ptr->gpio;
+		handle->duty = 0;
+		handle->open = 0;
+		handle->available = !!(handle->comparator = setup(channel_to_group_timer_ptr));
 	}
 
-	inited = true;
+	this->singleton = this;
 }
 
-bool mcpwm_open(mcpwm_t handle, const char *owner)
+MCPWM& MCPWM::get()
 {
-	channel_t *channel;
+	if(!MCPWM::singleton)
+		throw(hard_exception("MCPWM::get: not active"));
 
-	assert(inited);
-	assert(handle < mpt_size);
-
-	channel = &channels[handle];
-
-	if(!channel->available)
-		return(false);
-
-	if(channel->open)
-		return(true);
-
-	assert(channel->comparator);
-
-	channel->open = 1;
-	channel->duty = 0;
-	channel->owner = owner;
-
-	Log::get().abort_on_esp_err("mcpwm_comparator_set_compare_value", mcpwm_comparator_set_compare_value(channel->comparator->handle, channel->duty));
-
-	return(true);
+	return(*MCPWM::singleton);
 }
 
-void mcpwm_set(mcpwm_t handle, unsigned int duty)
+void MCPWM::open(Channel channel, std::string_view owner)
 {
-	channel_t *channel;
+	esp_err_t rv;
+	handle_t *handle;
 
-	assert(inited);
-	assert(handle < mpt_size);
+	if(!this->singleton)
+		throw(hard_exception("MCPWM::open: not active"));
 
-	channel = &channels[handle];
+	if(!magic_enum::enum_contains<Channel>(channel))
+		throw(hard_exception("MCPWM::open: channel out of range"));
 
-	assert(channel->open);
-	assert(channel->comparator);
+	handle = &handles[channel];
 
-	channel->duty = duty <= static_cast<unsigned int>(timer_ticks) ? duty : static_cast<unsigned int>(timer_ticks);
+	if(!handle->available)
+		throw(hard_exception("MCPWM::open: channel unavailable"));
 
-	Log::get().abort_on_esp_err("mcpwm_comparator_set_compare_value", mcpwm_comparator_set_compare_value(channel->comparator->handle, channel->duty));
+	if(handle->open)
+		throw(transient_exception("MCPWM::open: channel already open"));
+
+	if(!handle->comparator)
+		throw(hard_exception("MCPWM::open: channel has no comparator"));
+
+	handle->duty = 0;
+
+	if((rv = mcpwm_comparator_set_compare_value(handle->comparator->handle, handle->duty)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "MCPWM::open: mcpwm_comparator_set_compare_value")));
+
+	handle->open = 1;
+	handle->owner = owner;
 }
 
-unsigned int mcpwm_get(mcpwm_t handle)
+void MCPWM::set(Channel channel, int duty)
 {
-	const channel_t *channel;
+	esp_err_t rv;
+	handle_t *handle;
 
-	assert(inited);
-	assert(handle < mpt_size);
+	if(!this->singleton)
+		throw(hard_exception("MCPWM::set: not active"));
 
-	channel = &channels[handle];
+	if(!magic_enum::enum_contains<Channel>(channel))
+		throw(hard_exception("MCPWM::set: channel out of range"));
 
-	return(channel->duty);
+	handle = &handles[channel];
+
+	if(!handle->open)
+		throw(transient_exception("MCPWM::set: channel not open"));
+
+	if(!handle->comparator)
+		throw(hard_exception("MCPWM::set: channel has no comparator"));
+
+	if(duty >= timer_ticks)
+		throw(hard_exception(std::format("MCPWM::set: value {:d} out of range", duty)));
+
+	if((rv = mcpwm_comparator_set_compare_value(handle->comparator->handle, handle->duty)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "MCPWM::set: mcpwm_comparator_set_compare_value")));
+
+	handle->duty = duty;
 }
 
-void command_mcpwm_info(cli_command_call_t *call)
+int MCPWM::get(Channel channel)
 {
-	mcpwm_t handle;
-	channel_t *channel;
+	const handle_t *handle;
 
-	assert(inited);
-	assert(call);
-	assert(call->parameter_count == 0);
+	if(!this->singleton)
+		throw(hard_exception("MCPWM::get: not active"));
 
-	call->result = "MC-PWM INFO:";
-	call->result += (boost::format("\n- channels available: %u") % mpt_size).str();
-	call->result += "\nchannels:";
+	if(!magic_enum::enum_contains<Channel>(channel))
+		throw(hard_exception("MCPWM::get: channel out of range"));
 
-	for(handle = mpt_first; handle < mpt_size; handle = static_cast<mcpwm_t>(handle + 1))
+	handle = &handles[channel];
+
+	return(handle->duty);
+}
+
+void MCPWM::info(std::string &out)
+{
+	const handle_t *handle;
+
+	out += std::format("- channels available: {:d}", channels_size);
+	out += "\nchannels:";
+
+	for(auto const &channel : magic_enum::enum_values<Channel>())
 	{
-		channel = &channels[handle];
+		handle = &handles[channel];
 
-		if(channel->available)
-			call->result += (boost::format("\n- channel %u: 16 bits @ %4u Hz, group %u, timer %u, gpio %2d is %s duty: %5u, owned by %s") %
-					handle %
-					channel->frequency %
-					channel->group %
-					channel->timer %
-					channel->gpio %
-					(channel->open ? "open" : "not open") %
-					channel->duty %
-					channel->owner).str();
+		if(handle->available)
+			out += std::format("\n- channel {:d}: 16 bits @ {:4d} Hz, group {:d}, timer {:d}, gpio {:2d} is {} duty: {:5d}, owned by {}",
+					magic_enum::enum_integer(channel),
+					handle->frequency,
+					handle->group,
+					handle->timer,
+					handle->gpio,
+					handle->open ? "open" : "not open",
+					handle->duty,
+					handle->owner);
 		else
-			call->result += (boost::format("\n- channel %d is unavailable") % handle).str();
+			out += std::format("\n- channel {:d} is unavailable", magic_enum::enum_integer(channel));
 	}
 }

@@ -14,12 +14,13 @@ Log *Command::log_ = nullptr;
 System *Command::system_ = nullptr;
 Util *Command::util_ = nullptr;
 PDM *Command::pdm_ = nullptr;
+MCPWM *Command::mcpwm_ = nullptr;
 
 Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, LedPWM &ledpwm_in,
-		Notify &notify_in, Log &log_in, System &system_in, Util &util_in, PDM &pdm_in)
+		Notify &notify_in, Log &log_in, System &system_in, Util &util_in, PDM &pdm_in, MCPWM &mcpwm_in)
 	:
 		config(config_in), console(console_in), ledpixel(ledpixel_in), ledpwm(ledpwm_in),
-		notify(notify_in), log(log_in), system(system_in), util(util_in), pdm(pdm_in)
+		notify(notify_in), log(log_in), system(system_in), util(util_in), pdm(pdm_in), mcpwm(mcpwm_in)
 {
 	if(this->singleton)
 		throw(hard_exception("Command: already activated"));
@@ -34,6 +35,7 @@ Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, 
 	this->system_ = &system;
 	this->util_ = &util;
 	this->pdm_ = &pdm;
+	this->mcpwm_ = &mcpwm;
 }
 
 std::string Command::make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2)
@@ -333,4 +335,14 @@ void Command::pdm_info(cli_command_call_t *call)
 	call->result = "PDM INFO\n";
 
 	Command::pdm_->info(call->result);
+}
+
+void Command::mcpwm_info(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	call->result = "MCPWM INFO\n";
+
+	Command::mcpwm_->info(call->result);
 }
