@@ -302,7 +302,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "fs-read", (const char*)0, "read chunk from a file", fs_command_read,
+	{ "fs-read", nullptr, "read chunk from a file", Command::fs_read,
 		{	3,
 			{
 				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "length",  { .unsigned_int = { 0, 32768 }}},
@@ -312,7 +312,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "fs-checksum", (const char*)0, "checksum file on the littlefs filesystem", fs_command_checksum,
+	{ "fs-checksum", nullptr, "checksum a file", Command::fs_checksum,
 		{	1,
 			{
 				{ cli_parameter_string, 0, 1, 1, 1, "file", { .string = { 1, 64 }}},
@@ -320,7 +320,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "fs-erase", (const char*)0, "erase file on the filesystem", fs_command_erase,
+	{ "fs-erase", "rm", "erase file", Command::fs_erase,
 		{	1,
 			{
 				{ cli_parameter_string, 0, 1, 1, 1, "file", { .string = { 1, 64 }}},
@@ -328,7 +328,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "fs-format", "fsf", "format the littlefs filesystem", fs_command_format,
+	{ "fs-format", nullptr, "format/wipe a filesystem", Command::fs_format,
 		{	1,
 			{
 				{ cli_parameter_string, 0, 1, 0, 0, "partition name of fs to format", {}},
@@ -336,9 +336,9 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "fs-info", "fsi", "show info about the littlefs filesystem", fs_command_info, {}},
+	{ "fs-info", "fsi", "show info about the filesystems", Command::fs_info, {}},
 
-	{ "fs-list", "ls", "show all files on the littlefs filesystem", fs_command_list,
+	{ "fs-list", "ls", "show the files on a filesystem", Command::fs_list,
 		{	2,
 			{
 				{ cli_parameter_string, 0, 1, 0, 0, "directory to list", {}},
@@ -347,7 +347,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "fs-rename", "mv", "rename file on the filesystem", fs_command_rename,
+	{ "fs-rename", "mv", "rename file", Command::fs_rename,
 		{	2,
 			{
 				{ cli_parameter_string, 0, 1, 1, 1, "from file", { .string = { 1, 64 }}},
@@ -356,7 +356,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "fs-truncate", (const char*)0, "truncate a file", fs_command_truncate,
+	{ "fs-truncate", nullptr, "truncate a file", Command::fs_truncate,
 		{	3,
 			{
 				{ cli_parameter_string,			0, 1, 1, 1, "file", { .string = { 1, 64 }}},
@@ -365,7 +365,7 @@ static const cli_command_t cli_commands[] =
 		}
 	},
 
-	{ "fs-write", (const char*)0, "write to a file on the filesystem", fs_command_write,
+	{ "fs-write", nullptr, "write to a file", Command::fs_write,
 		{	3,
 			{
 				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "mode, 0 = truncate, 1 = append", { .unsigned_int = { 0, 1 }}},

@@ -50,8 +50,8 @@ void app_main(void)
 		System system(log);
 		PDM pdm(log);
 		MCPWM mcpwm(log);
-		Command command(config, console, ledpixel, ledpwm, notify, log, system, util, pdm, mcpwm);
-		fs_init();
+		FS fs(log);
+		Command command(config, console, ledpixel, ledpwm, notify, log, system, util, pdm, mcpwm, fs);
 		ramdisk_init(system.get_initial_free_spiram() / 2);
 		alias_init();
 		cli_init();

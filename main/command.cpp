@@ -15,12 +15,15 @@ System *Command::system_ = nullptr;
 Util *Command::util_ = nullptr;
 PDM *Command::pdm_ = nullptr;
 MCPWM *Command::mcpwm_ = nullptr;
+FS *Command::fs_ = nullptr;
 
 Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, LedPWM &ledpwm_in,
-		Notify &notify_in, Log &log_in, System &system_in, Util &util_in, PDM &pdm_in, MCPWM &mcpwm_in)
+		Notify &notify_in, Log &log_in, System &system_in, Util &util_in, PDM &pdm_in, MCPWM &mcpwm_in,
+		FS &fs_in)
 	:
 		config(config_in), console(console_in), ledpixel(ledpixel_in), ledpwm(ledpwm_in),
-		notify(notify_in), log(log_in), system(system_in), util(util_in), pdm(pdm_in), mcpwm(mcpwm_in)
+		notify(notify_in), log(log_in), system(system_in), util(util_in), pdm(pdm_in), mcpwm(mcpwm_in),
+		fs(fs_in)
 {
 	if(this->singleton)
 		throw(hard_exception("Command: already activated"));
@@ -36,6 +39,7 @@ Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, 
 	this->util_ = &util;
 	this->pdm_ = &pdm;
 	this->mcpwm_ = &mcpwm;
+	this->fs_ = &fs;
 }
 
 std::string Command::make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2)
@@ -345,4 +349,178 @@ void Command::mcpwm_info(cli_command_call_t *call)
 	call->result = "MCPWM INFO\n";
 
 	Command::mcpwm_->info(call->result);
+}
+
+void Command::fs_list(cli_command_call_t *call)
+{
+	bool option_long;
+
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	if(call->parameter_count == 2)
+	{
+		if(call->parameters[1].str == "-l")
+			option_long = true;
+		else
+		{
+			call->result = std::format("FS::fs-list: unknown option: {}\n", call->parameters[1].str);
+			return;
+		}
+	}
+	else
+		option_long = false;
+
+	call->result = std::format("DIRECTORY {}", call->parameters[0].str);
+
+	try
+	{
+		Command::fs_->list(call->result, call->parameters[0].str, option_long);
+	}
+	catch(const transient_exception &e)
+	{
+		call->result = std::format("fs-list: {}", e.what());
+	}
+}
+
+void Command::fs_format(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	try
+	{
+		Command::fs_->format(call->parameters[0].str);
+	}
+	catch(const transient_exception &e)
+	{
+		call->result = std::format("fs-format: {}", e.what());
+		return;
+	}
+
+	call->result = std::format("format {} OK", call->parameters[0].str);
+}
+
+void Command::fs_read(cli_command_call_t *call)
+{
+	int length;
+
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	try
+	{
+		length = Command::fs_->read(call->result_oob, call->parameters[2].str, call->parameters[1].unsigned_int, call->parameters[0].unsigned_int);
+	}
+	catch(const transient_exception &e)
+	{
+		call->result = std::format("fs-read: {}", e.what());
+		return;
+	}
+
+	call->result = std::format("OK chunk read: {:d}", length);
+}
+
+void Command::fs_write(cli_command_call_t *call)
+{
+	int length;
+
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	try
+	{
+		length = Command::fs_->write(call->oob, call->parameters[2].str, !!call->parameters[0].unsigned_int, call->parameters[1].unsigned_int);
+	}
+	catch(const transient_exception &e)
+	{
+		call->result = std::format("fs-write: {}", e.what());
+		return;
+	}
+
+	call->result = std::format("OK file length: {:d}", length);
+}
+
+void Command::fs_erase(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	try
+	{
+		Command::fs_->erase(call->parameters[0].str);
+	}
+	catch(const transient_exception &e)
+	{
+		call->result = std::format("fs-erase: {}", e.what());
+		return;
+	}
+
+	call->result = "OK file erased";
+}
+
+void Command::fs_rename(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	try
+	{
+		Command::fs_->rename(call->parameters[0].str, call->parameters[1].str);
+	}
+	catch(const transient_exception &e)
+	{
+		call->result = std::format("fs-rename: {}", e.what());
+		return;
+	}
+
+	call->result = "OK file renamed";
+}
+
+void Command::fs_truncate(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	try
+	{
+		Command::fs_->truncate(call->parameters[0].str, call->parameters[1].unsigned_int);
+	}
+	catch(const transient_exception &e)
+	{
+		call->result = std::format("fs-truncate: {}", e.what());
+		return;
+	}
+
+	call->result = "OK truncated";
+}
+
+void Command::fs_checksum(cli_command_call_t *call)
+{
+	std::string checksum;
+
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	try
+	{
+		checksum = Command::fs_->checksum(call->parameters[0].str);
+	}
+	catch(const transient_exception &e)
+	{
+		call->result = std::format("fs-checksum: {}", e.what());
+		return;
+	}
+
+	call->result = std::format("OK checksum: {}", checksum);
+}
+
+void Command::fs_info(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	call->result = "FS INFO\n";
+
+	Command::fs_->info(call->result);
 }

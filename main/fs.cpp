@@ -1,31 +1,26 @@
-#include <stdint.h>
-#include <stdbool.h>
-#include <string.h> // for strerror
+#include "fs.h"
 
-#include "log.h"
-#include "util.h"
-#include "cli-command.h"
 #include "ramdisk.h"
 #include "crypt.h"
-#include "fs.h"
+#include "exception.h"
 
 #include <esp_littlefs.h>
 
 #include <unistd.h>
 #include <fcntl.h>
-#include <assert.h>
 #include <dirent.h>
 #include <errno.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 
-#include <string>
 #include <format>
 
-static bool inited = false;
+FS *FS::singleton = nullptr;
 
-void fs_init(void)
+FS::FS(Log &log_in) : log(log_in)
 {
+	esp_err_t rv;
+
 	esp_vfs_littlefs_conf_t littlefs_parameters =
 	{
 		.base_path = "/littlefs",
@@ -37,87 +32,41 @@ void fs_init(void)
 		.grow_on_mount = 0,
 	};
 
-	assert(!inited);
+	if(this->singleton)
+		throw(hard_exception("FS: already active"));
 
-	Log::get().abort_on_esp_err("esp_vfs_littlefs_register", esp_vfs_littlefs_register(&littlefs_parameters));
+	if((rv = esp_vfs_littlefs_register(&littlefs_parameters)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "FS::eps_vfs_littlefs_register: ")));
 
-	inited = true;
+	this->singleton = this;
 }
 
-void fs_command_info(cli_command_call_t *call)
+FS& FS::get()
 {
-	size_t total, used, avail, usedpct;
-	int fd;
+	if(!FS::singleton)
+		throw(hard_exception("FS::get: not active"));
 
-	assert(inited);
-	assert(call->parameter_count == 0);
-
-	Log::get().abort_on_esp_err("esp_littlefs_info", esp_littlefs_info("littlefs", &total, &used));
-	avail = total - used;
-	usedpct = (100 * used) / total;
-
-	call->result = "LITTLEFS";
-
-	if(esp_littlefs_mounted("littlefs"))
-		call->result += std::format(" mounted at /littlefs:\n- total size: {:d} kB\n- used: {:d} kB\n- available {:d} kB, {:d}% used",
-				total / 1024, used / 1024, avail / 1024, usedpct);
-	else
-		call->result += " not mounted";
-
-	if((fd = open("/ramdisk", O_RDONLY | O_DIRECTORY)) >= 0)
-	{
-		ioctl(fd, IO_RAMDISK_GET_SIZE, &total);
-		ioctl(fd, IO_RAMDISK_GET_USED, &used);
-		close(fd);
-
-		avail = total - used;
-		usedpct = (100 * used) / total;
-
-		call->result += std::format("\nRAMDISK mounted at /ramdisk:\n- total size: {:d} kB\n- used: {:d} kB\n- available {:d} kB, {:d}% used",
-				total / 1024, used / 1024, avail / 1024, usedpct);
-	}
+	return(*FS::singleton);
 }
 
-void fs_command_list(cli_command_call_t *call)
+void FS::list(std::string &out, const std::string &directory, bool option_long)
 {
 	DIR *dir;
 	struct dirent *dirent;
 	struct stat statb;
 	std::string filename;
-	bool option_long;
 	std::string ctime;
 	std::string mtime;
 	int inode, length, allocated;
 
-	assert(inited);
-	assert((call->parameter_count > 0) && (call->parameter_count < 3));
+	if(!(dir = ::opendir(directory.c_str())))
+		throw(transient_exception(std::format("opendir of {} failed", directory)));
 
-	if(!(dir = opendir(call->parameters[0].str.c_str())))
+	while((dirent = ::readdir(dir)))
 	{
-		call->result = std::format("opendir of {} failed", call->parameters[0].str);
-		return;
-	}
+		filename = std::format("{}/{}", directory, dirent->d_name);
 
-	if(call->parameter_count == 2)
-	{
-		if(call->parameters[1].str == "-l")
-			option_long = true;
-		else
-		{
-			call->result = std::format("fs-list: unknown option: {}\n", call->parameters[1].str);
-			return;
-		}
-	}
-	else
-		option_long = false;
-
-	call->result = std::format("DIRECTORY {}", call->parameters[0].str);
-
-	while((dirent = readdir(dir)))
-	{
-		filename = std::format("{}/{}", call->parameters[0].str.c_str(), dirent->d_name);
-
-		if(stat(filename.c_str(), &statb))
+		if(::stat(filename.c_str(), &statb))
 		{
 			inode = -1;
 			length = -1;
@@ -135,137 +84,124 @@ void fs_command_list(cli_command_call_t *call)
 		}
 
 		if(option_long)
-			call->result += std::format("\n{:20} {:7d} {:4d}k {:19} {:19} {:11d}",
-					dirent->d_name, length, allocated, ctime, mtime, inode);
+			out += std::format("\n{:20} {:7d} {:4d}k {:19} {:19} {:11d}", dirent->d_name, length, allocated, ctime, mtime, inode);
 		else
-			call->result += std::format("\n{:3d}k {}", length / 1024UL, dirent->d_name);
+			out += std::format("\n{:3d}k {}", length / 1024UL, dirent->d_name);
 	}
 
-	closedir(dir);
+	::closedir(dir);
 }
 
-void fs_command_format(cli_command_call_t *call)
+void FS::format(const std::string &mount)
 {
-	assert(inited);
-	assert(call->parameter_count == 1);
+	int fd;
 
-	if(esp_littlefs_format(call->parameters[0].str.c_str()))
+	if(mount == "/littlefs")
 	{
-		call->result = std::format("format of {} failed", call->parameters[0].str);
-		return;
+		if(esp_littlefs_format(mount.c_str()))
+			throw(transient_exception(std::format("FS::format: littleFS format of {} failed", mount)));
 	}
+	else
+	{
+		if(mount == "/ramdisk")
+		{
+			if((fd = open("/ramdisk", O_RDONLY | O_DIRECTORY, 0)) < 0)
+				throw(transient_exception(this->log.errno_string_error(errno, std::format("FS::format: cannot open filesystem {}", mount))));
 
-	call->result = "format complete";
+			if(ioctl(fd, IO_RAMDISK_WIPE, nullptr))
+				throw(transient_exception(this->log.errno_string_error(errno, std::format("FS::format: cannot format filesystem {}", mount))));
+
+			close(fd);
+		}
+		else
+			throw(transient_exception(std::format("FS::format: mountpount {} doesn't exist", mount)));
+	}
 }
 
-void fs_command_read(cli_command_call_t *call)
+int FS::read(std::string &out, const std::string &file, int position, int size)
 {
 	int fd, length;
 
-	assert(inited);
-	assert(call->parameter_count == 3);
+	if((fd = ::open(file.c_str(), O_RDONLY, 0)) < 0)
+		throw(transient_exception(this->log.errno_string_error(errno, std::format("FS::read: cannot open file {}", file))));
 
-	if((fd = open(call->parameters[2].str.c_str(), O_RDONLY, 0)) < 0)
-	{
-		call->result = std::format("ERROR: cannot open file {}: {}", call->parameters[2].str, strerror(errno));
-		return;
-	}
-
-	if(lseek(fd, call->parameters[1].unsigned_int, SEEK_SET) == -1)
+	if(::lseek(fd, position, SEEK_SET) == -1)
 		length = 0;
 	else
 	{
-		call->result_oob.resize(call->parameters[0].unsigned_int);
+		out.resize(size);
 
-		if((length = ::read(fd, call->result_oob.data(), call->parameters[0].unsigned_int)) == 0)
+		if((length = ::read(fd, out.data(), size)) == 0)
 		{
-			call->result = "ERROR: read failed";
 			close(fd);
-			return;
+			throw(transient_exception(this->log.errno_string_error(errno, std::format("FS::read: read from {} failed", file))));
 		}
 
-		call->result_oob.resize(length);
+		out.resize(length);
 	}
 
 	close(fd);
 
-	call->result = std::format("OK chunk read: {:d}", length);
+	return(length);
 }
 
-void fs_command_write(cli_command_call_t *call)
+int FS::write(const std::string &in, const std::string &file, bool append, int length)
 {
-	int fd, length;
+	int fd;
 	struct stat statb;
 	int open_mode;
 
-	assert(inited);
-	assert(call->parameter_count == 3);
+	open_mode = O_WRONLY | O_CREAT | (append ? O_APPEND : O_TRUNC);
 
-	open_mode = O_WRONLY | O_CREAT | (call->parameters[0].unsigned_int ? O_APPEND : O_TRUNC);
+	if(length != in.size())
+		throw(hard_exception(std::format("FS::write: length parameter [{:d}] != data length [{:d}]", length, in.size())));
 
-	if(call->parameters[1].unsigned_int != call->oob.length())
+	if((fd = ::open(file.c_str(), open_mode, 0)) < 0)
+		throw(transient_exception(this->log.errno_string_error(errno, std::format("FS::write: cannot open file {}", file))));
+
+	if(::write(fd, in.data(), in.size()) != length)
 	{
-		call->result = std::format("ERROR: length [{:d}] != oob data length [{:d}]", call->parameters[1].unsigned_int, call->oob.length());
-		return;
-	}
-
-	if((fd = open(call->parameters[2].str.c_str(), open_mode, 0)) < 0)
-	{
-		call->result = std::format("ERROR: cannot open file {}: {}", call->parameters[2].str, strerror(errno));
-		return;
-	}
-
-	if((length = write(fd, call->oob.data(), call->oob.length())) != call->parameters[1].unsigned_int)
-	{
-		call->result = "ERROR: write failed";
 		close(fd);
-		return;
+		throw(transient_exception(this->log.errno_string_error(errno, std::format("FS::write: write to {} failed", file))));
 	}
 
 	close(fd);
 
-	if(stat(call->parameters[2].str.c_str(), &statb))
+	if(::stat(file.c_str(), &statb))
 		length = -1;
 	else
 		length = statb.st_size;
 
-	call->result = std::format("OK file length: {:d}", length);
+	return(length);
 }
 
-void fs_command_erase(cli_command_call_t *call)
+void FS::erase(const std::string &file)
 {
-	assert(inited);
-	assert(call->parameter_count == 1);
-
-	if(unlink(call->parameters[0].str.c_str()))
-		call->result = "file erase failed";
-	else
-		call->result = "OK file erased";
+	if(::unlink(file.c_str()))
+		throw(transient_exception(this->log.errno_string_error(errno, std::format("FS::erase: unlink of {} failed", file))));
 }
 
-void fs_command_rename(cli_command_call_t *call)
+void FS::rename(const std::string &from, const std::string &to)
 {
-	assert(inited);
-	assert(call->parameter_count == 2);
-
-	if(rename(call->parameters[0].str.c_str(), call->parameters[1].str.c_str()))
-		call->result = "file rename failed";
-	else
-		call->result = "OK file renamed";
+	if(::rename(from.c_str(), to.c_str()))
+		throw(transient_exception(this->log.errno_string_error(errno, std::format("FS::rename: rename of {} to {} failed", from, to))));
 }
 
-void fs_command_checksum(cli_command_call_t *call)
+void FS::truncate(const std::string &file, int position)
+{
+	if(::truncate(file.c_str(), position))
+		throw(transient_exception(this->log.errno_string_error(errno, std::format("FS::truncate: truncate of {} failed", file))));
+}
+
+std::string FS::checksum(const std::string &file)
 {
 	int length, fd;
 	Crypt::SHA256 md;
 	std::string hash_text;
 	std::string block;
 
-	if((fd = open(call->parameters[0].str.c_str(), O_RDONLY, 0)) < 0)
-	{
-		call->result = std::format("ERROR: cannot open file: {}", strerror(errno));
-		return;
-	}
+	if((fd = open(file.c_str(), O_RDONLY, 0)) < 0)
+		throw(transient_exception(this->log.errno_string_error(errno, std::format("FS::checksum: open {} failed", file))));
 
 	md.init();
 
@@ -282,18 +218,39 @@ void fs_command_checksum(cli_command_call_t *call)
 
 	hash_text = Crypt::hash_to_text(md.finish());
 
-	call->result = std::format("OK checksum: {}", hash_text);
+	return(hash_text);
 }
 
-void fs_command_truncate(cli_command_call_t *call)
+void FS::info(std::string &out)
 {
-	assert(call->parameter_count == 2);
+	esp_err_t rv;
+	size_t total, used, avail, usedpct;
+	int fd;
 
-	if(truncate(call->parameters[0].str.c_str(), call->parameters[1].unsigned_int))
+	if((rv = esp_littlefs_info("littlefs", &total, &used)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "FS::info: esp_littlefs_info: ")));
+
+	avail = total - used;
+	usedpct = (100 * used) / total;
+
+	out += "LITTLEFS";
+
+	if(esp_littlefs_mounted("littlefs"))
+		out += std::format(" mounted at /littlefs:\n- total size: {:d} kB\n- used: {:d} kB\n- available {:d} kB, {:d}% used",
+				total / 1024, used / 1024, avail / 1024, usedpct);
+	else
+		out += " not mounted";
+
+	if((fd = open("/ramdisk", O_RDONLY | O_DIRECTORY)) >= 0)
 	{
-		call->result = std::format("ERROR: cannot truncate file: {}", strerror(errno));
-		return;
-	}
+		ioctl(fd, IO_RAMDISK_GET_SIZE, &total);
+		ioctl(fd, IO_RAMDISK_GET_USED, &used);
+		close(fd);
 
-	call->result = "OK truncated";
+		avail = total - used;
+		usedpct = (100 * used) / total;
+
+		out += std::format("\nRAMDISK mounted at /ramdisk:\n- total size: {:d} kB\n- used: {:d} kB\n- available {:d} kB, {:d}% used",
+				total / 1024, used / 1024, avail / 1024, usedpct);
+	}
 }

@@ -57,16 +57,6 @@ void flash_command_info(cli_command_call_t *call);
 void flash_command_read(cli_command_call_t *call);
 void flash_command_write(cli_command_call_t *call);
 
-void fs_command_erase(cli_command_call_t *call);
-void fs_command_checksum(cli_command_call_t *call);
-void fs_command_format(cli_command_call_t *call);
-void fs_command_info(cli_command_call_t *call);
-void fs_command_list(cli_command_call_t *call);
-void fs_command_read(cli_command_call_t *call);
-void fs_command_write(cli_command_call_t *call);
-void fs_command_rename(cli_command_call_t *call);
-void fs_command_truncate(cli_command_call_t *call);
-
 void command_ota_start(cli_command_call_t *call);
 void command_ota_write(cli_command_call_t *call);
 void command_ota_finish(cli_command_call_t *call);
