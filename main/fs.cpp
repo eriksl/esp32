@@ -17,7 +17,7 @@
 
 FS *FS::singleton = nullptr;
 
-FS::FS(Log &log_in) : log(log_in)
+FS::FS(Log &log_in, Ramdisk::Root &ramdisk_in) : log(log_in), ramdisk(ramdisk_in)
 {
 	esp_err_t rv;
 
@@ -108,7 +108,7 @@ void FS::format(const std::string &mount)
 			if((fd = open("/ramdisk", O_RDONLY | O_DIRECTORY, 0)) < 0)
 				throw(transient_exception(this->log.errno_string_error(errno, std::format("FS::format: cannot open filesystem {}", mount))));
 
-			if(ioctl(fd, IO_RAMDISK_WIPE, nullptr))
+			if(ioctl(fd, Ramdisk::IO_RAMDISK_WIPE, nullptr))
 				throw(transient_exception(this->log.errno_string_error(errno, std::format("FS::format: cannot format filesystem {}", mount))));
 
 			close(fd);
@@ -243,8 +243,8 @@ void FS::info(std::string &out)
 
 	if((fd = open("/ramdisk", O_RDONLY | O_DIRECTORY)) >= 0)
 	{
-		ioctl(fd, IO_RAMDISK_GET_SIZE, &total);
-		ioctl(fd, IO_RAMDISK_GET_USED, &used);
+		ioctl(fd, Ramdisk::IO_RAMDISK_GET_SIZE, &total);
+		ioctl(fd, Ramdisk::IO_RAMDISK_GET_USED, &used);
 		close(fd);
 
 		avail = total - used;

@@ -1,236 +1,31 @@
 #include "ramdisk.h"
 
 #include "log.h"
-#include "util.h"
 #include "exception.h"
 
-#include <freertos/FreeRTOS.h>
 #include <esp_vfs.h>
 #include <esp_vfs_ops.h>
-#include <dirent.h>
-#include <errno.h>
+
 #include <fcntl.h>
-#include <time.h>
 #include <sys/ioctl.h>
 
-#include <string>
 #include <format>
-#include <map>
 
-class File
+using namespace Ramdisk;
+
+Root *Root::singleton = nullptr;
+
+Mutex::Mutex(SemaphoreHandle_t *mutex_in) : mutex(mutex_in)
 {
-	public:
+	xSemaphoreTake(*this->mutex, portMAX_DELAY);
+}
 
-		std::string get_filename() const;
-		unsigned int get_fileno() const;
-		unsigned int get_length() const;
-		unsigned int get_allocated() const;
-		struct timespec get_ctime() const;
-		struct timespec get_mtime() const;
-
-		void time_update(bool update_ctime = false);
-		int read(unsigned int offset, unsigned int size, uint8_t *data) const;
-		int write(unsigned int offset, unsigned int length, const uint8_t *data);
-		int truncate(unsigned int length);
-		int rename(const std::string &filename);
-
-		File() = delete;
-		File(const std::string &filename, unsigned int fileno);
-
-	private:
-
-		typedef std::basic_string<uint8_t> Data;
-
-		std::string filename;
-		unsigned int fileno;
-		struct timespec c_time;
-		struct timespec m_time;
-		Data contents;
-};
-
-class Dirent
+Mutex::~Mutex()
 {
-	public:
+	xSemaphoreGive(*this->mutex);
+	this->mutex = nullptr;
+}
 
-		void set(int next_fileno, unsigned int fileno = 0, const std::string &filename = "");
-		int get_next_fileno() const;
-		DIR *get_DIR();
-		struct dirent *get_dirent();
-
-		Dirent(int next_fileno = -1);
-
-	private:
-
-		struct dirent dirent;
-		DIR dir;
-		int next_fileno;
-};
-
-class Directory
-{
-	public:
-
-		File *get_file_by_fileno(unsigned int fileno);
-		const File *get_file_by_fileno_const(unsigned int fileno) const;
-		File *get_file_by_name(const std::string &filename);
-		const File *get_file_by_name_const(const std::string &filename) const;
-		unsigned int get_used() const;
-
-		int opendir(const std::string &path) const;
-		int readdir(Dirent *dirent) const;
-		int closedir(const Dirent *dirent) const;
-
-		int open(const std::string &filename, int fcntl_flags, unsigned int new_fileno);
-		int close(int fd) const;
-		int read(unsigned int fileno, unsigned int offset, unsigned int size, uint8_t *data) const;
-		int write(unsigned int fileno, unsigned int offset, unsigned int length, const uint8_t *data);
-
-		int unlink(const std::string &path);
-		int rename(const std::string &from, const std::string &to);
-
-		int clear();
-
-		Directory() = delete;
-		Directory(const std::string &path);
-
-	private:
-
-		typedef std::map<unsigned int /*fileno*/, File> FileMap;
-
-		std::string path;
-		FileMap files;
-};
-
-class FileDescriptor
-{
-	public:
-
-		unsigned int get_fd() const;
-		unsigned int get_fileno() const;
-		unsigned int get_fcntl_flags() const;
-		unsigned int get_offset() const;
-		bool is_fs() const;
-
-		void set_offset(unsigned int offset);
-
-		FileDescriptor() = delete;
-		FileDescriptor(unsigned int fd, unsigned int fileno, unsigned int fcntl_flags, unsigned int offset, bool fs);
-
-	private:
-
-		unsigned int fd;
-		unsigned int fileno;
-		unsigned int fcntl_flags;
-		unsigned int offset;
-		bool fs;
-};
-
-class Ramdisk
-{
-	public:
-
-		Ramdisk() = delete;
-		Ramdisk(const std::string &mountpoint, unsigned int size);
-
-		static DIR *static_opendir(void *context, const char *name);
-		static struct dirent *static_readdir(void *context, DIR *pdir);
-		static int static_closedir(void *context, DIR *pdir);
-		static int static_stat(void *context, const char *path, struct stat *st);
-		static int static_fstat(void *context, int fd, struct stat *st);
-		static int static_ioctl(void *context, int fd, int op, va_list);
-		static int static_open(void *context, const char *path, int fcntl_flags, int file_access_mode);
-		static int static_close(void *context, int fd);
-		static int static_read(void *context, int fd, void *data, size_t size);
-		static int static_write(void *context, int fd, const void *data, size_t size);
-		static off_t static_lseek(void *context, int fd, off_t size, int mode);
-		static int static_truncate(void *context, const char *path, off_t length);
-		static int static_ftruncate(void *context, int fd, off_t length);
-		static int static_unlink(void *context, const char *path);
-		static int static_rename(void *context, const char *from, const char *to);
-
-	private:
-
-		class Mutex
-		{
-			public:
-
-				Mutex() = delete;
-				Mutex(SemaphoreHandle_t *mutex);
-				~Mutex();
-
-			private:
-
-				SemaphoreHandle_t *mutex;
-		};
-
-		static constexpr unsigned int fd_max = 8;
-
-		typedef std::map<unsigned int /* file descriptor index */, FileDescriptor> FileDescriptorTable;
-		typedef std::map<DIR *, Dirent *> DirentTable;
-
-		std::string mountpoint;
-		Directory root;
-		unsigned int last_fileno;
-		FileDescriptorTable fd_table;
-		DirentTable dirent_table;
-		SemaphoreHandle_t mutex;
-		unsigned int size;
-
-		static constexpr esp_vfs_dir_ops_t vfs_dir_ops =
-		{
-			.stat_p = Ramdisk::static_stat,
-			.link_p = nullptr,
-			.unlink_p = Ramdisk::static_unlink,
-			.rename_p = Ramdisk::static_rename,
-			.opendir_p = Ramdisk::static_opendir,
-			.readdir_p = Ramdisk::static_readdir,
-			.readdir_r_p = nullptr,
-			.telldir_p = nullptr,
-			.seekdir_p = nullptr,
-			.closedir_p = Ramdisk::static_closedir,
-			.mkdir_p = nullptr,
-			.rmdir_p = nullptr,
-			.access_p = nullptr,
-			.truncate_p = Ramdisk::static_truncate,
-			.ftruncate_p = Ramdisk::static_ftruncate,
-			.utime_p = nullptr,
-		};
-		static constexpr esp_vfs_fs_ops_t vfs_fs_ops =
-		{
-			.write_p = Ramdisk::static_write,
-			.lseek_p = Ramdisk::static_lseek,
-			.read_p = Ramdisk::static_read,
-			.pread_p = nullptr,
-			.pwrite_p = nullptr,
-			.open_p = Ramdisk::static_open,
-			.close_p = Ramdisk::static_close,
-			.fstat_p = Ramdisk::static_fstat,
-			.fcntl_p = nullptr,
-			.ioctl_p = Ramdisk::static_ioctl,
-			.fsync_p = nullptr,
-			.dir = &vfs_dir_ops,
-			.select = nullptr,
-		};
-
-		bool file_in_use(const std::string &filename, unsigned int fcntl_flags) const;
-		void all_stat(const File *fp, struct stat *st) const;
-
-		DIR *opendir(const std::string &name);
-		struct dirent *readdir(DIR *pdir);
-		int closedir(DIR *pdir);
-		int stat(const std::string &path, struct stat *st);
-		int fstat(int fd, struct stat *st);
-		int ioctl(int fd, int op, int *intp);
-		int open(const std::string &path, int fcntl_flags);
-		int close(int fd);
-		int read(int fd, unsigned int size, uint8_t *data);
-		int write(int fd, unsigned int length, const uint8_t *data);
-		int lseek(int fd, unsigned int mode, int offset);
-		int truncate(const std::string &path, unsigned int length);
-		int ftruncate(int fd, unsigned int length);
-		int unlink(const std::string &path);
-		int rename(const std::string &from, const std::string &to);
-};
 
 File::File(const std::string &filename_in, unsigned int fileno_in)
 	: filename(filename_in), fileno(fileno_in)
@@ -602,16 +397,73 @@ void FileDescriptor::set_offset(unsigned int new_offset)
 	this->offset = new_offset;
 }
 
-Ramdisk::Ramdisk(const std::string &mountpoint_in, unsigned int size_in)
-	: mountpoint(mountpoint_in), root("/"), last_fileno(0), size(size_in)
+Root::Root(Log &log_in, const std::string &mountpoint_in, unsigned int size_in) :
+		log(log_in), mountpoint(mountpoint_in), size(size_in), root("/")
 {
-	this->mutex = xSemaphoreCreateMutex();
-	assert(this->mutex);
+	static const esp_vfs_dir_ops_t vfs_dir_ops =
+	{
+		.stat_p = Root::static_stat,
+		.link_p = nullptr,
+		.unlink_p = Root::static_unlink,
+		.rename_p = Root::static_rename,
+		.opendir_p = Root::static_opendir,
+		.readdir_p = Root::static_readdir,
+		.readdir_r_p = nullptr,
+		.telldir_p = nullptr,
+		.seekdir_p = nullptr,
+		.closedir_p = Root::static_closedir,
+		.mkdir_p = nullptr,
+		.rmdir_p = nullptr,
+		.access_p = nullptr,
+		.truncate_p = Root::static_truncate,
+		.ftruncate_p = Root::static_ftruncate,
+		.utime_p = nullptr,
+	};
 
-	Log::get().abort_on_esp_err("esp_vfs_register_fs", esp_vfs_register_fs(this->mountpoint.c_str(), &this->vfs_fs_ops, ESP_VFS_FLAG_CONTEXT_PTR | ESP_VFS_FLAG_STATIC, this));
+	static const esp_vfs_fs_ops_t vfs_fs_ops =
+	{
+		.write_p = Root::static_write,
+		.lseek_p = Root::static_lseek,
+		.read_p = Root::static_read,
+		.pread_p = nullptr,
+		.pwrite_p = nullptr,
+		.open_p = Root::static_open,
+		.close_p = Root::static_close,
+		.fstat_p = Root::static_fstat,
+		.fcntl_p = nullptr,
+		.ioctl_p = Root::static_ioctl,
+		.fsync_p = nullptr,
+		.dir = &vfs_dir_ops,
+		.select = nullptr,
+	};
+
+	esp_err_t rv;
+
+	if(this->singleton)
+		throw(hard_exception("Ramdisk: already active"));
+
+	this->mutex = xSemaphoreCreateMutex();
+
+	if(!this->mutex)
+		throw(hard_exception("Ramdisk: cannot create mutex"));
+
+	if((rv = esp_vfs_register_fs(this->mountpoint.c_str(), &vfs_fs_ops, ESP_VFS_FLAG_CONTEXT_PTR | ESP_VFS_FLAG_STATIC, this)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "Ramdisk: esp_vfs_register_fs")));
+
+	last_fileno = 0;
+
+	this->singleton = this;
 }
 
-bool Ramdisk::file_in_use(const std::string &filename, unsigned int fcntl_flags) const
+Root& Root::get()
+{
+	if(!Root::singleton)
+		throw(hard_exception("Ramdisk: not active"));
+
+	return(*singleton);
+}
+
+bool Root::file_in_use(const std::string &filename, unsigned int fcntl_flags) const
 {
 	const File *fp;
 	FileDescriptorTable::const_iterator it;
@@ -631,100 +483,100 @@ bool Ramdisk::file_in_use(const std::string &filename, unsigned int fcntl_flags)
 	return(false);
 }
 
-DIR *Ramdisk::static_opendir(void *context, const char *name)
+DIR *Root::static_opendir(void *context, const char *name)
 {
-	Ramdisk *ramdisk = reinterpret_cast<Ramdisk *>(context);
+	Root *ramdisk = reinterpret_cast<Root *>(context);
 	return(ramdisk->opendir(std::string(name)));
 }
 
-struct dirent *Ramdisk::static_readdir(void *context, DIR *pdir)
+struct dirent *Root::static_readdir(void *context, DIR *pdir)
 {
-	Ramdisk *ramdisk = reinterpret_cast<Ramdisk *>(context);
+	Root *ramdisk = reinterpret_cast<Root *>(context);
 	return(ramdisk->readdir(pdir));
 }
 
-int Ramdisk::static_closedir(void *context, DIR *pdir)
+int Root::static_closedir(void *context, DIR *pdir)
 {
-	Ramdisk *ramdisk = reinterpret_cast<Ramdisk *>(context);
+	Root *ramdisk = reinterpret_cast<Root *>(context);
 	return(ramdisk->closedir(pdir));
 }
 
-int Ramdisk::static_stat(void *context, const char *path, struct stat *st)
+int Root::static_stat(void *context, const char *path, struct stat *st)
 {
-	Ramdisk *ramdisk = reinterpret_cast<Ramdisk *>(context);
+	Root *ramdisk = reinterpret_cast<Root *>(context);
 	return(ramdisk->stat(std::string(path), st));
 }
 
-int Ramdisk::static_fstat(void *context, int fd, struct stat *st)
+int Root::static_fstat(void *context, int fd, struct stat *st)
 {
-	Ramdisk *ramdisk = reinterpret_cast<Ramdisk *>(context);
+	Root *ramdisk = reinterpret_cast<Root *>(context);
 	return(ramdisk->fstat(fd, st));
 }
 
-int Ramdisk::static_ioctl(void *context, int fd, int op, va_list ap)
+int Root::static_ioctl(void *context, int fd, int op, va_list ap)
 {
-	Ramdisk *ramdisk = reinterpret_cast<Ramdisk *>(context);
+	Root *ramdisk = reinterpret_cast<Root *>(context);
 
 	int *intp = va_arg(ap, int *);
 
 	return(ramdisk->ioctl(fd, op, intp));
 }
 
-int Ramdisk::static_open(void *context, const char *path, int fcntl_flags, int file_access_mode)
+int Root::static_open(void *context, const char *path, int fcntl_flags, int file_access_mode)
 {
-	Ramdisk *ramdisk = reinterpret_cast<Ramdisk *>(context);
+	Root *ramdisk = reinterpret_cast<Root *>(context);
 	return(ramdisk->open(std::string(path), fcntl_flags));
 }
 
-int Ramdisk::static_close(void *context, int fd)
+int Root::static_close(void *context, int fd)
 {
-	Ramdisk *ramdisk = reinterpret_cast<Ramdisk *>(context);
+	Root *ramdisk = reinterpret_cast<Root *>(context);
 	return(ramdisk->close(fd));
 }
 
-int Ramdisk::static_read(void *context, int fd, void *data, size_t size)
+int Root::static_read(void *context, int fd, void *data, size_t size)
 {
-	Ramdisk *ramdisk = reinterpret_cast<Ramdisk *>(context);
+	Root *ramdisk = reinterpret_cast<Root *>(context);
 	return(ramdisk->read(fd, size, static_cast<uint8_t *>(data)));
 }
 
-int Ramdisk::static_write(void *context, int fd, const void *data, size_t length)
+int Root::static_write(void *context, int fd, const void *data, size_t length)
 {
-	Ramdisk *ramdisk = reinterpret_cast<Ramdisk *>(context);
+	Root *ramdisk = reinterpret_cast<Root *>(context);
 	return(ramdisk->write(fd, length, static_cast<const uint8_t *>(data)));
 }
 
-off_t Ramdisk::static_lseek(void *context, int fd, off_t offset, int mode)
+off_t Root::static_lseek(void *context, int fd, off_t offset, int mode)
 {
-	Ramdisk *ramdisk = reinterpret_cast<Ramdisk *>(context);
+	Root *ramdisk = reinterpret_cast<Root *>(context);
 	return(ramdisk->lseek(fd, mode, offset));
 }
 
-int Ramdisk::static_ftruncate(void *context, int fd, off_t length)
+int Root::static_ftruncate(void *context, int fd, off_t length)
 {
-	Ramdisk *ramdisk = reinterpret_cast<Ramdisk *>(context);
+	Root *ramdisk = reinterpret_cast<Root *>(context);
 	return(ramdisk->ftruncate(fd, length));
 }
 
-int Ramdisk::static_truncate(void *context, const char *path, off_t length)
+int Root::static_truncate(void *context, const char *path, off_t length)
 {
-	Ramdisk *ramdisk = reinterpret_cast<Ramdisk *>(context);
+	Root *ramdisk = reinterpret_cast<Root *>(context);
 	return(ramdisk->truncate(std::string(path), length));
 }
 
-int Ramdisk::static_unlink(void *context, const char *path)
+int Root::static_unlink(void *context, const char *path)
 {
-	Ramdisk *ramdisk = reinterpret_cast<Ramdisk *>(context);
+	Root *ramdisk = reinterpret_cast<Root *>(context);
 	return(ramdisk->unlink(std::string(path)));
 }
 
-int Ramdisk::static_rename(void *context, const char *from, const char *to)
+int Root::static_rename(void *context, const char *from, const char *to)
 {
-	Ramdisk *ramdisk = reinterpret_cast<Ramdisk *>(context);
+	Root *ramdisk = reinterpret_cast<Root *>(context);
 	return(ramdisk->rename(std::string(from), std::string(to)));
 }
 
-void Ramdisk::all_stat(const File *fp, struct stat *st) const
+void Root::all_stat(const File *fp, struct stat *st) const
 {
 	memset(st, 0, sizeof(st));
 
@@ -740,7 +592,7 @@ void Ramdisk::all_stat(const File *fp, struct stat *st) const
 	st->st_ctim = fp->get_ctime();
 }
 
-int Ramdisk::stat(const std::string &path, struct stat *st)
+int Root::stat(const std::string &path, struct stat *st)
 {
 	Mutex(&this->mutex);
 	const File *fp;
@@ -756,7 +608,7 @@ int Ramdisk::stat(const std::string &path, struct stat *st)
 	return(0);
 }
 
-int Ramdisk::fstat(int fd, struct stat *st)
+int Root::fstat(int fd, struct stat *st)
 {
 	Mutex(&this->mutex);
 	FileDescriptorTable::const_iterator it;
@@ -779,7 +631,7 @@ int Ramdisk::fstat(int fd, struct stat *st)
 	return(0);
 }
 
-int Ramdisk::ioctl(int fd, int op, int *intp)
+int Root::ioctl(int fd, int op, int *intp)
 {
 	switch(op)
 	{
@@ -827,7 +679,7 @@ int Ramdisk::ioctl(int fd, int op, int *intp)
 	return(0);
 }
 
-DIR *Ramdisk::opendir(const std::string &path)
+DIR *Root::opendir(const std::string &path)
 {
 	Mutex(&this->mutex);
 	int fileno;
@@ -851,7 +703,7 @@ DIR *Ramdisk::opendir(const std::string &path)
 	return(dirent->get_DIR());
 }
 
-struct dirent *Ramdisk::readdir(DIR *pdir)
+struct dirent *Root::readdir(DIR *pdir)
 {
 	Mutex(&this->mutex);
 	DirentTable::iterator it;
@@ -872,7 +724,7 @@ struct dirent *Ramdisk::readdir(DIR *pdir)
 	return(it->second->get_dirent());
 }
 
-int Ramdisk::closedir(DIR *pdir)
+int Root::closedir(DIR *pdir)
 {
 	Mutex(&this->mutex);
 	DirentTable::iterator it;
@@ -896,7 +748,7 @@ int Ramdisk::closedir(DIR *pdir)
 	return(0);
 }
 
-int Ramdisk::open(const std::string &path, int fcntl_flags)
+int Root::open(const std::string &path, int fcntl_flags)
 {
 	Mutex(&this->mutex);
 	unsigned int fd, offset;
@@ -980,7 +832,7 @@ int Ramdisk::open(const std::string &path, int fcntl_flags)
 	return(fd);
 }
 
-int Ramdisk::close(int fd)
+int Root::close(int fd)
 {
 	Mutex(&this->mutex);
 	FileDescriptorTable::iterator it;
@@ -1006,7 +858,7 @@ int Ramdisk::close(int fd)
 	return(0);
 }
 
-int Ramdisk::read(int fd, unsigned int data_size, uint8_t *data)
+int Root::read(int fd, unsigned int data_size, uint8_t *data)
 {
 	Mutex(&this->mutex);
 	FileDescriptorTable::iterator it;
@@ -1035,7 +887,7 @@ int Ramdisk::read(int fd, unsigned int data_size, uint8_t *data)
 	return(received);
 }
 
-int Ramdisk::write(int fd, unsigned int length, const uint8_t *data)
+int Root::write(int fd, unsigned int length, const uint8_t *data)
 {
 	Mutex(&this->mutex);
 	FileDescriptorTable::iterator it;
@@ -1070,7 +922,7 @@ int Ramdisk::write(int fd, unsigned int length, const uint8_t *data)
 	return(written);
 }
 
-int Ramdisk::lseek(int fd, unsigned int mode, int delta_offset)
+int Root::lseek(int fd, unsigned int mode, int delta_offset)
 {
 	Mutex(&this->mutex);
 	FileDescriptorTable::iterator it;
@@ -1133,7 +985,7 @@ int Ramdisk::lseek(int fd, unsigned int mode, int delta_offset)
 	return(new_offset);
 }
 
-int Ramdisk::truncate(const std::string &path, unsigned int length)
+int Root::truncate(const std::string &path, unsigned int length)
 {
 	Mutex(&this->mutex);
 	FileDescriptorTable::iterator it;
@@ -1164,7 +1016,7 @@ int Ramdisk::truncate(const std::string &path, unsigned int length)
 	return(0);
 }
 
-int Ramdisk::ftruncate(int fd, unsigned int length)
+int Root::ftruncate(int fd, unsigned int length)
 {
 	Mutex(&this->mutex);
 	FileDescriptorTable::iterator it;
@@ -1201,7 +1053,7 @@ int Ramdisk::ftruncate(int fd, unsigned int length)
 	return(0);
 }
 
-int Ramdisk::unlink(const std::string &path)
+int Root::unlink(const std::string &path)
 {
 	Mutex(&this->mutex);
 	FileDescriptorTable::iterator it;
@@ -1234,7 +1086,7 @@ int Ramdisk::unlink(const std::string &path)
 	return(0);
 }
 
-int Ramdisk::rename(const std::string &from, const std::string &to)
+int Root::rename(const std::string &from, const std::string &to)
 {
 	Mutex(&this->mutex);
 	const File *fp;
@@ -1264,21 +1116,4 @@ int Ramdisk::rename(const std::string &from, const std::string &to)
 	}
 
 	return(0);
-}
-
-Ramdisk::Mutex::Mutex(SemaphoreHandle_t *mutex_in)
-	: mutex(mutex_in)
-{
-	xSemaphoreTake(*this->mutex, portMAX_DELAY);
-}
-
-Ramdisk::Mutex::~Mutex()
-{
-	xSemaphoreGive(*this->mutex);
-	this->mutex = nullptr;
-}
-
-void ramdisk_init(unsigned int size)
-{
-	new Ramdisk("/ramdisk", size);
 }

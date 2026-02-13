@@ -1,6 +1,7 @@
 #pragma once
 
 #include "log.h"
+#include "ramdisk.h"
 
 #include <string>
 
@@ -10,7 +11,7 @@ class FS final
 
 		explicit FS() = delete;
 		explicit FS(const FS &) = delete;
-		explicit FS(Log &);
+		explicit FS(Log &, Ramdisk::Root &);
 
 		static FS& get();
 
@@ -28,4 +29,5 @@ class FS final
 
 		static FS *singleton;
 		Log &log;
+		Ramdisk::Root &ramdisk;
 };
