@@ -32,7 +32,9 @@ class Log final
 		void warn_on_esp_err(std::string_view what, unsigned int rv);
 		void abort_on_esp_err(std::string_view what, int rv);
 		void abort(std::string_view what);
-		std::string esp_string_error(esp_err_t e, std::string_view message);
+
+		static std::string esp_string_error(esp_err_t e, std::string_view message);
+		static std::string errno_string_error(int e, std::string_view message);
 
 		void clear();
 		void setmonitor(bool);
