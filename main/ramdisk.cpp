@@ -88,6 +88,8 @@ class Directory
 		int unlink(const std::string &path);
 		int rename(const std::string &from, const std::string &to);
 
+		int clear();
+
 		Directory() = delete;
 		Directory(const std::string &path);
 
@@ -558,6 +560,13 @@ int Directory::unlink(const std::string &path_in)
 	return(0);
 }
 
+int Directory::clear()
+{
+	this->files.clear();
+
+	return(0);
+}
+
 FileDescriptor::FileDescriptor(unsigned int fd_in, unsigned int fileno_in, unsigned int fcntl_flags_in, unsigned int offset_in, bool fs_in)
 	: fd(fd_in), fileno(fileno_in), fcntl_flags(fcntl_flags_in), offset(offset_in), fs(fs_in)
 {
@@ -789,6 +798,22 @@ int Ramdisk::ioctl(int fd, int op, int *intp)
 		case(IO_RAMDISK_GET_SIZE):
 		{
 			*intp = this->size;
+			break;
+		}
+
+		case(IO_RAMDISK_WIPE):
+		{
+			for(const auto &entry : fd_table)
+			{
+				if(!(entry.second.get_fcntl_flags() & O_DIRECTORY))
+				{
+					errno = EBUSY;
+					return(-1);
+				}
+			}
+
+			this->root.clear();
+
 			break;
 		}
 
