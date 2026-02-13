@@ -1053,6 +1053,12 @@ int Ramdisk::write(int fd, unsigned int length, const uint8_t *data)
 		return(-1);
 	}
 
+	if(this->root.get_used() > this->size)
+	{
+		errno = ENOSPC;
+		return(-1);
+	}
+
 	if((written = this->root.write(it->second.get_fileno(), it->second.get_offset(), length, data)) < 0)
 	{
 		errno = 0 - written;
