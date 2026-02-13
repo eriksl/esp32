@@ -16,6 +16,7 @@
 #include "udp.h"
 #include "tcp.h"
 #include "command.h"
+#include "exception.h"
 
 #include <algorithm>
 #include <string>
@@ -91,40 +92,6 @@ typedef struct
 	cli_command_function_t *function;
 	cli_parameters_description_t parameters_description;
 } cli_command_t;
-
-class CommandException : public std::exception
-{
-	public:
-
-		CommandException() = delete;
-		CommandException(const std::string &what);
-		CommandException(const char *what);
-		CommandException(const boost::format &what);
-
-		const char *what() const noexcept;
-
-	private:
-
-		const std::string what_string;
-};
-
-
-CommandException::CommandException(const std::string &what) : what_string(what)
-{
-}
-
-CommandException::CommandException(const char *what) : what_string(what)
-{
-}
-
-CommandException::CommandException(const boost::format &what) : what_string(what.str())
-{
-}
-
-const char *CommandException::what() const noexcept
-{
-    return(what_string.c_str());
-}
 
 static QueueHandle_t receive_queue_handle;
 static QueueHandle_t send_queue_handle;
@@ -747,7 +714,7 @@ static void run_receive_queue(void *)
 			call.parameter_count = 0;
 
 			if(data.length() == 0)
-				throw(CommandException("ERROR: empty line"));
+				throw(transient_exception("ERROR: empty line"));
 
 			alias_expand(data);
 
@@ -771,7 +738,7 @@ static void run_receive_queue(void *)
 			}
 
 			if(!cli_command->name)
-				throw(CommandException(boost::format("ERROR: unknown command \"%s\"") % command));
+				throw(transient_exception(boost::format("ERROR: unknown command \"%s\"") % command));
 
 			count = cli_command->parameters_description.count;
 
@@ -795,7 +762,7 @@ static void run_receive_queue(void *)
 					if(!parameter_description->value_required)
 						continue;
 					else
-						throw(CommandException(boost::format("ERROR: missing required parameter %u") % (current + 1)));
+						throw(transient_exception(boost::format("ERROR: missing required parameter %u") % (current + 1)));
 				}
 				else
 				{
@@ -814,7 +781,7 @@ static void run_receive_queue(void *)
 						case(cli_parameter_none):
 						case(cli_parameter_size):
 						{
-							throw(CommandException(boost::format("ERROR: parameter with invalid type %d") % parameter_description->type));
+							throw(transient_exception(boost::format("ERROR: parameter with invalid type %d") % parameter_description->type));
 						}
 
 						case(cli_parameter_unsigned_int):
@@ -827,15 +794,15 @@ static void run_receive_queue(void *)
 							}
 							catch(...)
 							{
-								throw(CommandException(boost::format("ERROR: invalid unsigned integer value: %s") % parameter->str));
+								throw(transient_exception(boost::format("ERROR: invalid unsigned integer value: %s") % parameter->str));
 							}
 
 							if((parameter_description->lower_bound_required) && (value < parameter_description->unsigned_int.lower_bound))
-								throw(CommandException(boost::format("ERROR: invalid unsigned integer value: %u, smaller than lower bound: %u") %
+								throw(transient_exception(boost::format("ERROR: invalid unsigned integer value: %u, smaller than lower bound: %u") %
 										value % parameter_description->unsigned_int.lower_bound));
 
 							if((parameter_description->upper_bound_required) && (value > parameter_description->unsigned_int.upper_bound))
-								throw(CommandException(boost::format("ERROR: invalid unsigned integer value: %u, larger than upper bound: %u") %
+								throw(transient_exception(boost::format("ERROR: invalid unsigned integer value: %u, larger than upper bound: %u") %
 										value % parameter_description->unsigned_int.upper_bound));
 
 							parameter->type = cli_parameter_unsigned_int;
@@ -855,15 +822,15 @@ static void run_receive_queue(void *)
 							}
 							catch(...)
 							{
-								throw(CommandException(boost::format("ERROR: invalid signed integer value: %s") % parameter->str));
+								throw(transient_exception(boost::format("ERROR: invalid signed integer value: %s") % parameter->str));
 							}
 
 							if((parameter_description->lower_bound_required) && (value < parameter_description->signed_int.lower_bound))
-								throw(CommandException(boost::format("ERROR: invalid signed integer value: %d, smaller than lower bound: %d") %
+								throw(transient_exception(boost::format("ERROR: invalid signed integer value: %d, smaller than lower bound: %d") %
 										value % parameter_description->signed_int.lower_bound));
 
 							if((parameter_description->upper_bound_required) && (value > parameter_description->signed_int.upper_bound))
-								throw(CommandException(boost::format("ERROR: invalid signed integer value: %d, larger than upper bound: %d") %
+								throw(transient_exception(boost::format("ERROR: invalid signed integer value: %d, larger than upper bound: %d") %
 										value % parameter_description->signed_int.upper_bound));
 
 							parameter->type = cli_parameter_signed_int;
@@ -883,14 +850,14 @@ static void run_receive_queue(void *)
 							}
 							catch(...)
 							{
-								throw(CommandException(boost::format("ERROR: invalid float value: %s") % parameter->str));
+								throw(transient_exception(boost::format("ERROR: invalid float value: %s") % parameter->str));
 							}
 
 							if((parameter_description->lower_bound_required) && (value < parameter_description->fp.lower_bound))
-								throw(CommandException(boost::format("ERROR: invalid float value: %f, smaller than lower bound: %f") % value % parameter_description->fp.lower_bound));
+								throw(transient_exception(boost::format("ERROR: invalid float value: %f, smaller than lower bound: %f") % value % parameter_description->fp.lower_bound));
 
 							if((parameter_description->upper_bound_required) && (value > parameter_description->fp.upper_bound))
-								throw(CommandException(boost::format("ERROR: invalid float value: %f, larger than upper bound: %f") % value % parameter_description->fp.upper_bound));
+								throw(transient_exception(boost::format("ERROR: invalid float value: %f, larger than upper bound: %f") % value % parameter_description->fp.upper_bound));
 
 							parameter->type = cli_parameter_float;
 							parameter->has_value = 1;
@@ -906,10 +873,10 @@ static void run_receive_queue(void *)
 							length = parameter->str.length();
 
 							if((parameter_description->lower_bound_required) && (length < parameter_description->string.lower_length_bound))
-								throw(CommandException(boost::format("ERROR: invalid string length: %u, smaller than lower bound: %u") % length % parameter_description->string.lower_length_bound));
+								throw(transient_exception(boost::format("ERROR: invalid string length: %u, smaller than lower bound: %u") % length % parameter_description->string.lower_length_bound));
 
 							if((parameter_description->upper_bound_required) && (length > parameter_description->string.upper_length_bound))
-								throw(CommandException(boost::format("ERROR: invalid string length: %u, larger than upper bound: %u") % length % parameter_description->string.upper_length_bound));
+								throw(transient_exception(boost::format("ERROR: invalid string length: %u, larger than upper bound: %u") % length % parameter_description->string.upper_length_bound));
 
 							parameter->type = cli_parameter_string;
 							parameter->has_value = 1;
@@ -927,10 +894,10 @@ static void run_receive_queue(void *)
 							length = parameter->str.length();
 
 							if((parameter_description->lower_bound_required) && (length < parameter_description->string.lower_length_bound))
-								throw(CommandException(boost::format("ERROR: invalid raw string length: %u, smaller than lower bound: %u") % length % parameter_description->string.lower_length_bound));
+								throw(transient_exception(boost::format("ERROR: invalid raw string length: %u, smaller than lower bound: %u") % length % parameter_description->string.lower_length_bound));
 
 							if((parameter_description->upper_bound_required) && (length > parameter_description->string.upper_length_bound))
-								throw(CommandException(boost::format("ERROR: invalid raw string length: %u, larger than upper bound: %u") % length % parameter_description->string.upper_length_bound));
+								throw(transient_exception(boost::format("ERROR: invalid raw string length: %u, larger than upper bound: %u") % length % parameter_description->string.upper_length_bound));
 
 							parameter->type = cli_parameter_string;
 							parameter->has_value = 1;
@@ -942,17 +909,17 @@ static void run_receive_queue(void *)
 			}
 
 			if(current >= parameters_size)
-				throw(CommandException(boost::format("ERROR: too many parameters: %u") % current));
+				throw(transient_exception(boost::format("ERROR: too many parameters: %u") % current));
 
 			if(current < cli_command->parameters_description.count)
-				throw(CommandException("ERROR: missing parameters"));
+				throw(transient_exception("ERROR: missing parameters"));
 
 			for(; data_iterator != data.end(); data_iterator++)
 				if(*data_iterator > ' ')
 					break;
 
 			if(data_iterator != data.end())
-				throw(CommandException("ERROR: too many parameters"));
+				throw(transient_exception("ERROR: too many parameters"));
 
 			call.source =			command_response->source;
 			call.mtu =				command_response->mtu;
@@ -962,9 +929,16 @@ static void run_receive_queue(void *)
 
 			cli_command->function(&call);
 		}
-		catch(const CommandException &exception)
+		catch(const transient_exception &e)
 		{
-			call.result = exception.what();
+			call.result = std::format("WARNING: {}", e.what());
+			Log::get() << std::format("cli: transient exception: {}", e.what());
+			call.result_oob.clear();
+		}
+		catch(const hard_exception &e)
+		{
+			call.result = std::format("ERROR: {}", e.what());
+			Log::get() << std::format("cli: hard exception: {}", e.what());
 			call.result_oob.clear();
 		}
 
@@ -975,6 +949,7 @@ static void run_receive_queue(void *)
 		{
 			call.result = std::format("ERROR: packet mtu overflow, payload: {:d}, oob: {:d}, packet overhead: {:d}, mtu: {:d}",
 					call.result.size(), call.result_oob.size(), Packet::packet_header_size(), command_response->mtu);
+			Log::get() << std::format("cli: {}", call.result);
 			call.result_oob.clear();
 		}
 
