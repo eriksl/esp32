@@ -1517,7 +1517,7 @@ void Command::run_receive_queue()
 			}
 
 			if(!cli_command->name)
-				throw(transient_exception(boost::format("ERROR: unknown command \"%s\"") % command));
+				throw(transient_exception(std::format("ERROR: unknown command \"{}\"", command)));
 
 			count = cli_command->parameters_description.count;
 
@@ -1541,7 +1541,7 @@ void Command::run_receive_queue()
 					if(!parameter_description->value_required)
 						continue;
 					else
-						throw(transient_exception(boost::format("ERROR: missing required parameter %u") % (current + 1)));
+						throw(transient_exception(std::format("ERROR: missing required parameter {:d}", current + 1)));
 				}
 				else
 				{
@@ -1560,7 +1560,7 @@ void Command::run_receive_queue()
 						case(cli_parameter_none):
 						case(cli_parameter_size):
 						{
-							throw(transient_exception(boost::format("ERROR: parameter with invalid type %d") % parameter_description->type));
+							throw(transient_exception(std::format("ERROR: parameter with invalid type {:d}", static_cast<int>(parameter_description->type))));
 						}
 
 						case(cli_parameter_unsigned_int):
@@ -1573,16 +1573,16 @@ void Command::run_receive_queue()
 							}
 							catch(...)
 							{
-								throw(transient_exception(boost::format("ERROR: invalid unsigned integer value: %s") % parameter->str));
+								throw(transient_exception(std::format("ERROR: invalid unsigned integer value: {}", parameter->str)));
 							}
 
 							if((parameter_description->lower_bound_required) && (value < parameter_description->unsigned_int.lower_bound))
-								throw(transient_exception(boost::format("ERROR: invalid unsigned integer value: %u, smaller than lower bound: %u") %
-										value % parameter_description->unsigned_int.lower_bound));
+								throw(transient_exception(std::format("ERROR: invalid unsigned integer value: {:d}, smaller than lower bound: {:d}",
+										value, parameter_description->unsigned_int.lower_bound)));
 
 							if((parameter_description->upper_bound_required) && (value > parameter_description->unsigned_int.upper_bound))
-								throw(transient_exception(boost::format("ERROR: invalid unsigned integer value: %u, larger than upper bound: %u") %
-										value % parameter_description->unsigned_int.upper_bound));
+								throw(transient_exception(std::format("ERROR: invalid unsigned integer value: {:d}, larger than upper bound: {:d}",
+										value, parameter_description->unsigned_int.upper_bound)));
 
 							parameter->type = cli_parameter_unsigned_int;
 							parameter->has_value = 1;
@@ -1601,16 +1601,16 @@ void Command::run_receive_queue()
 							}
 							catch(...)
 							{
-								throw(transient_exception(boost::format("ERROR: invalid signed integer value: %s") % parameter->str));
+								throw(transient_exception(std::format("ERROR: invalid signed integer value: {}", parameter->str)));
 							}
 
 							if((parameter_description->lower_bound_required) && (value < parameter_description->signed_int.lower_bound))
-								throw(transient_exception(boost::format("ERROR: invalid signed integer value: %d, smaller than lower bound: %d") %
-										value % parameter_description->signed_int.lower_bound));
+								throw(transient_exception(std::format("ERROR: invalid signed integer value: {:d}, smaller than lower bound: {:d}",
+										value, parameter_description->signed_int.lower_bound)));
 
 							if((parameter_description->upper_bound_required) && (value > parameter_description->signed_int.upper_bound))
-								throw(transient_exception(boost::format("ERROR: invalid signed integer value: %d, larger than upper bound: %d") %
-										value % parameter_description->signed_int.upper_bound));
+								throw(transient_exception(std::format("ERROR: invalid signed integer value: {:d}, larger than upper bound: {:d}",
+										value, parameter_description->signed_int.upper_bound)));
 
 							parameter->type = cli_parameter_signed_int;
 							parameter->has_value = 1;
@@ -1629,14 +1629,16 @@ void Command::run_receive_queue()
 							}
 							catch(...)
 							{
-								throw(transient_exception(boost::format("ERROR: invalid float value: %s") % parameter->str));
+								throw(transient_exception(std::format("ERROR: invalid float value: {}", parameter->str)));
 							}
 
 							if((parameter_description->lower_bound_required) && (value < parameter_description->fp.lower_bound))
-								throw(transient_exception(boost::format("ERROR: invalid float value: %f, smaller than lower bound: %f") % value % parameter_description->fp.lower_bound));
+								throw(transient_exception(std::format("ERROR: invalid float value: {:f}, smaller than lower bound: {:f}",
+										value, parameter_description->fp.lower_bound)));
 
 							if((parameter_description->upper_bound_required) && (value > parameter_description->fp.upper_bound))
-								throw(transient_exception(boost::format("ERROR: invalid float value: %f, larger than upper bound: %f") % value % parameter_description->fp.upper_bound));
+								throw(transient_exception(std::format("ERROR: invalid float value: {:f}, larger than upper bound: {:f}",
+										value, parameter_description->fp.upper_bound)));
 
 							parameter->type = cli_parameter_float;
 							parameter->has_value = 1;
@@ -1652,10 +1654,12 @@ void Command::run_receive_queue()
 							length = parameter->str.length();
 
 							if((parameter_description->lower_bound_required) && (length < parameter_description->string.lower_length_bound))
-								throw(transient_exception(boost::format("ERROR: invalid string length: %u, smaller than lower bound: %u") % length % parameter_description->string.lower_length_bound));
+								throw(transient_exception(std::format("ERROR: invalid string length: {:d}, smaller than lower bound: {:d}",
+										length, parameter_description->string.lower_length_bound)));
 
 							if((parameter_description->upper_bound_required) && (length > parameter_description->string.upper_length_bound))
-								throw(transient_exception(boost::format("ERROR: invalid string length: %u, larger than upper bound: %u") % length % parameter_description->string.upper_length_bound));
+								throw(transient_exception(std::format("ERROR: invalid string length: {:d}, larger than upper bound: {:d}",
+										length, parameter_description->string.upper_length_bound)));
 
 							parameter->type = cli_parameter_string;
 							parameter->has_value = 1;
@@ -1673,10 +1677,12 @@ void Command::run_receive_queue()
 							length = parameter->str.length();
 
 							if((parameter_description->lower_bound_required) && (length < parameter_description->string.lower_length_bound))
-								throw(transient_exception(boost::format("ERROR: invalid raw string length: %u, smaller than lower bound: %u") % length % parameter_description->string.lower_length_bound));
+								throw(transient_exception(std::format("ERROR: invalid raw string length: {:d}, smaller than lower bound: {:d}",
+										length, parameter_description->string.lower_length_bound)));
 
 							if((parameter_description->upper_bound_required) && (length > parameter_description->string.upper_length_bound))
-								throw(transient_exception(boost::format("ERROR: invalid raw string length: %u, larger than upper bound: %u") % length % parameter_description->string.upper_length_bound));
+								throw(transient_exception(std::format("ERROR: invalid raw string length: {:d}, larger than upper bound: {:d}",
+										length, parameter_description->string.upper_length_bound)));
 
 							parameter->type = cli_parameter_string;
 							parameter->has_value = 1;
@@ -1688,7 +1694,7 @@ void Command::run_receive_queue()
 			}
 
 			if(current >= parameters_size)
-				throw(transient_exception(boost::format("ERROR: too many parameters: %u") % current));
+				throw(transient_exception(std::format("ERROR: too many parameters: {}", current)));
 
 			if(current < cli_command->parameters_description.count)
 				throw(transient_exception("ERROR: missing parameters"));
