@@ -6,7 +6,6 @@
 #include "console.h"
 #include "wlan.h"
 #include "i2c.h"
-#include "alias.h"
 #include "bt.h"
 #include "udp.h"
 #include "tcp.h"
