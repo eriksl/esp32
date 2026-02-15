@@ -15,7 +15,6 @@ void app_main(void);
 #include "mcpwm.h"
 #include "command.h"
 
-#include "alias.h"
 #include "bt.h"
 #include "display.h"
 #include "fs.h"
@@ -51,9 +50,10 @@ void app_main(void)
 		MCPWM mcpwm(log);
 		Ramdisk::Root ramdisk(log, "/ramdisk", system.get_initial_free_spiram() / 2);
 		FS fs(log, ramdisk);
-		Command command(config, console, ledpixel, ledpwm, notify, log, system, util, pdm, mcpwm, fs);
+		BT bt(log, config);
+		Command command(config, console, ledpixel, ledpwm, notify, log, system, util, pdm, mcpwm, fs, bt);
 		console.set(&command);
-		bt_init();
+		bt.set(&command);
 		wlan_init();
 		net_udp_init();
 		net_tcp_init();
@@ -61,8 +61,9 @@ void app_main(void)
 		i2c_init();
 		io_init();
 		sensor_init();
-		command.run();
+		bt.run();
 		console.run();
+		command.run();
 		notify.notify(Notify::Notification::sys_booting_finished);
 		vTaskSuspend(NULL);
 		throw("vTaskSuspend returned");

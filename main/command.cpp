@@ -28,8 +28,6 @@
 #include <freertos/queue.h>
 
 //FIXME
-void bluetooth_command_info(cli_command_call_t *call);
-void bluetooth_command_key(cli_command_call_t *call);
 void flash_command_bench(cli_command_call_t *call);
 void flash_command_checksum(cli_command_call_t *call);
 void flash_command_info(cli_command_call_t *call);
@@ -482,14 +480,15 @@ Util *Command::util_ = nullptr;
 PDM *Command::pdm_ = nullptr;
 MCPWM *Command::mcpwm_ = nullptr;
 FS *Command::fs_ = nullptr;
+BT *Command::bt_ = nullptr;
 
 Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, LedPWM &ledpwm_in,
 		Notify &notify_in, Log &log_in, System &system_in, Util &util_in, PDM &pdm_in, MCPWM &mcpwm_in,
-		FS &fs_in)
+		FS &fs_in, BT &bt_in)
 	:
 		config(config_in), console(console_in), ledpixel(ledpixel_in), ledpwm(ledpwm_in),
 		notify(notify_in), log(log_in), system(system_in), util(util_in), pdm(pdm_in), mcpwm(mcpwm_in),
-		fs(fs_in)
+		fs(fs_in), bt(bt_in)
 {
 	if(this->singleton)
 		throw(hard_exception("Command: already activated"));
@@ -514,6 +513,7 @@ Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, 
 	this->pdm_ = &pdm;
 	this->mcpwm_ = &mcpwm;
 	this->fs_ = &fs;
+	this->bt_ = &bt;
 }
 
 Command &Command::get()
@@ -1171,15 +1171,22 @@ void Command::bluetooth_info(cli_command_call_t *call)
 
 	call->result = "BLUETOOTH INFO";
 
-	bluetooth_command_info(call); // FIXME
+	bt_->info(call->result);
 }
 
 void Command::bluetooth_key(cli_command_call_t *call)
 {
+	std::string key;
+
 	if(!Command::singleton)
 		throw(hard_exception("Command: not activated"));
 
-	bluetooth_command_key(call); // FIXME
+	if(call->parameter_count == 1)
+		bt_->key(call->parameters[0].str);
+
+	key = bt_->key();
+
+	call->result = std::format("bluetooth key: {}", key);
 }
 
 void Command::ota_start(cli_command_call_t *call)

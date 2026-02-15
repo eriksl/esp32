@@ -10,6 +10,7 @@
 #include "pdm.h"
 #include "mcpwm.h"
 #include "fs.h"
+#include "bt.h"
 #include "exception.h"
 #include "cli-command.h"
 
@@ -130,7 +131,7 @@ class Command final
 		static void udp_info(cli_command_call_t *);
 		static void tcp_info(cli_command_call_t *);
 
-		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &, Util &, PDM &, MCPWM &, FS &);
+		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &, Util &, PDM &, MCPWM &, FS &, BT &);
 		Command() = delete;
 		Command(const Command &) = delete;
 
@@ -228,6 +229,7 @@ class Command final
 		static PDM *pdm_;
 		static MCPWM *mcpwm_;
 		static FS *fs_;
+		static BT *bt_;
 
 		typedef std::map<std::string, std::string> string_string_map;
 		string_string_map aliases;
@@ -243,6 +245,7 @@ class Command final
 		PDM &pdm;
 		MCPWM &mcpwm;
 		FS &fs;
+		BT &bt;
 
 		QueueHandle_t receive_queue_handle;
 		QueueHandle_t send_queue_handle;

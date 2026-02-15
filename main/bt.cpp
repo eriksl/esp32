@@ -1,11 +1,6 @@
-#include <string.h>
-#include <stdint.h>
-#include <stdbool.h>
-
-#include <esp_log.h>
+#include "bt.h"
 
 #include "log.h"
-#include "util.h"
 #include "packet.h"
 #include "config.h"
 #include "system.h"
@@ -24,90 +19,22 @@
 #include <host/util/util.h>
 #include <services/gap/ble_svc_gap.h>
 #include <services/gatt/ble_svc_gatt.h>
-#include <esp_timer.h>
 
-#include "bt.h"
-
-#include <string>
-#include <exception>
-#include <boost/format.hpp>
+#include <format>
 #include <thread>
 #include <chrono>
 
-extern "C" void ble_store_config_init(void);
+extern "C" void ble_store_config_init();
 
-enum
-{
-	service_handle = 0xabf0,
-	characteristics_handle = 0xabf1,
-	bt_mtu = 484,
-};
+BT *BT::singleton = nullptr;
 
-static int gap_event(struct ble_gap_event *event, void *arg);
-static int gatt_value_event(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *context, void *arg);
-static void bt_received(unsigned int connection_handle, unsigned int attribute_handle, const struct os_mbuf *mbuf);
-
-static std::string hostname;
-static std::string encryption_key;
-
-static uint8_t bt_host_address[6] = {0};
-static uint16_t value_attribute_handle;
-static uint8_t own_addr_type;
-
-static unsigned int stats_sent_bytes;
-static unsigned int stats_sent_packets;
-static unsigned int stats_sent_encryption_failed;
-
-static unsigned int stats_received_bytes;
-static unsigned int stats_received_packets;
-static unsigned int stats_received_null_packets;
-static unsigned int stats_received_decryption_failed;
-static unsigned int stats_received_invalid_packets;
-static unsigned int stats_received_incomplete_packets;
-
-static unsigned int stats_indication_error;
-static unsigned int stats_indication_timeout;
-
-static bool inited = false;
-
-static void nimble_port_task(void *param)
-{
-	assert(inited);
-
-	nimble_port_run();
-	nimble_port_freertos_deinit();
-}
-
-static int gatt_value_event(uint16_t connection_handle, uint16_t attribute_handle, struct ble_gatt_access_ctxt *context, void *arg)
-{
-	assert(inited);
-
-	switch (context->op)
-	{
-		case(BLE_GATT_ACCESS_OP_WRITE_CHR):
-		{
-			bt_received(connection_handle, attribute_handle, context->om);
-			break;
-		}
-
-		default:
-		{
-			Log::get() << std::format("bt: gatt_value_event: default callback: {:#x}", context->op);
-			break;
-		}
-	}
-
-	return(0);
-}
-
-static int gatt_init(void)
+BT::BT(Log &log_in, Config &config_in) : log(log_in), config(config_in)
 {
 	static constexpr ble_uuid_t uuid16 = { .type = BLE_UUID_TYPE_16, };
 	static struct ble_gatt_svc_def gatt_svc_definitions[2];
 	static struct ble_gatt_chr_def gatt_chr_definitions[2];
 	ble_gatt_svc_def *gatt_svc_definition;
 	ble_gatt_chr_def *gatt_chr_definition;
-	int rc = 0;
 
 	static const ble_uuid16_t uuid_service_handle =
 	{
@@ -121,8 +48,48 @@ static int gatt_init(void)
 		.value = characteristics_handle,
 	};
 
-	ble_svc_gap_init();
-	ble_svc_gatt_init();
+	esp_err_t rv;
+	int rc;
+
+	this->command = nullptr;
+
+	if(singleton)
+		throw(hard_exception("BT: already active"));
+
+	try
+	{
+		this->hostname = this->config.get_string("hostname");
+	}
+	catch(transient_exception &)
+	{
+		this->hostname = "esp32";
+	}
+
+	try
+	{
+		this->encryption_key = this->config.get_string("bt.key");
+	}
+	catch(transient_exception &)
+	{
+		this->encryption_key = "default";
+	}
+
+	if((rv = ::nimble_port_init()) != ESP_OK)
+		throw(hard_exception(log.esp_string_error(rv, "BT: nimble_port_init")));
+
+	::ble_hs_cfg.reset_cb = this->callback_reset_wrapper;
+	::ble_hs_cfg.sync_cb = this->callback_sync_wrapper;
+	::ble_hs_cfg.gatts_register_cb = this->gatt_svr_register_cb_wrapper;
+	::ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
+	::ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_NO_IO;
+	::ble_hs_cfg.sm_bonding = 0;
+	::ble_hs_cfg.sm_mitm = 0;
+	::ble_hs_cfg.sm_sc = 0;
+	::ble_hs_cfg.sm_our_key_dist  = 0;
+	::ble_hs_cfg.sm_their_key_dist = 0;
+
+	::ble_svc_gap_init();
+	::ble_svc_gatt_init();
 
 	gatt_svc_definition = &gatt_svc_definitions[0];
 	gatt_svc_definition->type = BLE_GATT_SVC_TYPE_PRIMARY;
@@ -138,7 +105,7 @@ static int gatt_init(void)
 
 	gatt_chr_definition = &gatt_chr_definitions[0];
 	gatt_chr_definition->uuid = reinterpret_cast<const ble_uuid_t *>(&uuid_characteristics_handle);
-	gatt_chr_definition->access_cb = gatt_value_event,
+	gatt_chr_definition->access_cb = gatt_value_event_wrapper,
 	gatt_chr_definition->val_handle = &value_attribute_handle,
 	gatt_chr_definition->flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY,
 
@@ -148,19 +115,95 @@ static int gatt_init(void)
 	gatt_chr_definition->val_handle = nullptr;
 	gatt_chr_definition->flags = 0;
 
-	if((rc = ble_gatts_count_cfg(gatt_svc_definitions)) != 0)
-		return(rc);
+	if((rc = ::ble_gatts_count_cfg(gatt_svc_definitions)) != ESP_OK)
+		throw(hard_exception(std::format("BT: ble_gatts_count_cfg: error: {:#x}", rc)));
 
-	if((rc = ble_gatts_add_svcs(gatt_svc_definitions)) != 0)
-		return rc;
+	if((rc = ::ble_gatts_add_svcs(gatt_svc_definitions)) != ESP_OK)
+		throw(hard_exception(std::format("BT: ble_gatts_add_svcs: {:#x}", rc)));
+
+	if((rc = ::ble_svc_gap_device_name_set(hostname.c_str())) != ESP_OK)
+		throw(hard_exception(std::format("BT: ble_svc_gap_device_name_set: {:#x}", rc)));
+
+	::ble_store_config_init();
+
+	this->stats_sent_bytes = 0;
+	this->stats_sent_packets = 0;
+	this->stats_sent_encryption_failed = 0;
+	this->stats_received_bytes = 0;
+	this->stats_received_packets = 0;
+	this->stats_received_null_packets = 0;
+	this->stats_received_decryption_failed = 0;
+	this->stats_received_invalid_packets = 0;
+	this->stats_received_incomplete_packets = 0;
+	this->stats_indication_error = 0;
+	this->stats_indication_timeout = 0;
+
+	running = false;
+
+	singleton = this;
+}
+
+void BT::run()
+{
+	if(running)
+		throw(hard_exception("BT::run: already running"));
+
+	::nimble_port_freertos_init(this->nimble_port_task);
+
+	running = true;
+}
+
+BT &BT::get()
+{
+	if(!BT::singleton)
+		throw(hard_exception("BT::get: not active"));
+
+	return(*BT::singleton);
+}
+
+void BT::set(Command *cmd)
+{
+	if(this->command)
+		throw(hard_exception("BT::set: command already set"));
+
+	this->command = cmd;
+}
+
+void BT::nimble_port_task(void *)
+{
+	::nimble_port_run();
+	::nimble_port_freertos_deinit();
+}
+
+int BT::gatt_value_event_wrapper(uint16_t connection_handle, uint16_t attribute_handle, struct ble_gatt_access_ctxt *context, void *arg)
+{
+	return(BT::get().gatt_value_event(connection_handle, attribute_handle, context, arg));
+}
+
+int BT::gatt_value_event(uint16_t connection_handle, uint16_t attribute_handle, struct ble_gatt_access_ctxt *context, void *arg)
+{
+	switch (context->op)
+	{
+		case(BLE_GATT_ACCESS_OP_WRITE_CHR):
+		{
+			this->received(connection_handle, attribute_handle, context->om);
+			break;
+		}
+
+		default:
+		{
+			this->log << std::format("bt: gatt_value_event: default callback: {:#x}", context->op);
+			break;
+		}
+	}
 
 	return(0);
 }
 
-static void server_advertise(void)
+void BT::server_advertise()
 {
 	struct ble_gap_adv_params adv_params;
-	struct ble_hs_adv_fields fields;
+	struct ble_hs_adv_fields fields;;
 	const char *name;
 	int rc;
 
@@ -180,56 +223,77 @@ static void server_advertise(void)
 	fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
 	fields.tx_pwr_lvl_is_present = 1;
 
-	Log::get().abort_on_esp_err("ble_gap_adv_set_fields", ble_gap_adv_set_fields(&fields));
+	if((rc = ble_gap_adv_set_fields(&fields)))
+		throw(hard_exception(std::format("BT: ble_gap_adv_set_fields: error: {:#x}", rc)));
 
 	memset(&adv_params, 0, sizeof(adv_params));
 	adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
 	adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
 
-	rc = ble_gap_adv_start(own_addr_type, NULL, BLE_HS_FOREVER, &adv_params, gap_event, NULL);
+	rc = ::ble_gap_adv_start(own_addr_type, NULL, BLE_HS_FOREVER, &adv_params, this->gap_event_wrapper, NULL);
 
 	if((rc != 0) && (rc != BLE_HS_EALREADY))
-		Log::get().abort_on_esp_err("bt: ble_gap_adv_start", rc);
+		throw(hard_exception(std::format("BT: ble_gap_adv_start: error: {:#x}", rc)));
 }
 
-static void callback_reset(int reason)
+void BT::callback_reset_wrapper(int reason)
 {
-	Log::get() << std::format("bt: resetting state, reason: {:#x}", reason);
+	BT::get().callback_reset(reason);
 }
 
-static void callback_sync(void)
+void BT::callback_reset(int reason)
 {
-	Log::get().abort_on_esp_err("bt: ble_hs_util_ensure_addr", ble_hs_util_ensure_addr(0));
-	Log::get().abort_on_esp_err("bt: ble_hs_id_infer_auto", ble_hs_id_infer_auto(0, &own_addr_type));
-	Log::get().abort_on_esp_err("bt: ble_hId_copy_addr", ble_hs_id_copy_addr(own_addr_type, bt_host_address, NULL));
-
-	server_advertise();
+	log << std::format("bt: resetting state, reason: {:#x}", reason);
 }
 
-static int gap_event(struct ble_gap_event *event, void *arg)
+void BT::callback_sync_wrapper()
 {
-	assert(inited);
+	return(BT::get().callback_sync());
+}
 
+void BT::callback_sync()
+{
+	int rc;
+
+	if((rc = ble_hs_util_ensure_addr(0)) != 0)
+		throw(hard_exception(std::format("BT: ble_hs_util_ensure_addr: error: {:#x}", rc)));
+
+	if((rc = ble_hs_id_infer_auto(0, &own_addr_type)) != 0)
+		throw(hard_exception(std::format("BT: ble_hs_id_infer_auto: error: {:#x}", rc)));
+
+	if((rc = ble_hs_id_copy_addr(own_addr_type, bt_host_address, NULL)) != 0)
+		throw(hard_exception(std::format("BT: ble_hs_id_copy_addr: error: {:#x}", rc)));
+
+	this->server_advertise();
+}
+
+int BT::gap_event_wrapper(struct ble_gap_event *event, void *arg)
+{
+	return(BT::get().gap_event(event, arg));
+}
+
+int BT::gap_event(struct ble_gap_event *event, void *arg)
+{
 	switch(event->type)
 	{
 		case(BLE_GAP_EVENT_CONNECT):
 		{
 			if(event->connect.status != 0)
-				server_advertise();
+				this->server_advertise();
 
 			break;
 		}
 
 		case(BLE_GAP_EVENT_DISCONNECT):
 		{
-			server_advertise();
+			this->server_advertise();
 
 			break;
 		}
 
 		case(BLE_GAP_EVENT_ADV_COMPLETE):
 		{
-			Log::get() << "bt: gap event complete";
+			log << "bt: gap event complete";
 
 			server_advertise();
 
@@ -238,19 +302,19 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
 		case(BLE_GAP_EVENT_REPEAT_PAIRING):
 		{
-			Log::get() << "bt: GAP EVENT repeat pairing";
+			log << "bt: GAP EVENT repeat pairing";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_PASSKEY_ACTION):
 		{
-			Log::get() << "bt: GAP EVENT passkey action";
+			log << "bt: GAP EVENT passkey action";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_NOTIFY_TX):
 		{
-			//Log::get() << "BLE_GAP_EVENT_NOTIFY_TX";
+			log << "BLE_GAP_EVENT_NOTIFY_TX";
 
 			/* NOTE: this event doesn't mean the notification is actually sent! */
 			/* it's just called synchronously from within ble_gatts_indicate_custom */
@@ -260,73 +324,73 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
 		case(BLE_GAP_EVENT_CONN_UPDATE):
 		{
-			Log::get() << "BLE_GAP_EVENT_CONN_UPDATE";
+			log << "BLE_GAP_EVENT_CONN_UPDATE";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_ENC_CHANGE):
 		{
-			Log::get() << "BLE_GAP_EVENT_ENC_CHANGE";
+			log << "BLE_GAP_EVENT_ENC_CHANGE";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_SUBSCRIBE):
 		{
-			Log::get() << "BLE_GAP_EVENT_SUBSCRIBE";
+			log << "BLE_GAP_EVENT_SUBSCRIBE";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_MTU):
 		{
-			Log::get() << "BLE_GAP_EVENT_MTU";
+			log << "BLE_GAP_EVENT_MTU";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_AUTHORIZE):
 		{
-			Log::get() << "BLE_GAP_EVENT_AUTHORIZE";
+			log << "BLE_GAP_EVENT_AUTHORIZE";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_TRANSMIT_POWER):
 		{
-			Log::get() << "BLE_GAP_EVENT_TRANSMIT_POWER";
+			log << "BLE_GAP_EVENT_TRANSMIT_POWER";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_PATHLOSS_THRESHOLD):
 		{
-			Log::get() << "BLE_GAP_EVENT_PATHLOSS_THRESHOLD";
+			log << "BLE_GAP_EVENT_PATHLOSS_THRESHOLD";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_PHY_UPDATE_COMPLETE):
 		{
-			Log::get() << "BLE_GAP_EVENT_PHY_UPDATE_COMPLETE";
+			log << "BLE_GAP_EVENT_PHY_UPDATE_COMPLETE";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_PARING_COMPLETE):
 		{
-			Log::get() << "BLE_GAP_EVENT_PARING_COMPLETE";
+			log << "BLE_GAP_EVENT_PARING_COMPLETE";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_DATA_LEN_CHG):
 		{
-			Log::get() << "BLE_GAP_EVENT_DATA_LEN_CHG";
+			log << "BLE_GAP_EVENT_DATA_LEN_CHG";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_LINK_ESTAB):
 		{
-			//Log::get() << "BLE_GAP_EVENT_LINK_ESTAB";
+			//log << "BLE_GAP_EVENT_LINK_ESTAB";
 			break;
 		}
 
 		default:
 		{
-			Log::get() << std::format("bt: gap event unknown: {:#x}", event->type);
+			log << std::format("bt: gap event unknown: {:#x}", event->type);
 
 			break;
 		}
@@ -335,7 +399,12 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 	return(0);
 }
 
-static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *context, void *arg)
+void BT::gatt_svr_register_cb_wrapper(struct ble_gatt_register_ctxt *context, void *arg)
+{
+	BT::get().gatt_svr_register_cb(context, arg);
+}
+
+void BT::gatt_svr_register_cb(struct ble_gatt_register_ctxt *context, void *arg)
 {
 	switch (context->op)
 	{
@@ -351,22 +420,21 @@ static void gatt_svr_register_cb(struct ble_gatt_register_ctxt *context, void *a
 
 		default:
 		{
-			Log::get() << std::format("bt: gatt event unknown: {:#x}", context->op);
-			abort();
+			log  << std::format("bt: gatt event unknown: {:#x}", context->op);
 
 			break;
 		}
 	}
 }
 
-static void bt_received(unsigned int connection_handle, unsigned int attribute_handle, const struct os_mbuf *mbuf)
+void BT::received(unsigned int connection_handle, unsigned int attribute_handle, const struct os_mbuf *mbuf)
 {
 	unsigned int length;
 	std::string receive_buffer, decrypt_buffer;
 	uint16_t om_length;
 
-	assert(inited);
-	assert(mbuf);
+	if(!mbuf)
+		throw(hard_exception("BT::received: invalid mbuf"));
 
 	length = os_mbuf_len(mbuf);
 
@@ -374,13 +442,14 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 
 	ble_hs_mbuf_to_flat(mbuf, receive_buffer.data(), receive_buffer.size(), &om_length);
 
-	assert(om_length == receive_buffer.size());
+	if(om_length != receive_buffer.size())
+		throw(hard_exception("BT::received:: invalid mbuf length"));
 
-	stats_received_packets++;
+	this->stats_received_packets++;
 
 	if(length == 0)
 	{
-		stats_received_null_packets++;
+		this->stats_received_null_packets++;
 		return;
 	}
 
@@ -390,24 +459,23 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 	}
 	catch(const hard_exception &e)
 	{
-		Log::get() << std::format("bt_received: {}", e.what());
-		stats_received_decryption_failed++;
+		this->stats_received_decryption_failed++;
 		return;
 	}
 
 	receive_buffer.clear();
 
-	stats_received_bytes += decrypt_buffer.size();
+	this->stats_received_bytes += decrypt_buffer.size();
 
 	if(!Packet::valid(decrypt_buffer))
 	{
-		stats_received_invalid_packets++;
+		this->stats_received_invalid_packets++;
 		return;
 	}
 
 	if(!Packet::complete(decrypt_buffer))
 	{
-		stats_received_incomplete_packets++;
+		this->stats_received_incomplete_packets++;
 		return;
 	}
 
@@ -420,18 +488,16 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 	command_response->bt.connection_handle = connection_handle;
 	command_response->bt.attribute_handle = attribute_handle;
 
-	Command::get().receive_queue_push(command_response);
+	command->receive_queue_push(command_response);
 
 	command_response = nullptr;
 }
 
-void net_bt_send(const command_response_t *command_response)
+void BT::send(const command_response_t *command_response)
 {
 	struct os_mbuf *txom;
 	std::string encrypt_buffer;
 	int attempt, rv;
-
-	assert(inited);
 
 	try
 	{
@@ -439,15 +505,16 @@ void net_bt_send(const command_response_t *command_response)
 	}
 	catch(const hard_exception &e)
 	{
-		Log::get() << std::format("bt_send: {}", e.what());
-		stats_sent_encryption_failed++;
+		this->stats_sent_encryption_failed++;
 		return;
 	}
 
 	for(attempt = 16; attempt > 0; attempt--)
 	{
 		txom = ble_hs_mbuf_from_flat(encrypt_buffer.data(), encrypt_buffer.size());
-		assert(txom);
+
+		if(!txom)
+			throw(hard_exception("BT::send: invalid mbuf"));
 
 		rv = ble_gatts_indicate_custom(command_response->bt.connection_handle, command_response->bt.attribute_handle, txom);
 
@@ -456,129 +523,65 @@ void net_bt_send(const command_response_t *command_response)
 
 		if(rv != BLE_HS_ENOMEM)
 		{
-			stats_indication_error++;
-			Log::get() << std::format("bt: send error: {:#x}", rv);
+			this->stats_indication_error++;
+			log << std::format("bt: send error: {:#x}", rv);
 			return;
 		}
 		else
-			Log::get() << "bt: HS_ENOMEM";
+			log << "bt: HS_ENOMEM";
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-		Log::get() << "bt: send: retry";
+		log << "bt: send: retry";
 	}
 
 	if(attempt == 0)
 	{
-		stats_indication_timeout++;
+		this->stats_indication_timeout++;
 		return;
 	}
 
-	stats_sent_bytes += command_response->packet.size();
-	stats_sent_packets++;
+	this->stats_sent_bytes += command_response->packet.size();
+	this->stats_sent_packets++;
 }
 
-void bt_init(void)
+void BT::info(std::string &out)
 {
-	assert(!inited);
+	out += std::format("\n  address: {}", System::get().mac_addr_to_string(reinterpret_cast<const char *>(bt_host_address), true)); // FIXME
+	out += "\n  data sent:";
+	out += std::format("\n  - packets: {:d}", this->stats_sent_packets);
+	out += std::format("\n  - bytes: {:d}", this->stats_sent_bytes);
+	out += std::format("\n  - encryption failed: {:d}", this->stats_sent_encryption_failed);
+	out += "\n  data received:";
+	out += std::format("\n  - bytes: {:d}", this->stats_received_bytes);
+	out += std::format("\n  - packets: {:d}", this->stats_received_packets);
+	out += std::format("\n  - decryption failed: {:d}", this->stats_received_decryption_failed);
+	out += std::format("\n  - null packets: {:d}", this->stats_received_null_packets);
+	out += std::format("\n  - invalid packets: {:d}", this->stats_received_invalid_packets);
+	out += std::format("\n  - incomplete packets: {:d}", this->stats_received_incomplete_packets);
+	out += "\n  indications:";
+	out += std::format("\n  - errors: {:d}", this->stats_indication_error);
+	out += std::format("\n  - timeouts: {:d}", this->stats_indication_timeout);
+}
+
+void BT::key(const std::string &ekey)
+{
+	config.set_string("bt.key", ekey);
+	encryption_key = ekey;
+}
+
+std::string BT::key()
+{
+	std::string ekey;
 
 	try
 	{
-		hostname = Config::get().get_string("hostname");
+		ekey = config.get_string("bt.key");
 	}
-	catch(transient_exception &)
+	catch(const transient_exception &)
 	{
-		hostname = "esp32";
+		ekey = this->encryption_key;
 	}
 
-	try
-	{
-		encryption_key = Config::get().get_string("bt.key");
-	}
-	catch(transient_exception &)
-	{
-		encryption_key = "default";
-	}
-
-	Log::get().warn_on_esp_err("nimble_port_init", nimble_port_init());
-
-	inited = true;
-
-	ble_hs_cfg.reset_cb = callback_reset;
-	ble_hs_cfg.sync_cb = callback_sync;
-	ble_hs_cfg.gatts_register_cb = gatt_svr_register_cb;
-	ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
-	ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_NO_IO;
-	ble_hs_cfg.sm_bonding = 0;
-	ble_hs_cfg.sm_mitm = 0;
-	ble_hs_cfg.sm_sc = 0;
-	ble_hs_cfg.sm_our_key_dist  = 0;
-	ble_hs_cfg.sm_their_key_dist = 0;
-
-	Log::get().abort_on_esp_err("gatt_init", gatt_init());
-	Log::get().abort_on_esp_err("ble_svc_gap_device_name_set", ble_svc_gap_device_name_set(hostname.c_str()));
-	ble_store_config_init();
-	nimble_port_freertos_init(nimble_port_task);
-}
-
-void bluetooth_command_info(cli_command_call_t *call)
-{
-	assert(call->parameter_count == 0);
-
-	call->result += (boost::format("\n  address: %s") % System::get().mac_addr_to_string(reinterpret_cast<const char *>(bt_host_address), true)).str();
-	call->result += "\n  data sent:";
-	call->result += (boost::format("\n  - packets: %u") % stats_sent_packets).str();
-	call->result += (boost::format("\n  - bytes: %u") % stats_sent_bytes).str();
-	call->result += (boost::format("\n  - encryption failed: %u") % stats_sent_encryption_failed).str();
-	call->result += "\n  data received:";
-	call->result += (boost::format("\n  - bytes: %u") % stats_received_bytes).str();
-	call->result += (boost::format("\n  - packets: %u") % stats_received_packets).str();
-	call->result += (boost::format("\n  - decryption failed: %u") % stats_received_decryption_failed).str();
-	call->result += (boost::format("\n  - null packets: %u") % stats_received_null_packets).str();
-	call->result += (boost::format("\n  - invalid packets: %u") % stats_received_invalid_packets).str();
-	call->result += (boost::format("\n  - incomplete packets: %u") % stats_received_incomplete_packets).str();
-	call->result += "\n  indications:";
-	call->result += (boost::format("\n  - errors: %u") % stats_indication_error).str();
-	call->result += (boost::format("\n  - timeouts: %u") % stats_indication_timeout).str();
-}
-
-void bluetooth_command_key(cli_command_call_t *call)
-{
-	std::string key;
-
-	try
-	{
-		switch(call->parameter_count)
-		{
-			case(1):
-			{
-				Config::get().set_string("bt.key", call->parameters[0].str);
-				encryption_key = call->parameters[0].str;
-				[[fallthrough]];
-			}
-			case(0):
-			{
-				try
-				{
-					key = Config::get().get_string("bt.key");
-				}
-				catch(const transient_exception &)
-				{
-					key = encryption_key;
-				}
-
-				call->result = (boost::format("bluetooth key: %s") % key).str();
-				break;
-			}
-			default:
-			{
-				Log::get().abort("bluetooth-command-key: invalid parameter count");
-				break;
-			}
-		}
-	}
-	catch(const e32if_exception &e)
-	{
-		call->result = std::string("bluetooth-command-key: ") + e.what();
-	}
+	return(ekey);
 }
