@@ -53,7 +53,6 @@ void app_main(void)
 		FS fs(log, ramdisk);
 		Command command(config, console, ledpixel, ledpwm, notify, log, system, util, pdm, mcpwm, fs);
 		console.set(&command);
-		alias_init();
 		bt_init();
 		wlan_init();
 		net_udp_init();

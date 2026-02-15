@@ -208,6 +208,7 @@ class Command final
 		static const std::map<cli_parameter_type_description_t, std::string> parameter_type_to_string;
 		static const cli_command_t cli_commands[];
 
+		//FIXME
 		static int cli_stats_commands_received;
 		static int cli_stats_commands_received_packet;
 		static int cli_stats_commands_received_raw;
@@ -227,6 +228,9 @@ class Command final
 		static PDM *pdm_;
 		static MCPWM *mcpwm_;
 		static FS *fs_;
+
+		typedef std::map<std::string, std::string> string_string_map;
+		string_string_map aliases;
 
 		Config &config;
 		Console &console;
@@ -253,4 +257,6 @@ class Command final
 		[[noreturn]] void run_receive_queue();
 		[[noreturn]] static void run_send_queue_wrapper(void *);
 		[[noreturn]] void run_send_queue();
+		void alias_command(cli_command_call_t *call);
+		void alias_expand(std::string &data) const;
 };

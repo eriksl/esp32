@@ -14,8 +14,13 @@
 #include "exception.h"
 #include "packet.h"
 
+#include "log.h"
+#include "command.h"
+#include "cli-command.h"
+
 #include <format>
 #include <thread>
+#include <map>
 #include <algorithm>
 
 #include <esp_pthread.h>
@@ -1385,7 +1390,7 @@ void Command::alias(cli_command_call_t *call)
 	if(!Command::singleton)
 		throw(hard_exception("Command: not activated"));
 
-	command_alias(call); // FIXME
+	Command::singleton->alias_command(call);
 }
 
 void Command::run(cli_command_call_t *call) // FIXME
@@ -1495,7 +1500,7 @@ void Command::run_receive_queue()
 			if(data.length() == 0)
 				throw(transient_exception("ERROR: empty line"));
 
-			alias_expand(data);
+			this->alias_expand(data);
 
 			command.clear();
 
@@ -1829,4 +1834,73 @@ void Command::run_send_queue()
 void Command::receive_queue_push(command_response_t *command_response)
 {
 	xQueueSendToBack(this->receive_queue_handle, &command_response, portMAX_DELAY);
+}
+
+void Command::alias_command(cli_command_call_t *call)
+{
+	string_string_map::const_iterator it;
+
+	switch(call->parameter_count)
+	{
+		case(0):
+		{
+			break;
+		}
+
+		case(1):
+		{
+			if((it = aliases.find(call->parameters[0].str)) != aliases.end())
+				aliases.erase(it);
+
+			break;
+		}
+
+		case(2):
+		{
+			aliases.insert_or_assign(call->parameters[0].str, call->parameters[1].str);
+			break;
+			break;
+		}
+
+		default:
+		{
+			assert(call->parameter_count < 3);
+			break;
+		}
+	}
+
+	call->result = "ALIASES";
+
+	for(const auto &ref : aliases)
+		call->result += std::format("\n  {}: {}", ref.first, ref.second);
+}
+
+void Command::alias_expand(std::string &data) const
+{
+	std::string command;
+	std::string parameters;
+	unsigned int delimiter;
+	string_string_map::const_iterator it;
+
+	if(data.length() == 0)
+		return;
+
+	for(delimiter = 0; delimiter < data.length(); delimiter++)
+		if(data.at(delimiter) <= ' ')
+			break;
+
+	if(delimiter == 0)
+		return;
+
+	if(delimiter >= data.length())
+		command = data;
+	else
+		command = data.substr(0, delimiter);
+
+	if((it = aliases.find(command)) == aliases.end())
+		return;
+
+	parameters = data.substr(delimiter);
+
+	data = it->second + parameters;
 }

@@ -1,6 +1,5 @@
 idf_component_register(
 	SRCS
-		"alias.cpp"
 		"bt.cpp"
 		"command.cpp"
 		"config.cpp"
