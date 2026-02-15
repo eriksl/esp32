@@ -66,12 +66,12 @@ void net_udp_command_info(cli_command_call_t *call);
 void net_tcp_command_info(cli_command_call_t *call);
 
 //FIXME
-int Command::cli_stats_commands_received;
-int Command::cli_stats_commands_received_packet;
-int Command::cli_stats_commands_received_raw;
-int Command::cli_stats_replies_sent;
-int Command::cli_stats_replies_sent_packet;
-int Command::cli_stats_replies_sent_raw;
+int Command::cli_stats_commands_received = 0;
+int Command::cli_stats_commands_received_packet = 0;
+int Command::cli_stats_commands_received_raw = 0;
+int Command::cli_stats_replies_sent = 0;
+int Command::cli_stats_replies_sent_packet = 0;
+int Command::cli_stats_replies_sent_raw = 0;
 
 const std::map<cli_parameter_type_description_t, std::string> Command::parameter_type_to_string
 {
