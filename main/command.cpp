@@ -1482,272 +1482,294 @@ void Command::run_receive_queue()
 	const cli_parameter_description_t	*parameter_description;
 	cli_command_call_t					call;
 
-	for(;;)
+	try
 	{
-		command_response = receive_queue_pop();
-		Packet::decapsulate(command_response->packetised, command_response->packet, data, oob_data);
-
-		if(command_response->packetised)
-			cli_stats_commands_received_packet++;
-		else
-			cli_stats_commands_received_raw++;
-
-		try
+		for(;;)
 		{
-			call.parameter_count = 0;
+			command_response = receive_queue_pop();
+			Packet::decapsulate(command_response->packetised, command_response->packet, data, oob_data);
 
-			if(data.length() == 0)
-				throw(transient_exception("ERROR: empty line"));
+			if(command_response->packetised)
+				cli_stats_commands_received_packet++;
+			else
+				cli_stats_commands_received_raw++;
 
-			this->alias_expand(data);
-
-			command.clear();
-
-			for(data_iterator = data.begin(); data_iterator != data.end(); data_iterator++)
-				if(*data_iterator > ' ')
-					command.append(1, *data_iterator);
-				else
-					break;
-
-			for(ix = 0;; ix++)
+			try
 			{
-				cli_command = &cli_commands[ix];
+				call.parameter_count = 0;
 
-				if(!cli_command->name || (command == cli_command->name))
-					break;
+				if(data.length() == 0)
+					throw(transient_exception("ERROR: empty line"));
 
-				if(cli_command->alias && (command == cli_command->alias))
-					break;
-			}
+				this->alias_expand(data);
 
-			if(!cli_command->name)
-				throw(transient_exception(std::format("ERROR: unknown command \"{}\"", command)));
+				command.clear();
 
-			count = cli_command->parameters_description.count;
+				for(data_iterator = data.begin(); data_iterator != data.end(); data_iterator++)
+					if(*data_iterator > ' ')
+						command.append(1, *data_iterator);
+					else
+						break;
 
-			if(count > parameters_size)
-				throw(hard_exception("Command::run_receive_queue: parameter count > parameters_size"));
+				for(ix = 0;; ix++)
+				{
+					cli_command = &cli_commands[ix];
 
-			for(current = 0; current < count; current++)
-			{
-				parameter_description = &cli_command->parameters_description.entries[current];
-				parameter = &call.parameters[current];
+					if(!cli_command->name || (command == cli_command->name))
+						break;
 
-				parameter->type = cli_parameter_none;
-				parameter->has_value = 0;
+					if(cli_command->alias && (command == cli_command->alias))
+						break;
+				}
+
+				if(!cli_command->name)
+					throw(transient_exception(std::format("ERROR: unknown command \"{}\"", command)));
+
+				count = cli_command->parameters_description.count;
+
+				if(count > parameters_size)
+					throw(hard_exception("Command::run_receive_queue: parameter count > parameters_size"));
+
+				for(current = 0; current < count; current++)
+				{
+					parameter_description = &cli_command->parameters_description.entries[current];
+					parameter = &call.parameters[current];
+
+					parameter->type = cli_parameter_none;
+					parameter->has_value = 0;
+
+					for(; data_iterator != data.end(); data_iterator++)
+						if(*data_iterator > ' ')
+							break;
+
+					if(data_iterator == data.end())
+					{
+						if(!parameter_description->value_required)
+							continue;
+						else
+							throw(transient_exception(std::format("ERROR: missing required parameter {:d}", current + 1)));
+					}
+					else
+					{
+						call.parameter_count++;
+
+						parameter->str.clear();
+
+						for(; data_iterator != data.end(); data_iterator++)
+							if(*data_iterator > ' ')
+								parameter->str.append(1, *data_iterator);
+							else
+								break;
+
+						switch(parameter_description->type)
+						{
+							case(cli_parameter_none):
+							case(cli_parameter_size):
+							{
+								throw(transient_exception(std::format("ERROR: parameter with invalid type {:d}", static_cast<int>(parameter_description->type))));
+							}
+
+							case(cli_parameter_unsigned_int):
+							{
+								unsigned int value;
+
+								try
+								{
+									value = std::stoul(parameter->str, nullptr, parameter_description->base);
+								}
+								catch(...)
+								{
+									throw(transient_exception(std::format("ERROR: invalid unsigned integer value: {}", parameter->str)));
+								}
+
+								if((parameter_description->lower_bound_required) && (value < parameter_description->unsigned_int.lower_bound))
+									throw(transient_exception(std::format("ERROR: invalid unsigned integer value: {:d}, smaller than lower bound: {:d}",
+											value, parameter_description->unsigned_int.lower_bound)));
+
+								if((parameter_description->upper_bound_required) && (value > parameter_description->unsigned_int.upper_bound))
+									throw(transient_exception(std::format("ERROR: invalid unsigned integer value: {:d}, larger than upper bound: {:d}",
+											value, parameter_description->unsigned_int.upper_bound)));
+
+								parameter->type = cli_parameter_unsigned_int;
+								parameter->has_value = 1;
+								parameter->unsigned_int = value;
+
+								break;
+							}
+
+							case(cli_parameter_signed_int):
+							{
+								int value;
+
+								try
+								{
+									value = std::stol(parameter->str, nullptr, parameter_description->base);
+								}
+								catch(...)
+								{
+									throw(transient_exception(std::format("ERROR: invalid signed integer value: {}", parameter->str)));
+								}
+
+								if((parameter_description->lower_bound_required) && (value < parameter_description->signed_int.lower_bound))
+									throw(transient_exception(std::format("ERROR: invalid signed integer value: {:d}, smaller than lower bound: {:d}",
+											value, parameter_description->signed_int.lower_bound)));
+
+								if((parameter_description->upper_bound_required) && (value > parameter_description->signed_int.upper_bound))
+									throw(transient_exception(std::format("ERROR: invalid signed integer value: {:d}, larger than upper bound: {:d}",
+											value, parameter_description->signed_int.upper_bound)));
+
+								parameter->type = cli_parameter_signed_int;
+								parameter->has_value = 1;
+								parameter->signed_int = value;
+
+								break;
+							}
+
+							case(cli_parameter_float):
+							{
+								float value;
+
+								try
+								{
+									value = std::stod(parameter->str, nullptr);
+								}
+								catch(...)
+								{
+									throw(transient_exception(std::format("ERROR: invalid float value: {}", parameter->str)));
+								}
+
+								if((parameter_description->lower_bound_required) && (value < parameter_description->fp.lower_bound))
+									throw(transient_exception(std::format("ERROR: invalid float value: {:f}, smaller than lower bound: {:f}",
+											value, parameter_description->fp.lower_bound)));
+
+								if((parameter_description->upper_bound_required) && (value > parameter_description->fp.upper_bound))
+									throw(transient_exception(std::format("ERROR: invalid float value: {:f}, larger than upper bound: {:f}",
+											value, parameter_description->fp.upper_bound)));
+
+								parameter->type = cli_parameter_float;
+								parameter->has_value = 1;
+								parameter->fp = value;
+
+								break;
+							}
+
+							case(cli_parameter_string):
+							{
+								unsigned int length;
+
+								length = parameter->str.length();
+
+								if((parameter_description->lower_bound_required) && (length < parameter_description->string.lower_length_bound))
+									throw(transient_exception(std::format("ERROR: invalid string length: {:d}, smaller than lower bound: {:d}",
+											length, parameter_description->string.lower_length_bound)));
+
+								if((parameter_description->upper_bound_required) && (length > parameter_description->string.upper_length_bound))
+									throw(transient_exception(std::format("ERROR: invalid string length: {:d}, larger than upper bound: {:d}",
+											length, parameter_description->string.upper_length_bound)));
+
+								parameter->type = cli_parameter_string;
+								parameter->has_value = 1;
+
+								break;
+							}
+
+							case(cli_parameter_string_raw):
+							{
+								unsigned int length;
+
+								for(; data_iterator != data.end(); data_iterator++)
+									parameter->str.append(1, *data_iterator);
+
+								length = parameter->str.length();
+
+								if((parameter_description->lower_bound_required) && (length < parameter_description->string.lower_length_bound))
+									throw(transient_exception(std::format("ERROR: invalid raw string length: {:d}, smaller than lower bound: {:d}",
+											length, parameter_description->string.lower_length_bound)));
+
+								if((parameter_description->upper_bound_required) && (length > parameter_description->string.upper_length_bound))
+									throw(transient_exception(std::format("ERROR: invalid raw string length: {:d}, larger than upper bound: {:d}",
+											length, parameter_description->string.upper_length_bound)));
+
+								parameter->type = cli_parameter_string;
+								parameter->has_value = 1;
+
+								break;
+							}
+						}
+					}
+				}
+
+				if(current >= parameters_size)
+					throw(transient_exception(std::format("ERROR: too many parameters: {}", current)));
+
+				if(current < cli_command->parameters_description.count)
+					throw(transient_exception("ERROR: missing parameters"));
 
 				for(; data_iterator != data.end(); data_iterator++)
 					if(*data_iterator > ' ')
 						break;
 
-				if(data_iterator == data.end())
-				{
-					if(!parameter_description->value_required)
-						continue;
-					else
-						throw(transient_exception(std::format("ERROR: missing required parameter {:d}", current + 1)));
-				}
-				else
-				{
-					call.parameter_count++;
+				if(data_iterator != data.end())
+					throw(transient_exception("ERROR: too many parameters"));
 
-					parameter->str.clear();
+				call.source =			command_response->source;
+				call.mtu =				command_response->mtu;
+				call.oob =				oob_data;
+				call.result.clear();
+				call.result_oob.clear();
 
-					for(; data_iterator != data.end(); data_iterator++)
-						if(*data_iterator > ' ')
-							parameter->str.append(1, *data_iterator);
-						else
-							break;
-
-					switch(parameter_description->type)
-					{
-						case(cli_parameter_none):
-						case(cli_parameter_size):
-						{
-							throw(transient_exception(std::format("ERROR: parameter with invalid type {:d}", static_cast<int>(parameter_description->type))));
-						}
-
-						case(cli_parameter_unsigned_int):
-						{
-							unsigned int value;
-
-							try
-							{
-								value = std::stoul(parameter->str, nullptr, parameter_description->base);
-							}
-							catch(...)
-							{
-								throw(transient_exception(std::format("ERROR: invalid unsigned integer value: {}", parameter->str)));
-							}
-
-							if((parameter_description->lower_bound_required) && (value < parameter_description->unsigned_int.lower_bound))
-								throw(transient_exception(std::format("ERROR: invalid unsigned integer value: {:d}, smaller than lower bound: {:d}",
-										value, parameter_description->unsigned_int.lower_bound)));
-
-							if((parameter_description->upper_bound_required) && (value > parameter_description->unsigned_int.upper_bound))
-								throw(transient_exception(std::format("ERROR: invalid unsigned integer value: {:d}, larger than upper bound: {:d}",
-										value, parameter_description->unsigned_int.upper_bound)));
-
-							parameter->type = cli_parameter_unsigned_int;
-							parameter->has_value = 1;
-							parameter->unsigned_int = value;
-
-							break;
-						}
-
-						case(cli_parameter_signed_int):
-						{
-							int value;
-
-							try
-							{
-								value = std::stol(parameter->str, nullptr, parameter_description->base);
-							}
-							catch(...)
-							{
-								throw(transient_exception(std::format("ERROR: invalid signed integer value: {}", parameter->str)));
-							}
-
-							if((parameter_description->lower_bound_required) && (value < parameter_description->signed_int.lower_bound))
-								throw(transient_exception(std::format("ERROR: invalid signed integer value: {:d}, smaller than lower bound: {:d}",
-										value, parameter_description->signed_int.lower_bound)));
-
-							if((parameter_description->upper_bound_required) && (value > parameter_description->signed_int.upper_bound))
-								throw(transient_exception(std::format("ERROR: invalid signed integer value: {:d}, larger than upper bound: {:d}",
-										value, parameter_description->signed_int.upper_bound)));
-
-							parameter->type = cli_parameter_signed_int;
-							parameter->has_value = 1;
-							parameter->signed_int = value;
-
-							break;
-						}
-
-						case(cli_parameter_float):
-						{
-							float value;
-
-							try
-							{
-								value = std::stod(parameter->str, nullptr);
-							}
-							catch(...)
-							{
-								throw(transient_exception(std::format("ERROR: invalid float value: {}", parameter->str)));
-							}
-
-							if((parameter_description->lower_bound_required) && (value < parameter_description->fp.lower_bound))
-								throw(transient_exception(std::format("ERROR: invalid float value: {:f}, smaller than lower bound: {:f}",
-										value, parameter_description->fp.lower_bound)));
-
-							if((parameter_description->upper_bound_required) && (value > parameter_description->fp.upper_bound))
-								throw(transient_exception(std::format("ERROR: invalid float value: {:f}, larger than upper bound: {:f}",
-										value, parameter_description->fp.upper_bound)));
-
-							parameter->type = cli_parameter_float;
-							parameter->has_value = 1;
-							parameter->fp = value;
-
-							break;
-						}
-
-						case(cli_parameter_string):
-						{
-							unsigned int length;
-
-							length = parameter->str.length();
-
-							if((parameter_description->lower_bound_required) && (length < parameter_description->string.lower_length_bound))
-								throw(transient_exception(std::format("ERROR: invalid string length: {:d}, smaller than lower bound: {:d}",
-										length, parameter_description->string.lower_length_bound)));
-
-							if((parameter_description->upper_bound_required) && (length > parameter_description->string.upper_length_bound))
-								throw(transient_exception(std::format("ERROR: invalid string length: {:d}, larger than upper bound: {:d}",
-										length, parameter_description->string.upper_length_bound)));
-
-							parameter->type = cli_parameter_string;
-							parameter->has_value = 1;
-
-							break;
-						}
-
-						case(cli_parameter_string_raw):
-						{
-							unsigned int length;
-
-							for(; data_iterator != data.end(); data_iterator++)
-								parameter->str.append(1, *data_iterator);
-
-							length = parameter->str.length();
-
-							if((parameter_description->lower_bound_required) && (length < parameter_description->string.lower_length_bound))
-								throw(transient_exception(std::format("ERROR: invalid raw string length: {:d}, smaller than lower bound: {:d}",
-										length, parameter_description->string.lower_length_bound)));
-
-							if((parameter_description->upper_bound_required) && (length > parameter_description->string.upper_length_bound))
-								throw(transient_exception(std::format("ERROR: invalid raw string length: {:d}, larger than upper bound: {:d}",
-										length, parameter_description->string.upper_length_bound)));
-
-							parameter->type = cli_parameter_string;
-							parameter->has_value = 1;
-
-							break;
-						}
-					}
-				}
+				cli_command->function(&call);
+			}
+			catch(const transient_exception &e)
+			{
+				call.result = std::format("WARNING: {}", e.what());
+				*log_ << std::format("cli: transient exception: {}", e.what());
+				call.result_oob.clear();
+			}
+			catch(const hard_exception &e)
+			{
+				call.result = std::format("ERROR: {}", e.what());
+				*log_ << std::format("cli: hard exception: {}", e.what());
+				call.result_oob.clear();
 			}
 
-			if(current >= parameters_size)
-				throw(transient_exception(std::format("ERROR: too many parameters: {}", current)));
+			if(call.result_oob.empty() && (call.result.size() > command_response->mtu))
+				call.result.resize(command_response->mtu);
 
-			if(current < cli_command->parameters_description.count)
-				throw(transient_exception("ERROR: missing parameters"));
+			if(call.result_oob.size() > command_response->mtu)
+			{
+				call.result = std::format("ERROR: packet mtu overflow, payload: {:d}, oob: {:d}, packet overhead: {:d}, mtu: {:d}",
+						call.result.size(), call.result_oob.size(), Packet::packet_header_size(), command_response->mtu);
+				*log_ << std::format("cli: {}", call.result);
+				call.result_oob.clear();
+			}
 
-			for(; data_iterator != data.end(); data_iterator++)
-				if(*data_iterator > ' ')
-					break;
+			command_response->packet = Packet::encapsulate(command_response->packetised, call.result, call.result_oob);
+			send_queue_push(command_response);
 
-			if(data_iterator != data.end())
-				throw(transient_exception("ERROR: too many parameters"));
-
-			call.source =			command_response->source;
-			call.mtu =				command_response->mtu;
-			call.oob =				oob_data;
-			call.result.clear();
-			call.result_oob.clear();
-
-			cli_command->function(&call);
+			for(ix = 0; ix < call.parameter_count; ix++)
+				call.parameters[ix].str.clear();
 		}
-		catch(const transient_exception &e)
-		{
-			call.result = std::format("WARNING: {}", e.what());
-			*log_ << std::format("cli: transient exception: {}", e.what());
-			call.result_oob.clear();
-		}
-		catch(const hard_exception &e)
-		{
-			call.result = std::format("ERROR: {}", e.what());
-			*log_ << std::format("cli: hard exception: {}", e.what());
-			call.result_oob.clear();
-		}
-
-		if(call.result_oob.empty() && (call.result.size() > command_response->mtu))
-			call.result.resize(command_response->mtu);
-
-		if(call.result_oob.size() > command_response->mtu)
-		{
-			call.result = std::format("ERROR: packet mtu overflow, payload: {:d}, oob: {:d}, packet overhead: {:d}, mtu: {:d}",
-					call.result.size(), call.result_oob.size(), Packet::packet_header_size(), command_response->mtu);
-			*log_ << std::format("cli: {}", call.result);
-			call.result_oob.clear();
-		}
-
-		command_response->packet = Packet::encapsulate(command_response->packetised, call.result, call.result_oob);
-		send_queue_push(command_response);
-
-		for(ix = 0; ix < call.parameter_count; ix++)
-			call.parameters[ix].str.clear();
 	}
+	catch(const hard_exception &e)
+	{
+		log_->abort(std::format("Command::run_receive_queue: uncaught hard exception: {}", e.what()));
+	}
+	catch(const transient_exception &e)
+	{
+		log_->abort(std::format("Command::run_receive_queue: uncaught transient exception: {}", e.what()));
+	}
+	catch(const std::exception &e)
+	{
+		log_->abort(std::format("Command::run_receive_queue: uncaught generic exception: {}", e.what()));
+	}
+	catch(...)
+	{
+		log_->abort("Command::run_receive_queue: uncaught unknown exception");
+	}
+
+	for(;;) // prevent compiler error
+		(void)0;
 }
 
 void Command::run_send_queue_wrapper(void *command_)
@@ -1766,68 +1788,90 @@ void Command::run_send_queue()
 {
 	command_response_t *command_response;
 
-	for(;;)
+	try
 	{
-		command_response = this->send_queue_pop();
-
-		switch(command_response->source)
+		for(;;)
 		{
-			case(cli_source_bt):
+			command_response = this->send_queue_pop();
+
+			switch(command_response->source)
 			{
-				net_bt_send(command_response);
-				break;
+				case(cli_source_bt):
+				{
+					bt_->send(command_response);
+					break;
+				}
+
+				case(cli_source_console):
+				{
+					console_->send(*command_response);
+					break;
+				}
+
+				case(cli_source_wlan_tcp):
+				{
+					net_tcp_send(command_response);
+					break;
+				}
+
+				case(cli_source_wlan_udp):
+				{
+					net_udp_send(command_response);
+					break;
+				}
+
+				case(cli_source_script):
+				{
+					if(!command_response->packet.empty() && command_response->packet.back() == '\n') // FIXME
+						command_response->packet.pop_back();
+
+					if(!command_response->packet.empty())
+						*log_ << std::format("script: {}: {}", command_response->script.name, command_response->packet);
+
+					break;
+				}
+
+				default:
+				{
+					*log_ << std::format("cli: invalid source type: {:d}", static_cast<int>(command_response->source));
+					break;
+				}
 			}
 
-			case(cli_source_console):
+			if(command_response->source == cli_source_script)
 			{
-				console_->send(*command_response);
-				break;
+				if(!command_response->script.task)
+					throw(hard_exception("Command::run_send_queue: invalid script task"));
+
+				xTaskNotifyGive(static_cast<TaskHandle_t>(command_response->script.task));
+				command_response->script.name[0] = '\0';
+				command_response->script.task = nullptr;
 			}
 
-			case(cli_source_wlan_tcp):
-			{
-				net_tcp_send(command_response);
-				break;
-			}
-
-			case(cli_source_wlan_udp):
-			{
-				net_udp_send(command_response);
-				break;
-			}
-
-			case(cli_source_script):
-			{
-				if(!command_response->packet.empty() && command_response->packet.back() == '\n') // FIXME
-					command_response->packet.pop_back();
-
-				if(!command_response->packet.empty())
-					*log_ << std::format("script: {}: {}", command_response->script.name, command_response->packet);
-
-				break;
-			}
-
-			default:
-			{
-				*log_ << std::format("cli: invalid source type: {:d}", static_cast<int>(command_response->source));
-				break;
-			}
+			command_response->source = cli_source_none;
+			delete command_response;
+			command_response = nullptr;
 		}
-
-		if(command_response->source == cli_source_script)
-		{
-			if(!command_response->script.task)
-				throw(hard_exception("Command::run_send_queue: invalid script task"));
-
-			xTaskNotifyGive(static_cast<TaskHandle_t>(command_response->script.task));
-			command_response->script.name[0] = '\0';
-			command_response->script.task = nullptr;
-		}
-
-		command_response->source = cli_source_none;
-		delete command_response;
-		command_response = nullptr;
 	}
+	catch(const hard_exception &e)
+	{
+		log_->abort(std::format("Command::run_send_queue: uncaught hard exception: {}", e.what()));
+	}
+	catch(const transient_exception &e)
+	{
+		log_->abort(std::format("Command::run_send_queue: uncaught transient exception: {}", e.what()));
+	}
+	catch(const std::exception &e)
+	{
+		log_->abort(std::format("Command::run_send_queue: uncaught generic exception: {}", e.what()));
+	}
+	catch(...)
+	{
+		log_->abort("Command::run_send_queue: uncaught unknown exception");
+	}
+
+	for(;;) // prevent compiler error
+		(void)0;
 }
 
 void Command::receive_queue_push(command_response_t *command_response)
