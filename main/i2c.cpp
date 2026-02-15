@@ -6,9 +6,9 @@
 
 #include "log.h"
 #include "util.h"
-#include "cli-command.h"
 #include "config.h"
 #include "exception.h"
+#include "cli-command.h"
 
 #include <driver/i2c_master.h>
 #include <freertos/FreeRTOS.h>

@@ -5,10 +5,10 @@
 #include "log.h"
 #include "util.h"
 #include "config.h"
-#include "cli-command.h"
 #include "display.h"
 #include "crypt.h"
 #include "exception.h"
+#include "cli-command.h"
 
 #include <assert.h>
 #include <unistd.h>

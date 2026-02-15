@@ -1,25 +1,23 @@
-#include <stdint.h>
-#include <stdbool.h>
+#include "command-response.h"
+#include "tcp.h"
+
 #include <sys/socket.h>
 #include <sys/poll.h>
+
 #include <assert.h>
 #include <thread>
 #include <esp_pthread.h>
 
-#include "cli.h"
 #include "log.h"
-#include "util.h"
 #include "packet.h"
 #include "cli-command.h"
-#include "tcp.h"
+#include "command.h"
 
 #include <string>
 #include <boost/format.hpp>
 #include <thread>
 #include <chrono>
 
-#include <thread>
-#include <chrono>
 class TCP
 {
 	public:
@@ -241,7 +239,7 @@ void TCP::run()
 			command_response->packetised = 1;
 			command_response->packet = tcp_receive_buffer;
 
-			cli_receive_queue_push(command_response);
+			Command::get().receive_queue_push(command_response);
 
 			command_response = nullptr;
 			tcp_receive_buffer.clear();

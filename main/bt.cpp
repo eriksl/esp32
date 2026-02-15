@@ -4,15 +4,15 @@
 
 #include <esp_log.h>
 
-#include "cli.h"
 #include "log.h"
 #include "util.h"
 #include "packet.h"
 #include "config.h"
 #include "system.h"
-#include "cli-command.h"
 #include "crypt.h"
 #include "exception.h"
+#include "command.h"
+#include "cli-command.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -420,7 +420,7 @@ static void bt_received(unsigned int connection_handle, unsigned int attribute_h
 	command_response->bt.connection_handle = connection_handle;
 	command_response->bt.attribute_handle = attribute_handle;
 
-	cli_receive_queue_push(command_response);
+	Command::get().receive_queue_push(command_response);
 
 	command_response = nullptr;
 }
@@ -525,7 +525,6 @@ void bluetooth_command_info(cli_command_call_t *call)
 {
 	assert(call->parameter_count == 0);
 
-	call->result = "bluetooth information";
 	call->result += (boost::format("\n  address: %s") % System::get().mac_addr_to_string(reinterpret_cast<const char *>(bt_host_address), true)).str();
 	call->result += "\n  data sent:";
 	call->result += (boost::format("\n  - packets: %u") % stats_sent_packets).str();

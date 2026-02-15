@@ -3,6 +3,7 @@
 #include "exception.h"
 #include "util.h"
 #include "log.h"
+#include "command.h"
 
 #include <esp_pthread.h>
 #include <driver/usb_serial_jtag.h>
@@ -39,6 +40,15 @@ Console::Console(Config &config_in) :
 	}
 
 	this->singleton = this;
+	this->command = nullptr;
+}
+
+void Console::set(Command *cmd)
+{
+	if(this->command)
+		throw(hard_exception("Console::set(Command): already set"));
+
+	this->command = cmd;
 }
 
 char Console::read_byte(void)
@@ -288,7 +298,7 @@ void Console::run_thread()
 				command_response->mtu = 32768;
 				command_response->packetised = 0;
 				command_response->packet = *line;
-				cli_receive_queue_push(command_response);
+				this->command->receive_queue_push(command_response);
 				command_response = nullptr;
 
 				if((this->current_line + 1) < this->lines_amount)
@@ -343,6 +353,9 @@ void Console::run(void)
 
 	if(this->running)
 		throw(hard_exception("Console::run: already running"));
+
+	if(!this->command)
+		throw(hard_exception("Console::run: command module not linked"));
 
 	thread_config.thread_name = "console";
 	thread_config.pin_to_core = 1;

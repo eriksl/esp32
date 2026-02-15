@@ -1,14 +1,13 @@
+#include "sensor.h"
+
+#include "log.h"
+#include "i2c.h"
+#include "cli-command.h"
+
 #include <stdint.h>
-#include <stdbool.h>
 #include <time.h>
 #include <math.h>
 #include <assert.h>
-
-#include "log.h"
-#include "util.h"
-#include "i2c.h"
-#include "cli-command.h"
-#include "sensor.h"
 
 #include <string>
 #include <boost/format.hpp>

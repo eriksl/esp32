@@ -1,13 +1,15 @@
 #pragma once
 
 #include "config.h"
-#include "cli.h"
+#include "command-response.h"
 
 #include <map>
 #include <array>
 #include <string>
 
 #include <freertos/FreeRTOS.h> // for vTaskDelay
+
+class Command;
 
 class Console final
 {
@@ -24,6 +26,7 @@ class Console final
 
 		static void emergency_wall(std::string_view text);
 
+		void set(Command *);
 		static Console &get();
 
 	private:
@@ -45,6 +48,7 @@ class Console final
 
 		std::map<std::string, int> stats;
 		Config &config;
+		Command *command;
 		unsigned int current_line;
 		bool running;
 		std::string hostname;

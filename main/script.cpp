@@ -1,3 +1,9 @@
+#include "script.h"
+
+#include "log.h"
+#include "command.h"
+#include "cli-command.h"
+
 #include <string>
 #include <array>
 #include <vector>
@@ -5,13 +11,6 @@
 #include <fstream>
 #include <thread>
 #include <chrono>
-
-#include "cli-command.h"
-#include "log.h"
-#include "script.h"
-#include <stdint.h>
-#include <string.h>
-#include "util.h"
 
 #include <esp_pthread.h>
 
@@ -253,7 +252,7 @@ static void script_run(ThreadState *initial_thread_state)
 				strlcpy(command_response->script.name, thread_state->script.c_str(), sizeof(command_response->script.name)); // FIXME
 				command_response->script.task = xTaskGetCurrentTaskHandle();
 
-				cli_receive_queue_push(command_response);
+				Command::get().receive_queue_push(command_response);
 
 				ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 

@@ -15,7 +15,6 @@ void app_main(void);
 #include "mcpwm.h"
 #include "command.h"
 
-#include "cli.h"
 #include "alias.h"
 #include "bt.h"
 #include "display.h"
@@ -53,8 +52,8 @@ void app_main(void)
 		Ramdisk::Root ramdisk(log, "/ramdisk", system.get_initial_free_spiram() / 2);
 		FS fs(log, ramdisk);
 		Command command(config, console, ledpixel, ledpwm, notify, log, system, util, pdm, mcpwm, fs);
+		console.set(&command);
 		alias_init();
-		cli_init();
 		bt_init();
 		wlan_init();
 		net_udp_init();
@@ -63,6 +62,7 @@ void app_main(void)
 		i2c_init();
 		io_init();
 		sensor_init();
+		command.run();
 		console.run();
 		notify.notify(Notify::Notification::sys_booting_finished);
 		vTaskSuspend(NULL);

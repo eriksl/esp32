@@ -2,8 +2,6 @@
 
 #include <string>
 
-#include "cli.h"
-
 enum
 {
 	parameters_size = 16,

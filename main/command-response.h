@@ -2,13 +2,7 @@
 
 #include <string>
 
-enum
-{
-	command_response_magic_number_head = 0x1234abcd,
-	command_response_magic_number_tail = 0xdcba4321,
-};
-
-typedef enum
+enum cli_source_t
 {
 	cli_source_none = 0,
 	cli_source_bt,
@@ -17,11 +11,10 @@ typedef enum
 	cli_source_wlan_udp,
 	cli_source_script,
 	cli_source_size,
-} cli_source_t;
+};
 
-typedef struct
+struct command_response_t
 {
-	unsigned int magic_number_head;
 	cli_source_t source;
 	unsigned int mtu;
 	std::string packet;
@@ -54,8 +47,4 @@ typedef struct
 			void *task; // TaskHandle_t
 		} script;
 	};
-	unsigned int magic_number_tail;
-} command_response_t;
-
-void cli_receive_queue_push(command_response_t *buffer);
-void cli_init(void);
+};

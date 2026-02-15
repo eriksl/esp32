@@ -1,6 +1,5 @@
 #include "log.h"
 #include "util.h"
-#include "cli-command.h"
 #include "mcpwm.h"
 #include "ledpwm.h"
 #include "pdm.h"
@@ -8,6 +7,7 @@
 #include "io.h"
 #include "i2c.h"
 #include "exception.h"
+#include "cli-command.h"
 
 #include <assert.h>
 

@@ -2,7 +2,6 @@ idf_component_register(
 	SRCS
 		"alias.cpp"
 		"bt.cpp"
-		"cli.cpp"
 		"command.cpp"
 		"config.cpp"
 		"console.cpp"
@@ -65,7 +64,7 @@ set(ALLFLAGS
 		-Wtrampolines
 		-Wfloat-equal
 		-Wshadow
-		-Wframe-larger-than=2048
+		-Wframe-larger-than=3096
 		-Wunsafe-loop-optimizations
 		-Wpointer-arith
 		-Wcast-qual

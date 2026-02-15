@@ -1,9 +1,11 @@
+#include "alias.h"
+
 #include <string>
 #include <map>
 
-#include "cli-command.h"
 #include "log.h"
-#include "alias.h"
+#include "command.h"
+#include "cli-command.h"
 
 #include <string>
 #include <boost/format.hpp>

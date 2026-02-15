@@ -1,17 +1,16 @@
-#include <stdint.h>
-#include <stdbool.h>
+#include "command-response.h"
+#include "udp.h"
+
 #include <sys/socket.h>
 #include <sys/poll.h>
 #include <assert.h>
 #include <thread>
 #include <esp_pthread.h>
 
-#include "cli.h"
 #include "log.h"
-#include "util.h"
+#include "command.h"
 #include "packet.h"
 #include "cli-command.h"
-#include "udp.h"
 
 #include <string>
 #include <boost/format.hpp>
@@ -170,7 +169,7 @@ void UDP::run()
 		command_response->mtu = this->mtu;
 		command_response->packet = udp_receive_buffer;
 
-		cli_receive_queue_push(command_response);
+		Command::get().receive_queue_push(command_response);
 
 		command_response = nullptr;
 

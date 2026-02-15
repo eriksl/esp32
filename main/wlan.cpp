@@ -1,20 +1,17 @@
-#include <stdint.h>
-#include <stdbool.h>
-#include <assert.h>
-
-#include <lwip/netif.h>
-
 #include "wlan.h"
 
-#include "cli.h"
 #include "config.h"
 #include "log.h"
-#include "util.h"
+#include "command.h"
 #include "packet.h"
-#include "cli-command.h"
 #include "notify.h"
 #include "system.h"
 #include "exception.h"
+#include "cli-command.h"
+
+#include <lwip/netif.h>
+
+#include <assert.h>
 
 #include <esp_event.h>
 #include <esp_wifi.h>
@@ -626,7 +623,6 @@ void wlan_command_info(cli_command_call_t *call)
 	assert(inited);
 	assert(call->parameter_count == 0);
 
-	call->result = "WLAN INFO";
 	call->result += (boost::format("\ncurrent state: %s, since %u seconds ago") % wlan_state_to_cstr(state) % state_time).str();
 
 	if((rv = esp_wifi_get_mode(&wlan_mode)))

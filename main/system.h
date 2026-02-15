@@ -26,8 +26,8 @@ class System final
 		};
 
 		explicit System() = delete;
-		explicit System(Log &);
 		explicit System(System &) = delete;
+		explicit System(Log &);
 
 		static System& get();
 
