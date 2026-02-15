@@ -532,9 +532,9 @@ void Command::run()
 		throw(hard_exception("Command::run: already running"));
 
 	thread_config = esp_pthread_get_default_config();
-	thread_config.thread_name = "cli recv";
+	thread_config.thread_name = "cmd recv";
 	thread_config.pin_to_core = 1;
-	thread_config.stack_size = 5 * 1024;
+	thread_config.stack_size = 6 * 1024;
 	thread_config.prio = 1;
 	//thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
 	esp_pthread_set_cfg(&thread_config);
@@ -544,7 +544,7 @@ void Command::run()
 	receive_thread.detach();
 
 	thread_config = esp_pthread_get_default_config();
-	thread_config.thread_name = "cli send";
+	thread_config.thread_name = "cmd send";
 	thread_config.pin_to_core = 1;
 	thread_config.stack_size = 3 * 1024;
 	thread_config.prio = 1;
