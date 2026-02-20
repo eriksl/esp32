@@ -556,7 +556,7 @@ void Command::run()
 	send_thread.detach();
 }
 
-void Command::help(std::string out, const std::string &filter)
+void Command::help(std::string &out, const std::string &filter)
 {
 	unsigned int command_index, parameter_index;
 	const cli_command_t *command;

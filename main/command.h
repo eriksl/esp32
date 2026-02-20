@@ -246,13 +246,14 @@ class Command final
 		MCPWM &mcpwm;
 		FS &fs;
 		BT &bt;
+		WLAN &wlan;
 
 		QueueHandle_t receive_queue_handle;
 		QueueHandle_t send_queue_handle;
 		bool running;
 
 		std::string make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2);
-		void help(std::string out, const std::string &filter = "");
+		void help(std::string &out, const std::string &filter = "");
 		command_response_t *receive_queue_pop();
 		void send_queue_push(command_response_t *command_response);
 		command_response_t *send_queue_pop();
