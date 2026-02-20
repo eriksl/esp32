@@ -1,6 +1,6 @@
 extern "C"
 {
-void app_main(void);
+[[noreturn]] void app_main();
 }
 
 #include "exception.h"
