@@ -299,10 +299,10 @@ void Log::abort(std::string_view what)
 
 std::string Log::esp_string_error(esp_err_t e, std::string_view message)
 {
-	return(std::format("{}: {} [{:d}]", message, esp_err_to_name(e), e));
+	return(std::format("{}: \"{}\" [{:d}]", message, esp_err_to_name(e), e));
 }
 
 std::string Log::errno_string_error(int e, std::string_view message)
 {
-	return(std::format("{}: {} [{:d}]", message, strerror(e), e));
+	return(std::format("{}: \"{}\" [{:d}]", message, strerror(e), e));
 }
