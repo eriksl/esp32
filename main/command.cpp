@@ -1423,6 +1423,48 @@ void Command::tcp_info(cli_command_call_t *call)
 	net_tcp_command_info(call); // FIXME
 }
 
+void Command::alias_command(cli_command_call_t *call)
+{
+	string_string_map::const_iterator it;
+
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	switch(call->parameter_count)
+	{
+		case(0):
+		{
+			break;
+		}
+
+		case(1):
+		{
+			if((it = aliases.find(call->parameters[0].str)) != aliases.end())
+				aliases.erase(it);
+
+			break;
+		}
+
+		case(2):
+		{
+			aliases.insert_or_assign(call->parameters[0].str, call->parameters[1].str);
+			break;
+			break;
+		}
+
+		default:
+		{
+			assert(call->parameter_count < 3);
+			break;
+		}
+	}
+
+	call->result = "ALIASES";
+
+	for(const auto &ref : aliases)
+		call->result += std::format("\n  {}: {}", ref.first, ref.second);
+}
+
 command_response_t *Command::receive_queue_pop()
 {
 	command_response_t *command_response = nullptr;
@@ -1884,45 +1926,6 @@ void Command::run_send_queue()
 void Command::receive_queue_push(command_response_t *command_response)
 {
 	xQueueSendToBack(this->receive_queue_handle, &command_response, portMAX_DELAY);
-}
-
-void Command::alias_command(cli_command_call_t *call)
-{
-	string_string_map::const_iterator it;
-
-	switch(call->parameter_count)
-	{
-		case(0):
-		{
-			break;
-		}
-
-		case(1):
-		{
-			if((it = aliases.find(call->parameters[0].str)) != aliases.end())
-				aliases.erase(it);
-
-			break;
-		}
-
-		case(2):
-		{
-			aliases.insert_or_assign(call->parameters[0].str, call->parameters[1].str);
-			break;
-			break;
-		}
-
-		default:
-		{
-			assert(call->parameter_count < 3);
-			break;
-		}
-	}
-
-	call->result = "ALIASES";
-
-	for(const auto &ref : aliases)
-		call->result += std::format("\n  {}: {}", ref.first, ref.second);
 }
 
 void Command::alias_expand(std::string &data) const
