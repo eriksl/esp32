@@ -25,12 +25,11 @@ extern "C"
 #include "sensor.h"
 #include "tcp.h"
 #include "udp.h"
-#include "wlan.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-void app_main(void)
+void app_main()
 {
 	std::string exception_text;
 
