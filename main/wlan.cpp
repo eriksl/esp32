@@ -2,155 +2,331 @@
 
 #include "config.h"
 #include "log.h"
-#include "command.h"
-#include "packet.h"
 #include "notify.h"
 #include "system.h"
 #include "exception.h"
-#include "cli-command.h"
 
 #include <lwip/netif.h>
 
-#include <assert.h>
-
 #include <esp_event.h>
 #include <esp_wifi.h>
-#include <esp_netif.h>
 #include <esp_netif_net_stack.h>
 #include <esp_netif_sntp.h>
-#include <esp_timer.h>
 
-#include <string>
-#include <boost/format.hpp>
+#include <freertos/FreeRTOS.h>
 
-typedef enum
+#include <format>
+
+#include "magic_enum/magic_enum.hpp"
+
+WLAN *WLAN::singleton = nullptr;
+
+const WLAN::state_info_map_t WLAN::state_info
 {
-	ws_invalid,
-	ws_init,
-	ws_associating,
-	ws_associated,
-	ws_ipv4_address_acquired,
-	ws_ipv6_link_local_address_acquired,
-	ws_ipv6_slaac_address_acquired,
-	ws_ipv6_static_address_active,
-	ws_rescue_ap_mode_init,
-	ws_rescue_ap_mode_idle,
-	ws_rescue_ap_mode_associated,
-	ws_size,
-} wlan_state_t;
-
-static const char *key_ipv6_static_address = "ipv6-address";
-
-static bool inited = false;
-static esp_netif_t *netif_sta;
-static esp_netif_t *netif_ap;
-static wlan_state_t state = ws_invalid;
-static unsigned int state_time;
-static TimerHandle_t state_timer;
-
-static bool static_ipv6_address_set;
-static esp_ip6_addr_t static_ipv6_address;
-
-typedef struct
-{
-	uint32_t valid_transitions;
-	const char *name;
-	Notify::Notification notification;
-} state_info_t;
-
-static const state_info_t state_info[ws_size] =
-{
-	[ws_invalid] =							{ (1 << ws_init),
-											"invalid", Notify::Notification::none },
-	[ws_init] =								{ (1 << ws_init) | (1 << ws_associating),
-											"init", Notify::Notification::none },
-	[ws_associating] =						{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_associated)  | (1 << ws_rescue_ap_mode_idle) | (1 << ws_rescue_ap_mode_associated),
-											"associating", Notify::Notification::net_associating },
-	[ws_associated] =						{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv4_address_acquired) | (1 << ws_ipv6_link_local_address_acquired),
-											"associated", Notify::Notification::net_associating_finished },
-	[ws_ipv4_address_acquired] =			{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv6_link_local_address_acquired),
-											"ipv4 address acquired", Notify::Notification::net_ipv4_acquired },
-	[ws_ipv6_link_local_address_acquired] =	{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv4_address_acquired) | (1 << ws_ipv6_slaac_address_acquired) | (1 << ws_ipv6_static_address_active),
-											"ipv6 link local address acquired", Notify::Notification::net_ipv6_ll_active },
-	[ws_ipv6_slaac_address_acquired] =		{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv6_static_address_active),
-											"ipv6 autoconfig address acquired", Notify::Notification::net_ipv6_slaac_acquired },
-	[ws_ipv6_static_address_active] =		{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_ipv6_slaac_address_acquired) | (1 << ws_ipv6_static_address_active),
-											"ipv6 static address set", Notify::Notification::net_ipv6_static_active },
-	[ws_rescue_ap_mode_init] =				{ (1 << ws_init) | (1 << ws_associating) | (1 << ws_rescue_ap_mode_idle) | (1 << ws_rescue_ap_mode_associated),
-											"rescue access point mode init", Notify::Notification::net_ap_mode_init },
-	[ws_rescue_ap_mode_idle] =				{ (1 << ws_rescue_ap_mode_init) | (1 << ws_rescue_ap_mode_associated),
-											"rescue access point mode idle", Notify::Notification::net_ap_mode_idle },
-	[ws_rescue_ap_mode_associated] =		{ (1 << ws_rescue_ap_mode_idle),
-											"rescue access point mode associated", Notify::Notification::net_ap_mode_associated },
+	{ WLAN::state_t::invalid,							{
+															(1 << magic_enum::enum_integer(WLAN::state_t::init)),
+															"invalid", Notify::Notification::none
+														}},
+	{ WLAN::state_t::init,								{
+															(1 << magic_enum::enum_integer(WLAN::state_t::init)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::associating)),
+															"init", Notify::Notification::none
+														}},
+	{ WLAN::state_t::associating,						{
+															(1 << magic_enum::enum_integer(WLAN::state_t::init)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::associating)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::associated)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::rescue_ap_mode_idle)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::rescue_ap_mode_associated)),
+															"associating", Notify::Notification::net_associating
+														}},
+	{ WLAN::state_t::associated,						{
+															(1 << magic_enum::enum_integer(WLAN::state_t::init)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::associating)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::ipv4_address_acquired)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::ipv6_link_local_address_acquired)),
+															"associated", Notify::Notification::net_associating_finished
+														}},
+	{ WLAN::state_t::ipv4_address_acquired,				{
+															(1 << magic_enum::enum_integer(WLAN::state_t::init)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::associating)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::ipv6_link_local_address_acquired)),
+															"ipv4 address acquired", Notify::Notification::net_ipv4_acquired
+														}},
+	{ WLAN::state_t::ipv6_link_local_address_acquired,	{
+															(1 << magic_enum::enum_integer(WLAN::state_t::init)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::associating)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::ipv4_address_acquired)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::ipv6_slaac_address_acquired)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::ipv6_static_address_active)),
+															"ipv6 link local address acquired", Notify::Notification::net_ipv6_ll_active
+														}},
+	{ WLAN::state_t::ipv6_slaac_address_acquired,		{
+															(1 << magic_enum::enum_integer(WLAN::state_t::init)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::associating)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::ipv6_static_address_active)),
+															"ipv6 autoconfig address acquired", Notify::Notification::net_ipv6_slaac_acquired
+														}},
+	{ WLAN::state_t::ipv6_static_address_active,		{
+															(1 << magic_enum::enum_integer(WLAN::state_t::init)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::associating)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::ipv6_slaac_address_acquired)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::ipv6_static_address_active)),
+															"ipv6 static address set", Notify::Notification::net_ipv6_static_active
+														}},
+	{ WLAN::state_t::rescue_ap_mode_init,				{
+															(1 << magic_enum::enum_integer(WLAN::state_t::init)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::associating)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::rescue_ap_mode_idle)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::rescue_ap_mode_associated)),
+															"rescue access point mode init", Notify::Notification::net_ap_mode_init
+														}},
+	{ WLAN::state_t::rescue_ap_mode_idle,				{
+															(1 << magic_enum::enum_integer(WLAN::state_t::rescue_ap_mode_init)) |
+															(1 << magic_enum::enum_integer(WLAN::state_t::rescue_ap_mode_associated)),
+															"rescue access point mode idle", Notify::Notification::net_ap_mode_idle
+														}},
+	{ WLAN::state_t::rescue_ap_mode_associated,			{
+															(1 << magic_enum::enum_integer(WLAN::state_t::rescue_ap_mode_idle)),
+															"rescue access point mode associated", Notify::Notification::net_ap_mode_associated
+														}},
 };
 
-static const char *wlan_state_to_cstr(wlan_state_t state_in)
+const WLAN::wifi_auth_mode_map_t WLAN::wifi_auth_mode_map
 {
-	assert((state >= 0) && (state < ws_size));
-	assert((state_in >= 0) && (state_in < ws_size));
+	{ WIFI_AUTH_OPEN,						"open" },
+	{ WIFI_AUTH_WEP,						"wep" },
+	{ WIFI_AUTH_WPA_PSK,					"wpa psk" },
+	{ WIFI_AUTH_WPA2_PSK,					"wpa2 psk" },
+	{ WIFI_AUTH_WPA_WPA2_PSK,				"wpa or wpa2 psk" },
+	{ WIFI_AUTH_ENTERPRISE,					"wpa enterprise" },
+	{ WIFI_AUTH_WPA2_ENTERPRISE,			"wpa 2 enterprise" },
+	{ WIFI_AUTH_WPA3_PSK,					"wpa3 psk" },
+	{ WIFI_AUTH_WPA2_WPA3_PSK,				"wpa2 or wpa3 psk" },
+	{ WIFI_AUTH_WAPI_PSK,					"wapi psk" },
+	{ WIFI_AUTH_OWE,						"owe" },
+	{ WIFI_AUTH_WPA3_ENT_192,				"wpa3 enterprise 192 bit" },
+	{ WIFI_AUTH_WPA3_EXT_PSK,				"wpa3 extended psk" },
+	{ WIFI_AUTH_WPA3_EXT_PSK_MIXED_MODE,	"wpa3 extended psk mixed mode", },
+	{ WIFI_AUTH_DPP,						"dpp" },
+	{ WIFI_AUTH_WPA3_ENTERPRISE,			"wpa 3 enterprise" },
+	{ WIFI_AUTH_WPA2_WPA3_ENTERPRISE,		"wpa2 or wpa enterprise" },
+	{ WIFI_AUTH_WPA_ENTERPRISE,				"wpa enterprise" },
+};
 
-	return(state_info[state_in].name);
+const WLAN::wifi_cipher_type_map_t WLAN::wifi_cipher_type_map
+{
+	{ WIFI_CIPHER_TYPE_NONE,		"none" },
+	{ WIFI_CIPHER_TYPE_WEP40,		"wep 40" },
+	{ WIFI_CIPHER_TYPE_WEP104,		"wep 104" },
+	{ WIFI_CIPHER_TYPE_TKIP,		"tkip" },
+	{ WIFI_CIPHER_TYPE_CCMP,		"ccmp" },
+	{ WIFI_CIPHER_TYPE_TKIP_CCMP,	"tkip or ccmp" },
+	{ WIFI_CIPHER_TYPE_AES_CMAC128,	"aes cmac 128" },
+	{ WIFI_CIPHER_TYPE_SMS4,		"sms 4" },
+	{ WIFI_CIPHER_TYPE_GCMP,		"gcmp" },
+	{ WIFI_CIPHER_TYPE_GCMP256,		"gcmp 256" },
+	{ WIFI_CIPHER_TYPE_AES_GMAC128,	"aes gmac 128" },
+	{ WIFI_CIPHER_TYPE_AES_GMAC256,	"aes gmac 256" },
+};
+
+const WLAN::wifi_phy_mode_map_t WLAN::wifi_phy_mode_map
+{
+	{ WIFI_PHY_MODE_LR,		"low rate"	},
+	{ WIFI_PHY_MODE_11B,	"11b"		},
+	{ WIFI_PHY_MODE_11G,	"11g"		},
+	{ WIFI_PHY_MODE_11A,	"11a"		},
+	{ WIFI_PHY_MODE_HT20,	"ht20"		},
+	{ WIFI_PHY_MODE_HT40,	"ht40"		},
+	{ WIFI_PHY_MODE_HE20,	"he20"		},
+	{ WIFI_PHY_MODE_VHT20,	"vht20"		},
+};
+
+WLAN::WLAN(Log &log_in, Config &config_in, Notify &notify_in, System & system_in) :
+		log(log_in), config(config_in), notify(notify_in), system(system_in)
+{
+	static esp_sntp_config_t sntp_config = ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(0, {});
+
+	esp_err_t rv;
+	std::string ipv6_address_string;
+	wifi_init_config_t init_config = WIFI_INIT_CONFIG_DEFAULT();
+
+	init_config.ampdu_rx_enable = 1;
+	init_config.ampdu_tx_enable = 1;
+	init_config.amsdu_tx_enable = 0;
+	init_config.nvs_enable = 1;
+	init_config.wifi_task_core_id = 0;
+
+	this->hostname = "esp32s3";
+
+	try
+	{
+		this->hostname = this->config.get_string("hostname");
+	}
+	catch(transient_exception &e)
+	{
+	}
+
+	this->static_ipv6_address = "";
+
+	try
+	{
+		this->static_ipv6_address = this->config.get_string(this->key_ipv6_static_address);
+	}
+	catch(transient_exception &)
+	{
+	}
+
+	sntp_config.start = false;
+	sntp_config.server_from_dhcp = true;
+
+	this->state = state_t::init;
+
+	if(!(this->state_timer = xTimerCreate("wlan-state", pdMS_TO_TICKS(1000), pdTRUE, nullptr, this->state_callback_wrapper)))
+		throw(hard_exception("WLAN: timer couldn't be created"));
+
+	if((rv = esp_event_loop_create_default()) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "WLAN: esp_event_loop_create_default")));
+
+	if((rv = esp_netif_init()) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "WLAN: esp_netif_init")));
+
+	if(!(this->netif_sta = esp_netif_create_default_wifi_sta()))
+		throw(hard_exception("WLAN: cannot create netif_sta"));
+
+	if(!(this->netif_ap = esp_netif_create_default_wifi_ap()))
+		throw(hard_exception("WLAN: cannot create netif_ap"));
+
+	if((rv = esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, this->wlan_event_handler_wrapper, nullptr, nullptr)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "WLAN: esp_event_handler_instance_register wifi")));
+
+	if((rv = esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID, this->ip_event_handler_wrapper, nullptr, nullptr)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "WLAN: esp_event_handler_instance_register ip")));
+
+	if((rv = esp_netif_sntp_init(&sntp_config)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "WLAN: esp_netif_sntp_init")));
+
+	if((rv = esp_wifi_init(&init_config)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "WLAN: esp_wifi_init")));
+
+	if((rv = esp_wifi_set_mode(WIFI_MODE_STA)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "WLAN: esp_wifi_set_mode")));
+
+	if((rv = esp_wifi_config_11b_rate(WIFI_IF_STA, true)) != ESP_OK) // disable 11b rate
+		throw(hard_exception(this->log.esp_string_error(rv, "WLAN: esp_wifi_config_11b_rate sta")));
+
+	if((rv = esp_wifi_config_11b_rate(WIFI_IF_AP, true)) != ESP_OK) // disable 11b rate
+		throw(hard_exception(this->log.esp_string_error(rv, "WLAN: esp_wifi_config_11b_rate ap")));
+
+	if((rv = esp_netif_set_hostname(this->netif_sta, this->hostname.c_str())) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "WLAN: esp_netif_set_hostname sta")));
+
+	if((rv = esp_netif_set_hostname(this->netif_ap, this->hostname.c_str())) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "WLAN: esp_netif_set_hostname ap")));
+
+	this->singleton = this;
 }
 
-static void set_state(wlan_state_t state_new)
+void WLAN::run()
 {
-	const char *state_string;
-	const char *state_new_string;
+	esp_err_t rv;
+
+	if((rv = esp_wifi_start()) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "WLAN::run: esp_wifi_start")));
+
+	xTimerStart(this->state_timer, portMAX_DELAY);
+}
+
+std::string WLAN::state_to_string(state_t state_in)
+{
+	if(!magic_enum::enum_contains<state_t>(state_in))
+		throw(hard_exception(std::format("WLAN::state_to_string: invalid argument: {:d}", magic_enum::enum_integer(state_in))));
+
+	return(this->state_info.at(state_in).name);
+}
+
+void WLAN::set_state(state_t state_new)
+{
+	std::string state_string;
+	std::string state_new_string;
 	wifi_mode_t wlan_mode;
+	esp_err_t rv;
 
-	assert((state >= 0) && (state < ws_size));
-	assert((state_new >= 0) && (state_new < ws_size));
+	if(!magic_enum::enum_contains<state_t>(state_new))
+		throw(hard_exception("WLAN::set_state: invalid argument"));
 
-	state_string = wlan_state_to_cstr(state);
-	state_new_string = wlan_state_to_cstr(state_new);
+	state_string = this->state_to_string(this->state);
+	state_new_string = this->state_to_string(state_new);
 
 #if 0
-	Log::get << std::format("wlan: state from {} to {}", state_string, state_new_string);
+	this->log << std::format("wlan: state from {} to {}", state_string, state_new_string);
 #endif
 
-	if((state_new == ws_associating) || (!(state_info[state].valid_transitions & (1 << state_new))))
+	if((state_new == state_t::associating) || (!(this->state_info.at(this->state).valid_transitions & (1 << magic_enum::enum_integer(state_new)))))
 	{
-		if(!(state_info[state].valid_transitions & (1 << state_new)))
-			Log::get() << std::format("wlan: invalid state transition from {} ({:d}) to {} ({:d}), {:#x}, reassociating",
-					state_string, static_cast<unsigned int>(state),
-					state_new_string, static_cast<unsigned int>(state_new),
-					state_info[state].valid_transitions);
+		if(!(this->state_info.at(this->state).valid_transitions & (1 << magic_enum::enum_integer(state_new))))
+			this->log << std::format("wlan: invalid state transition from {} ({:d}) to {} ({:d}), {:#x}, reassociating",
+					state_string, static_cast<int>(this->state),
+					state_new_string, static_cast<int>(state_new),
+					this->state_info.at(this->state).valid_transitions);
 		else
-			if((state != ws_init) && (state != ws_associating))
-				Log::get() << std::format("wlan: reassociate, switch from {} to {}", state_string, state_new_string);
+			if((this->state != state_t::init) && (this->state != state_t::associating))
+				this->log << std::format("wlan: reassociate, switch from {} to {}", state_string, state_new_string);
 
 		wlan_mode = WIFI_MODE_STA;
-		Log::get().warn_on_esp_err("esp_wifi_get_mode", esp_wifi_get_mode(&wlan_mode));
+
+		if((rv = esp_wifi_get_mode(&wlan_mode)) != ESP_OK)
+			throw(transient_exception(this->log.esp_string_error(rv, "WLAN::set_state: esp_wifi_get_mode")));
 
 		if(wlan_mode == WIFI_MODE_AP)
 		{
-			Log::get() << "wlan: switch from AP mode to STA mode";
-			Log::get().warn_on_esp_err("esp_wifi_deauth_sta", esp_wifi_deauth_sta(0));
-			Log::get().warn_on_esp_err("esp_wifi_stop", esp_wifi_stop());
-			Log::get().warn_on_esp_err("esp_wifi_set_mode", esp_wifi_set_mode(WIFI_MODE_STA));
-			Log::get().warn_on_esp_err("esp_wifi_start", esp_wifi_start());
+			this->log << "wlan: switch from AP mode to STA mode";
+
+			this->log.warn_on_esp_err("esp_wifi_deauth_sta", esp_wifi_deauth_sta(0));
+
+			if((rv = esp_wifi_stop()) != ESP_OK)
+				throw(transient_exception(this->log.esp_string_error(rv, "WLAN::set_state: esp_wifi_stop")));
+
+			if((rv = esp_wifi_set_mode(WIFI_MODE_STA)) != ESP_OK)
+				throw(transient_exception(this->log.esp_string_error(rv, "WLAN::set_state: esp_wifi_set_mode")));
+
+			if((rv = esp_wifi_start()) != ESP_OK)
+				throw(transient_exception(this->log.esp_string_error(rv, "WLAN::set_state: esp_wifi_start")));
 		}
 		else
-			if((state != ws_init) && (state != ws_associating))
+		{
+			if((this->state != state_t::init) && (this->state != state_t::associating))
 			{
-				Log::get() << "wlan: start disconnect";
-				Log::get().warn_on_esp_err("esp_wifi_disconnect", esp_wifi_disconnect());
+				this->log << "wlan: start disconnect";
+				this->log.warn_on_esp_err("esp_wifi_disconnect", esp_wifi_disconnect());
 			}
+		}
 
-		Log::get().warn_on_esp_err("esp_wifi_connect", esp_wifi_connect());
+		this->log.warn_on_esp_err("esp_wifi_connect", esp_wifi_connect());
 
-		state_new = ws_associating;
+		state_new = state_t::associating;
 	}
 
-	if(state != state_new)
-		state_time = 0;
+	if(this->state != state_new)
+		this->state_time = 0;
 
-	state = state_new;
+	this->state = state_new;
 
-	Notify::get().notify(state_info[state].notification);
+	this->notify.notify(this->state_info.at(this->state).notification);
 }
 
-static void state_callback(TimerHandle_t handle)
+void WLAN::state_callback_wrapper(TimerHandle_t handle)
+{
+	if(!WLAN::singleton)
+	{
+		Console::emergency_wall("WLAN::state_callback_wrapper: not active");
+		abort();
+	}
+
+	WLAN::singleton->state_callback(handle);
+}
+
+void WLAN::state_callback(TimerHandle_t handle)
 {
 	static wifi_config_t config_ap =
 	{
@@ -181,164 +357,207 @@ static void state_callback(TimerHandle_t handle)
 		},
 	};
 
+	std::string ssid;
+	std::string passwd;
+	esp_err_t rv;
+
 	uint8_t mac_address[6];
 
-	state_time++;
+	this->state_time++;
 
-	if(((state == ws_associating) || (state == ws_associated)) && (state_time > 30))
+	if(((this->state == state_t::associating) || (this->state == state_t::associated)) && (this->state_time > 30))
 	{
-		Log::get().warn_on_esp_err("esp_wifi_get_mac", esp_wifi_get_mac(WIFI_IF_AP, mac_address));
-		snprintf((char *)config_ap.ap.ssid, sizeof(config_ap.ap.ssid), "esp32-%02x:%02x:%02x:%02x:%02x:%02x",
-				mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
-		snprintf((char *)config_ap.ap.password, sizeof(config_ap.ap.password), "rescue-%02x:%02x:%02x:%02x:%02x:%02x",
-				mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
+		if((rv = esp_wifi_get_mac(WIFI_IF_AP, mac_address)) != ESP_OK)
+			throw(transient_exception(this->log.esp_string_error(rv, "WLAN::state_callback: esp_wifi_get_mac")));
 
-		Log::get() << std::format("wlan: switching to rescue access point mode (ssid: {}, password: {})",
+		passwd = ssid = this->system.mac_addr_to_string(std::string_view(reinterpret_cast<const char *>(mac_address), sizeof(mac_address)), false);
+
+		ssid = std::format("esp32-{}", ssid);
+		passwd = std::format("rescue-{}", passwd);
+
+		ssid.copy(reinterpret_cast<char *>(config_ap.ap.ssid), sizeof(config_ap.ap.ssid), 0);
+		config_ap.ap.ssid[sizeof(config_ap.ap.ssid) - 1] = '\0';
+
+		passwd.copy(reinterpret_cast<char *>(config_ap.ap.password), sizeof(config_ap.ap.password), 0);
+		config_ap.ap.password[sizeof(config_ap.ap.password) - 1] = '\0';
+
+		this->log << std::format("wlan: switching to rescue access point mode (ssid: {}, password: {})",
 				reinterpret_cast<const char *>(config_ap.ap.ssid), reinterpret_cast<const char *>(config_ap.ap.password));
-		Log::get() << std::format("wlan: after {:d} seconds of disassociation", state_time);
+		this->log << std::format("wlan: after {:d} seconds of disassociation", this->state_time);
 
-		Log::get().warn_on_esp_err("esp_wifi_disconnect", esp_wifi_disconnect());
-		Log::get().warn_on_esp_err("esp_wifi_stop", esp_wifi_stop());
-		Log::get().warn_on_esp_err("esp_wifi_set_mode", esp_wifi_set_mode(WIFI_MODE_AP));
-		Log::get().warn_on_esp_err("esp_wifi_set_config", esp_wifi_set_config(WIFI_IF_AP, &config_ap));
+		this->log.warn_on_esp_err("esp_wifi_disconnect", esp_wifi_disconnect());
+		this->log.warn_on_esp_err("esp_wifi_stop", esp_wifi_stop());
+		this->log.warn_on_esp_err("esp_wifi_set_mode", esp_wifi_set_mode(WIFI_MODE_AP));
+		this->log.warn_on_esp_err("esp_wifi_set_config", esp_wifi_set_config(WIFI_IF_AP, &config_ap));
 
-		state = ws_rescue_ap_mode_init;
-		state_time = 0;
+		this->state = state_t::rescue_ap_mode_init;
+		this->state_time = 0;
 
-		Log::get().warn_on_esp_err("esp_wifi_start", esp_wifi_start());
+		this->log.warn_on_esp_err("esp_wifi_start", esp_wifi_start());
 	}
 
-	if(((state == ws_rescue_ap_mode_init) || (state == ws_rescue_ap_mode_idle) || (state == ws_rescue_ap_mode_associated)) && (state_time > 300))
+	if(((this->state == state_t::rescue_ap_mode_init) || (this->state == state_t::rescue_ap_mode_idle) || (this->state == state_t::rescue_ap_mode_associated)) && (this->state_time > 300))
 	{
-		Log::get() << std::format("wlan: resetting after {} seconds in rescue mode", state_time);
+		log << std::format("wlan: resetting after {} seconds in rescue mode", this->state_time);
 		esp_restart();
 	}
 }
 
-static void wlan_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+void WLAN::wlan_event_handler_wrapper(void *arg, esp_event_base_t event_base, std::int32_t event_id, void *event_data)
 {
-	assert(inited);
+	if(!WLAN::singleton)
+	{
+		Console::emergency_wall("WLAN::event_handler_wrapper: not active");
+		abort();
+	}
 
+	WLAN::singleton->wlan_event_handler(arg, event_base, event_id, event_data);
+}
+
+void WLAN::wlan_event_handler(void *arg, esp_event_base_t event_base, std::int32_t event_id, void *event_data)
+{
 	switch(event_id)
 	{
 		case(WIFI_EVENT_STA_START): /* 2 */
 		{
-			Log::get() << "wlan: associating";
-			set_state(ws_associating);
+			this->log << "wlan: associating";
+			this->set_state(state_t::associating);
 			break;
 		}
 		case(WIFI_EVENT_STA_STOP): /* 3 */
 		{
-			Log::get() << "wlan: stop";
-			set_state(ws_init);
+			this->log << "wlan: stop";
+			this->set_state(state_t::init);
 			break;
 		}
 		case(WIFI_EVENT_STA_CONNECTED): /* 4 */
 		{
-			Log::get().warn_on_esp_err("esp_netif_create_ip6_linklocal", esp_netif_create_ip6_linklocal(netif_sta));
+			this->log.warn_on_esp_err("esp_netif_create_ip6_linklocal", esp_netif_create_ip6_linklocal(this->netif_sta));
 
-			if(static_ipv6_address_set) // ugly workaround, skip SLAAC because it also adds it's address as "preferred"
+			if(!this->static_ipv6_address.empty()) // ugly workaround, skip SLAAC because it also adds it's address as "preferred"
 			{
 				struct netif *lwip_netif;
-				lwip_netif = (struct netif *)esp_netif_get_netif_impl(netif_sta);
+				lwip_netif = static_cast<struct netif *>(esp_netif_get_netif_impl(this->netif_sta));
 				lwip_netif->ip6_autoconfig_enabled = 0;
 			}
 
-			Log::get() << "wlan: associated";
+			this->log << "wlan: associated";
 
-			set_state(ws_associated);
+			this->set_state(state_t::associated);
 			break;
 		}
 		case(WIFI_EVENT_STA_DISCONNECTED): /* 5 */
 		{
-			wifi_event_sta_disconnected_t *event = (wifi_event_sta_disconnected_t *)event_data;
-			Log::get() << std::format("wlan: disconnected: reason: {:#x}", event->reason);
-			set_state(ws_associating);
+			wifi_event_sta_disconnected_t *event = reinterpret_cast<wifi_event_sta_disconnected_t *>(event_data);
+			this->log << std::format("wlan: disconnected: reason: {:#x}", event->reason);
+			this->set_state(state_t::associating);
 			break;
 		}
 		case(WIFI_EVENT_AP_START):
 		{
-			Log::get() << "wlan: start access point";
-			set_state(ws_rescue_ap_mode_idle);
+			this->log << "wlan: start access point";
+			this->set_state(state_t::rescue_ap_mode_idle);
 			break;
 		}
 		case(WIFI_EVENT_AP_STOP):
 		{
-			Log::get() << "wlan: stop access point";
-			set_state(ws_rescue_ap_mode_init);
+			this->log << "wlan: stop access point";
+			this->set_state(state_t::rescue_ap_mode_init);
 			break;
 		}
 		case(WIFI_EVENT_AP_STACONNECTED):
 		{
-			Log::get() << "wlan: access point associated";
-			set_state(ws_rescue_ap_mode_associated);
+			this->log << "wlan: access point associated";
+			this->set_state(state_t::rescue_ap_mode_associated);
 			break;
 		}
 		case(WIFI_EVENT_AP_STADISCONNECTED):
 		{
-			Log::get() << "wlan: access point deassociated";
-			set_state(ws_rescue_ap_mode_idle);
+			this->log << "wlan: access point deassociated";
+			this->set_state(state_t::rescue_ap_mode_idle);
 			break;
 		}
 		case(WIFI_EVENT_AP_PROBEREQRECVED):
 		{
-			Log::get() << "wlan: ap probe received";
+			this->log << "wlan: ap probe received";
 			break;
 		}
 		case(WIFI_EVENT_STA_BEACON_TIMEOUT): /* 21 */
 		{
-			Log::get() << "wlan: beacon timeout";
+			this->log << "wlan: beacon timeout";
 			break;
 		}
 		case(WIFI_EVENT_HOME_CHANNEL_CHANGE): /* 40 */
 		{
-			Log::get() << "wlan: home channel change";
+			this->log << "wlan: home channel change";
 			break;
 		}
 		default:
 		{
-			Log::get() << std::format("wlan: unknown event: {:#x}", event_id);
+			this->log << std::format("wlan: unknown event: {:#x}", event_id);
 			break;
 		}
 	}
 }
 
-static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+void WLAN::ip_event_handler_wrapper(void *arg, esp_event_base_t event_base, std::int32_t event_id, void *event_data)
 {
-	assert(inited);
+	if(!WLAN::singleton)
+	{
+		Console::emergency_wall("WLAN::ip_event_handler_wrapper: not active");
+		abort();
+	}
+
+	WLAN::singleton->ip_event_handler(arg, event_base, event_id, event_data);
+}
+
+void WLAN::ip_event_handler(void *arg, esp_event_base_t event_base, std::int32_t event_id, void *event_data)
+{
+	esp_err_t rv;
 
 	switch(event_id)
 	{
 		case(IP_EVENT_STA_GOT_IP):
 		{
-			const ip_event_got_ip_t *event = (const ip_event_got_ip_t *)event_data;
+			const auto *event = reinterpret_cast<const ip_event_got_ip_t *>(event_data);
 
-			Log::get().abort_on_esp_err("esp_netif_sntp_start", esp_netif_sntp_start());
-			Log::get() << std::format("wlan: ipv4: {} (mask: {}, gw: {})",
-					System::get().ipv4_addr_to_string(&event->ip_info.ip.addr),
-					System::get().ipv4_addr_to_string(&event->ip_info.gw.addr),
-					System::get().ipv4_addr_to_string(&event->ip_info.netmask.addr));
+			if((rv = esp_netif_sntp_start()) != ESP_OK)
+				throw(transient_exception(this->log.esp_string_error(rv, "WLAN::ip_event_handler: esp_netif_sntp_start")));
 
-			set_state(ws_ipv4_address_acquired);
+			this->log << std::format("wlan: ipv4: {} (mask: {}, gw: {})",
+					this->system.ipv4_addr_to_string(&event->ip_info.ip.addr),
+					this->system.ipv4_addr_to_string(&event->ip_info.gw.addr),
+					this->system.ipv4_addr_to_string(&event->ip_info.netmask.addr));
+
+			this->set_state(state_t::ipv4_address_acquired);
 
 			break;
 		}
 
 		case(IP_EVENT_GOT_IP6):
 		{
-			const ip_event_got_ip6_t *event = (const ip_event_got_ip6_t *)event_data;
-			const char *address_type;
+			const auto *event = reinterpret_cast<const ip_event_got_ip6_t *>(event_data);
+			std::string address_type;
 
-			switch(System::get().ipv6_address_type(reinterpret_cast<const uint8_t *>(&event->ip6_info.ip.addr)))
+			switch(this->system.ipv6_address_type(reinterpret_cast<const uint8_t *>(&event->ip6_info.ip.addr)))
 			{
 				case(System::IPV6AddressType::link_local):
 				{
 					address_type = "link-local";
 
-					set_state(ws_ipv6_link_local_address_acquired);
+					this->set_state(state_t::ipv6_link_local_address_acquired);
 
-					if(static_ipv6_address_set)
-						Log::get().warn_on_esp_err("esp_netif_add_ip6_address", esp_netif_add_ip6_address(netif_sta, static_ipv6_address, true));
+					if(!this->static_ipv6_address.empty())
+					{
+						std::uint8_t ipv6_address[16];
+						esp_ip6_addr_t esp_ipv6_address;
+
+						this->system.string_to_ipv6_addr(this->static_ipv6_address, ipv6_address);
+
+						memcpy(&esp_ipv6_address.addr[0], ipv6_address, sizeof(esp_ipv6_address.addr));
+
+						this->log.warn_on_esp_err("esp_netif_add_ip6_address", esp_netif_add_ip6_address(this->netif_sta, esp_ipv6_address, true));
+					}
 
 					break;
 				}
@@ -346,7 +565,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 				{
 					address_type = "SLAAC";
 
-					set_state(ws_ipv6_slaac_address_acquired);
+					this->set_state(state_t::ipv6_slaac_address_acquired);
 
 					break;
 				}
@@ -354,7 +573,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 				{
 					address_type = "static";
 
-					set_state(ws_ipv6_static_address_active);
+					this->set_state(state_t::ipv6_static_address_active);
 
 					break;
 				}
@@ -362,379 +581,289 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
 				{
 					address_type = "invalid";
 
-					Log::get() << "wlan: invalid IPv6 address received";
+					this->log << "wlan: invalid IPv6 address received";
 
 					break;
 				}
 			}
 
-			Log::get() << std::format("wlan: {} ipv6: {}", address_type, System::get().ipv6_addr_to_string(&event->ip6_info.ip.addr[0]));
+			this->log << std::format("wlan: {} ipv6: {}", address_type, this->system.ipv6_addr_to_string(&event->ip6_info.ip.addr[0]));
 
 			break;
 		}
 
 		case(IP_EVENT_STA_LOST_IP):
 		{
-			Log::get() << "ip event: lost ipv4";
+			this->log << "ip event: lost ipv4";
 			break;
 		}
 
 		default:
 		{
-			Log::get() << std::format("ip event: unknown event: {:#x}", event_id);
+			this->log << std::format("ip event: unknown event: {:#x}", event_id);
 			break;
 		}
 	}
 }
 
-void wlan_command_client_config(cli_command_call_t *call)
+void WLAN::set(const std::string &ssid, const std::string &passwd)
 {
-	std::string value;
-
-	assert(inited);
-	assert(call->parameter_count  < 3);
-
-	if(call->parameter_count > 1)
-		Config::get().set_string("wlan-passwd", call->parameters[1].str);
-
-	if(call->parameter_count > 0)
-		Config::get().set_string("wlan-ssid", call->parameters[0].str);
-
-	call->result = "client ssid: ";
-
-	try
+	static wifi_config_t config_sta =
 	{
-		call->result += Config::get().get_string("wlan-ssid");
-	}
-	catch(transient_exception &)
-	{
-		call->result += "<unset>";
-	}
-
-	call->result += "\nclient password: ";
-
-	try
-	{
-		call->result += Config::get().get_string("wlan-passwd");
-	}
-	catch(transient_exception &)
-	{
-		call->result += "<unset>";
-	}
-
-	if(call->parameter_count > 1)
-	{
-		static wifi_config_t config_sta =
+		.sta =
 		{
-			.sta =
+			.ssid = {},
+			.password = {},
+			.scan_method = WIFI_ALL_CHANNEL_SCAN,
+			.bssid_set = 0,
+			.bssid = {},
+			.channel = 0,
+			.listen_interval = 3,
+			.sort_method = WIFI_CONNECT_AP_BY_SIGNAL,
+			.threshold = {},
+			.pmf_cfg =
 			{
-				.ssid = {},
-				.password = {},
-				.scan_method = WIFI_ALL_CHANNEL_SCAN,
-				.bssid_set = 0,
-				.bssid = {},
-				.channel = 0,
-				.listen_interval = 3,
-				.sort_method = WIFI_CONNECT_AP_BY_SIGNAL,
-				.threshold = {},
-				.pmf_cfg =
-				{
-					.capable = false,
-					.required = false,
-				},
-				.rm_enabled = 0,
-				.btm_enabled = 0,
-				.mbo_enabled = 0,
-				.ft_enabled = 0,
-				.owe_enabled = 0,
-				.transition_disable = 0,
-				.reserved1 = 0,
-				.sae_pwe_h2e = {},
-				.sae_pk_mode = {},
-				.failure_retry_cnt = 1,
-  				.he_dcm_set = 0,
-    			.he_dcm_max_constellation_tx = 0,
-    			.he_dcm_max_constellation_rx = 0,
-    			.he_mcs9_enabled = 0,
-    			.he_su_beamformee_disabled = 0,
-    			.he_trig_su_bmforming_feedback_disabled = 0,
-    			.he_trig_mu_bmforming_partial_feedback_disabled = 0,
-    			.he_trig_cqi_feedback_disabled = 0,
-    			.vht_su_beamformee_disabled = 0,
-    			.vht_mu_beamformee_disabled = 0,
-    			.vht_mcs8_enabled = 0,
-    			.reserved2 = 0,
-    			.sae_h2e_identifier = {},
+				.capable = false,
+				.required = false,
 			},
-		};
+			.rm_enabled = 0,
+			.btm_enabled = 0,
+			.mbo_enabled = 0,
+			.ft_enabled = 0,
+			.owe_enabled = 0,
+			.transition_disable = 0,
+			.reserved1 = 0,
+			.sae_pwe_h2e = {},
+			.sae_pk_mode = {},
+			.failure_retry_cnt = 1,
+			.he_dcm_set = 0,
+			.he_dcm_max_constellation_tx = 0,
+			.he_dcm_max_constellation_rx = 0,
+			.he_mcs9_enabled = 0,
+			.he_su_beamformee_disabled = 0,
+			.he_trig_su_bmforming_feedback_disabled = 0,
+			.he_trig_mu_bmforming_partial_feedback_disabled = 0,
+			.he_trig_cqi_feedback_disabled = 0,
+			.vht_su_beamformee_disabled = 0,
+			.vht_mu_beamformee_disabled = 0,
+			.vht_mcs8_enabled = 0,
+			.reserved2 = 0,
+			.sae_h2e_identifier = {},
+		},
+	};
 
-		esp_err_t rv;
-		wifi_mode_t wlan_mode;
+	esp_err_t rv;
+	wifi_mode_t wlan_mode;
 
-		wlan_mode = WIFI_MODE_STA;
-		Log::get().warn_on_esp_err("esp_wifi_get_mode", esp_wifi_get_mode(&wlan_mode));
+	this->config.set_string("wlan-passwd", ssid);
+	this->config.set_string("wlan-ssid", passwd);
 
-		if(wlan_mode == WIFI_MODE_AP)
-		{
-			Log::get().warn_on_esp_err("esp_wifi_deauth_sta", esp_wifi_deauth_sta(0));
-			Log::get().warn_on_esp_err("esp_wifi_stop", esp_wifi_stop());
-			Log::get().warn_on_esp_err("esp_wifi_set_mode", esp_wifi_set_mode(WIFI_MODE_STA));
-			Log::get().warn_on_esp_err("esp_wifi_start", esp_wifi_start());
-		}
+	wlan_mode = WIFI_MODE_STA;
 
-		call->parameters[0].str.copy(reinterpret_cast<char *>(config_sta.sta.ssid), sizeof(config_sta.sta.ssid));
-		call->parameters[1].str.copy(reinterpret_cast<char *>(config_sta.sta.password), sizeof(config_sta.sta.password));
+	if((rv = esp_wifi_get_mode(&wlan_mode)) != ESP_OK)
+		throw(transient_exception(this->log.esp_string_error(rv, "WLAN::set: esp_wifi_get_mode")));
 
-		rv = esp_wifi_set_config(WIFI_IF_STA, &config_sta);
+	if(wlan_mode == WIFI_MODE_AP)
+	{
+		if((rv = esp_wifi_deauth_sta(0)) != ESP_OK)
+			throw(transient_exception(this->log.esp_string_error(rv, "WLAN::set: esp_wifi_deauth_sta")));
 
-		Log::get().warn_on_esp_err("esp_wifi_set_config", rv);
+		if((rv = esp_wifi_stop()) != ESP_OK)
+			throw(transient_exception(this->log.esp_string_error(rv, "WLAN::set: esp_wifi_stop")));
 
-		if(rv)
-		{
-			call->result = "\nesp_wifi_set_config returns error";
-			return;
-		}
+		if((rv = esp_wifi_set_mode(WIFI_MODE_STA)) != ESP_OK)
+			throw(transient_exception(this->log.esp_string_error(rv, "WLAN::set: esp_wifi_set_mode")));
 
-		set_state(ws_associating);
+		if((rv = esp_wifi_start()) != ESP_OK)
+			throw(transient_exception(this->log.esp_string_error(rv, "WLAN::set: esp_wifi_start")));
+	}
+
+	ssid.copy(reinterpret_cast<char *>(config_sta.sta.ssid), sizeof(config_sta.sta.ssid));
+	passwd.copy(reinterpret_cast<char *>(config_sta.sta.password), sizeof(config_sta.sta.password));
+
+	if((rv = esp_wifi_set_config(WIFI_IF_STA, &config_sta)) != ESP_OK)
+		throw(transient_exception(this->log.esp_string_error(rv, "WLAN::set: esp_wifi_set_config")));
+
+	this->set_state(state_t::associating);
+}
+
+void WLAN::get(std::string &ssid, std::string &passwd)
+{
+	ssid = "<unset>";
+
+	try
+	{
+		ssid = this->config.get_string("wlan-passwd");
+	}
+	catch(const transient_exception &)
+	{
+	}
+
+	passwd = "<unset>";
+
+	try
+	{
+		passwd = this->config.get_string("wlan-ssid");
+	}
+	catch(const transient_exception &)
+	{
 	}
 }
 
-void wlan_command_ipv6_static(cli_command_call_t *call)
+void WLAN::set_ipv6_static(const std::string &input_address)
 {
-	std::string ipv6_address_string;
-	esp_ip6_addr_t ipv6_address;
+	uint8_t ipv6_address[16];
+	std::string converted_address;
 
-	assert(inited);
-	assert(call->parameter_count < 2);
-
-	if(call->parameter_count > 0)
+	if(input_address.empty())
 	{
-		if(esp_netif_str_to_ip6(call->parameters[0].str.c_str(), &ipv6_address))
-		{
-			call->result = "invalid ipv6 address";
-			return;
-		}
+		this->static_ipv6_address = "";
+		this->config.erase(this->key_ipv6_static_address);
+	}
+	else
+	{
+		this->system.string_to_ipv6_addr(input_address, ipv6_address /* sockaddr6_in->sin6_addr.in6_addr = uint8_t[16] */);
+		converted_address = this->system.ipv6_addr_to_string(ipv6_address);
 
-		ipv6_address_string = ip6addr_ntoa((const ip6_addr_t *)&ipv6_address);
-
-		for(auto &c : ipv6_address_string)
+		for(auto &c : converted_address)
 			c = std::tolower(c);
 
-		Config::get().set_string(key_ipv6_static_address, ipv6_address_string);
-
-		static_ipv6_address = ipv6_address;
-		static_ipv6_address_set = true;
-	}
-
-	call->result = "ipv6 static address: ";
-
-	try
-	{
-		call->result += Config::get().get_string(key_ipv6_static_address);
-	}
-	catch(transient_exception &)
-	{
-		call->result += "<unset>";
+		this->config.set_string(this->key_ipv6_static_address, converted_address);
+		this->static_ipv6_address = converted_address;
 	}
 }
 
-void wlan_init(void)
+void WLAN::get_ipv6_static(std::string &address)
 {
-	std::string hostname;
-	std::string ipv6_address_string;
-	wifi_init_config_t init_config = WIFI_INIT_CONFIG_DEFAULT();
-	static esp_sntp_config_t sntp_config = ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(0, {});
+	address = this->static_ipv6_address;
 
-	assert(!inited);
-
-	init_config.ampdu_rx_enable = 1;
-	init_config.ampdu_tx_enable = 1;
-	init_config.amsdu_tx_enable = 0;
-	init_config.nvs_enable = 1;
-	init_config.wifi_task_core_id = 0;
-
-	try
-	{
-		hostname = Config::get().get_string("hostname");
-	}
-	catch(transient_exception &e)
-	{
-		hostname = "esp32s3";
-	}
-
-	sntp_config.start = false;
-	sntp_config.server_from_dhcp = true;
-
-	state_timer = xTimerCreate("wlan-state", pdMS_TO_TICKS(1000), pdTRUE, (void *)0, state_callback);
-	assert(state_timer);
-
-	set_state(ws_init);
-
-	try
-	{
-		ipv6_address_string = Config::get().get_string(key_ipv6_static_address);
-		static_ipv6_address_set = esp_netif_str_to_ip6(ipv6_address_string.c_str(), &static_ipv6_address) == ESP_OK;
-	}
-	catch(transient_exception &)
-	{
-		static_ipv6_address_set = false;
-	}
-
-	inited = true;
-
-	Log::get().abort_on_esp_err("esp_event_loop_create_default", esp_event_loop_create_default());
-
-	Log::get().abort_on_esp_err("esp_netif_init", esp_netif_init());
-	netif_sta = esp_netif_create_default_wifi_sta();
-	netif_ap = esp_netif_create_default_wifi_ap();
-
-	Log::get().abort_on_esp_err("esp_event_handler_instance_register 1",
-			esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wlan_event_handler, (void *)0, (esp_event_handler_instance_t *)0));
-	Log::get().abort_on_esp_err("esp_event_handler_instance_register 2",
-			esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID, ip_event_handler, (void *)0, (esp_event_handler_instance_t *)0));
-
-	Log::get().abort_on_esp_err("esp_netif_sntp_init", esp_netif_sntp_init(&sntp_config));
-	Log::get().abort_on_esp_err("esp_wifi_init", esp_wifi_init(&init_config));
-	Log::get().abort_on_esp_err("esp_wifi_set_mode", esp_wifi_set_mode(WIFI_MODE_STA));
-	Log::get().abort_on_esp_err("esp_wifi_config_11b_rate", esp_wifi_config_11b_rate(WIFI_IF_STA, true)); // FIXME
-	Log::get().abort_on_esp_err("esp_wifi_config_11b_rate", esp_wifi_config_11b_rate(WIFI_IF_AP, true)); // FIXME
-	Log::get().abort_on_esp_err("esp_wifi_start", esp_wifi_start());
-
-	Log::get().abort_on_esp_err("esp_netif_set_hostname", esp_netif_set_hostname(netif_sta, hostname.c_str()));
-	Log::get().abort_on_esp_err("esp_netif_set_hostname", esp_netif_set_hostname(netif_ap, hostname.c_str()));
-
-	xTimerStart(state_timer, portMAX_DELAY);
+	if(address.empty())
+		address = "<unset>";
 }
 
-void wlan_command_info(cli_command_call_t *call)
+void WLAN::info(std::string &out)
 {
 	esp_netif_t *netif;
 	esp_netif_ip_info_t ip_info;
 	esp_netif_flags_t if_flags;
 	wifi_ap_record_t ap_info;
-	const char *hostname, *key;
+	const char *host, *key;
 	uint8_t mac[6];
 	char ifname[16];
 	esp_ip6_addr_t esp_ip6_addr[8];
 	wifi_mode_t wlan_mode;
 	wifi_ps_type_t ps_type;
-	unsigned int ix, rv;
+	int ix, count;
+	std::string ip, gw, netmask;
+	esp_err_t rv;
 
-	assert(inited);
-	assert(call->parameter_count == 0);
+	out += std::format("\ncurrent state: {}, since {:d} seconds ago", this->state_to_string(this->state), this->state_time);
+	out += "\noperating mode: ";
 
-	call->result += (boost::format("\ncurrent state: %s, since %u seconds ago") % wlan_state_to_cstr(state) % state_time).str();
-
-	if((rv = esp_wifi_get_mode(&wlan_mode)))
+	if((rv = esp_wifi_get_mode(&wlan_mode)) != ESP_OK)
 	{
-		Log::get().warn_on_esp_err("esp_wifi_get_mode", rv);
-		call->result += "no information";
+		out += this->log.esp_string_error(rv, "no information: esp_wifi_get_mode");
 		return;
 	}
 
-	call->result += "\noperating mode: ";
-
 	if(wlan_mode == WIFI_MODE_AP)
 	{
-		call->result += "access point";
-		netif = netif_ap;
+		out += "access point";
+		netif = this->netif_ap;
 	}
 	else
 	{
-		call->result += "station";
-		netif = netif_sta;
+		out += "station";
+		netif = this->netif_sta;
 	}
 
-	call->result += "\ninterface:";
-	call->result += (boost::format("\n- number of interfaces: %u") % esp_netif_get_nr_of_ifs()).str();
-	call->result += (boost::format("\n- index: %d") % esp_netif_get_netif_impl_index(netif)).str();
+	out += "\ninterface:";
+	out += std::format("\n- number of interfaces: {:d}", esp_netif_get_nr_of_ifs());
+	out += std::format("\n- index: {:d}", esp_netif_get_netif_impl_index(netif));
+	out += "\n- name: ";
 
-	Log::get().abort_on_esp_err("esp_netif_get_netif_impl_name", esp_netif_get_netif_impl_name(netif, ifname));
-
-	call->result += (boost::format("\n- name: %s") % ifname).str();
+	if((rv = esp_netif_get_netif_impl_name(netif, ifname)) != ESP_OK)
+		out += this->log.esp_string_error(rv, "no information: esp_netif_get_netif_impl_name");
+	else
+		out += ifname;
 
 	key = esp_netif_get_ifkey(netif);
 
-	call->result += (boost::format("\n- key: %s") % (key ? key : "<invalid>")).str();
+	out += std::format("\n- key: {}", key ? : "<invalid>");
 
 	key = esp_netif_get_desc(netif);
 
-	call->result += (boost::format("\n- description: %s") % (key ? key : "<invalid>")).str();
-	call->result += "\n- flags:";
+	out += std::format("\n- description: {}", key ? : "<invalid>");
 
 	if_flags = esp_netif_get_flags(netif);
 
+	out += "\n- flags:";
+
 	if(if_flags & ESP_NETIF_DHCP_CLIENT)
-		call->result += " dhcp-client";
+		out += " dhcp-client";
 
 	if(if_flags & ESP_NETIF_DHCP_SERVER)
-		call->result += " dhcp-server";
+		out += " dhcp-server";
 
 	if(if_flags & ESP_NETIF_FLAG_AUTOUP)
-		call->result += " auto-up";
+		out += " auto-up";
 
 	if(if_flags & ESP_NETIF_FLAG_GARP)
-		call->result += " garp";
+		out += " garp";
 
 	if(if_flags & ESP_NETIF_FLAG_EVENT_IP_MODIFIED)
-		call->result += " event-ip-modified";
+		out += " event-ip-modified";
 
 	if(if_flags & ESP_NETIF_FLAG_MLDV6_REPORT)
-		call->result += " mldv6-report";
+		out += " mldv6-report";
 
-	call->result += "\nmac:\n- address:";
+	out += "\nmac:\n- address:";
 
-	if((rv = esp_netif_get_mac(netif, mac)))
-	{
-		Log::get().warn_on_esp_err("esp_netif_get_mac", rv);
-		call->result += "<unknown>";
-	}
+	if((rv = esp_netif_get_mac(netif, mac)) != ESP_OK)
+		out += this->log.esp_string_error(rv, " no information: esp_netif_get_mac");
 	else
-		call->result += System::get().mac_addr_to_string(reinterpret_cast<const char *>(mac), false);
+		out += this->system.mac_addr_to_string(reinterpret_cast<const char *>(mac), false);
 
-	call->result += "\nipv4:";
+	out += "\nipv4:";
 
-	if((rv = esp_netif_get_ip_info(netif, &ip_info)))
+	if(esp_netif_get_ip_info(netif, &ip_info) != ESP_OK)
 	{
-		Log::get().warn_on_esp_err("esp_netif_get_ip_info", rv);
-		call->result += "\n- interface address: <unknown>";
-		call->result += "\n- gateway address: <unknown>";
-		call->result += "\n- netmask: <unknown>";
+		ip = "<unknown>";
+		gw = "<unknown>";
+		netmask = "<unknown>";
 	}
 	else
 	{
-		call->result += "\n- interface address: ";
-		call->result += System::get().ipv4_addr_to_string(&ip_info.ip.addr);
-		call->result += "\n- gateway address: ";
-		call->result += System::get().ipv4_addr_to_string(&ip_info.gw.addr);
-		call->result += "\n- netmask: ";
-		call->result += System::get().ipv4_addr_to_string(&ip_info.netmask.addr);
+		ip = this->system.ipv4_addr_to_string(&ip_info.ip.addr);
+		gw = this->system.ipv4_addr_to_string(&ip_info.gw.addr);
+		netmask = this->system.ipv4_addr_to_string(&ip_info.netmask.addr);
 	}
 
-	call->result += "\nipv6:";
+	out += std::format("\n- interface address: {}", ip);
+	out += std::format("\n- gateway address: {}", gw);
+	out += std::format("\n- netmask: {}", netmask);
 
-	rv = esp_netif_get_all_ip6(netif, esp_ip6_addr);
+	out += "\nipv6:";
 
-	for(ix = 0; ix < rv; ix++)
-		call->result += std::format("\n- address {:d}: {} ({})", ix,
-				System::get().ipv6_addr_to_string(&esp_ip6_addr[ix].addr),
-				System::get().ipv6_address_type_string(reinterpret_cast<const void *>(&esp_ip6_addr[ix].addr)));
-
-	call->result += "\nhostname: ";
-
-	if((rv = esp_netif_get_hostname(netif, &hostname)))
-	{
-		Log::get().warn_on_esp_err("esp_netif_get_hostname", rv);
-		call->result =+ "<unknown>";
-	}
+	if((count = esp_netif_get_all_ip6(netif, esp_ip6_addr)) <= 0)
+		out += " <no addresses>";
 	else
-		call->result += hostname;
+		for(ix = 0; ix < count; ix++)
+			out += std::format("\n- address {:d}: {} ({})", ix,
+					this->system.ipv6_addr_to_string(&esp_ip6_addr[ix].addr),
+					this->system.ipv6_address_type_string(reinterpret_cast<const void *>(&esp_ip6_addr[ix].addr)));
+
+	out += "\nhostname: ";
+
+	if((rv = esp_netif_get_hostname(netif, &host)))
+		out += this->log.esp_string_error(rv, "no information: esp_netif_get_hostname");
+	else
+		out += host;
+
+	out += "\nsleep mode: ";
 
 	if((rv = esp_wifi_get_ps(&ps_type)))
-	{
-		Log::get().warn_on_esp_err("esp_wifi_get_ps", rv);
-		key = "<invalid>";
-	}
+		out += this->log.esp_string_error(rv, "no information: esp_wifi_get_ps");
 	else
 	{
 		switch(ps_type)
@@ -744,9 +873,9 @@ void wlan_command_info(cli_command_call_t *call)
 			case(WIFI_PS_MAX_MODEM): key = "maximal"; break;
 			default: key = "<unknown>"; break;
 		}
-	}
 
-	call->result += (boost::format("\n- power saving: %s") % key).str();
+		out += key;
+	}
 
 	if(wlan_mode == WIFI_MODE_STA)
 	{
@@ -755,155 +884,116 @@ void wlan_command_info(cli_command_call_t *call)
 		wifi_bandwidth_t wbw;
 		wifi_phy_mode_t mode;
 
-		call->result += "\nwlan STA status:";
+		out += "\nwlan STA status:";
 
 		if((rv = esp_wifi_sta_get_ap_info(&ap_info)))
-		{
-			Log::get().warn_on_esp_err("esp_wifi_sta_get_ap_info", rv);
-			call->result += " <no info>";
-		}
+			out += this->log.esp_string_error(rv, "no information: esp_wifi_sta_get_ap_info");
 		else
 		{
-			call->result += (boost::format("\n- access point: %s") % System::get().mac_addr_to_string(reinterpret_cast<const char *>(ap_info.bssid), false)).str();
-			call->result += (boost::format("\n- SSID: %s") % ap_info.ssid).str();
-			call->result += "\n- ";
+			out += std::format("\n- access point: {}", this->system.mac_addr_to_string(reinterpret_cast<const char *>(ap_info.bssid), false));
+			out += std::format("\n- SSID: {}", reinterpret_cast<const char *>(ap_info.ssid));
+			out += "\n- ";
 
 			if(ap_info.second == WIFI_SECOND_CHAN_ABOVE)
-				call->result += (boost::format("channels: %u+%u") % static_cast<unsigned int>(ap_info.primary) % static_cast<unsigned int>(ap_info.primary + 1)).str();
+				out += std::format("channels: {:d}+{:d}", static_cast<int>(ap_info.primary), static_cast<int>(ap_info.primary) + 1);
 			else
 				if(ap_info.second == WIFI_SECOND_CHAN_BELOW)
-					call->result += (boost::format("channels: %u+%u") % static_cast<unsigned int>(ap_info.primary) % static_cast<unsigned int>(ap_info.primary - 1)).str();
+					out += std::format("channels: {:d}+{:d}", static_cast<int>(ap_info.primary), static_cast<int>(ap_info.primary) - 1);
 				else
-					call->result += (boost::format("channel: %u") % static_cast<unsigned int>(ap_info.primary)).str();
+					out += std::format("channel: {:d}", static_cast<int>(ap_info.primary));
 
-			call->result += (boost::format("\n- rssi: %d") % static_cast<int>(ap_info.rssi)).str();
+			out += std::format("\n- rssi: {:d}", static_cast<int>(ap_info.rssi));
+			out += std::format("\n- authentication mode: ");
 
-			switch(ap_info.authmode)
 			{
-				case(WIFI_AUTH_OPEN): key = "open"; break;
-				case(WIFI_AUTH_WEP): key = "wep"; break;
-				case(WIFI_AUTH_WPA_PSK): key = "wpa psk"; break;
-				case(WIFI_AUTH_WPA2_PSK): key = "wpa2 psk"; break;
-				case(WIFI_AUTH_WPA_WPA2_PSK): key = "wpa+wpa2 psk"; break;
-				case(WIFI_AUTH_ENTERPRISE): key = "wpa+wpa2 802.1x"; break;
-				case(WIFI_AUTH_WPA3_PSK): key = "wpa3 psk"; break;
-				case(WIFI_AUTH_WPA2_WPA3_PSK): key = "wpa2+wpa3 psk"; break;
-				case(WIFI_AUTH_WAPI_PSK): key = "wapi psk"; break;
-				case(WIFI_AUTH_OWE): key = "owe"; break;
-				case(WIFI_AUTH_WPA3_ENT_192): key = "wpa3 802.1x 192 bits"; break;
-				case(WIFI_AUTH_WPA3_EXT_PSK): key = "wpa3 802.1x psk"; break;
-				case(WIFI_AUTH_WPA3_EXT_PSK_MIXED_MODE): key = "wpa3 802.1x psk mixed"; break;
-				default: key = "<invalid>"; break;
+				const auto it = wifi_auth_mode_map.find(ap_info.authmode);
+
+				if(it == wifi_auth_mode_map.end())
+					out += "<unknown>";
+				else
+					out += it->second;
 			}
 
-			call->result += (boost::format("\n- authentication mode: %s") % key).str();
+			out += "\n- pairwise cipher: ";
 
-			switch(ap_info.pairwise_cipher)
 			{
-				case(WIFI_CIPHER_TYPE_NONE): key = "none"; break;
-				case(WIFI_CIPHER_TYPE_WEP40): key = "wep 40"; break;
-				case(WIFI_CIPHER_TYPE_WEP104): key = "wep 104"; break;
-				case(WIFI_CIPHER_TYPE_TKIP): key = "tkip"; break;
-				case(WIFI_CIPHER_TYPE_CCMP): key = "ccmp"; break;
-				case(WIFI_CIPHER_TYPE_TKIP_CCMP): key = "tkip+ccmp"; break;
-				case(WIFI_CIPHER_TYPE_AES_CMAC128): key = "aes cmac128"; break;
-				case(WIFI_CIPHER_TYPE_SMS4): key = "sms 4"; break;
-				case(WIFI_CIPHER_TYPE_GCMP): key = "gcmp"; break;
-				case(WIFI_CIPHER_TYPE_GCMP256): key = "gcmp 256"; break;
-				case(WIFI_CIPHER_TYPE_AES_GMAC128): key = "aes gmac 128"; break;
-				case(WIFI_CIPHER_TYPE_AES_GMAC256): key = "aes gmac 256"; break;
-				default: key = "<invalid>"; break;
+				const auto it = wifi_cipher_type_map.find(ap_info.pairwise_cipher);
+
+				if(it == wifi_cipher_type_map.end())
+					out += "<unknown>";
+				else
+					out += it->second;
 			}
 
-			call->result += (boost::format("\n- pairwise cipher: %s") % key).str();
+			out += "\n- group cipher: ";
 
-			switch(ap_info.group_cipher)
 			{
-				case(WIFI_CIPHER_TYPE_NONE): key = "none"; break;
-				case(WIFI_CIPHER_TYPE_WEP40): key = "wep 40"; break;
-				case(WIFI_CIPHER_TYPE_WEP104): key = "wep 104"; break;
-				case(WIFI_CIPHER_TYPE_TKIP): key = "tkip"; break;
-				case(WIFI_CIPHER_TYPE_CCMP): key = "ccmp"; break;
-				case(WIFI_CIPHER_TYPE_TKIP_CCMP): key = "tkip+ccmp"; break;
-				case(WIFI_CIPHER_TYPE_AES_CMAC128): key = "aes cmac128"; break;
-				case(WIFI_CIPHER_TYPE_SMS4): key = "sms 4"; break;
-				case(WIFI_CIPHER_TYPE_GCMP): key = "gcmp"; break;
-				case(WIFI_CIPHER_TYPE_GCMP256): key = "gcmp 256"; break;
-				case(WIFI_CIPHER_TYPE_AES_GMAC128): key = "aes gmac 128"; break;
-				case(WIFI_CIPHER_TYPE_AES_GMAC256): key = "aes gmac 256"; break;
-				default: key = "<invalid>"; break;
+				const auto it = wifi_cipher_type_map.find(ap_info.group_cipher);
+
+				if(it == wifi_cipher_type_map.end())
+					out += "<unknown>";
+				else
+					out += it->second;
 			}
 
-			call->result += (boost::format( "\n- group cipher: %s") % key).str();
-			call->result += (boost::format( "\n- country: %.2s [%u-%u], max power: %d dB") %
-					ap_info.country.cc %
-					ap_info.country.schan %
-					(ap_info.country.nchan - ap_info.country.schan + 1) %
-					ap_info.country.max_tx_power).str();
+			std::string country_code;
+			country_code.assign(ap_info.country.cc, 2);
+
+			out += std::format( "\n- country: {:s} [{:d}-{:d}], max power: {:d} dB",
+					country_code,
+					ap_info.country.schan,
+					ap_info.country.nchan - ap_info.country.schan + 1,
+					ap_info.country.max_tx_power);
 		}
 
-		call->result += "\n- protocols:";
+		out += "\n- protocols:";
 
 		if((rv = esp_wifi_get_protocol(WIFI_IF_STA, &protocol_bitmap)))
-		{
-			Log::get().warn_on_esp_err("esp_wifi_get_protocol", rv);
-			call->result += " <invalid>";
-		}
+			out += this->log.esp_string_error(rv, " no information: esp_wifi_get_protocol");
 		else
 		{
 			if(protocol_bitmap & WIFI_PROTOCOL_11B)
-				call->result += " 802.11b";
+				out += " 802.11b";
 
 			if(protocol_bitmap & WIFI_PROTOCOL_11G)
-				call->result += " 802.11g";
+				out += " 802.11g";
 
 			if(protocol_bitmap & WIFI_PROTOCOL_11N)
-				call->result += " 802.11n";
+				out += " 802.11n";
 
 			if(protocol_bitmap & WIFI_PROTOCOL_11AX)
-				call->result += " 802.11ax";
+				out += " 802.11ax";
 		}
 
-		call->result += ", bandwidth: ";
+		out += ", bandwidth: ";
 
 		if((rv = esp_wifi_get_bandwidth(WIFI_IF_STA, &wbw)))
-		{
-			Log::get().warn_on_esp_err("esp_wifi_get_bandwidth", rv);
-			call->result += "<invalid>";
-		}
+			out += this->log.esp_string_error(rv, " no information: esp_wifi_get_bandwidth");
 		else
-			call->result += (wbw == WIFI_BW_HT40) ? "ht40" : "ht20";
+			out += (wbw == WIFI_BW_HT40) ? "ht40" : "ht20";
+
+		out+= "\n- phy mode: ";
 
 		if((rv = esp_wifi_sta_get_negotiated_phymode(&mode)))
-		{
-			Log::get().warn_on_esp_err("esp_wifi_sta_get_negotiated_phymode", rv);
-			key = "<invalid>";
-		}
+			out += this->log.esp_string_error(rv, " no information: esp_wifi_sta_get_negotiated_phymode");
 		else
 		{
-			switch(mode)
-			{
-				case(WIFI_PHY_MODE_LR): key =	"low rate"; break;
-				case(WIFI_PHY_MODE_11B): key =	"802.11b"; break;
-				case(WIFI_PHY_MODE_11G): key =	"802.11g"; break;
-				case(WIFI_PHY_MODE_HT20): key =	"802.11n ht20"; break;
-				case(WIFI_PHY_MODE_HT40): key =	"802.11n ht40"; break;
-				case(WIFI_PHY_MODE_HE20): key =	"802.11ax he20"; break;
-				default: key =					"<invalid>"; break;
-			}
+			const auto it = wifi_phy_mode_map.find(mode);
+
+			if(it == wifi_phy_mode_map.end())
+				out += "<unknown>";
+			else
+				out += it->second;
 		}
 
-		call->result += (boost::format("\n- phy mode: %s") % key).str();
-		call->result += (boost::format( "\n- TSF timestamp: %llu") % esp_wifi_get_tsf_time(WIFI_IF_STA)).str();
-		call->result += "\n- configured inactive time: ";
+		out += std::format( "\n- TSF timestamp: {:d}", esp_wifi_get_tsf_time(WIFI_IF_STA));
+
+		out += "\n- configured inactive time: ";
 
 		if((rv = esp_wifi_get_inactive_time(WIFI_IF_STA, &timeout)))
-		{
-			Log::get().warn_on_esp_err("esp_wifi_get_inactive_time", rv);
-			call->result += "<invalid>";
-		}
+			out += this->log.esp_string_error(rv, " no information: esp_wifi_get_inactive_time");
 		else
-			call->result += (boost::format("%u") % timeout).str();
+			out += std::format("{:d}", timeout);
 	}
 	else
 	{
@@ -911,23 +1001,22 @@ void wlan_command_info(cli_command_call_t *call)
 		wifi_second_chan_t secondary;
 		wifi_country_t country;
 
-		call->result += "\nwlan AP status:";
+		out += "\nwlan AP status:";
 
 		if((rv = esp_wifi_get_channel(&channel, &secondary)))
-		{
-			Log::get().warn_on_esp_err("esp_wifi_get_channel", rv);
-			channel = 0;
-		}
+			out += this->log.esp_string_error(rv, " no information: esp_wifi_get_channel");
+		else
+			out += std::format("\n- channel: {}", channel);
 
-		call->result += (boost::format("\n- channel: %u") % channel).str();
-		call->result += "\n- country: ";
+		out += "\n- country: ";
 
 		if((rv = esp_wifi_get_country(&country)))
-		{
-			Log::get().warn_on_esp_err("esp_wifi_get_country", rv);
-			call->result += "<invalid>";
-		}
+			out += this->log.esp_string_error(rv, " no information: esp_wifi_get_country");
 		else
-			call->result += (boost::format("%.2s") % country.cc).str();
+		{
+			std::string country_code;
+			country_code.assign(country.cc, 2);
+			out += country_code;
+		}
 	}
 }

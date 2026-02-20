@@ -17,6 +17,7 @@ extern "C"
 #include "fs.h"
 #include "ramdisk.h"
 #include "bt.h"
+#include "wlan.h"
 #include "command.h"
 
 #include "display.h"
@@ -50,16 +51,17 @@ void app_main()
 		Ramdisk::Root ramdisk(log, "/ramdisk", system.get_initial_free_spiram() / 2);
 		FS fs(log, ramdisk);
 		BT bt(log, config);
-		Command command(config, console, ledpixel, ledpwm, notify, log, system, util, pdm, mcpwm, fs, bt);
+		WLAN wlan(log, config, notify, system);
+		Command command(config, console, ledpixel, ledpwm, notify, log, system, util, pdm, mcpwm, fs, bt, wlan);
 		console.set(&command);
 		bt.set(&command);
-		wlan_init();
 		net_udp_init();
 		net_tcp_init();
 		display_init();
 		i2c_init();
 		io_init();
 		sensor_init();
+		wlan.run();
 		bt.run();
 		console.run();
 		command.run();

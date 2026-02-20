@@ -11,6 +11,7 @@
 #include "mcpwm.h"
 #include "fs.h"
 #include "bt.h"
+#include "wlan.h"
 #include "exception.h"
 #include "cli-command.h"
 
@@ -131,7 +132,7 @@ class Command final
 		static void udp_info(cli_command_call_t *);
 		static void tcp_info(cli_command_call_t *);
 
-		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &, Util &, PDM &, MCPWM &, FS &, BT &);
+		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &, Util &, PDM &, MCPWM &, FS &, BT &, WLAN &);
 		Command() = delete;
 		Command(const Command &) = delete;
 
@@ -230,6 +231,7 @@ class Command final
 		static MCPWM *mcpwm_;
 		static FS *fs_;
 		static BT *bt_;
+		static WLAN *wlan_;
 
 		typedef std::map<std::string, std::string> string_string_map;
 		string_string_map aliases;

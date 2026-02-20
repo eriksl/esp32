@@ -38,9 +38,6 @@ void command_ota_write(cli_command_call_t *call);
 void command_ota_finish(cli_command_call_t *call);
 void command_ota_commit(cli_command_call_t *call);
 void command_ota_confirm(cli_command_call_t *call);
-void wlan_command_client_config(cli_command_call_t *call);
-void wlan_command_info(cli_command_call_t *call);
-void wlan_command_ipv6_static(cli_command_call_t *call);
 void command_display_brightness(cli_command_call_t *call);
 void command_display_configure(cli_command_call_t *call);
 void command_display_erase(cli_command_call_t *call);
@@ -481,14 +478,15 @@ PDM *Command::pdm_ = nullptr;
 MCPWM *Command::mcpwm_ = nullptr;
 FS *Command::fs_ = nullptr;
 BT *Command::bt_ = nullptr;
+WLAN *Command::wlan_ = nullptr;
 
 Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, LedPWM &ledpwm_in,
 		Notify &notify_in, Log &log_in, System &system_in, Util &util_in, PDM &pdm_in, MCPWM &mcpwm_in,
-		FS &fs_in, BT &bt_in)
+		FS &fs_in, BT &bt_in, WLAN &wlan_in)
 	:
 		config(config_in), console(console_in), ledpixel(ledpixel_in), ledpwm(ledpwm_in),
 		notify(notify_in), log(log_in), system(system_in), util(util_in), pdm(pdm_in), mcpwm(mcpwm_in),
-		fs(fs_in), bt(bt_in)
+		fs(fs_in), bt(bt_in), wlan(wlan_in)
 {
 	if(this->singleton)
 		throw(hard_exception("Command: already activated"));
@@ -514,6 +512,7 @@ Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, 
 	this->mcpwm_ = &mcpwm;
 	this->fs_ = &fs;
 	this->bt_ = &bt;
+	this->wlan_ = &wlan;
 }
 
 Command &Command::get()
@@ -1229,32 +1228,6 @@ void Command::ota_confirm(cli_command_call_t *call)
 	command_ota_confirm(call); // FIXME
 }
 
-void Command::wlan_client_config(cli_command_call_t *call)
-{
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
-	wlan_command_client_config(call); // FIXME
-}
-
-void Command::wlan_info(cli_command_call_t *call)
-{
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
-	call->result = "WLAN INFO";
-
-	wlan_command_info(call); // FIXME
-}
-
-void Command::wlan_ipv6_static(cli_command_call_t *call)
-{
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
-	wlan_command_ipv6_static(call); // FIXME
-}
-
 void Command::display_brightness(cli_command_call_t *call)
 {
 	if(!Command::singleton)
@@ -1463,6 +1436,53 @@ void Command::alias_command(cli_command_call_t *call)
 
 	for(const auto &ref : aliases)
 		call->result += std::format("\n  {}: {}", ref.first, ref.second);
+}
+
+void Command::wlan_client_config(cli_command_call_t *call)
+{
+	std::string ssid;
+	std::string passwd;
+
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	if(call->parameter_count == 1)
+		throw(hard_exception("wlan_client_config: need to set both ssid and passwd"));
+
+	if(call->parameter_count > 2)
+		throw(hard_exception("wlan_client_config: invalid arguments"));
+
+	if(call->parameter_count == 2)
+		wlan_->set(call->parameters[0].str, call->parameters[1].str);
+
+	wlan_->get(ssid, passwd);
+
+	call->result = std::format("wlan client, ssid: {}, password: {}", ssid, passwd);
+}
+
+void Command::wlan_ipv6_static(cli_command_call_t *call)
+{
+	std::string address;
+
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	if(call->parameter_count == 1)
+		wlan_->set_ipv6_static(call->parameters[0].str);
+
+	wlan_->get_ipv6_static(address);
+
+	call->result = std::format("ipv6 static address: {}", address);
+}
+
+void Command::wlan_info(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	call->result = "WLAN INFO";
+
+	wlan_->info(call->result);
 }
 
 command_response_t *Command::receive_queue_pop()

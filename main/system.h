@@ -49,6 +49,7 @@ class System final
 		std::string		ipv6_address_type_string(const void * /* sockaddr6_in->sin6_addr.s6_addr = char[16] */);
 		std::string		ipv6_addr_to_string(const void * /* sockaddr6_in->sin6_addr.in6_addr = uint8_t[16] */);
 		std::string		mac_addr_to_string(std::string_view address, bool invert);
+		void			string_to_ipv6_addr(const std::string &string, void *addr /* sockaddr6_in->sin6_addr.in6_addr = uint8_t[16] */);
 
 	private:
 

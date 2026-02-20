@@ -654,6 +654,20 @@ std::string System::ipv6_addr_to_string(const void *in /* sockaddr6_in->sin6_add
 	return(dst);
 }
 
+void System::string_to_ipv6_addr(const std::string &string, void *addr /* sockaddr6_in->sin6_addr.in6_addr = uint8_t[16] */)
+{
+	int rv;
+
+	if(!addr)
+		throw(hard_exception("System::string_to_ipv6_addr: invalid argument"));
+
+	if((rv = ::inet_pton(AF_INET6, string.c_str(), addr)) == 0)
+		throw(transient_exception("System::string_to_ipv6_addr: invalid address"));
+
+	if(rv == -1)
+		throw(hard_exception("System::string_to_ipv6_addr: invalid address family"));
+}
+
 std::string System::mac_addr_to_string(std::string_view mac, bool invert)
 {
 	std::string dst;
