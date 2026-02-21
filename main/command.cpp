@@ -1867,13 +1867,13 @@ void Command::run_send_queue()
 			{
 				case(cli_source_bt):
 				{
-					bt_->send(command_response);
+					this->bt.send(command_response);
 					break;
 				}
 
 				case(cli_source_console):
 				{
-					console_->send(*command_response);
+					this->console.send(*command_response);
 					break;
 				}
 
