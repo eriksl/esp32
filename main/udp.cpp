@@ -90,7 +90,7 @@ void UDP::thread_runner()
 			throw(hard_exception("UDP::thread_runner: command not set"));
 
 		if((this->socket_fd = ::socket(AF_INET6, SOCK_DGRAM, 0)) < 0)
-			throw(transient_exception(this->log.errno_string_error(errno, "UDP::thread_runner: open")));
+			throw(transient_exception(this->log.errno_string_error(errno, "UDP::thread_runner: socket")));
 
 		memset(&si6_addr, 0, sizeof(si6_addr));
 		si6_addr.sin6_family = AF_INET6;

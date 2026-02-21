@@ -57,7 +57,6 @@ void command_io_stats(cli_command_call_t *call);
 void command_io_write(cli_command_call_t *call);
 void command_alias(cli_command_call_t *call);
 void command_run(cli_command_call_t *call);
-void net_tcp_command_info(cli_command_call_t *call);
 
 //FIXME
 int Command::cli_stats_commands_received = 0;
@@ -480,14 +479,15 @@ FS *Command::fs_ = nullptr;
 BT *Command::bt_ = nullptr;
 WLAN *Command::wlan_ = nullptr;
 UDP *Command::udp_ = nullptr;
+TCP *Command::tcp_ = nullptr;
 
 Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, LedPWM &ledpwm_in,
 		Notify &notify_in, Log &log_in, System &system_in, Util &util_in, PDM &pdm_in, MCPWM &mcpwm_in,
-		FS &fs_in, BT &bt_in, WLAN &wlan_in, UDP &udp_in)
+		FS &fs_in, BT &bt_in, WLAN &wlan_in, UDP &udp_in, TCP &tcp_in)
 	:
 		config(config_in), console(console_in), ledpixel(ledpixel_in), ledpwm(ledpwm_in),
 		notify(notify_in), log(log_in), system(system_in), util(util_in), pdm(pdm_in), mcpwm(mcpwm_in),
-		fs(fs_in), bt(bt_in), wlan(wlan_in), udp(udp_in)
+		fs(fs_in), bt(bt_in), wlan(wlan_in), udp(udp_in), tcp(tcp_in)
 {
 	if(this->singleton)
 		throw(hard_exception("Command: already activated"));
@@ -515,6 +515,7 @@ Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, 
 	this->bt_ = &bt;
 	this->wlan_ = &wlan;
 	this->udp_ = &udp;
+	this->tcp_ = &tcp;
 }
 
 Command &Command::get()
@@ -1382,14 +1383,6 @@ void Command::run(cli_command_call_t *call) // FIXME
 	command_run(call); // FIXME
 }
 
-void Command::tcp_info(cli_command_call_t *call)
-{
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
-	net_tcp_command_info(call); // FIXME
-}
-
 void Command::alias_command(cli_command_call_t *call)
 {
 	string_string_map::const_iterator it;
@@ -1487,6 +1480,16 @@ void Command::udp_info(cli_command_call_t *call)
 	call->result = "UDP INFO";
 
 	udp_->info(call->result);
+}
+
+void Command::tcp_info(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	call->result = "TCP INFO";
+
+	tcp_->info(call->result);
 }
 
 command_response_t *Command::receive_queue_pop()
@@ -1883,7 +1886,7 @@ void Command::run_send_queue()
 
 				case(cli_source_wlan_tcp):
 				{
-					net_tcp_send(command_response);
+					this->tcp.send(command_response);
 					break;
 				}
 

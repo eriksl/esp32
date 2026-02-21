@@ -20,12 +20,12 @@ extern "C"
 #include "wlan.h"
 #include "command.h"
 #include "udp.h"
+#include "tcp.h"
 
 #include "display.h"
 #include "i2c.h"
 #include "io.h"
 #include "sensor.h"
-#include "tcp.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -53,11 +53,12 @@ void app_main()
 		BT bt(log, config);
 		WLAN wlan(log, config, notify, system);
 		UDP udp(log);
-		Command command(config, console, ledpixel, ledpwm, notify, log, system, util, pdm, mcpwm, fs, bt, wlan, udp);
+		TCP tcp(log);
+		Command command(config, console, ledpixel, ledpwm, notify, log, system, util, pdm, mcpwm, fs, bt, wlan, udp, tcp);
 		console.set(&command);
 		bt.set(&command);
 		udp.set(&command);
-		net_tcp_init();
+		tcp.set(&command);
 		display_init();
 		i2c_init();
 		io_init();
@@ -65,6 +66,7 @@ void app_main()
 		wlan.run();
 		bt.run();
 		udp.run();
+		tcp.run();
 		console.run();
 		command.run();
 		notify.notify(Notify::Notification::sys_booting_finished);

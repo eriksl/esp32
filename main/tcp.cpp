@@ -1,276 +1,297 @@
-#include "command-response.h"
 #include "tcp.h"
 
+#include "command.h"
+
+#include "exception.h"
+#include "packet.h"
+
+#include <string.h> // for memcpy
 #include <sys/socket.h>
 #include <sys/poll.h>
 
-#include <assert.h>
-#include <thread>
 #include <esp_pthread.h>
 
-#include "log.h"
-#include "packet.h"
-#include "cli-command.h"
-#include "command.h"
-
-#include <string>
-#include <boost/format.hpp>
 #include <thread>
 #include <chrono>
 
-class TCP
+TCP *TCP::singleton = nullptr;
+
+TCP::TCP(Log &log_in) : log(log_in)
 {
-	public:
+	if(this->singleton)
+		throw(hard_exception("TCP: already active"));
 
-		enum
-		{
-			mtu = 16 * 1024, // emperically determined
-		};
+	this->socket_fd = -1;
+	this->running = false;
+	this->command = nullptr;
+	this->singleton = this;
+}
 
-		int socket_fd = -1;
-
-		unsigned int send_bytes;
-		unsigned int send_segments;
-		unsigned int send_packets;
-		unsigned int send_errors;
-		unsigned int send_no_connection;
-		unsigned int receive_bytes;
-		unsigned int receive_packets;
-		unsigned int receive_accepts;
-		unsigned int receive_accept_errors;
-		unsigned int receive_errors;
-		unsigned int receive_invalid_packets;
-		unsigned int receive_incomplete_packets;
-
-		TCP();
-
-		void send(const command_response_t *command_response);
-		void command_info(cli_command_call_t *call);
-		static void run_wrapper(void *);
-		void run();
-};
-
-TCP::TCP() :
-		socket_fd(-1),
-		send_bytes(0),
-		send_segments(0),
-		send_packets(0),
-		send_errors(0),
-		send_no_connection(0),
-		receive_bytes(0),
-		receive_packets(0),
-		receive_accepts(0),
-		receive_accept_errors(0),
-		receive_errors(0),
-		receive_invalid_packets(0),
-		receive_incomplete_packets(0)
+TCP &TCP::get()
 {
+	if(!TCP::singleton)
+		throw(hard_exception("TCP::get: not active"));
+
+	return(*this->singleton);
+}
+
+void TCP::set(Command *in)
+{
+	if(!in)
+		throw(hard_exception("TCP::set: invalid argument"));
+
+	this->command = in;
+}
+
+void TCP::run()
+{
+	esp_err_t rv;
 	esp_pthread_cfg_t thread_config = esp_pthread_get_default_config();
+
+	if(this->running)
+		throw(hard_exception("TCP::run: already running"));
 
 	thread_config.thread_name = "tcp";
 	thread_config.pin_to_core = 1;
 	thread_config.stack_size = 2 * 1024;
 	thread_config.prio = 1;
-	//thread_config.stack_alloc_caps = MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM;
-	Log::get().abort_on_esp_err("esp_pthread_set_cfg", esp_pthread_set_cfg(&thread_config));
+	thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
 
-	std::thread new_thread(TCP::run_wrapper, this);
+	if((rv = esp_pthread_set_cfg(&thread_config)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "esp_pthread_set_cfg")));
+
+	std::thread new_thread(TCP::thread_wrapper, this);
+
+	this->running = true;
+
 	new_thread.detach();
 }
 
-void TCP::run()
+void TCP::thread_wrapper(void *in)
 {
-	std::string tcp_receive_buffer;
-	int accept_fd, rv;
+	TCP *this_;
+
+	this_ = reinterpret_cast<TCP *>(in);
+
+	this_->thread_runner();
+}
+
+void TCP::thread_runner()
+{
+	std::string receive_buffer;
+	int accept_fd, rv, length;
 	struct sockaddr_in6 si6_addr;
 	socklen_t si6_addr_length;
-	int length;
 	struct pollfd pfd;
 
-	accept_fd = socket(AF_INET6, SOCK_STREAM, 0);
-	assert(accept_fd >= 0);
-
-	memset(&si6_addr, 0, sizeof(si6_addr));
-	si6_addr.sin6_family = AF_INET6;
-	si6_addr.sin6_port = htons(24);
-
-	rv = bind(accept_fd, (const struct sockaddr *)&si6_addr, sizeof(si6_addr));
-	assert(rv == 0);
-
-	rv = listen(accept_fd, 0);
-	assert(rv == 0);
-
-	for(;;)
+	try
 	{
-		si6_addr_length = sizeof(si6_addr);
+		if(!this->command)
+			throw(hard_exception("TCP::thread_runner: command not set"));
 
-		if((socket_fd = accept(accept_fd, (struct sockaddr *)&si6_addr, &si6_addr_length)) < 0)
-		{
-			receive_accept_errors++;
-			continue;
-		}
+		if((accept_fd = ::socket(AF_INET6, SOCK_STREAM, 0)) < 0)
+			throw(transient_exception(this->log.errno_string_error(errno, "TCP::thread_runner: socket")));
 
-		receive_accepts++;
+		memset(&si6_addr, 0, sizeof(si6_addr));
+		si6_addr.sin6_family = AF_INET6;
+		si6_addr.sin6_port = htons(24);
+
+		if(::bind(accept_fd, reinterpret_cast<const struct sockaddr *>(&si6_addr), sizeof(si6_addr)) != 0)
+			throw(transient_exception(this->log.errno_string_error(errno, "TCP::thread_runner: bind")));
+
+		if(::listen(accept_fd, 0) != 0)
+			throw(transient_exception(this->log.errno_string_error(errno, "TCP::thread_runner: listen")));
 
 		for(;;)
 		{
-			tcp_receive_buffer.clear();
+			si6_addr_length = sizeof(si6_addr);
 
-			pfd.fd = this->socket_fd;
-			pfd.events = POLLIN;
-			pfd.revents = 0;
-
-			rv = poll(&pfd, 1, -1);
-
-			if(rv < 0)
+			if((socket_fd = accept(accept_fd, (struct sockaddr *)&si6_addr, &si6_addr_length)) < 0)
 			{
-				Log::get().log_errno(errno, "tcp: poll error");
+				this->stats["connections failed"]++;
 				continue;
 			}
 
-			if(!(pfd.revents & POLLIN))
+			this->stats["connections accepted"]++;
+
+			for(;;)
 			{
-				Log::get().log_errno(errno, "tcp: socket error");
-				Log::get().abort("tcp socket error");
-			}
+				receive_buffer.clear();
 
-			if(ioctl(this->socket_fd, FIONREAD, &length))
-			{
-				Log::get().log_errno(errno, "tcp: ioctl");
-				Log::get().abort("tcp ioctl error");
-			}
+				pfd.fd = this->socket_fd;
+				pfd.events = POLLIN;
+				pfd.revents = 0;
 
-			tcp_receive_buffer.clear();
-			tcp_receive_buffer.resize(length);
+				rv = poll(&pfd, 1, -1);
 
-			length = ::recv(this->socket_fd, tcp_receive_buffer.data(), tcp_receive_buffer.size(), 0);
-
-			if(length < 0)
-			{
-				Log::get() << std::format("tcp: receive error: {:d}", length);
-				receive_errors++;
-				break;
-			}
-
-			if(length == 0)
-				break;
-
-			tcp_receive_buffer.resize(length);
-
-			receive_bytes += length;
-
-			if(!Packet::valid(tcp_receive_buffer))
-			{
-				receive_invalid_packets++;
-				continue;
-			}
-
-			if(!Packet::complete(tcp_receive_buffer))
-			{
-				unsigned int offset, pending;
-
-				offset = length;
-				pending = Packet::length(tcp_receive_buffer) - offset;
-				tcp_receive_buffer.resize(Packet::length(tcp_receive_buffer));
-
-				while(pending > 0)
+				if(rv < 0)
 				{
-					pfd.fd = this->socket_fd;
-					pfd.events = POLLIN;
-					pfd.revents = 0;
-
-					rv = poll(&pfd, 1, 1000);
-
-					if(rv < 0)
-					{
-						Log::get().log_errno(errno, "tcp: poll error (2)");
-						break;
-					}
-
-					if(rv == 0)
-					{
-						Log::get() << "tcp: timeout";
-						break;
-					}
-
-					if(!(pfd.revents & POLLIN))
-					{
-						Log::get().log_errno(errno, "tcp: socket error (2)");
-						Log::get().abort("tcp socket error (2)");
-					}
-
-					length = ::recv(this->socket_fd, tcp_receive_buffer.data() + offset, pending, 0);
-
-					if(length == 0)
-						break;
-
-					if(length < 0)
-					{
-						Log::get() << std::format("tcp: receive error (2): {:d}", length);
-						receive_errors++;
-						break;
-					}
-
-					pending -= length;
-					offset += length;
+					this->log.log_errno(errno, "tcp: poll error");
+					this->stats["poll generic error"]++;
+					break;
 				}
 
-				if(!Packet::complete(tcp_receive_buffer))
+				if(!(pfd.revents & POLLIN))
 				{
-					Log::get() << "tcp: packet incomplete";
-					receive_incomplete_packets++;
+					this->log.log_errno(errno, "tcp: socket error");
+					this->stats["poll receive error"]++;
+					break;
+				}
+
+				if(ioctl(this->socket_fd, FIONREAD, &length))
+					throw(hard_exception("tcp: ioctl fionread"));
+
+				receive_buffer.clear();
+				receive_buffer.resize(length);
+
+				length = ::recv(this->socket_fd, receive_buffer.data(), receive_buffer.size(), 0);
+
+				if(length < 0)
+				{
+					this->stats["receive errors"]++;
+					break;
+				}
+
+				if(length == 0)
+				{
+					this->stats["receive zero size packets"]++;
+					this->log << "tcp: zero packet received";
+					break;
+				}
+
+				receive_buffer.resize(length);
+
+				this->stats["receive bytes"] += length;
+
+				if(!Packet::valid(receive_buffer))
+				{
+					this->stats["receive invalid packet"]++;
 					continue;
 				}
 
-				length = Packet::length(tcp_receive_buffer);
-				tcp_receive_buffer.resize(length);
+				if(!Packet::complete(receive_buffer))
+				{
+					int offset, pending;
+
+					offset = length;
+					pending = Packet::length(receive_buffer) - offset;
+					receive_buffer.resize(Packet::length(receive_buffer));
+
+					while(pending > 0)
+					{
+						pfd.fd = this->socket_fd;
+						pfd.events = POLLIN;
+						pfd.revents = 0;
+
+						rv = poll(&pfd, 1, 1000);
+
+						if(rv < 0)
+						{
+							this->log.log_errno(errno, "tcp: poll error (2)");
+							this->stats["receive fragment poll failures"]++;
+							break;
+						}
+
+						if(rv == 0)
+						{
+							this->log << "tcp: timeout";
+							this->stats["receive fragment poll timeouts"]++;
+							break;
+						}
+
+						if(!(pfd.revents & POLLIN))
+						{
+							this->log.log_errno(errno, "tcp: socket error (2)");
+							this->stats["receive fragment poll errors"]++;
+							break;
+						}
+
+						length = ::recv(this->socket_fd, receive_buffer.data() + offset, pending, 0);
+
+						if(length == 0)
+							break;
+
+						if(length < 0)
+						{
+							this->log << std::format("tcp: receive error (2): {:d}", length);
+							this->stats["receive fragment receive errors"]++;
+							break;
+						}
+
+						pending -= length;
+						offset += length;
+					}
+
+					if(!Packet::complete(receive_buffer))
+					{
+						this->log << "tcp: packet incomplete";
+						this->stats["receive packets incomplete"]++;
+						continue;
+					}
+
+					length = Packet::length(receive_buffer);
+					receive_buffer.resize(length);
+				}
+
+				command_response_t *command_response = new command_response_t;
+
+				static_assert(sizeof(command_response->ip.address.sin6_addr) >= sizeof(struct sockaddr));
+				static_assert(sizeof(command_response->ip.address.sin6_addr) >= sizeof(struct sockaddr_in));
+				static_assert(sizeof(command_response->ip.address.sin6_addr) >= sizeof(struct sockaddr_in6));
+
+				memcpy(&command_response->ip.address.sin6_addr, &si6_addr, si6_addr_length);
+				command_response->ip.address.sin6_length = si6_addr_length;
+				command_response->source = cli_source_wlan_tcp;
+				command_response->mtu = this->mtu;
+				command_response->packetised = 1;
+				command_response->packet = receive_buffer;
+
+				this->command->receive_queue_push(command_response);
+
+				command_response = nullptr;
+				receive_buffer.clear();
+
+				this->stats["receive packets"]++;
 			}
 
-			command_response_t *command_response = new command_response_t;
-
-			static_assert(sizeof(command_response->ip.address.sin6_addr) >= sizeof(struct sockaddr));
-			static_assert(sizeof(command_response->ip.address.sin6_addr) >= sizeof(struct sockaddr_in));
-			static_assert(sizeof(command_response->ip.address.sin6_addr) >= sizeof(struct sockaddr_in6));
-
-			memcpy(&command_response->ip.address.sin6_addr, &si6_addr, si6_addr_length);
-			command_response->ip.address.sin6_length = si6_addr_length;
-			command_response->source = cli_source_wlan_tcp;
-			command_response->mtu = this->mtu;
-			command_response->packetised = 1;
-			command_response->packet = tcp_receive_buffer;
-
-			Command::get().receive_queue_push(command_response);
-
-			command_response = nullptr;
-			tcp_receive_buffer.clear();
-			receive_packets++;
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			close(socket_fd);
+			socket_fd = -1;
 		}
 
-		close(socket_fd);
-		socket_fd = -1;
+		throw(hard_exception("tcp threadrunner: loop breaks"));
 	}
-}
+	catch(const hard_exception &e)
+	{
+		this->log.abort(std::format("tcp thread: hard exception: {}", e.what()).c_str());
+	}
+	catch(const transient_exception &e)
+	{
+		this->log.abort(std::format("tcp thread: transient exception: {}", e.what()).c_str());
+	}
+	catch(...)
+	{
+		this->log.abort("tcp thread: unknown exception");
+	}
 
-void TCP::run_wrapper(void *ptr)
-{
-	TCP *_this = static_cast<TCP *>(ptr);
-
-	_this->run();
+	for(;;)
+		(void)0;
 }
 
 void TCP::send(const command_response_t *command_response)
 {
 	int length, offset, chunk_length, sent;
 
-	assert(command_response);
+	if(!command_response)
+		throw(hard_exception("TCP::send: invalid argument"));
 
 	if(socket_fd < 0)
 	{
-		send_no_connection++;
-		goto error; // FIXME
+		this->stats["send no connection"]++;
+		return;
 	}
 
-	send_packets++;
+	this->stats["send packets"]++;
 
 	offset = 0;
 	length = command_response->packet.length();
@@ -282,77 +303,37 @@ void TCP::send(const command_response_t *command_response)
 	{
 		chunk_length = length;
 
-		if(chunk_length > mtu)
-			chunk_length = mtu;
+		if(chunk_length > this->mtu)
+			chunk_length = this->mtu;
 
 		sent = ::send(socket_fd, command_response->packet.data() + offset, chunk_length, 0);
 
-		send_segments++;
+		this->stats["send segments"]++;
 
 		if(sent <= 0)
 		{
-			send_errors++;
+			this->stats["send errors"]++;
 			break;
 		}
 
-		send_bytes += sent;
+		this->stats["send bytes"] += sent;
 
 		length -= sent;
 		offset += sent;
 
-		assert(length >= 0);
-		assert(offset <= command_response->packet.length());
+		if(length < 0)
+			throw(hard_exception("TCP::send: length < 0"));
+
+		if(offset > command_response->packet.length())
+			throw(hard_exception("TCP::send; offset >= command_response->packet.length()"));
 
 		if(length == 0)
 			break;
-
-		assert(offset < command_response->packet.length());
 	}
-
-error:
 }
 
-void TCP::command_info(cli_command_call_t *call)
+void TCP::info(std::string &out)
 {
-	assert(call->parameter_count == 0);
-
-	call->result = "TCP INFO";
-	call->result += "\nsending";
-	call->result += (boost::format("\n- sent bytes %u") % send_bytes).str();
-	call->result += (boost::format("\n- sent segments %u") % send_segments).str();
-	call->result += (boost::format("\n- sent packets: %u") % send_packets).str();
-	call->result += (boost::format("\n- send errors: %u") % send_errors).str();
-	call->result += (boost::format("\n- disconnected socket events: %u") % send_no_connection).str();
-	call->result += "\nreceiving";
-	call->result += (boost::format("\n- received bytes: %u") % receive_bytes).str();
-	call->result += (boost::format("\n- received packets: %u") % receive_packets).str();
-	call->result += (boost::format("\n- incomplete packets: %u") % receive_incomplete_packets).str();
-	call->result += (boost::format("\n- receive errors: %u") % receive_errors).str();
-	call->result += (boost::format("\n- accepted connections: %u") % receive_accepts).str();
-	call->result += (boost::format("\n- accept errors: %u") % receive_accept_errors).str();
-}
-
-static TCP *TCP_singleton = nullptr;
-
-void net_tcp_init(void)
-{
-	assert(!TCP_singleton);
-
-	TCP_singleton = new TCP();
-
-	assert(TCP_singleton);
-}
-
-void net_tcp_send(const command_response_t *command_response)
-{
-	assert(TCP_singleton);
-
-	return(TCP_singleton->send(command_response));
-}
-
-void net_tcp_command_info(cli_command_call_t *call)
-{
-	assert(TCP_singleton);
-
-	return(TCP_singleton->command_info(call));
+	for(const auto &it : this->stats)
+		out += std::format("\n{:<32s} {:d}", it.first, it.second);
 }

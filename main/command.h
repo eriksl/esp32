@@ -13,6 +13,7 @@
 #include "bt.h"
 #include "wlan.h"
 #include "udp.h"
+#include "tcp.h"
 #include "exception.h"
 #include "cli-command.h"
 
@@ -94,7 +95,7 @@ class Command final
 		static void udp_info(cli_command_call_t *);
 		static void tcp_info(cli_command_call_t *);
 
-		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &, Util &, PDM &, MCPWM &, FS &, BT &, WLAN &, UDP &);
+		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &, Util &, PDM &, MCPWM &, FS &, BT &, WLAN &, UDP &, TCP &);
 		Command() = delete;
 		Command(const Command &) = delete;
 
@@ -195,6 +196,7 @@ class Command final
 		static BT *bt_;
 		static WLAN *wlan_;
 		static UDP *udp_;
+		static TCP *tcp_;
 
 		typedef std::map<std::string, std::string> string_string_map;
 		string_string_map aliases;
@@ -213,6 +215,7 @@ class Command final
 		BT &bt;
 		WLAN &wlan;
 		UDP &udp;
+		TCP &tcp;
 
 		QueueHandle_t receive_queue_handle;
 		QueueHandle_t send_queue_handle;
