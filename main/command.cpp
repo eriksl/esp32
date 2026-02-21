@@ -464,6 +464,7 @@ const Command::cli_command_t Command::cli_commands[] =
 	{ nullptr, nullptr, nullptr, nullptr, {} },
 };
 
+//FIXME
 Command *Command::singleton = nullptr;
 Config *Command::config_ = nullptr;
 Console *Command::console_ = nullptr;
@@ -1795,13 +1796,13 @@ void Command::run_receive_queue()
 			catch(const transient_exception &e)
 			{
 				call.result = std::format("WARNING: {}", e.what());
-				*log_ << std::format("cli: transient exception: {}", e.what());
+				this->log << std::format("cli: transient exception: {}", e.what());
 				call.result_oob.clear();
 			}
 			catch(const hard_exception &e)
 			{
 				call.result = std::format("ERROR: {}", e.what());
-				*log_ << std::format("cli: hard exception: {}", e.what());
+				this->log << std::format("cli: hard exception: {}", e.what());
 				call.result_oob.clear();
 			}
 
@@ -1812,7 +1813,7 @@ void Command::run_receive_queue()
 			{
 				call.result = std::format("ERROR: packet mtu overflow, payload: {:d}, oob: {:d}, packet overhead: {:d}, mtu: {:d}",
 						call.result.size(), call.result_oob.size(), Packet::packet_header_size(), command_response->mtu);
-				*log_ << std::format("cli: {}", call.result);
+				this->log << std::format("cli: {}", call.result);
 				call.result_oob.clear();
 			}
 
@@ -1898,14 +1899,14 @@ void Command::run_send_queue()
 						command_response->packet.pop_back();
 
 					if(!command_response->packet.empty())
-						*log_ << std::format("script: {}: {}", command_response->script.name, command_response->packet);
+						this->log << std::format("script: {}: {}", command_response->script.name, command_response->packet);
 
 					break;
 				}
 
 				default:
 				{
-					*log_ << std::format("cli: invalid source type: {:d}", static_cast<int>(command_response->source));
+					this->log << std::format("cli: invalid source type: {:d}", static_cast<int>(command_response->source));
 					break;
 				}
 			}
