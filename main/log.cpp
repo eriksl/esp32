@@ -288,7 +288,7 @@ void Log::abort(std::string_view what)
 
 	try
 	{
-		this->log(std::format("abort: %s", what));
+		this->log(std::format("abort: {}", what));
 	}
 	catch(...)
 	{
@@ -304,5 +304,5 @@ std::string Log::esp_string_error(esp_err_t e, std::string_view message)
 
 std::string Log::errno_string_error(int e, std::string_view message)
 {
-	return(std::format("{}: \"{}\" [{:d}]", message, strerror(e), e));
+	return(std::format("{}: \"{}\" [{:d}]", message, strerror(e) ? : "(null)", e));
 }
