@@ -90,6 +90,4 @@ void command_alias(cli_command_call_t *call);
 
 void command_run(cli_command_call_t *call);
 
-void net_udp_command_info(cli_command_call_t *call);
-
 void net_tcp_command_info(cli_command_call_t *call);

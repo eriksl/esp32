@@ -12,6 +12,7 @@
 #include "fs.h"
 #include "bt.h"
 #include "wlan.h"
+#include "udp.h"
 #include "exception.h"
 #include "cli-command.h"
 
@@ -22,45 +23,6 @@ class Command final
 	public:
 
 		static constexpr int parameters_size = 16;
-
-#if 0
-		enum cli_parameter_type_description_t
-		{
-			cli_parameter_none = 0,
-			cli_parameter_unsigned_int,
-			cli_parameter_signed_int,
-			cli_parameter_float,
-			cli_parameter_string,
-			cli_parameter_string_raw,
-			cli_parameter_size,
-		};
-
-		struct cli_parameter_t
-		{
-			cli_parameter_type_description_t type:4;
-			unsigned int has_value:1;
-
-			union
-			{
-				unsigned int	unsigned_int;
-				int				signed_int;
-				float			fp;
-			};
-
-			std::string str;
-		};
-
-		struct cli_command_call_t
-		{
-			cli_source_t		source;
-			unsigned int		mtu;
-			unsigned int		parameter_count;
-			cli_parameter_t		parameters[parameters_size];
-			std::string			oob;
-			std::string			result;
-			std::string			result_oob;
-		};
-#endif
 
 		static void config_info(cli_command_call_t *);
 		static void config_set_int(cli_command_call_t *);
@@ -132,7 +94,7 @@ class Command final
 		static void udp_info(cli_command_call_t *);
 		static void tcp_info(cli_command_call_t *);
 
-		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &, Util &, PDM &, MCPWM &, FS &, BT &, WLAN &);
+		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &, Util &, PDM &, MCPWM &, FS &, BT &, WLAN &, UDP &);
 		Command() = delete;
 		Command(const Command &) = delete;
 
@@ -232,6 +194,7 @@ class Command final
 		static FS *fs_;
 		static BT *bt_;
 		static WLAN *wlan_;
+		static UDP *udp_;
 
 		typedef std::map<std::string, std::string> string_string_map;
 		string_string_map aliases;
@@ -249,6 +212,7 @@ class Command final
 		FS &fs;
 		BT &bt;
 		WLAN &wlan;
+		UDP &udp;
 
 		QueueHandle_t receive_queue_handle;
 		QueueHandle_t send_queue_handle;

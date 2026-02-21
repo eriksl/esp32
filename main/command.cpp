@@ -57,7 +57,6 @@ void command_io_stats(cli_command_call_t *call);
 void command_io_write(cli_command_call_t *call);
 void command_alias(cli_command_call_t *call);
 void command_run(cli_command_call_t *call);
-void net_udp_command_info(cli_command_call_t *call);
 void net_tcp_command_info(cli_command_call_t *call);
 
 //FIXME
@@ -479,14 +478,15 @@ MCPWM *Command::mcpwm_ = nullptr;
 FS *Command::fs_ = nullptr;
 BT *Command::bt_ = nullptr;
 WLAN *Command::wlan_ = nullptr;
+UDP *Command::udp_ = nullptr;
 
 Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, LedPWM &ledpwm_in,
 		Notify &notify_in, Log &log_in, System &system_in, Util &util_in, PDM &pdm_in, MCPWM &mcpwm_in,
-		FS &fs_in, BT &bt_in, WLAN &wlan_in)
+		FS &fs_in, BT &bt_in, WLAN &wlan_in, UDP &udp_in)
 	:
 		config(config_in), console(console_in), ledpixel(ledpixel_in), ledpwm(ledpwm_in),
 		notify(notify_in), log(log_in), system(system_in), util(util_in), pdm(pdm_in), mcpwm(mcpwm_in),
-		fs(fs_in), bt(bt_in), wlan(wlan_in)
+		fs(fs_in), bt(bt_in), wlan(wlan_in), udp(udp_in)
 {
 	if(this->singleton)
 		throw(hard_exception("Command: already activated"));
@@ -513,6 +513,7 @@ Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, 
 	this->fs_ = &fs;
 	this->bt_ = &bt;
 	this->wlan_ = &wlan;
+	this->udp_ = &udp;
 }
 
 Command &Command::get()
@@ -1380,14 +1381,6 @@ void Command::run(cli_command_call_t *call) // FIXME
 	command_run(call); // FIXME
 }
 
-void Command::udp_info(cli_command_call_t *call)
-{
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
-	net_udp_command_info(call); // FIXME
-}
-
 void Command::tcp_info(cli_command_call_t *call)
 {
 	if(!Command::singleton)
@@ -1483,6 +1476,16 @@ void Command::wlan_info(cli_command_call_t *call)
 	call->result = "WLAN INFO";
 
 	wlan_->info(call->result);
+}
+
+void Command::udp_info(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	call->result = "UDP INFO";
+
+	udp_->info(call->result);
 }
 
 command_response_t *Command::receive_queue_pop()
@@ -1885,7 +1888,7 @@ void Command::run_send_queue()
 
 				case(cli_source_wlan_udp):
 				{
-					net_udp_send(command_response);
+					this->udp.send(command_response);
 					break;
 				}
 
