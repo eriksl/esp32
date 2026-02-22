@@ -92,7 +92,7 @@ void Console::write_string(std::string_view data)
 	}
 }
 
-void Console::run_thread()
+void Console::thread_runner()
 {
 	static constexpr char backspace_string[] = { 0x08, 0x20, 0x08, 0x00 };
 	static constexpr char reprint_string[] = "^R\n";
@@ -337,18 +337,6 @@ void Console::run_thread()
 	}
 }
 
-void Console::run_thread_wrapper(void *this_)
-{
-	Console *console;
-
-	if(!this_)
-		throw(hard_exception("Console::run_thread_wrapper: nullptr passed"));
-
-	console = reinterpret_cast<Console *>(this_);
-
-	console->run_thread();
-}
-
 void Console::run(void)
 {
 	esp_err_t rv;
@@ -369,7 +357,8 @@ void Console::run(void)
 	if((rv = esp_pthread_set_cfg(&thread_config)) != ESP_OK)
 		throw(hard_exception(Log::get().esp_string_error(rv, "Console::run: esp_pthread_set_cfg")));
 
-	std::thread new_thread(this->run_thread_wrapper, this);
+	std::thread new_thread([this]() { this->thread_runner(); });
+
 	new_thread.detach();
 
 	this->running = true;

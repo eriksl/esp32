@@ -541,7 +541,7 @@ void Command::run()
 	//thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
 	esp_pthread_set_cfg(&thread_config);
 
-	std::thread receive_thread(run_receive_queue_wrapper, this);
+	std::thread receive_thread([this]() { this->run_receive_queue(); });
 
 	receive_thread.detach();
 
@@ -550,10 +550,10 @@ void Command::run()
 	thread_config.pin_to_core = 1;
 	thread_config.stack_size = 3 * 1024;
 	thread_config.prio = 1;
-	//thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+	thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
 	esp_pthread_set_cfg(&thread_config);
 
-	std::thread send_thread(run_send_queue_wrapper, this);
+	std::thread send_thread([this]() { this->run_send_queue(); });
 
 	send_thread.detach();
 }
@@ -1533,18 +1533,6 @@ command_response_t *Command::send_queue_pop()
 	return(command_response);
 }
 
-void Command::run_receive_queue_wrapper(void *command_)
-{
-	Command *command;
-
-	if(!command_)
-		throw(hard_exception("Command::run_receive_queue_wrapper: invalid argument"));
-
-	command = reinterpret_cast<Command *>(command_);
-
-	command->run_receive_queue();
-}
-
 void Command::run_receive_queue()
 {
 	command_response_t					*command_response;
@@ -1829,35 +1817,23 @@ void Command::run_receive_queue()
 	}
 	catch(const hard_exception &e)
 	{
-		log_->abort(std::format("Command::run_receive_queue: uncaught hard exception: {}", e.what()));
+		this->log.abort(std::format("Command::run_receive_queue: uncaught hard exception: {}", e.what()));
 	}
 	catch(const transient_exception &e)
 	{
-		log_->abort(std::format("Command::run_receive_queue: uncaught transient exception: {}", e.what()));
+		this->log.abort(std::format("Command::run_receive_queue: uncaught transient exception: {}", e.what()));
 	}
 	catch(const std::exception &e)
 	{
-		log_->abort(std::format("Command::run_receive_queue: uncaught generic exception: {}", e.what()));
+		this->log.abort(std::format("Command::run_receive_queue: uncaught generic exception: {}", e.what()));
 	}
 	catch(...)
 	{
-		log_->abort("Command::run_receive_queue: uncaught unknown exception");
+		this->log.abort("Command::run_receive_queue: uncaught unknown exception");
 	}
 
 	for(;;) // prevent compiler error
 		(void)0;
-}
-
-void Command::run_send_queue_wrapper(void *command_)
-{
-	Command *command;
-
-	if(!command_)
-		throw(hard_exception("Command::run_send_queue_wrapper: invalid argument"));
-
-	command = reinterpret_cast<Command *>(command_);
-
-	command->run_send_queue();
 }
 
 void Command::run_send_queue()

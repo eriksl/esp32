@@ -33,6 +33,5 @@ class TCP final
 		std::map<std::string, int> stats;
 		bool running;
 
-		[[noreturn]] static void thread_wrapper(void *);
 		[[noreturn]] void thread_runner();
 };

@@ -226,9 +226,7 @@ class Command final
 		command_response_t *receive_queue_pop();
 		void send_queue_push(command_response_t *command_response);
 		command_response_t *send_queue_pop();
-		[[noreturn]] static void run_receive_queue_wrapper(void *);
 		[[noreturn]] void run_receive_queue();
-		[[noreturn]] static void run_send_queue_wrapper(void *);
 		[[noreturn]] void run_send_queue();
 		void alias_command(cli_command_call_t *call);
 		void alias_expand(std::string &data) const;

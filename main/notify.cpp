@@ -208,25 +208,13 @@ void Notify::run()
 	if((rv = esp_pthread_set_cfg(&thread_config)) != ESP_OK)
 		throw(hard_exception("Notify::run: esp_pthread_set_cfg"));
 
-	std::thread new_thread(this->run_thread_wrapper, this);
+	std::thread new_thread([this]() { this->thread_runner(); });
 	new_thread.detach();
 
 	this->running = true;
 }
 
-void Notify::run_thread_wrapper(void *this_)
-{
-	Notify *notify;
-
-	if(!this_)
-		throw(hard_exception("Notify::run_thread_wrapper: nullptr passed"));
-
-	notify = reinterpret_cast<Notify *>(this_);
-
-	notify->run_thread();
-}
-
-void Notify::run_thread()
+void Notify::thread_runner()
 {
 	const notification_info_t *info_ptr;
 	const phase_t *phase_ptr;

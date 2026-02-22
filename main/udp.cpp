@@ -60,20 +60,11 @@ void UDP::run()
 	if((rv = esp_pthread_set_cfg(&thread_config)) != ESP_OK)
 		throw(hard_exception(this->log.esp_string_error(rv, "esp_pthread_set_cfg")));
 
-	std::thread new_thread(UDP::thread_wrapper, this);
+	std::thread new_thread([this]() { this->thread_runner(); });
 
 	this->running = true;
 
 	new_thread.detach();
-}
-
-void UDP::thread_wrapper(void *in)
-{
-	UDP *this_;
-
-	this_ = reinterpret_cast<UDP *>(in);
-
-	this_->thread_runner();
 }
 
 void UDP::thread_runner()

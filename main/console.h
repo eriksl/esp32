@@ -57,8 +57,7 @@ class Console final
 		char read_byte();
 		void write_string(std::string_view);
 		void prompt();
-		void run_thread();
-		static void run_thread_wrapper(void *);
+		void thread_runner();
 
 		static_assert(usb_uart_rx_buffer_size > 64); // required by driver
 		static_assert(usb_uart_tx_buffer_size > 64); // required by driver

@@ -63,6 +63,5 @@ class Notify final
 		Notification current_notification;
 		int current_phase;
 
-		static void run_thread_wrapper(void *);
-		void run_thread();
+		void thread_runner();
 };
