@@ -1931,19 +1931,19 @@ void Command::run_send_queue()
 	}
 	catch(const hard_exception &e)
 	{
-		log_->abort(std::format("Command::run_send_queue: uncaught hard exception: {}", e.what()));
+		this->log.abort(std::format("Command::run_send_queue: uncaught hard exception: {}", e.what()));
 	}
 	catch(const transient_exception &e)
 	{
-		log_->abort(std::format("Command::run_send_queue: uncaught transient exception: {}", e.what()));
+		this->log.abort(std::format("Command::run_send_queue: uncaught transient exception: {}", e.what()));
 	}
 	catch(const std::exception &e)
 	{
-		log_->abort(std::format("Command::run_send_queue: uncaught generic exception: {}", e.what()));
+		this->log.abort(std::format("Command::run_send_queue: uncaught generic exception: {}", e.what()));
 	}
 	catch(...)
 	{
-		log_->abort("Command::run_send_queue: uncaught unknown exception");
+		this->log.abort("Command::run_send_queue: uncaught unknown exception");
 	}
 
 	for(;;) // prevent compiler error
