@@ -17,15 +17,19 @@
 #include "command.h"
 #include "cli-command.h"
 
+#include <map>
+#include <array>
+#include <algorithm>
+#include <chrono>
 #include <format>
 #include <thread>
-#include <map>
-#include <algorithm>
 
 #include <esp_pthread.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+
+#include <esp_pthread.h>
 
 //FIXME
 void flash_command_bench(cli_command_call_t *call);
@@ -1375,14 +1379,6 @@ void Command::alias(cli_command_call_t *call)
 	Command::singleton->alias_command(call);
 }
 
-void Command::run(cli_command_call_t *call) // FIXME
-{
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
-	command_run(call); // FIXME
-}
-
 void Command::alias_command(cli_command_call_t *call)
 {
 	string_string_map::const_iterator it;
@@ -1490,6 +1486,48 @@ void Command::tcp_info(cli_command_call_t *call)
 	call->result = "TCP INFO";
 
 	tcp_->info(call->result);
+}
+
+void Command::run(cli_command_call_t *call)
+{
+	unsigned int ix;
+	esp_err_t rv;
+	esp_pthread_cfg_t thread_config = esp_pthread_get_default_config();
+	auto *thread_state = new script_state_t();
+
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	thread_state->repeat.active = false;
+	thread_state->repeat.target = 0;
+	thread_state->repeat.current = 0;
+	thread_state->script = call->parameters[0].str;
+
+	for(ix = 1; ix < call->parameter_count; ix++)
+		thread_state->parameter.push_back(call->parameters[ix].str);
+
+	thread_state->file.open(std::format("/ramdisk/{}", thread_state->script));
+
+	if(thread_state->file.fail())
+	{
+		thread_state->file.open(std::format("/littlefs/{}", thread_state->script));
+
+		if(thread_state->file.fail())
+			throw(transient_exception(std::format("run script: script {} not found", thread_state->script)));
+	}
+
+	thread_config.thread_name = call->parameters[0].str.c_str();
+	thread_config.pin_to_core = 1;
+	thread_config.stack_size = 4 * 1024;
+	thread_config.prio = 1;
+	//thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT; // NOTE: uses littlefs -> accesses flash, cannot have stack in SPI RAM
+
+	if((rv = esp_pthread_set_cfg(&thread_config)) != ESP_OK)
+		throw(hard_exception(log_->esp_string_error(rv, "Command::run: esp_pthread_set_cfg")));
+
+	std::thread new_thread([thread_state]() { Command::singleton->script_thread_runner(thread_state); });
+
+	new_thread.detach();
 }
 
 command_response_t *Command::receive_queue_pop()
@@ -1959,4 +1997,251 @@ void Command::alias_expand(std::string &data) const
 	parameters = data.substr(delimiter);
 
 	data = it->second + parameters;
+}
+
+void Command::script_thread_runner(script_state_t *thread_state)
+{
+	try
+	{
+		std::deque<script_state_t *> script_thread_states;
+		std::string initial_script, line, command, expanded_line;
+		unsigned int parameter_index;
+		size_t pos, start, end;
+
+		initial_script = thread_state->script;
+		script_thread_states.push_front(thread_state);
+
+		while(script_thread_states.size() > 0)
+		{
+			thread_state = script_thread_states.front();
+			script_thread_states.pop_front();
+
+			while(std::getline(thread_state->file, line))
+			{
+				while(!line.empty() && (line.back() == '\n'))
+					line.pop_back();
+
+				expanded_line.clear();
+
+				for(std::string::const_iterator it = line.begin(); it != line.end(); it++) // FIXME: make dedicated parser
+				{
+					if(*it != '$')
+					{
+						expanded_line.append(1, *it);
+						continue;
+					}
+
+					if((it + 1) == line.end())
+					{
+						expanded_line.append(1, '!');
+						continue;
+					}
+
+					if((it[1] >= '0') && (it[1] <= '9'))
+					{
+						parameter_index = static_cast<int>(it[1] - '0');
+
+						if(parameter_index < thread_state->parameter.size())
+							expanded_line.append(thread_state->parameter.at(parameter_index));
+						else
+							expanded_line.append(std::format("!{:d}", parameter_index));
+
+						it++;
+
+						continue;
+					}
+
+					if(it[1] == 'r')
+					{
+						expanded_line.append(std::format("{:d}", thread_state->repeat.current));
+
+						it++;
+
+						continue;
+					}
+
+					if(it[1] == 'R')
+					{
+						expanded_line.append(std::format("{:d}", thread_state->repeat.target));
+
+						it++;
+
+						continue;
+					}
+
+					expanded_line.append(1, *it);
+				}
+
+				if((pos = expanded_line.find(' ')) == std::string::npos)
+					command = expanded_line;
+				else
+					command = expanded_line.substr(0, pos);
+
+				if(command == "stop")
+				{
+					this->log << std::format("{}: STOP", thread_state->script);
+					break;
+				}
+
+				if(command == "call")
+				{
+					script_thread_states.push_front(thread_state);
+
+					thread_state = new script_state_t();
+
+					thread_state->repeat.active = false;
+					thread_state->repeat.target = 0;
+					thread_state->repeat.current = 0;
+
+					for(start = expanded_line.find(' '); (start != std::string::npos) && (start < expanded_line.length()) && (expanded_line.at(start) == ' '); start++)
+						(void)0;
+
+					end = expanded_line.find(' ', start);
+
+					if(end == std::string::npos)
+					{
+						thread_state->script = expanded_line.substr(start);
+						start = std::string::npos;
+					}
+					else
+					{
+						thread_state->script = expanded_line.substr(start, end - start);
+						start = end + 1;
+					}
+
+					while((start != std::string::npos) && (start < expanded_line.length()))
+					{
+						end = expanded_line.find(' ', start);
+
+						if(end == std::string::npos)
+						{
+							thread_state->parameter.push_back(expanded_line.substr(start));
+							start = std::string::npos;
+						}
+						else
+						{
+							thread_state->parameter.push_back(expanded_line.substr(start, end - start));
+							start = end + 1;
+						}
+					}
+
+					thread_state->file.open(std::format("/ramdisk/{}", thread_state->script));
+
+					if(thread_state->file.fail())
+					{
+						thread_state->file.open(std::format("/littlefs/{}", thread_state->script));
+
+						if(thread_state->file.fail())
+							throw(transient_exception(std::format("script: script {} in call statement from top level script {} not found", thread_state->script, initial_script)));
+					}
+
+					continue;
+				}
+
+				if(command == "pause")
+				{
+					int sleep_msec;
+
+					if(pos == std::string::npos)
+						sleep_msec = 1000;
+					else
+					{
+						try
+						{
+							sleep_msec = static_cast<int>(std::stof(expanded_line.substr(pos)) * 1000.0f);
+						}
+						catch(...)
+						{
+							sleep_msec = 1000;
+						}
+					}
+
+					if((sleep_msec > 0) && (sleep_msec >= 10))
+						std::this_thread::sleep_for(std::chrono::milliseconds(sleep_msec));
+
+					continue;
+				}
+
+				if(command == "repeat")
+				{
+					if(thread_state->repeat.active)
+					{
+						if((thread_state->repeat.target != 0) && (thread_state->repeat.current++ >= thread_state->repeat.target))
+						{
+							thread_state->repeat.target = 0;
+							thread_state->repeat.current = 0;
+							thread_state->repeat.active = false;
+						}
+						else
+						{
+							thread_state->file.seekg(0);
+							std::this_thread::sleep_for(std::chrono::milliseconds(100));
+						}
+					}
+					else
+					{
+						int target = 0;
+
+						if(pos != std::string::npos)
+						{
+							try
+							{
+								target = static_cast<unsigned int>(std::stol(expanded_line.substr(pos)));
+							}
+							catch(...)
+							{
+								target = 0;
+							}
+						}
+
+						if(target < 1)
+							throw(transient_exception(std::format("script: invalid repeat count: {:d}", target)));
+
+						thread_state->repeat.target = target;
+						thread_state->repeat.current = 1;
+						thread_state->repeat.active = true;
+						thread_state->file.seekg(0);
+						std::this_thread::sleep_for(std::chrono::milliseconds(100));
+					}
+
+					continue;
+				}
+
+				command_response_t *command_response = new command_response_t;
+
+				command_response->source = cli_source_script;
+				command_response->mtu = 120;
+				command_response->packetised = 0;
+				command_response->packet = expanded_line;
+				command_response->script.name = thread_state->script;
+				command_response->script.task = xTaskGetCurrentTaskHandle();
+
+				this->receive_queue_push(command_response);
+
+				ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+				command_response = nullptr;
+			}
+
+			delete thread_state;
+		}
+	}
+	catch(const hard_exception &e)
+	{
+		this->log << std::format("script: hard exception: {}", e.what()).c_str();
+	}
+	catch(const transient_exception &e)
+	{
+		this->log << std::format("script: transient exception: {}", e.what()).c_str();
+	}
+	catch(const std::exception &e)
+	{
+		this->log << std::format("script: standard exception: {}", e.what()).c_str();
+	}
+	catch(...)
+	{
+		this->log << "script: unknown exception";
+	}
+
+	//FIXME may need to kill itself
 }

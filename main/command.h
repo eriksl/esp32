@@ -18,6 +18,8 @@
 #include "cli-command.h"
 
 #include <string>
+#include <deque>
+#include <fstream>
 
 class Command final
 {
@@ -108,6 +110,21 @@ class Command final
 
 		static constexpr int receive_queue_size = 8;
 		static constexpr int send_queue_size = 8;
+
+		typedef std::deque<std::string> string_deque_t;
+
+		struct script_state_t
+		{
+			std::string script;
+			std::ifstream file;
+			struct
+			{
+				bool active;
+				unsigned int target;
+				unsigned int current;
+			} repeat;
+			string_deque_t parameter;
+		};
 
 		typedef void(cli_command_function_t)(cli_command_call_t *);
 
@@ -230,4 +247,5 @@ class Command final
 		[[noreturn]] void run_send_queue();
 		void alias_command(cli_command_call_t *call);
 		void alias_expand(std::string &data) const;
+		void script_thread_runner(script_state_t *);
 };

@@ -24,27 +24,24 @@ struct command_response_t
 		unsigned int packetised:1;
 	};
 
-	union
+	struct
+	{
+		unsigned int connection_handle;
+		unsigned int attribute_handle;
+	} bt;
+
+	struct
 	{
 		struct
 		{
-			unsigned int connection_handle;
-			unsigned int attribute_handle;
-		} bt;
+			unsigned int sin6_length;
+			char sin6_addr[32];
+		} address;
+	} ip;
 
-		struct
-		{
-			struct
-			{
-				unsigned int sin6_length;
-				char sin6_addr[32];
-			} address;
-		} ip;
-
-		struct
-		{
-			char name[16];
-			void *task; // TaskHandle_t
-		} script;
-	};
+	struct
+	{
+		std::string name;
+		void *task; // TaskHandle_t
+	} script;
 };

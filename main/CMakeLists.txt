@@ -22,7 +22,6 @@ idf_component_register(
 		"esp32-common/packet.cpp"
 		"pdm.cpp"
 		"ramdisk.cpp"
-		"script.cpp"
 		"sensor.cpp"
 		"system.cpp"
 		"tcp.cpp"
