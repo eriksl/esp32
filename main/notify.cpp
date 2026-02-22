@@ -4,6 +4,7 @@
 #include "ledpwm.h"
 #include "exception.h"
 #include "util.h"
+#include "log.h"
 
 #include "format"
 #include "thread"
@@ -231,37 +232,55 @@ void Notify::run_thread()
 	const phase_t *phase_ptr;
 	int sleep_ms = 0;
 
-	for(;;)
+	try
 	{
-		std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
-
-		if(!magic_enum::enum_contains<Notification>(this->current_notification))
+		for(;;)
 		{
-			sleep_ms = 100;
-			continue;
+			std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+
+			if(!magic_enum::enum_contains<Notification>(this->current_notification))
+			{
+				sleep_ms = 100;
+				continue;
+			}
+
+			this->current_phase++;
+
+			if((this->current_phase < 0) || (this->current_phase >= this->phase_size))
+				this->current_phase = 0;
+
+			info_ptr = &this->notification_info[magic_enum::enum_integer(this->current_notification)];
+
+			assert(info_ptr->notification == this->current_notification);
+
+			phase_ptr = &info_ptr->phase[this->current_phase];
+
+			if(this->using_ledpixel)
+			{
+				Ledpixel::get().set(Ledpixel::Channel::channel_0_notify, 0, phase_ptr->colour.r, phase_ptr->colour.g, phase_ptr->colour.b);
+				Ledpixel::get().flush(Ledpixel::Channel::channel_0_notify);
+			}
+
+			if(this->using_ledpwm)
+				LedPWM::get().set(LedPWM::Channel::channel_14bit_5khz_notify, (1UL << phase_ptr->duty_shift) - 1);
+
+			sleep_ms = phase_ptr->time_ms ? : 100;
 		}
-
-		this->current_phase++;
-
-		if((this->current_phase < 0) || (this->current_phase >= this->phase_size))
-			this->current_phase = 0;
-
-		info_ptr = &this->notification_info[magic_enum::enum_integer(this->current_notification)];
-
-		assert(info_ptr->notification == this->current_notification);
-
-		phase_ptr = &info_ptr->phase[this->current_phase];
-
-		if(this->using_ledpixel)
-		{
-			Ledpixel::get().set(Ledpixel::Channel::channel_0_notify, 0, phase_ptr->colour.r, phase_ptr->colour.g, phase_ptr->colour.b);
-			Ledpixel::get().flush(Ledpixel::Channel::channel_0_notify);
-		}
-
-		if(this->using_ledpwm)
-			LedPWM::get().set(LedPWM::Channel::channel_14bit_5khz_notify, (1UL << phase_ptr->duty_shift) - 1);
-
-		sleep_ms = phase_ptr->time_ms ? : 100;
+	}
+	catch(const hard_exception &e)
+	{
+		Console::emergency_wall(std::format("notify thread: hard exception: {}", e.what()).c_str());
+		::abort();
+	}
+	catch(const transient_exception &e)
+	{
+		Console::emergency_wall(std::format("notify thread: transient exception: {}", e.what()).c_str());
+		::abort();
+	}
+	catch(...)
+	{
+		Console::emergency_wall("notify thread: unknown exception");
+		::abort();
 	}
 }
 
