@@ -93,7 +93,7 @@ class Command final
 		static void io_stats(cli_command_call_t *);
 		static void io_write(cli_command_call_t *);
 		static void alias(cli_command_call_t *);
-		static void run(cli_command_call_t *);
+		static void command_run(cli_command_call_t *);
 		static void udp_info(cli_command_call_t *);
 		static void tcp_info(cli_command_call_t *);
 		static void cat(cli_command_call_t *);
@@ -240,7 +240,8 @@ class Command final
 		bool running;
 
 		std::string make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2);
-		void help(std::string &, const std::string &filter = "");
+		void help(std::string &out);
+		void help(std::string &out, std::string_view filter);
 		command_response_t *receive_queue_pop();
 		void send_queue_push(command_response_t *);
 		command_response_t *send_queue_pop();

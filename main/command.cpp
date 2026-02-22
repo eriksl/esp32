@@ -414,7 +414,7 @@ const Command::cli_command_t Command::cli_commands[] =
 
 	{ "reset", "r", "reset", Command::reset, {}},
 
-	{ "run", nullptr, "run a script", Command::run,
+	{ "run", nullptr, "run a script", Command::command_run,
 		{	5,
 			{
 				{ cli_parameter_string, 0, 1, 0, 0, "script name", {}},
@@ -570,7 +570,19 @@ void Command::run()
 	send_thread.detach();
 }
 
-void Command::help(std::string &out, const std::string &filter)
+void Command::help(std::string &out)
+{
+	unsigned int command_index;
+	const cli_command_t *command;
+
+	for(command_index = 0; cli_commands[command_index].name; command_index++)
+	{
+		command = &cli_commands[command_index];
+		out += std::format("\n  {:<18s} {:<4s} {}", command->name, command->alias ? command->alias : "", command->help ? command->help : "");
+	}
+}
+
+void Command::help(std::string &out, std::string_view filter)
 {
 	unsigned int command_index, parameter_index;
 	const cli_command_t *command;
@@ -581,31 +593,28 @@ void Command::help(std::string &out, const std::string &filter)
 	{
 		command = &cli_commands[command_index];
 
-		if(filter.length() && (filter != command->name) && (!command->alias || (filter != command->alias)))
+		if((filter != command->name) && (!command->alias || (filter != command->alias)))
 			continue;
 
 		out += std::format("\n  {:<18s} {:<4s} {}", command->name, command->alias ? command->alias : "", command->help ? command->help : "");
 
-		if(filter.length())
+		for(parameter_index = 0; parameter_index < command->parameters_description.count; parameter_index++)
 		{
-			for(parameter_index = 0; parameter_index < command->parameters_description.count; parameter_index++)
+			parameter = &command->parameters_description.entries[parameter_index];
+
+			if(parameter->value_required)
 			{
-				parameter = &command->parameters_description.entries[parameter_index];
-
-				if(parameter->value_required)
-				{
-					delimiter[0] = "[";
-					delimiter[1] = "]";
-				}
-				else
-				{
-					delimiter[0] = "(";
-					delimiter[1] = ")";
-				}
-
-				out += std::format(" {}{} {}{}", delimiter[0], this->parameter_type_to_string.at(parameter->type),
-						parameter->description ? parameter->description : "", delimiter[1]);
+				delimiter[0] = "[";
+				delimiter[1] = "]";
 			}
+			else
+			{
+				delimiter[0] = "(";
+				delimiter[1] = ")";
+			}
+
+			out += std::format(" {}{} {}{}", delimiter[0], this->parameter_type_to_string.at(parameter->type),
+					parameter->description ? parameter->description : "", delimiter[1]);
 		}
 	}
 }
@@ -1100,11 +1109,10 @@ void Command::command_help(cli_command_call_t *call)
 
 	call->result = "HELP";
 
-	if(call->parameter_count == 2)
-		singleton->help(call->result, call->parameters[1].str);
+	if(call->parameter_count > 0)
+		singleton->help(call->result, call->parameters[0].str);
 	else
 		singleton->help(call->result);
-
 }
 
 void Command::hostname(cli_command_call_t *call)
@@ -1548,7 +1556,7 @@ void Command::cat(cli_command_call_t *call)
 		call->result += "\n(...)";
 }
 
-void Command::run(cli_command_call_t *call)
+void Command::command_run(cli_command_call_t *call)
 {
 	unsigned int ix;
 	esp_err_t rv;
