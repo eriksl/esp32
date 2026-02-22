@@ -96,6 +96,7 @@ class Command final
 		static void run(cli_command_call_t *);
 		static void udp_info(cli_command_call_t *);
 		static void tcp_info(cli_command_call_t *);
+		static void cat(cli_command_call_t *);
 
 		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &, Util &, PDM &, MCPWM &, FS &, BT &, WLAN &, UDP &, TCP &);
 		Command() = delete;

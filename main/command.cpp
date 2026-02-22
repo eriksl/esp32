@@ -101,6 +101,14 @@ const Command::cli_command_t Command::cli_commands[] =
 		}
 	},
 
+	{ "show-file", "cat", "show the contents of a  file", Command::cat,
+		{	1,
+			{
+				{ cli_parameter_string, 0, 1, 0, 0, "file", {}},
+			},
+		}
+	},
+
 	{ "command-info", "comi", "show info about command processing", Command::info, {}},
 	{ "config-dump", "cd", "dump all nvs keys", Command::config_dump, {}},
 
@@ -1486,6 +1494,58 @@ void Command::tcp_info(cli_command_call_t *call)
 	call->result = "TCP INFO";
 
 	tcp_->info(call->result);
+}
+
+void Command::cat(cli_command_call_t *call)
+{
+	int lines, chars;
+	std::string line;
+	std::ifstream file;
+
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	file.open(call->parameters[0].str);
+
+	if(file.fail())
+		file.open(std::format("/ramdisk/{}", call->parameters[0].str));
+
+	if(file.fail())
+		file.open(std::format("/littlefs/{}", call->parameters[0].str));
+
+	if(file.fail())
+		throw(transient_exception(std::format("cat: cannot open file {}", call->parameters[0].str)));
+
+	for(lines = 0; (lines < 22) && std::getline(file, line); lines++)
+	{
+		chars = 0;
+
+		for(const auto &current : line)
+		{
+			if(chars > 100)
+			{
+				call->result += "(...)";
+				break;
+			}
+
+			if((current < ' ') || (current > '~'))
+			{
+				chars += 4;
+				call->result += std::format("[{:02x}]", current);
+			}
+			else
+			{
+				chars++;
+				call->result += current;
+			}
+		}
+		call->result += "\n";
+	}
+
+	file.close();
+
+	if(lines >= 22)
+		call->result += "\n(...)";
 }
 
 void Command::run(cli_command_call_t *call)
