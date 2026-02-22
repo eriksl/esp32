@@ -46,24 +46,11 @@ typedef struct
 
 typedef void(cli_command_function_t)(cli_command_call_t *);
 
-void bluetooth_command_info(cli_command_call_t *call);
-void bluetooth_command_key(cli_command_call_t *call);
-
-void flash_command_bench(cli_command_call_t *call);
-void flash_command_checksum(cli_command_call_t *call);
-void flash_command_info(cli_command_call_t *call);
-void flash_command_read(cli_command_call_t *call);
-void flash_command_write(cli_command_call_t *call);
-
 void command_ota_start(cli_command_call_t *call);
 void command_ota_write(cli_command_call_t *call);
 void command_ota_finish(cli_command_call_t *call);
 void command_ota_commit(cli_command_call_t *call);
 void command_ota_confirm(cli_command_call_t *call);
-
-void wlan_command_client_config(cli_command_call_t *call);
-void wlan_command_info(cli_command_call_t *call);
-void wlan_command_ipv6_static(cli_command_call_t *call);
 
 void command_display_brightness(cli_command_call_t *call);
 void command_display_configure(cli_command_call_t *call);
@@ -85,9 +72,3 @@ void command_io_dump(cli_command_call_t *call);
 void command_io_read(cli_command_call_t *call);
 void command_io_stats(cli_command_call_t *call);
 void command_io_write(cli_command_call_t *call);
-
-void command_alias(cli_command_call_t *call);
-
-void command_run(cli_command_call_t *call);
-
-void net_tcp_command_info(cli_command_call_t *call);

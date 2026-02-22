@@ -239,13 +239,13 @@ class Command final
 		bool running;
 
 		std::string make_exception_text(std::string_view fn, std::string_view message1, std::string_view message2);
-		void help(std::string &out, const std::string &filter = "");
+		void help(std::string &, const std::string &filter = "");
 		command_response_t *receive_queue_pop();
-		void send_queue_push(command_response_t *command_response);
+		void send_queue_push(command_response_t *);
 		command_response_t *send_queue_pop();
 		[[noreturn]] void run_receive_queue();
 		[[noreturn]] void run_send_queue();
-		void alias_command(cli_command_call_t *call);
-		void alias_expand(std::string &data) const;
+		void alias_command(cli_command_call_t *);
+		void alias_expand(std::string &) const;
 		void script_thread_runner(script_state_t *);
 };

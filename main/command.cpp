@@ -1151,7 +1151,7 @@ void Command::write(cli_command_call_t *call)
 	if(!Command::singleton)
 		throw(hard_exception("Command: not activated"));
 
-	if(call->parameter_count == 1)
+	if(call->parameter_count > 0)
 		call->result = call->parameters[0].str;
 }
 
