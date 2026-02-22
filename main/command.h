@@ -20,6 +20,7 @@
 #include <string>
 #include <deque>
 #include <fstream>
+#include <mutex>
 
 class Command final
 {
@@ -97,6 +98,8 @@ class Command final
 		static void udp_info(cli_command_call_t *);
 		static void tcp_info(cli_command_call_t *);
 		static void cat(cli_command_call_t *);
+		static void script_info(cli_command_call_t *);
+		static void script_stop(cli_command_call_t *);
 
 		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &, Util &, PDM &, MCPWM &, FS &, BT &, WLAN &, UDP &, TCP &);
 		Command() = delete;
@@ -125,6 +128,13 @@ class Command final
 				unsigned int current;
 			} repeat;
 			string_deque_t parameter;
+		};
+
+		struct script_thread_t
+		{
+			std::string command_line;
+			bool stop;
+			bool stopping;
 		};
 
 		typedef void(cli_command_function_t)(cli_command_call_t *);
@@ -249,5 +259,7 @@ class Command final
 		[[noreturn]] void run_send_queue();
 		void alias_command(cli_command_call_t *);
 		void alias_expand(std::string &) const;
+		std::mutex script_thread_mutex;
 		void script_thread_runner(script_state_t *);
+		std::map<int, script_thread_t> script_thread_map;
 };

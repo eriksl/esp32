@@ -422,6 +422,21 @@ const Command::cli_command_t Command::cli_commands[] =
 				{ cli_parameter_string, 0, 0, 0, 0, "parameter 2", {}},
 				{ cli_parameter_string, 0, 0, 0, 0, "parameter 3", {}},
 				{ cli_parameter_string, 0, 0, 0, 0, "parameter 4", {}},
+				{ cli_parameter_string, 0, 0, 0, 0, "parameter 5", {}},
+				{ cli_parameter_string, 0, 0, 0, 0, "parameter 6", {}},
+				{ cli_parameter_string, 0, 0, 0, 0, "parameter 7", {}},
+				{ cli_parameter_string, 0, 0, 0, 0, "parameter 8", {}},
+				{ cli_parameter_string, 0, 0, 0, 0, "parameter 9", {}},
+			},
+		},
+	},
+
+	{ "script-info", "sci", "info about running scripts", Command::script_info, {}},
+
+	{ "script-stop", "scs", "info about running scripts", Command::script_stop,
+		{	1,
+			{
+				{ cli_parameter_unsigned_int, 0, 0, 0, 0, "script thread id to stop", { .unsigned_int = { 0, 0 }}},
 			},
 		},
 	},
@@ -1598,6 +1613,49 @@ void Command::command_run(cli_command_call_t *call)
 	new_thread.detach();
 }
 
+void Command::script_info(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	Command::singleton->script_thread_mutex.lock();
+
+	call->result = "SCRIPT THREADS:";
+
+	for(auto const &script : Command::singleton->script_thread_map)
+		call->result += std::format("\n{:2d}: {}, stop sent: {}, stopping: {}", script.first, script.second.command_line, util_->yesno(script.second.stop), util_->yesno(script.second.stopping));
+
+	Command::singleton->script_thread_mutex.unlock();
+}
+
+void Command::script_stop(cli_command_call_t *call)
+{
+	int filter;
+
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	if(call->parameter_count == 0)
+		filter = -1;
+	else
+		filter = call->parameters[0].unsigned_int;
+
+	call->result += "Stopping script threads:";
+
+	Command::singleton->script_thread_mutex.lock();
+
+	for(auto &script : Command::singleton->script_thread_map)
+	{
+		if((script.first == filter) || (filter < 0))
+		{
+			script.second.stop = true;
+			call->result += std::format("\nscript \"{}\" [{:d}] closing down", script.second.command_line, script.first);
+		}
+	}
+
+	Command::singleton->script_thread_mutex.unlock();
+}
+
 command_response_t *Command::receive_queue_pop()
 {
 	command_response_t *command_response = nullptr;
@@ -2069,12 +2127,35 @@ void Command::alias_expand(std::string &data) const
 
 void Command::script_thread_runner(script_state_t *thread_state)
 {
+	int task_id = 0;
+
 	try
 	{
 		std::deque<script_state_t *> script_thread_states;
 		std::string initial_script, line, command, expanded_line;
 		unsigned int parameter_index;
 		size_t pos, start, end;
+		TaskStatus_t status;
+		script_thread_t script_thread;
+		bool stop;
+
+		vTaskGetInfo(nullptr, &status, pdFALSE, eReady);
+		task_id = static_cast<int>(status.xTaskNumber);
+
+		script_thread.command_line = thread_state->script;
+
+		for(const auto &parm : thread_state->parameter)
+		{
+			script_thread.command_line += " ";
+			script_thread.command_line += parm;
+		}
+
+		script_thread.stop = false;
+		script_thread.stopping = false;
+
+		this->script_thread_mutex.lock();
+		this->script_thread_map[task_id] = script_thread;
+		this->script_thread_mutex.unlock();
 
 		initial_script = thread_state->script;
 		script_thread_states.push_front(thread_state);
@@ -2086,6 +2167,24 @@ void Command::script_thread_runner(script_state_t *thread_state)
 
 			while(std::getline(thread_state->file, line))
 			{
+				stop = false;
+
+				this->script_thread_mutex.lock();
+
+				if(this->script_thread_map[task_id].stop)
+				{
+					this->script_thread_map[task_id].stopping = true;
+					stop = true;
+				}
+
+				this->script_thread_mutex.unlock();
+
+				if(stop)
+				{
+					this->log << std::format("script {} [{:d}] stopped", initial_script, task_id);
+					break;
+				}
+
 				while(!line.empty() && (line.back() == '\n'))
 					line.pop_back();
 
@@ -2311,5 +2410,14 @@ void Command::script_thread_runner(script_state_t *thread_state)
 		this->log << "script: unknown exception";
 	}
 
-	//FIXME may need to kill itself
+	std::map<int, script_thread_t>::iterator it;
+
+	this->script_thread_mutex.lock();
+
+	if((it = this->script_thread_map.find(task_id)) == this->script_thread_map.end())
+		this->log << std::format("script: task {:d} cannot be removed from task map", task_id);
+	else
+		this->script_thread_map.erase(it);
+
+	this->script_thread_mutex.unlock();
 }
