@@ -322,15 +322,18 @@ void Console::run_thread()
 	}
 	catch(const hard_exception &e)
 	{
-		Log::get().abort(std::format("console thread: hard exception: {}", e.what()).c_str());
+		Console::emergency_wall(std::format("console thread: hard exception: {}", e.what()).c_str());
+		::abort();
 	}
 	catch(const transient_exception &e)
 	{
-		Log::get().abort(std::format("console thread: transient exception: {}", e.what()).c_str());
+		Console::emergency_wall(std::format("console thread: transient exception: {}", e.what()).c_str());
+		::abort();
 	}
 	catch(...)
 	{
-		Log::get().abort("console thread: unknown exception");
+		Console::emergency_wall("console thread: unknown exception");
+		::abort();
 	}
 }
 
