@@ -1,54 +1,199 @@
 #pragma once
 
-typedef enum
+#include "log.h"
+#include "config.h"
+
+#include <string>
+#include <map>
+#include <mutex>
+
+#include <driver/i2c_master.h>
+
+class I2C final
 {
-	i2c_module_0 = 0,
-	i2c_module_1,
-	i2c_module_2_ulp,
-	i2c_module_size,
-	i2c_module_error = i2c_module_size,
-	i2c_module_unavailable = i2c_module_size,
-	i2c_module_first = i2c_module_0,
-	i2c_module_last = i2c_module_2_ulp,
-} i2c_module_t;
+	public:
 
-typedef enum
-{
-	i2c_bus_none = 0,
-	i2c_bus_first = i2c_bus_none,
-	i2c_bus_0,
-	i2c_bus_mux_first = i2c_bus_0,
-	i2c_bus_1,
-	i2c_bus_2,
-	i2c_bus_3,
-	i2c_bus_4,
-	i2c_bus_5,
-	i2c_bus_6,
-	i2c_bus_7,
-	i2c_bus_size,
-	i2c_bus_invalid = i2c_bus_size,
-} i2c_bus_t;
+		class Module;
+		class Bus;
+		class Device;
 
-struct i2c_opaque_t {} __attribute__((aligned(sizeof(int))));
+		typedef std::basic_string<unsigned char> data_t;
 
-typedef struct i2c_opaque_t *i2c_slave_t;
-typedef const struct i2c_opaque_t *const_i2c_slave_t;
+		static constexpr int i2c_bus_mux_address = 0x70;
+		static constexpr int i2c_address_shift = 1;
+		static constexpr int i2c_write_flag = 0x00;
+		static constexpr int i2c_read_flag = 0x01;
 
-bool i2c_module_available(i2c_module_t module);
-unsigned int i2c_buses(i2c_module_t module);
-bool i2c_ulp(i2c_module_t module);
-bool i2c_slave_ulp(i2c_slave_t slave);
-i2c_slave_t i2c_register_slave(const char *name, i2c_module_t module, i2c_bus_t bus, unsigned int address);
-bool i2c_unregister_slave(i2c_slave_t *slave);
-bool i2c_probe_slave(i2c_module_t module, i2c_bus_t bus, unsigned int address);
-bool i2c_get_slave_info(i2c_slave_t slave, i2c_module_t *module, i2c_bus_t *bus, unsigned int *address, const char **name);
-i2c_slave_t i2c_find_slave(i2c_module_t module, i2c_bus_t bus, unsigned int address);
-bool i2c_send(i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t *send_buffer);
-bool i2c_send_1(i2c_slave_t slave, unsigned int byte);
-bool i2c_send_2(i2c_slave_t slave, unsigned int byte_1, unsigned int byte_2);
-bool i2c_send_3(i2c_slave_t slave, unsigned int byte_1, unsigned int byte_2, unsigned int byte_3);
-bool i2c_receive(i2c_slave_t slave, unsigned int read_buffer_size, uint8_t *read_buffer);
-bool i2c_send_receive(i2c_slave_t slave, unsigned int send_buffer_length, const uint8_t *send_buffer, unsigned int receive_buffer_size, uint8_t *receive_buffer);
-bool i2c_send_1_receive(i2c_slave_t slave, unsigned int byte, unsigned int receive_buffer_size, uint8_t *receive_buffer);
+		explicit I2C() = delete;
+		explicit I2C(const I2C &) = delete;
+		explicit I2C(Log &, Config &);
 
-void i2c_init(void);
+		static I2C &get();
+
+		bool probe(int module, int bus, int address);
+		Device* find(int module, int bus, int address);
+		Device* new_device(int module_index, int bus_index, int address, std::string_view name);
+		int speed(int module_index);
+		void speed(int module_index, int speed);
+		void info(std::string &);
+		std::map<int, Module *>& modules();
+
+		class Module
+		{
+			public:
+
+				explicit Module() = delete;
+				explicit Module(const Module &) = delete;
+				explicit Module(Log &, Config &, I2C &, int index, int subindex, int sda, int scl);
+				virtual ~Module();
+				
+				bool probe(int bus, int address);
+				Device* find(int bus, int address);
+				void send(int bus, int address, const data_t &);
+				void receive(int bus, int address_in, int length, data_t &);
+				void send_receive(int bus, int address, const data_t &, int length, data_t &);
+				bool restricted();
+
+				I2C &root();
+				Bus *bus(int index);
+				void speed(int);
+				int speed();
+				std::string info();
+				int index();
+				std::map<int, Bus *>& buses();
+
+			protected:
+
+				Log &log;
+				Config &config;
+				std::string name;
+				int module_index;
+				int device_port;
+				int sda;
+				int scl;
+				bool has_mux;
+				std::map<int, Bus *> _buses;
+				int speed_khz;
+				i2c_master_bus_handle_t module_handle;
+				i2c_master_dev_handle_t device_handle;
+
+				bool probe_mux();
+				void create_buses(int amount);
+				void set_mux(int bus);
+
+				virtual void _set_mux(int bus_bits) = 0;
+				virtual bool _probe(int address) = 0;
+				virtual void _send(int address, const data_t &) = 0;
+				virtual void _receive(int address, int length, data_t &) = 0;
+				virtual void _send_receive(int address, const data_t &, int length, data_t &) = 0;
+				virtual bool _restricted() = 0;
+
+			private:
+
+				std::mutex mutex;
+				I2C &root_ref;
+		};
+
+		class MainModule final : public Module
+		{
+			public:
+
+				explicit MainModule() = delete;
+				explicit MainModule(const MainModule &) = delete;
+				explicit MainModule(Log &, Config &, I2C &, int, int, int, int);
+
+				void _set_mux(int bus_bits) override;
+				bool _probe(int address) override;
+
+			private:
+
+				void _send(int address, const data_t &) override;
+				void _receive(int address, int length, data_t &) override;
+				void _send_receive(int address, const data_t &, int length, data_t &) override;
+				bool _restricted() override;
+		};
+
+		class ULPModule final : public Module
+		{
+			public:
+
+				explicit ULPModule() = delete;
+				explicit ULPModule(const ULPModule &) = delete;
+				explicit ULPModule(Log &, Config &, I2C &, int, int, int, int);
+
+				void _set_mux(int bus_bits) override;
+				bool _probe(int address) override;
+
+			private:
+
+				void _send(int address, const data_t &) override;
+				void _receive(int address_in, int length, data_t &) override;
+				void _send_receive(int address, const data_t &, int length, data_t &) override;
+				bool _restricted() override;
+		};
+
+		class Bus final
+		{
+			public:
+
+				explicit Bus() = delete;
+				explicit Bus(const Bus &) = delete;
+				explicit Bus(Log &, Module &, int index, std::string_view name);
+
+				Device* new_device(int address, std::string_view name);
+				Device* find(int address);
+				std::string info();
+				int index();
+				void delete_device(Device *);
+
+				void send(int address, const data_t &);
+				void receive(int address, int length, data_t &);
+				void send_receive(int address, const data_t&, int length, data_t &);
+
+				Module &module();
+
+			private:
+
+				std::map<int, Device *> devices;
+				Log &log;
+				Module &module_ref;
+				int bus_index;
+				std::string name;
+		};
+
+		class Device final
+		{
+			public:
+
+				explicit Device() = delete;
+				explicit Device(const Device &) = delete;
+				explicit Device(Log &, Bus &, int address, std::string_view name);
+				~Device();
+
+				std::string info();
+				void data(int &module, int &bus, int &address, std::string &name);
+				void send(const data_t &);
+				void send(unsigned char b1);
+				void send(unsigned char b1, unsigned char b2);
+				void send(unsigned char b1, unsigned char b2, unsigned char b3);
+				void receive(int length, data_t &);
+				void send_receive(const data_t &, int length, data_t &);
+				void send_receive(unsigned char b1, int length, data_t &);
+				void send_receive(unsigned char b1, unsigned char b2, int length, data_t &in);
+				void send_receive(unsigned char b1, unsigned char b2, unsigned char b3, int length, data_t &in);
+
+			private:
+
+				Log &log;
+				Bus &bus_ref;
+				int address;
+				std::string name;
+		};
+
+	private:
+
+		static I2C *singleton;
+		Log &log;
+		Config &config;
+		std::map<int, Module *> _modules;
+};

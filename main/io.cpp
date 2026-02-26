@@ -76,7 +76,7 @@ typedef struct io_data_T
 	{
 		struct
 		{
-			i2c_slave_t slave;
+			I2C::Device *device;
 		} i2c;
 	};
 	int int_value[io_int_value_size];
@@ -438,7 +438,7 @@ static bool pcf8574_detect(const io_info_t *info, unsigned int module, unsigned 
 {
 	assert(inited);
 
-	return(i2c_probe_slave(static_cast<i2c_module_t>(module), static_cast<i2c_bus_t>(bus), address));
+	return(I2C::get().probe(module, bus, address));
 }
 
 static bool pcf8574_init(io_data_t *dataptr)
@@ -448,18 +448,14 @@ static bool pcf8574_init(io_data_t *dataptr)
 	dataptr->int_value[pcf8574_int_value_cache_in] = 0xff;
 	dataptr->int_value[pcf8574_int_value_cache_out] = 0xff;
 
-	if(!i2c_send_1(dataptr->i2c.slave, 0xff))
-	{
-		Log::get() << "io pcf8574 init: i2c send failed";
-		return(false);
-	}
+	dataptr->i2c.device->send(0xff);
 
 	return(true);
 }
 
 static bool pcf8574_read(io_data_t *dataptr, unsigned int pin, unsigned int *value)
 {
-	std::uint8_t buffer[1];
+	I2C::data_t buffer;
 
 	assert(inited);
 
@@ -467,10 +463,9 @@ static bool pcf8574_read(io_data_t *dataptr, unsigned int pin, unsigned int *val
 	assert(dataptr->info);
 	assert(pin < dataptr->info->pins);
 
-	if(!i2c_receive(dataptr->i2c.slave, 1, buffer))
-		return(false);
+	dataptr->i2c.device->receive(1, buffer);
 
-	dataptr->int_value[pcf8574_int_value_cache_in] = buffer[0];
+	dataptr->int_value[pcf8574_int_value_cache_in] = buffer.at(0);
 
 	*value = !!(buffer[0] & (1 << pin));
 
@@ -491,7 +486,9 @@ static bool pcf8574_write(io_data_t *dataptr, unsigned int pin, unsigned int val
 	else
 		dataptr->int_value[pcf8574_int_value_cache_out] |= (1 << pin);
 
-	return(i2c_send_1(dataptr->i2c.slave, dataptr->int_value[pcf8574_int_value_cache_out]));
+	dataptr->i2c.device->send(dataptr->int_value[pcf8574_int_value_cache_out]);
+
+	return(true);
 }
 
 static void pcf8574_pin_info(const io_data_t *dataptr, unsigned int pin, std::string &result)
@@ -705,27 +702,27 @@ static io_data_t *find_io(io_bus_t bus, unsigned int parameter_1, unsigned int p
 
 			case(io_bus_i2c):
 			{
-				i2c_module_t i2c_module;
-				i2c_bus_t i2c_bus;
-				unsigned int i2c_address;
-				const char *name;
+				int i2c_module;
+				int i2c_bus;
+				int i2c_address;
+				std::string name;
 
-				assert(parameter_1 < i2c_module_size);
-				assert(parameter_2 < i2c_bus_size);
+				//assert(parameter_1 < 3);
+				//assert(parameter_2 < i2c_bus_size);
 				assert(parameter_3 < 128);
 
-				i2c_get_slave_info(dataptr->i2c.slave, &i2c_module, &i2c_bus, &i2c_address, &name);
+				dataptr->i2c.device->data(i2c_module, i2c_bus, i2c_address, name);
 
-				if((i2c_module_t)parameter_1 != i2c_module)
+				if(parameter_1 != i2c_module)
 					continue;
 
 				if(parameter_3 != i2c_address)
 					continue;
 
-				if(((i2c_bus_t)parameter_2 == i2c_bus_none) || (i2c_bus == i2c_bus_none))
+				if((parameter_2 == 0) || (i2c_bus == 0))
 					goto found;
 
-				if((i2c_bus_t)parameter_2 == i2c_bus)
+				if(parameter_2 == i2c_bus)
 					goto found;
 
 				break;
@@ -749,10 +746,6 @@ void io_init(void)
 	const io_info_t *infoptr;
 	io_data_t *dataptr, *next;
 	io_id_t id;
-	i2c_module_t module;
-	i2c_bus_t bus;
-	i2c_slave_t slave;
-	unsigned int buses;
 
 	assert(!inited);
 
@@ -802,16 +795,13 @@ void io_init(void)
 
 			case(io_bus_i2c):
 			{
-				for(module = i2c_module_first; module < i2c_module_size; module = static_cast<i2c_module_t>(module + 1))
+				I2C::Device *device;
+
+				for(const auto &module : I2C::get().modules())
 				{
-					if(!i2c_module_available(module))
-						continue;
-
-					buses = i2c_buses(module);
-
-					for(bus = i2c_bus_first; bus < buses; bus = static_cast<i2c_bus_t>(bus + 1))
+					for(const auto &bus : module.second->buses())
 					{
-						if(find_io(infoptr->bus, (unsigned int)module, (unsigned int)bus, infoptr->instance.i2c.address))
+						if(find_io(infoptr->bus, module.first, bus.first, infoptr->instance.i2c.address))
 						{
 							stat_i2c_detect_skipped++;
 							continue;
@@ -819,19 +809,23 @@ void io_init(void)
 
 						stat_i2c_detect_tried++;
 
-						if(infoptr->detect_fn && !infoptr->detect_fn(infoptr, module, bus, infoptr->instance.i2c.address))
+						if(infoptr->detect_fn && !infoptr->detect_fn(infoptr, module.first, bus.first, infoptr->instance.i2c.address))
 							continue;
 
-						if(!(slave = i2c_register_slave(infoptr->name, module, bus, infoptr->instance.i2c.address)))
+						try
 						{
-							Log::get() << std::format("io: warning: cannot register io {}", infoptr->name);
+							device = I2C::get().new_device(module.first, bus.first, infoptr->instance.i2c.address, infoptr->name);
+						}
+						catch(const transient_exception &e)
+						{
+							Log::get() << std::format("io: warning: cannot register io {}: {}", infoptr->name, e.what());
 							continue;
 						}
 
 						dataptr = new io_data_t;
 
 						dataptr->id = id;
-						dataptr->i2c.slave = slave;
+						dataptr->i2c.device = device;
 						dataptr->info = infoptr;
 						dataptr->next = (io_data_t *)0;
 
@@ -1055,10 +1049,9 @@ bool io_pin_info(std::string &result, unsigned int io, unsigned int pin)
 void command_io_dump(cli_command_call_t *call)
 {
 	const io_data_t *dataptr;
-	i2c_module_t module;
-	i2c_bus_t bus;
-	unsigned int address, sequence;
-	const char *name;
+	int module, bus, address;
+	unsigned int sequence;
+	std::string name;
 	unsigned int pin;
 
 	assert(inited);
@@ -1088,7 +1081,7 @@ void command_io_dump(cli_command_call_t *call)
 
 			case(io_bus_i2c):
 			{
-				i2c_get_slave_info(dataptr->i2c.slave, &module, &bus, &address, &name);
+				dataptr->i2c.device->data(module, bus, address, name);
 				call->result += std::format("\nbus info\n- I2C device {} at {:d}/{:d}/{:#x}", name, static_cast<unsigned int>(module), static_cast<unsigned int>(bus), address);
 
 				break;

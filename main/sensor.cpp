@@ -2,6 +2,7 @@
 
 #include "log.h"
 #include "i2c.h"
+#include <exception.h>
 #include "cli-command.h"
 
 #include <stdint.h>
@@ -11,8 +12,11 @@
 
 #include <string>
 #include <boost/format.hpp>
+#include <format>
 #include <thread>
 #include <chrono>
+
+#include <esp_pthread.h>
 
 typedef struct
 {
@@ -36,7 +40,7 @@ typedef struct
 typedef struct data_T
 {
 	sensor_detect_t state;
-	i2c_slave_t slave;
+	I2C::Device *device;
 	sensor_value_t values[sensor_type_size];
 	const struct info_T *info;
 	void *private_data;
@@ -52,7 +56,7 @@ typedef struct info_T
 	sensor_flags_t flags;
 	unsigned int precision;
 	size_t private_data_size;
-	sensor_detect_t (*const detect_fn)(i2c_slave_t);
+	sensor_detect_t (*const detect_fn)(I2C::Device *);
 	bool (*const init_fn)(data_t *);
 	bool (*const poll_fn)(data_t *);
 	void (*const dump_fn)(const data_t *, std::string &);
@@ -66,7 +70,7 @@ typedef struct
 
 typedef struct
 {
-	i2c_module_t module;
+	int module;
 } run_parameters_t;
 
 static const sensor_type_info_t sensor_type_info[sensor_type_size] =
@@ -97,17 +101,17 @@ static bool inited = false;
 static SemaphoreHandle_t data_mutex;
 static data_t *data_root = nullptr;
 
-static unsigned int stat_sensors_not_considered[i2c_module_size] = { 0 };
-static unsigned int stat_sensors_skipped[i2c_module_size] = { 0 };
-static unsigned int stat_sensors_not_skipped[i2c_module_size] = { 0 };
-static unsigned int stat_sensors_probed[i2c_module_size] = { 0 };
-static unsigned int stat_sensors_found[i2c_module_size] = { 0 };
-static unsigned int stat_sensors_disabled[i2c_module_size] = { 0 };
-static unsigned int stat_sensors_confirmed[i2c_module_size] = { 0 };
-static unsigned int stat_poll_run[i2c_module_size] = { 0 };
-static unsigned int stat_poll_ok[i2c_module_size] = { 0 };
-static unsigned int stat_poll_error[i2c_module_size] = { 0 };
-static unsigned int stat_poll_skipped[i2c_module_size] = { 0 };
+static unsigned int stat_sensors_not_considered[3] = { 0 };
+static unsigned int stat_sensors_skipped[3] = { 0 };
+static unsigned int stat_sensors_not_skipped[3] = { 0 };
+static unsigned int stat_sensors_probed[3] = { 0 };
+static unsigned int stat_sensors_found[3] = { 0 };
+static unsigned int stat_sensors_disabled[3] = { 0 };
+static unsigned int stat_sensors_confirmed[3] = { 0 };
+static unsigned int stat_poll_run[3] = { 0 };
+static unsigned int stat_poll_ok[3] = { 0 };
+static unsigned int stat_poll_error[3] = { 0 };
+static unsigned int stat_poll_skipped[3] = { 0 };
 
 static inline void data_mutex_take(void)
 {
@@ -131,9 +135,24 @@ typedef struct
 	float factor;
 } device_autoranging_data_t;
 
+static void log_sensor(I2C::Device *device, std::string_view message)
+{
+	std::string name;
+	int module, bus, address;
+
+	device->data(module, bus, address, name);
+
+	Log::get() << std::format("{} @ {:d}/{:d}/{:#04x}: {}", name, module, bus, address, message);
+}
+
 [[nodiscard]] static unsigned int unsigned_20_top_be(const uint8_t ptr[])
 {
 	return((((ptr[0] & 0xff) >> 0) << 12) | (((ptr[1] & 0xff) >> 0) << 4) | (((ptr[2] & 0xf0) >> 4) << 0));
+}
+
+[[nodiscard]] static unsigned int unsigned_20_top_be(const I2C::data_t &data, int offset = 0)
+{
+	return((((data.at(offset + 0) & 0xff) >> 0) << 12) | (((data.at(offset + 1) & 0xff) >> 0) << 4) | (((data.at(offset + 2) & 0xf0) >> 4) << 0));
 }
 
 [[nodiscard]] static unsigned int unsigned_20_bottom_be(const uint8_t ptr[])
@@ -141,19 +160,19 @@ typedef struct
 	return((((ptr[0] & 0x0f) >> 0) << 16) | (((ptr[1] & 0xff) >> 0) << 8) | (((ptr[2] & 0xff) >> 0) << 0));
 }
 
-[[nodiscard]] static unsigned int unsigned_16_be(const uint8_t ptr[])
+[[nodiscard]] static unsigned int unsigned_16_be(const I2C::data_t &data, int offset = 0)
 {
-	return(((ptr[0] & 0xff) << 8) | (ptr[1] & 0xff));
+	return(((data.at(offset + 0) & 0xff) << 8) | (data.at(offset + 1) & 0xff));
 }
 
-[[nodiscard]] static unsigned int unsigned_16_le(const uint8_t ptr[])
+[[nodiscard]] static unsigned int unsigned_16_le(const I2C::data_t &data, int offset = 0)
 {
-	return(((ptr[1] & 0xff) << 8) | (ptr[0] & 0xff));
+	return(((data.at(offset + 1) & 0xff) << 8) | (data.at(offset + 0) & 0xff));
 }
 
-[[nodiscard]] static int signed_16_le(const uint8_t ptr[])
+[[nodiscard]] static int signed_16_le(const I2C::data_t &data, int offset = 0)
 {
-	int rv = ((ptr[1] & 0xff) << 8) | (ptr[0] & 0xff);
+	int rv = ((data.at(offset + 1) & 0xff) << 8) | (data.at(offset + 0) & 0xff);
 
 	if(rv > (1 << 15))
 		rv = 0 - ((1 << 16) - rv);
@@ -161,24 +180,24 @@ typedef struct
 	return(rv);
 }
 
-[[nodiscard]] static unsigned int unsigned_12_top_be(const uint8_t ptr[])
+[[nodiscard]] static unsigned int unsigned_12_top_be(const I2C::data_t &data, int offset = 0)
 {
-	return((((ptr[0] & 0xff) >> 0) << 4) | (((ptr[1] & 0xf0) >> 4) << 0));
+	return((((data.at(offset + 0) & 0xff) >> 0) << 4) | (((data.at(offset + 1) & 0xf0) >> 4) << 0));
 }
 
-[[nodiscard]] static unsigned int unsigned_12_bottom_le(const uint8_t ptr[])
+[[nodiscard]] static unsigned int unsigned_12_bottom_le(const I2C::data_t &data, int offset = 0)
 {
-	return((((ptr[0] & 0x0f) >> 0) << 0) | (((ptr[1] & 0xff) >> 0) << 4));
+	return((((data.at(offset + 0) & 0x0f) >> 0) << 0) | (((data.at(offset + 1) & 0xff) >> 0) << 4));
 }
 
-[[nodiscard]] static unsigned int unsigned_8(const uint8_t ptr[])
+[[nodiscard]] static unsigned int unsigned_8(const I2C::data_t &data, int offset = 0)
 {
-	return((unsigned int)(*ptr & 0xff));
+	return(static_cast<unsigned int>(data.at(offset) & 0xff));
 }
 
-[[nodiscard]] static int signed_8(const uint8_t ptr[])
+[[nodiscard]] static int signed_8(const I2C::data_t &data, int offset = 0)
 {
-	int rv = (unsigned int)(*ptr & 0xff);
+	int rv = static_cast<unsigned int>(data.at(offset) & 0xff);
 
 	if(rv > (1 << 7))
 		rv = 0 - ((1 << 8) - rv);
@@ -229,15 +248,21 @@ static const device_autoranging_data_t bh1750_autoranging_data[bh1750_autorangin
 	{{	bh1750_opcode_one_lmode,	31	},	{ 1000, 65536 }, 65535, 2.40 },
 };
 
-static sensor_detect_t bh1750_detect(i2c_slave_t slave)
+static sensor_detect_t bh1750_detect(I2C::Device* device)
 {
-	uint8_t buffer[8];
+	I2C::data_t i2c_data;
 
-	if(!i2c_send_1_receive(slave, bh1750_opcode_powerdown, sizeof(buffer), buffer))
+	try
+	{
+		device->send_receive(bh1750_opcode_powerdown, 8, i2c_data);
+	}
+	catch(const transient_exception &)
+	{
 		return(sensor_not_found);
+	}
 
-	if((buffer[2] != 0xff) || (buffer[3] != 0xff) || (buffer[4] != 0xff) ||
-			(buffer[5] != 0xff) || (buffer[6] != 0xff) || (buffer[7] != 0xff))
+	if((i2c_data.at(2) != 0xff) || (i2c_data.at(3) != 0xff) || (i2c_data.at(4) != 0xff) ||
+			(i2c_data.at(5) != 0xff) || (i2c_data.at(6) != 0xff) || (i2c_data.at(7) != 0xff))
 		return(sensor_not_found);
 
 	return(sensor_found);
@@ -249,9 +274,13 @@ static bool bh1750_init(data_t *data)
 
 	assert(pdata);
 
-	if(!i2c_send_1(data->slave, bh1750_opcode_poweron))
+	try
 	{
-		Log::get() << "bh1750: init error";
+		data->device->send(bh1750_opcode_poweron);
+	}
+	catch(const transient_exception &e)
+	{
+		Log::get() << std::format("bh1750: init error: %s", e.what());
 		return(false);
 	}
 
@@ -268,7 +297,7 @@ static bool bh1750_init(data_t *data)
 static bool bh1750_poll(data_t *data)
 {
 	bh1750_private_data_t *pdata = static_cast<bh1750_private_data_t *>(data->private_data);
-	uint8_t buffer[2];
+	I2C::data_t i2c_data;
 
 	assert(pdata);
 
@@ -276,11 +305,7 @@ static bool bh1750_poll(data_t *data)
 	{
 		case(bh1750_state_init):
 		{
-			if(!i2c_send_1(data->slave, bh1750_opcode_reset))
-			{
-				Log::get() << "bh1750: poll: error 1";
-				return(false);
-			}
+			data->device->send(bh1750_opcode_reset);
 
 			pdata->state = bh1750_state_reset;
 
@@ -290,23 +315,9 @@ static bool bh1750_poll(data_t *data)
 		case(bh1750_state_reset):
 		case(bh1750_state_finished):
 		{
-			if(!i2c_send_1(data->slave, bh1750_opcode_change_meas_hi | ((bh1750_autoranging_data[pdata->scaling].data[1] >> 5) & 0b0000'0111)))
-			{
-				Log::get() << "bh1750: poll error 2";
-				return(false);
-			}
-
-			if(!i2c_send_1(data->slave, bh1750_opcode_change_meas_lo | ((bh1750_autoranging_data[pdata->scaling].data[1] >> 0) & 0b0001'1111)))
-			{
-				Log::get() << "bh1750: poll error 2";
-				return(false);
-			}
-
-			if(!i2c_send_1(data->slave, bh1750_autoranging_data[pdata->scaling].data[0]))
-			{
-				Log::get() << "bh1750: poll error 3";
-				return(false);
-			}
+			data->device->send(bh1750_opcode_change_meas_hi | ((bh1750_autoranging_data[pdata->scaling].data[1] >> 5) & 0b0000'0111));
+			data->device->send(bh1750_opcode_change_meas_lo | ((bh1750_autoranging_data[pdata->scaling].data[1] >> 0) & 0b0001'1111));
+			data->device->send(bh1750_autoranging_data[pdata->scaling].data[0]);
 
 			pdata->state = bh1750_state_measuring;
 
@@ -317,13 +328,9 @@ static bool bh1750_poll(data_t *data)
 		{
 			pdata->state = bh1750_state_finished;
 
-			if(!i2c_receive(data->slave, sizeof(buffer), buffer))
-			{
-				Log::get() << "bh1750: poll: warning: error in receive data";
-				return(false);
-			}
+			data->device->receive(2, i2c_data);
 
-			pdata->raw_value = unsigned_16_be(buffer);
+			pdata->raw_value = unsigned_16_be(i2c_data);
 
 			if((pdata->raw_value >= bh1750_autoranging_data[pdata->scaling].overflow) && (pdata->scaling >= (bh1750_autoranging_data_size - 1)))
 			{
@@ -382,12 +389,18 @@ typedef struct
 	unsigned int raw_value[2];
 } tmp75_private_data_t;
 
-static sensor_detect_t tmp75_detect(i2c_slave_t slave)
+static sensor_detect_t tmp75_detect(I2C::Device* device)
 {
-	uint8_t buffer[2];
+	I2C::data_t i2c_data;
 
-	if(!i2c_send_1_receive(slave, tmp75_reg_conf, sizeof(buffer), buffer))
+	try
+	{
+		device->send_receive(tmp75_reg_conf, 2, i2c_data);
+	}
+	catch(const transient_exception &e)
+	{
 		return(sensor_not_found);
+	}
 
 	return(sensor_found);
 }
@@ -395,22 +408,19 @@ static sensor_detect_t tmp75_detect(i2c_slave_t slave)
 static bool tmp75_init(data_t *data)
 {
 	tmp75_private_data_t *pdata = static_cast<tmp75_private_data_t *>(data->private_data);
-	uint8_t buffer[2];
+	I2C::data_t i2c_data;
 
 	assert(pdata);
 
 	pdata->raw_value[0] = 0;
 	pdata->raw_value[1] = 0;
 
-	if(!i2c_send_2(data->slave, tmp75_reg_conf, tmp75_reg_conf_res_12))
-		return(false);
+	data->device->send(tmp75_reg_conf, tmp75_reg_conf_res_12);
+	data->device->send_receive(tmp75_reg_conf, 2, i2c_data);
 
-	if(!i2c_send_1_receive(data->slave, tmp75_reg_conf, sizeof(buffer), buffer))
-		return(false);
-
-	if(buffer[0] != tmp75_reg_conf_res_12)
+	if(i2c_data.at(0) != tmp75_reg_conf_res_12)
 	{
-		Log::get() << std::format("tmp75: init: config: {:#x}", buffer[0]);
+		log_sensor(data->device, std::format("init: config[0]: {:#04x}, no tmp75", i2c_data.at(0)));
 		return(false);
 	}
 
@@ -420,20 +430,16 @@ static bool tmp75_init(data_t *data)
 static bool tmp75_poll(data_t *data)
 {
 	tmp75_private_data_t *pdata = static_cast<tmp75_private_data_t *>(data->private_data);
-	uint8_t buffer[2];
+	I2C::data_t i2c_data;
 	unsigned int raw_temperature;
 
 	assert(pdata);
 
-	if(!i2c_send_1_receive(data->slave, tmp75_reg_temp, sizeof(buffer), buffer))
-	{
-		Log::get() << "sensor: error in poll tmp75";
-		return(false);
-	}
+	data->device->send_receive(tmp75_reg_temp, 2, i2c_data);
 
-	pdata->raw_value[0] = buffer[0];
-	pdata->raw_value[1] = buffer[1];
-	raw_temperature = unsigned_16_be(buffer);
+	pdata->raw_value[0] = i2c_data.at(0);
+	pdata->raw_value[1] = i2c_data.at(1);
+	raw_temperature = unsigned_16_be(i2c_data);
 	data->values[sensor_type_temperature].value = raw_temperature / 256.0f;
 	data->values[sensor_type_temperature].stamp = time(nullptr);
 
@@ -507,36 +513,40 @@ typedef struct
 
 static bool opt3001_start_measurement(data_t *data)
 {
-	uint8_t buffer[3];
+	I2C::data_t i2c_data;
 
-	buffer[0] = opt3001_reg_conf;
-	buffer[1] = (opt3001_config & 0xff00) >> 8;
-	buffer[2] = (opt3001_config & 0x00ff) >> 0;
+	i2c_data.resize(3);
 
-	if(!i2c_send(data->slave, sizeof(buffer), buffer))
-		return(false);
+	i2c_data[0] = opt3001_reg_conf;
+	i2c_data[1] = (opt3001_config & 0xff00) >> 8;
+	i2c_data[2] = (opt3001_config & 0x00ff) >> 0;
 
-	if(!i2c_send_1_receive(data->slave, opt3001_reg_conf, 2, buffer))
-		return(false);
+	data->device->send(i2c_data);
+	data->device->send_receive(opt3001_reg_conf, 2, i2c_data); // FIXME? check?
 
 	return(true);
 }
 
-static sensor_detect_t opt3001_detect(i2c_slave_t slave)
+static sensor_detect_t opt3001_detect(I2C::Device* device)
 {
-	uint8_t buffer[2];
+	I2C::data_t i2c_data;
 
-	if(!i2c_send_1_receive(slave, opt3001_reg_id_manuf, sizeof(buffer), buffer))
-		return(sensor_not_found);
+	try
+	{
+		device->send_receive(opt3001_reg_id_manuf, 2, i2c_data);
 
-	if(unsigned_16_be(buffer) != opt3001_id_manuf_ti)
-		return(sensor_not_found);
+		if(unsigned_16_be(i2c_data) != opt3001_id_manuf_ti)
+			return(sensor_not_found);
 
-	if(!i2c_send_1_receive(slave, opt3001_reg_id_dev, sizeof(buffer), buffer))
-		return(sensor_not_found);
+		device->send_receive(opt3001_reg_id_dev, 2, i2c_data);
 
-	if(unsigned_16_be(buffer) != opt3001_id_dev_opt3001)
+		if(unsigned_16_be(i2c_data) != opt3001_id_dev_opt3001)
+			return(sensor_not_found);
+	}
+	catch(const transient_exception &)
+	{
 		return(sensor_not_found);
+	}
 
 	return(sensor_found);
 }
@@ -544,7 +554,7 @@ static sensor_detect_t opt3001_detect(i2c_slave_t slave)
 static bool opt3001_init(data_t *data)
 {
 	opt3001_private_data_t *pdata = static_cast<opt3001_private_data_t *>(data->private_data);
-	uint8_t buffer[2];
+	I2C::data_t i2c_data;
 	unsigned int read_config;
 
 	assert(pdata);
@@ -560,10 +570,9 @@ static bool opt3001_init(data_t *data)
 		return(false);
 	}
 
-	if(!i2c_send_1_receive(data->slave, opt3001_reg_conf, sizeof(buffer), buffer))
-		return(false);
+	data->device->send_receive(opt3001_reg_conf, 2, i2c_data);
 
-	read_config = unsigned_16_be(buffer) & (opt3001_conf_mask_exp | opt3001_conf_conv_mode | opt3001_conf_conv_time | opt3001_conf_range);
+	read_config = unsigned_16_be(i2c_data) & (opt3001_conf_mask_exp | opt3001_conf_conv_mode | opt3001_conf_conv_time | opt3001_conf_range);
 
 	if(read_config != opt3001_config)
 	{
@@ -577,7 +586,7 @@ static bool opt3001_init(data_t *data)
 static bool opt3001_poll(data_t *data)
 {
 	opt3001_private_data_t *pdata = static_cast<opt3001_private_data_t *>(data->private_data);
-	uint8_t buffer[2];
+	I2C::data_t i2c_data;
 	unsigned int config;
 
 	assert(pdata);
@@ -600,13 +609,9 @@ static bool opt3001_poll(data_t *data)
 
 		case(opt3001_state_measuring):
 		{
-			if(!i2c_send_1_receive(data->slave, opt3001_reg_conf, sizeof(buffer), buffer))
-			{
-				Log::get() << "opt3001 poll: error 1";
-				return(false);
-			}
+			data->device->send_receive(opt3001_reg_conf, 2, i2c_data);
 
-			config = unsigned_16_be(buffer);
+			config = unsigned_16_be(i2c_data);
 
 			if(!(config & opt3001_conf_flag_ready))
 				return(true);
@@ -619,14 +624,10 @@ static bool opt3001_poll(data_t *data)
 				return(true);
 			}
 
-			if(!i2c_send_1_receive(data->slave, opt3001_reg_result, sizeof(buffer), buffer))
-			{
-				Log::get() << "opt3001 poll: error 2";
-				return(false);
-			}
+			data->device->send_receive(opt3001_reg_result, 2, i2c_data);
 
-			pdata->exponent = (buffer[0] & 0xf0) >> 4;
-			pdata->mantissa = ((buffer[0] & 0x0f) << 8) | buffer[1];
+			pdata->exponent = (i2c_data.at(0) & 0xf0) >> 4;
+			pdata->mantissa = ((i2c_data.at(0) & 0x0f) << 8) | i2c_data.at(1);
 
 			data->values[sensor_type_visible_light].value = 0.01f * (float)(1 << pdata->exponent) * (float)pdata->mantissa;
 			data->values[sensor_type_visible_light].stamp = time(nullptr);
@@ -688,38 +689,33 @@ typedef struct
 	unsigned int exponent;
 } max44009_private_data_t;
 
-static sensor_detect_t max44009_detect(i2c_slave_t slave)
+static sensor_detect_t max44009_detect(I2C::Device* device)
 {
-	uint8_t buffer[2];
+	I2C::data_t i2c_data;
 
-	if(!i2c_send_1_receive(slave, max44009_reg_ints, sizeof(buffer), buffer))
+	device->send_receive(max44009_reg_ints, 2, i2c_data);
+
+	if((i2c_data.at(0) != max44009_probe_ints) || (i2c_data.at(1) != max44009_probe_ints))
 		return(sensor_not_found);
 
-	if((buffer[0] != max44009_probe_ints) || (buffer[1] != max44009_probe_ints))
+	device->send_receive(max44009_reg_inte, 2, i2c_data);
+
+	if((i2c_data.at(0) != max44009_probe_inte) || (i2c_data.at(1) != max44009_probe_inte))
 		return(sensor_not_found);
 
-	if(!i2c_send_1_receive(slave, max44009_reg_inte, sizeof(buffer), buffer))
+	device->send_receive(max44009_reg_thresh_msb, 2, i2c_data);
+
+	if((i2c_data.at(0) != max44009_probe_thresh_msb) || (i2c_data.at(1) != max44009_probe_thresh_msb))
 		return(sensor_not_found);
 
-	if((buffer[0] != max44009_probe_inte) || (buffer[1] != max44009_probe_inte))
+	device->send_receive(max44009_reg_thresh_lsb, 2, i2c_data);
+
+	if((i2c_data.at(0) != max44009_probe_thresh_lsb) || (i2c_data.at(1) != max44009_probe_thresh_lsb))
 		return(sensor_not_found);
 
-	if(!i2c_send_1_receive(slave, max44009_reg_thresh_msb, sizeof(buffer), buffer))
-		return(sensor_not_found);
+	device->send_receive(max44009_reg_thresh_timer, 2, i2c_data);
 
-	if((buffer[0] != max44009_probe_thresh_msb) || (buffer[1] != max44009_probe_thresh_msb))
-		return(sensor_not_found);
-
-	if(!i2c_send_1_receive(slave, max44009_reg_thresh_lsb, sizeof(buffer), buffer))
-		return(sensor_not_found);
-
-	if((buffer[0] != max44009_probe_thresh_lsb) || (buffer[1] != max44009_probe_thresh_lsb))
-		return(sensor_not_found);
-
-	if(!i2c_send_1_receive(slave, max44009_reg_thresh_timer, sizeof(buffer), buffer))
-		return(sensor_not_found);
-
-	if((buffer[0] != max44009_probe_thresh_timer) || (buffer[1] != max44009_probe_thresh_timer))
+	if((i2c_data.at(0) != max44009_probe_thresh_timer) || (i2c_data.at(1) != max44009_probe_thresh_timer))
 		return(sensor_not_found);
 
 	return(sensor_found);
@@ -728,7 +724,7 @@ static sensor_detect_t max44009_detect(i2c_slave_t slave)
 static bool max44009_init(data_t *data)
 {
 	max44009_private_data_t *pdata = static_cast<max44009_private_data_t *>(data->private_data);
-	uint8_t buffer[2];
+	I2C::data_t i2c_data;
 
 	assert(pdata);
 
@@ -736,19 +732,10 @@ static bool max44009_init(data_t *data)
 	pdata->mantissa = 0;
 	pdata->exponent = 0;
 
-	if(!i2c_send_2(data->slave, max44009_reg_conf, max44009_conf_cont))
-	{
-		Log::get() << "sensors: max44009: init error 1";
-		return(false);
-	}
+	data->device->send(max44009_reg_conf, max44009_conf_cont);
+	data->device->send_receive(max44009_reg_conf, 2, i2c_data);
 
-	if(!i2c_send_1_receive(data->slave, max44009_reg_conf, sizeof(buffer), buffer))
-	{
-		Log::get() << "sensors: max44009: init error 2";
-		return(false);
-	}
-
-	if((buffer[0] & (max44009_conf_cont | max44009_conf_manual)) != max44009_conf_cont)
+	if((i2c_data.at(0) & (max44009_conf_cont | max44009_conf_manual)) != max44009_conf_cont)
 	{
 		Log::get() << "sensors: max44009: init error 3";
 		return(false);
@@ -760,19 +747,15 @@ static bool max44009_init(data_t *data)
 static bool max44009_poll(data_t *data)
 {
 	max44009_private_data_t *pdata = static_cast<max44009_private_data_t *>(data->private_data);
-	uint8_t buffer[2];
+	I2C::data_t i2c_data;
 
 	assert(pdata);
 
-	if(!i2c_send_1_receive(data->slave, max44009_reg_data_msb, sizeof(buffer), buffer))
-	{
-		Log::get() << "sensors: max44009: poll error 1";
-		return(false);
-	}
+	data->device->send_receive(max44009_reg_data_msb, 2, i2c_data);
 
-	pdata->exponent =	(buffer[0] & 0xf0) >> 4;
-	pdata->mantissa =	(buffer[0] & 0x0f) << 4;
-	pdata->mantissa |=	(buffer[1] & 0x0f) << 0;
+	pdata->exponent =	(i2c_data.at(0) & 0xf0) >> 4;
+	pdata->mantissa =	(i2c_data.at(0) & 0x0f) << 4;
+	pdata->mantissa |=	(i2c_data.at(1) & 0x0f) << 0;
 
 	if(pdata->exponent != 0b1111)
 	{
@@ -837,12 +820,18 @@ typedef struct
 
 static bool asair_ready(data_t *data)
 {
-	uint8_t buffer[1];
+	I2C::data_t i2c_data;
 
-	if(!i2c_send_1_receive(data->slave, asair_cmd_get_status, sizeof(buffer), buffer))
+	try
+	{
+		data->device->send_receive(asair_cmd_get_status, 1, i2c_data);
+	}
+	catch(const transient_exception &e)
+	{
 		return(false);
+	}
 
-	if(!(buffer[0] & asair_status_ready))
+	if(!(i2c_data.at(0) & asair_status_ready))
 		return(false);
 
 	return(true);
@@ -851,14 +840,37 @@ static bool asair_ready(data_t *data)
 static bool asair_init_chip(data_t *data)
 {
 	asair_private_data_t *pdata = static_cast<asair_private_data_t *>(data->private_data);
+	bool ok;
 
-	if(i2c_send_3(data->slave, asair_cmd_aht10_init_1, asair_cmd_aht10_init_2, asair_cmd_aht10_init_3))
+	ok = true;
+
+	try
+	{
+		data->device->send(asair_cmd_aht10_init_1, asair_cmd_aht10_init_2, asair_cmd_aht10_init_3);
+	}
+	catch(const transient_exception &e)
+	{
+		ok = false;
+	}
+
+	if(ok)
 	{
 		pdata->type = 10;
 		return(true);
 	}
 
-	if(i2c_send_3(data->slave, asair_cmd_aht20_init_1, asair_cmd_aht20_init_2, asair_cmd_aht20_init_3))
+	ok = true;
+
+	try
+	{
+		data->device->send(asair_cmd_aht20_init_1, asair_cmd_aht20_init_2, asair_cmd_aht20_init_3);
+	}
+	catch(const transient_exception &e)
+	{
+		ok = false;
+	}
+
+	if(ok)
 	{
 		pdata->type = 20;
 		return(true);
@@ -870,15 +882,12 @@ static bool asair_init_chip(data_t *data)
 	return(false);
 }
 
-static sensor_detect_t asair_detect(i2c_slave_t slave)
+static sensor_detect_t asair_detect(I2C::Device* device)
 {
-	uint8_t buffer[1];
+	I2C::data_t i2c_data;
 
-	if(!i2c_send_1_receive(slave, asair_cmd_get_status, sizeof(buffer), buffer))
-		return(sensor_not_found);
-
-	if(!i2c_send_1(slave, asair_cmd_reset))
-		return(sensor_not_found);
+	device->send_receive(asair_cmd_get_status, 1, i2c_data);
+	device->send(asair_cmd_reset);
 
 	return(sensor_found);
 }
@@ -912,7 +921,7 @@ static bool asair_init(data_t *data)
 static bool asair_poll(data_t *data)
 {
 	asair_private_data_t *pdata = static_cast<asair_private_data_t *>(data->private_data);
-	uint8_t	buffer[8];
+	I2C::data_t i2c_data;
 
 	assert(pdata);
 
@@ -937,13 +946,9 @@ static bool asair_poll(data_t *data)
 
 		case(asair_state_ready):
 		{
-			if(!i2c_send_1_receive(data->slave, asair_cmd_get_status, 1, buffer))
-			{
-				Log::get() << "sensors: asair: poll error 1";
-				return(false);
-			}
+			data->device->send_receive(asair_cmd_get_status, 1, i2c_data);
 
-			if((buffer[0] & asair_status_busy) || !(buffer[0] & asair_status_ready))
+			if((i2c_data.at(0) & asair_status_busy) || !(i2c_data.at(0) & asair_status_ready))
 			{
 				Log::get() << "sensors: asair: poll error 2";
 				return(false);
@@ -957,24 +962,15 @@ static bool asair_poll(data_t *data)
 
 		case(asair_state_start_measure):
 		{
-			if(!i2c_send_1_receive(data->slave, asair_cmd_get_status, 1, buffer))
-			{
-				Log::get() << "sensors: asair: poll error 3";
-				return(false);
-			}
+			data->device->send_receive(asair_cmd_get_status, 1, i2c_data);
 
-			if(buffer[0] & asair_status_busy)
+			if(i2c_data.at(0) & asair_status_busy)
 			{
 				Log::get() << "sensors: asair: poll error 4";
 				return(false);
 			}
 
-			if(!i2c_send_3(data->slave, asair_cmd_measure_0, asair_cmd_measure_1, asair_cmd_measure_2))
-			{
-				Log::get() << "sensors: asair: poll error 5";
-				pdata->valid = false;
-				return(false);
-			}
+			data->device->send(asair_cmd_measure_0, asair_cmd_measure_1, asair_cmd_measure_2);
 
 			pdata->state = asair_state_measuring;
 
@@ -990,22 +986,17 @@ static bool asair_poll(data_t *data)
 
 		case(asair_state_measure_complete):
 		{
-			if(!i2c_send_1_receive(data->slave, asair_cmd_get_status, sizeof(buffer), buffer))
-			{
-				Log::get() << "sensors: asair: poll error 6";
-				pdata->valid = false;
-				return(false);
-			}
+			data->device->send_receive(asair_cmd_get_status, 8, i2c_data);
 
-			if(buffer[0] & asair_status_busy)
+			if(i2c_data.at(0) & asair_status_busy)
 			{
 				Log::get() << "sensors: asair: poll error 7";
 				pdata->valid = false;
 				return(false);
 			}
 
-			pdata->raw_temperature = unsigned_20_bottom_be(&buffer[3]);
-			pdata->raw_humidity = unsigned_20_top_be(&buffer[1]);
+			pdata->raw_temperature = unsigned_20_bottom_be(&i2c_data.at(3));
+			pdata->raw_humidity = unsigned_20_top_be(&i2c_data.at(1));
 
 			data->values[sensor_type_temperature].value = ((200.f * pdata->raw_temperature) / 1048576.f) - 50.0f;
 			data->values[sensor_type_temperature].stamp = time(nullptr);
@@ -1104,43 +1095,43 @@ static const device_autoranging_data_t tsl2561_autoranging_data[tsl2561_autorang
 	{{	tsl2561_tim_integ_13ms,		tsl2561_tim_low_gain	},	{	256,	65536	},	5047,	200		},
 };
 
-static bool tsl2561_write_byte(i2c_slave_t slave, tsl2561_reg_t reg, unsigned int value)
+static bool tsl2561_write_byte(I2C::Device* device, tsl2561_reg_t reg, unsigned int value)
 {
-	return(i2c_send_2(slave, tsl2561_cmd_cmd | tsl2561_cmd_clear | (static_cast<unsigned int>(reg) & tsl2561_cmd_address), value));
-}
-
-static bool tsl2561_read_byte(i2c_slave_t slave, tsl2561_reg_t reg, unsigned int *value)
-{
-	uint8_t buffer[1];
-
-	if(!i2c_send_1_receive(slave, tsl2561_cmd_cmd | (static_cast<unsigned int>(reg) & tsl2561_cmd_address), sizeof(buffer), buffer))
-		return(false);
-
-	*value = buffer[0];
+	device->send(tsl2561_cmd_cmd | tsl2561_cmd_clear | (static_cast<unsigned int>(reg) & tsl2561_cmd_address), value);
 
 	return(true);
 }
 
-static bool tsl2561_read_word(i2c_slave_t slave, tsl2561_reg_t reg, unsigned int *value)
+static bool tsl2561_read_byte(I2C::Device* device, tsl2561_reg_t reg, unsigned int *value)
 {
-	uint8_t buffer[2];
+	I2C::data_t i2c_data;
 
-	if(!i2c_send_1_receive(slave, tsl2561_cmd_cmd | (static_cast<unsigned int>(reg) & tsl2561_cmd_address), sizeof(buffer), buffer))
-		return(false);
+	device->send_receive(tsl2561_cmd_cmd | (static_cast<unsigned int>(reg) & tsl2561_cmd_address), 1, i2c_data);
 
-	*value = unsigned_16_le(buffer);
+	*value = i2c_data.at(0);
 
 	return(true);
 }
 
-static bool tsl2561_write_check(i2c_slave_t slave, tsl2561_reg_t reg, unsigned int value)
+static bool tsl2561_read_word(I2C::Device* device, tsl2561_reg_t reg, unsigned int *value)
+{
+	I2C::data_t i2c_data;
+
+	device->send_receive(tsl2561_cmd_cmd | (static_cast<unsigned int>(reg) & tsl2561_cmd_address), 2, i2c_data);
+
+	*value = unsigned_16_le(i2c_data);
+
+	return(true);
+}
+
+static bool tsl2561_write_check(I2C::Device* device, tsl2561_reg_t reg, unsigned int value)
 {
 	unsigned rv;
 
-	if(!tsl2561_write_byte(slave, reg, value))
+	if(!tsl2561_write_byte(device, reg, value))
 		return(false);
 
-	if(!tsl2561_read_byte(slave, reg, &rv))
+	if(!tsl2561_read_byte(device, reg, &rv))
 		return(false);
 
 	if(value != rv)
@@ -1149,32 +1140,32 @@ static bool tsl2561_write_check(i2c_slave_t slave, tsl2561_reg_t reg, unsigned i
 	return(true);
 }
 
-static sensor_detect_t tsl2561_detect(i2c_slave_t slave)
+static sensor_detect_t tsl2561_detect(I2C::Device* device)
 {
 	unsigned int regval;
 
-	if(!tsl2561_read_byte(slave, tsl2561_reg_id, &regval))
+	if(!tsl2561_read_byte(device, tsl2561_reg_id, &regval))
 		return(sensor_not_found);
 
 	if(regval != tsl2561_id_tsl2561)
 		return(sensor_not_found);
 
-	if(!tsl2561_read_word(slave, tsl2561_reg_threshlow, &regval))
+	if(!tsl2561_read_word(device, tsl2561_reg_threshlow, &regval))
 		return(sensor_not_found);
 
 	if(regval != tsl2561_probe_threshold)
 		return(sensor_not_found);
 
-	if(!tsl2561_read_word(slave, tsl2561_reg_threshhigh, &regval))
+	if(!tsl2561_read_word(device, tsl2561_reg_threshhigh, &regval))
 		return(sensor_not_found);
 
 	if(regval != tsl2561_probe_threshold)
 		return(sensor_not_found);
 
-	if(!tsl2561_write_check(slave, tsl2561_reg_control, tsl2561_ctrl_power_off))
+	if(!tsl2561_write_check(device, tsl2561_reg_control, tsl2561_ctrl_power_off))
 		return(sensor_not_found);
 
-	if(tsl2561_write_check(slave, tsl2561_reg_id, 0x00)) // id register should not be writable
+	if(tsl2561_write_check(device, tsl2561_reg_id, 0x00)) // id register should not be writable
 		return(sensor_not_found);
 
 	return(sensor_found);
@@ -1195,19 +1186,19 @@ static bool tsl2561_init(data_t *data)
 	pdata->channel[0] = 0;
 	pdata->channel[1] = 0;
 
-	if(!tsl2561_write_check(data->slave, tsl2561_reg_interrupt, 0x00))
+	if(!tsl2561_write_check(data->device, tsl2561_reg_interrupt, 0x00))
 	{
 		Log::get() << "tsl2561: init: error 1";
 		return(false);
 	}
 
-	if(!tsl2561_write_byte(data->slave, tsl2561_reg_control, tsl2561_ctrl_power_on))
+	if(!tsl2561_write_byte(data->device, tsl2561_reg_control, tsl2561_ctrl_power_on))
 	{
 		Log::get() << "tsl2561: init: error 2";
 		return(false);
 	}
 
-	if(!tsl2561_read_byte(data->slave, tsl2561_reg_control, &regval))
+	if(!tsl2561_read_byte(data->device, tsl2561_reg_control, &regval))
 	{
 		Log::get() << "tsl2561: init: error 3";
 		return(false);
@@ -1235,7 +1226,7 @@ static bool tsl2561_poll(data_t *data)
 		case(tsl2561_state_init):
 		case(tsl2561_state_finished):
 		{
-			if(!tsl2561_write_check(data->slave, tsl2561_reg_timeint, tsl2561_autoranging_data[pdata->scaling].data[0] | tsl2561_autoranging_data[pdata->scaling].data[1]))
+			if(!tsl2561_write_check(data->device, tsl2561_reg_timeint, tsl2561_autoranging_data[pdata->scaling].data[0] | tsl2561_autoranging_data[pdata->scaling].data[1]))
 			{
 				Log::get() << "tsl2561: poll: error 1";
 				return(false);
@@ -1254,13 +1245,13 @@ static bool tsl2561_poll(data_t *data)
 
 			pdata->state = tsl2561_state_finished;
 
-			if(!tsl2561_read_word(data->slave, tsl2561_reg_data0, &pdata->channel[0]))
+			if(!tsl2561_read_word(data->device, tsl2561_reg_data0, &pdata->channel[0]))
 			{
 				Log::get() << "tsl2561: poll: error 2";
 				return(false);
 			}
 
-			if(!tsl2561_read_word(data->slave, tsl2561_reg_data1, &pdata->channel[1]))
+			if(!tsl2561_read_word(data->device, tsl2561_reg_data1, &pdata->channel[1]))
 			{
 				Log::get() << "tsl2561: poll: error 3";
 				return(false);
@@ -1383,31 +1374,25 @@ typedef struct
 	unsigned int raw_humidity;
 } hdc1080_private_data_t;
 
-static bool hdc1080_write_word(i2c_slave_t slave, unsigned int reg, unsigned int word)
+static bool hdc1080_write_word(I2C::Device* device, unsigned int reg, unsigned int word)
 {
-	uint8_t buffer[3];
+	device->send(reg, (word & 0xff00) >> 8, (word & 0x00ff) >> 0);
 
-	buffer[0] = reg;
-	buffer[1] = (word & 0xff00) >> 8;
-	buffer[2] = (word & 0x00ff) >> 0;
-
-	return(i2c_send(slave, sizeof(buffer), buffer));
+	return(true);
 }
 
-static sensor_detect_t hdc1080_detect(i2c_slave_t slave)
+static sensor_detect_t hdc1080_detect(I2C::Device* device)
 {
-	uint8_t buffer[2];
+	I2C::data_t i2c_data;
 
-	if(!i2c_send_1_receive(slave, hdc1080_reg_man_id, sizeof(buffer), buffer))
+	device->send_receive(hdc1080_reg_man_id, 2, i2c_data);
+
+	if(unsigned_16_be(i2c_data) != hdc1080_man_id)
 		return(sensor_not_found);
 
-	if(unsigned_16_be(buffer) != hdc1080_man_id)
-		return(sensor_not_found);
+	device->send_receive(hdc1080_reg_dev_id, 2, i2c_data);
 
-	if(!i2c_send_1_receive(slave, hdc1080_reg_dev_id, sizeof(buffer), buffer))
-		return(sensor_not_found);
-
-	if(unsigned_16_be(buffer) != hdc1080_dev_id)
+	if(unsigned_16_be(i2c_data) != hdc1080_dev_id)
 		return(sensor_not_found);
 
 	return(sensor_found);
@@ -1421,7 +1406,7 @@ static bool hdc1080_init(data_t *data)
 
 	pdata->state = hdc1080_state_init;
 
-	if(!hdc1080_write_word(data->slave, hdc1080_reg_conf, hdc1080_conf_rst))
+	if(!hdc1080_write_word(data->device, hdc1080_reg_conf, hdc1080_conf_rst))
 	{
 		Log::get() << "hdc1080: init failed";
 		return(false);
@@ -1440,7 +1425,7 @@ static bool hdc1080_poll(data_t *data)
 {
 	hdc1080_private_data_t *pdata = static_cast<hdc1080_private_data_t *>(data->private_data);
 	static constexpr unsigned int conf = hdc1080_conf_tres_14 | hdc1080_conf_hres_14 | hdc1080_conf_mode_two;
-	uint8_t buffer[4];
+	I2C::data_t i2c_data;
 
 	assert(pdata);
 
@@ -1457,19 +1442,15 @@ static bool hdc1080_poll(data_t *data)
 
 		case(hdc1080_state_reset):
 		{
-			if(!i2c_send_1_receive(data->slave, hdc1080_reg_conf, 2, buffer))
-			{
-				Log::get() << "hdc1080: poll error 1";
-				return(false);
-			}
+			data->device->send_receive(hdc1080_reg_conf, 2, i2c_data);
 
-			if(unsigned_16_le(buffer) & hdc1080_conf_rst)
+			if(unsigned_16_le(i2c_data) & hdc1080_conf_rst)
 			{
 				Log::get() << "hdc1080: poll error 2";
 				return(false);
 			}
 
-			if(!hdc1080_write_word(data->slave, hdc1080_reg_conf, conf))
+			if(!hdc1080_write_word(data->device, hdc1080_reg_conf, conf))
 			{
 				Log::get() << "hdc1080: poll error 3";
 				return(false);
@@ -1485,11 +1466,7 @@ static bool hdc1080_poll(data_t *data)
 		{
 			pdata->valid = false;
 
-			if(!i2c_send_1(data->slave, hdc1080_reg_data_temp))
-			{
-				Log::get() << "hdc1080: poll error 4";
-				return(false);
-			}
+			data->device->send(hdc1080_reg_data_temp);
 
 			pdata->state = hdc1080_state_measuring;
 
@@ -1500,14 +1477,10 @@ static bool hdc1080_poll(data_t *data)
 		{
 			pdata->state = hdc1080_state_finished;
 
-			if(!i2c_receive(data->slave, sizeof(buffer), buffer))
-			{
-				Log::get() << "hdc1080 poll error 5";
-				return(false);
-			}
+			data->device->receive(4, i2c_data);
 
-			pdata->raw_temperature = unsigned_16_be(&buffer[0]);
-			pdata->raw_humidity = unsigned_16_be(&buffer[2]);
+			pdata->raw_temperature = unsigned_16_be(i2c_data, 0);
+			pdata->raw_humidity = unsigned_16_be(i2c_data, 2);
 			pdata->valid = true;
 
 			data->values[sensor_type_temperature].value = ((pdata->raw_temperature * 165.0f) / (float)(1 << 16)) - 40.f;
@@ -1603,7 +1576,7 @@ typedef struct
 	unsigned int raw_humidity;
 } sht3x_private_data_t;
 
-static uint8_t sht3x_crc8(int length, const uint8_t *data)
+static uint8_t sht3x_crc8(int length, const I2C::data_t &data, int offset = 0)
 {
 	uint8_t outer, inner, testbit, crc;
 
@@ -1611,7 +1584,7 @@ static uint8_t sht3x_crc8(int length, const uint8_t *data)
 
 	for(outer = 0; (int)outer < length; outer++)
 	{
-		crc ^= data[outer];
+		crc ^= data.at(outer + offset);
 
 		for(inner = 0; inner < 8; inner++)
 		{
@@ -1625,39 +1598,22 @@ static uint8_t sht3x_crc8(int length, const uint8_t *data)
 	return(crc);
 }
 
-static bool sht3x_send_command(i2c_slave_t slave, unsigned int cmd)
+static bool sht3x_send_command(I2C::Device* device, unsigned int cmd)
 {
-	uint8_t cmd_bytes[2];
-
-	cmd_bytes[0] = (cmd & 0xff00) >> 8;
-	cmd_bytes[1] = (cmd & 0x00ff) >> 0;
-
-	if(!i2c_send(slave, sizeof(cmd_bytes), cmd_bytes))
-	{
-		Log::get() << "sht3x: sht3x_send_command: error";
-		return(false);
-	}
+	device->send((cmd & 0xff00) >> 8, (cmd & 0x00ff) >> 0);
 
 	return(true);
 }
 
-static bool sht3x_receive_command(i2c_slave_t slave, sht3x_cmd_t cmd, unsigned int *result)
+static bool sht3x_receive_command(I2C::Device* device, sht3x_cmd_t cmd, unsigned int *result)
 {
-	uint8_t buffer[3];
 	uint8_t crc_local, crc_remote;
-	uint8_t cmd_bytes[2];
+	I2C::data_t i2c_data;
 
-	cmd_bytes[0] = (cmd & 0xff00) >> 8;
-	cmd_bytes[1] = (cmd & 0x00ff) >> 0;
+	device->send_receive((cmd & 0xff00) >> 8, (cmd & 0x00ff) >> 0, 3, i2c_data);
 
-	if(!i2c_send_receive(slave, sizeof(cmd_bytes), cmd_bytes, sizeof(buffer), buffer))
-	{
-		Log::get() << "sht3x: sht3x_receive_command: error";
-		return(false);
-	}
-
-	crc_local = buffer[2];
-	crc_remote = sht3x_crc8(2, &buffer[0]);
+	crc_local = i2c_data.at(2);
+	crc_remote = sht3x_crc8(2, i2c_data);
 
 	if(crc_local != crc_remote)
 	{
@@ -1665,28 +1621,20 @@ static bool sht3x_receive_command(i2c_slave_t slave, sht3x_cmd_t cmd, unsigned i
 		return(false);
 	}
 
-	*result = unsigned_16_be(buffer);
+	*result = unsigned_16_be(i2c_data);
 
 	return(true);
 }
 
-static bool sht3x_fetch_data(i2c_slave_t slave, unsigned int *result1, unsigned int *result2)
+static bool sht3x_fetch_data(I2C::Device* device, unsigned int *result1, unsigned int *result2)
 {
-	uint8_t buffer[6];
+	I2C::data_t i2c_data;
 	uint8_t crc_local, crc_remote;
-	uint8_t cmd_bytes[2];
 
-	cmd_bytes[0] = (sht3x_cmd_fetch_data & 0xff00) >> 8;
-	cmd_bytes[1] = (sht3x_cmd_fetch_data & 0x00ff) >> 0;
+	device->send_receive((sht3x_cmd_fetch_data & 0xff00) >> 8, (sht3x_cmd_fetch_data & 0x00ff) >> 0, 6, i2c_data);
 
-	if(!i2c_send_receive(slave, sizeof(cmd_bytes), cmd_bytes, sizeof(buffer), buffer))
-	{
-		Log::get() << "sht3x: sht3x_fetch_data: error";
-		return(false);
-	}
-
-	crc_local = buffer[2];
-	crc_remote = sht3x_crc8(2, &buffer[0]);
+	crc_local = i2c_data.at(2);
+	crc_remote = sht3x_crc8(2, i2c_data);
 
 	if(crc_local != crc_remote)
 	{
@@ -1694,8 +1642,8 @@ static bool sht3x_fetch_data(i2c_slave_t slave, unsigned int *result1, unsigned 
 		return(false);
 	}
 
-	crc_local = buffer[5];
-	crc_remote = sht3x_crc8(2, &buffer[3]);
+	crc_local = i2c_data.at(5);
+	crc_remote = sht3x_crc8(2, i2c_data, 3);
 
 	if(crc_local != crc_remote)
 	{
@@ -1703,15 +1651,15 @@ static bool sht3x_fetch_data(i2c_slave_t slave, unsigned int *result1, unsigned 
 		return(false);
 	}
 
-	*result1 = unsigned_16_be(&buffer[0]);
-	*result2 = unsigned_16_be(&buffer[3]);
+	*result1 = unsigned_16_be(i2c_data, 0);
+	*result2 = unsigned_16_be(i2c_data, 3);
 
 	return(true);
 }
 
-static sensor_detect_t sht3x_detect(i2c_slave_t slave)
+static sensor_detect_t sht3x_detect(I2C::Device* device)
 {
-	if(!sht3x_send_command(slave, sht3x_cmd_break))
+	if(!sht3x_send_command(device, sht3x_cmd_break))
 	{
 		Log::get() << "sht3x: detect error";
 		return(sensor_not_found);
@@ -1745,7 +1693,7 @@ static bool sht3x_poll(data_t *data)
 	{
 		case(sht3x_state_init):
 		{
-			if(!sht3x_send_command(data->slave, sht3x_cmd_reset))
+			if(!sht3x_send_command(data->device, sht3x_cmd_reset))
 			{
 				Log::get() << "sht3x: poll error 1";
 				return(false);
@@ -1758,7 +1706,7 @@ static bool sht3x_poll(data_t *data)
 
 		case(sht3x_state_reset):
 		{
-			if(!sht3x_receive_command(data->slave, sht3x_cmd_read_status, &result))
+			if(!sht3x_receive_command(data->device, sht3x_cmd_read_status, &result))
 			{
 				Log::get() << "sht3x: poll error 2";
 				return(false);
@@ -1770,7 +1718,7 @@ static bool sht3x_poll(data_t *data)
 				return(false);
 			}
 
-			if(!sht3x_send_command(data->slave, sht3x_cmd_clear_status))
+			if(!sht3x_send_command(data->device, sht3x_cmd_clear_status))
 			{
 				Log::get() << "sht3x: poll error 4";
 				return(false);
@@ -1783,7 +1731,7 @@ static bool sht3x_poll(data_t *data)
 
 		case(sht3x_state_ready):
 		{
-			if(!sht3x_receive_command(data->slave, sht3x_cmd_read_status, &result))
+			if(!sht3x_receive_command(data->device, sht3x_cmd_read_status, &result))
 			{
 				Log::get() << "sht3x: poll error 5";
 				return(false);
@@ -1804,7 +1752,7 @@ static bool sht3x_poll(data_t *data)
 		{
 			pdata->valid = false;
 
-			if(!sht3x_send_command(data->slave, sht3x_cmd_single_meas_noclock_high))
+			if(!sht3x_send_command(data->device, sht3x_cmd_single_meas_noclock_high))
 			{
 				Log::get() << "sht3x: poll error 7";
 				return(false);
@@ -1819,7 +1767,7 @@ static bool sht3x_poll(data_t *data)
 		{
 			pdata->state = sht3x_state_finished;
 
-			if(!sht3x_fetch_data(data->slave, &results[0], &results[1]))
+			if(!sht3x_fetch_data(data->device, &results[0], &results[1]))
 			{
 				Log::get() << "sht3x: poll error 8";
 				return(false);
@@ -1984,63 +1932,54 @@ typedef struct
 static bool bmx280_read_otp(data_t *data)
 {
 	bmx280_private_data_t *pdata = static_cast<bmx280_private_data_t *>(data->private_data);
-	uint8_t cal_data[bmx280_cal_size];
-	uint8_t buffer[1];
+	I2C::data_t i2c_data;
 	unsigned int e4, e5, e6;
 
 	assert(pdata);
 
-	if(!i2c_send_1_receive(data->slave, bmx280_reg_id, sizeof(buffer), buffer))
-	{
-		Log::get() << "bmx280: error read otp data 1";
-		return(false);
-	}
+	data->device->send_receive(bmx280_reg_id, 1, i2c_data);
 
-	pdata->type = buffer[0];
+	pdata->type = i2c_data.at(0);
 
-	if(!i2c_send_1_receive(data->slave, bmx280_cal_base, sizeof(cal_data), cal_data))
-	{
-		Log::get() << "bmx280: error read otp data 2";
-		return(false);
-	}
+	data->device->send_receive(bmx280_cal_base, bmx280_cal_size, i2c_data);
 
-	pdata->t1 = unsigned_16_le(&cal_data[bmx280_cal_0x88_0x89_dig_t1]);
-	pdata->t2 = signed_16_le(&cal_data[bmx280_cal_0x8a_0x8b_dig_t2]);
-	pdata->t3 = signed_16_le(&cal_data[bmx280_cal_0x8c_0x8d_dig_t3]);
-	pdata->p1 = unsigned_16_le(&cal_data[bmx280_cal_0x8e_0x8f_dig_p1]);
-	pdata->p2 = signed_16_le(&cal_data[bmx280_cal_0x90_0x91_dig_p2]);
-	pdata->p3 = signed_16_le(&cal_data[bmx280_cal_0x92_0x93_dig_p3]);
-	pdata->p4 = signed_16_le(&cal_data[bmx280_cal_0x94_0x95_dig_p4]);
-	pdata->p5 = signed_16_le(&cal_data[bmx280_cal_0x96_0x97_dig_p5]);
-	pdata->p6 = signed_16_le(&cal_data[bmx280_cal_0x98_0x99_dig_p6]);
-	pdata->p7 = signed_16_le(&cal_data[bmx280_cal_0x9a_0x9b_dig_p7]);
-	pdata->p8 = signed_16_le(&cal_data[bmx280_cal_0x9c_0x9d_dig_p8]);
-	pdata->p9 = signed_16_le(&cal_data[bmx280_cal_0x9e_0x9f_dig_p9]);
+	pdata->t1 = unsigned_16_le(i2c_data, bmx280_cal_0x88_0x89_dig_t1);
+	pdata->t2 = signed_16_le(i2c_data, bmx280_cal_0x8a_0x8b_dig_t2);
+	pdata->t3 = signed_16_le(i2c_data, bmx280_cal_0x8c_0x8d_dig_t3);
+	pdata->p1 = unsigned_16_le(i2c_data, bmx280_cal_0x8e_0x8f_dig_p1);
+	pdata->p2 = signed_16_le(i2c_data, bmx280_cal_0x90_0x91_dig_p2);
+	pdata->p3 = signed_16_le(i2c_data, bmx280_cal_0x92_0x93_dig_p3);
+	pdata->p4 = signed_16_le(i2c_data, bmx280_cal_0x94_0x95_dig_p4);
+	pdata->p5 = signed_16_le(i2c_data, bmx280_cal_0x96_0x97_dig_p5);
+	pdata->p6 = signed_16_le(i2c_data, bmx280_cal_0x98_0x99_dig_p6);
+	pdata->p7 = signed_16_le(i2c_data, bmx280_cal_0x9a_0x9b_dig_p7);
+	pdata->p8 = signed_16_le(i2c_data, bmx280_cal_0x9c_0x9d_dig_p8);
+	pdata->p9 = signed_16_le(i2c_data, bmx280_cal_0x9e_0x9f_dig_p9);
 
 	if(pdata->type == bmx280_reg_id_bme280)
 	{
-		pdata->h1 = cal_data[bmx280_cal_0xa1_dig_h1];
-		pdata->h2 = signed_16_le(&cal_data[bmx280_cal_0xe1_0xe2_dig_h2]);
-		pdata->h3 = cal_data[bmx280_cal_0xe3_dig_h3];
-		e4 = cal_data[bmx280_cal_0xe4_0xe5_0xe6_dig_h4_h5 + 0];
-		e5 = cal_data[bmx280_cal_0xe4_0xe5_0xe6_dig_h4_h5 + 1];
-		e6 = cal_data[bmx280_cal_0xe4_0xe5_0xe6_dig_h4_h5 + 2];
+		pdata->h1 = i2c_data.at(bmx280_cal_0xa1_dig_h1);
+		pdata->h2 = signed_16_le(i2c_data, bmx280_cal_0xe1_0xe2_dig_h2);
+		pdata->h3 = i2c_data.at(bmx280_cal_0xe3_dig_h3);
+		e4 = i2c_data.at(bmx280_cal_0xe4_0xe5_0xe6_dig_h4_h5 + 0);
+		e5 = i2c_data.at(bmx280_cal_0xe4_0xe5_0xe6_dig_h4_h5 + 1);
+		e6 = i2c_data.at(bmx280_cal_0xe4_0xe5_0xe6_dig_h4_h5 + 2);
 		pdata->h4 = ((e4 & 0xff) << 4) | ((e5 & 0x0f) >> 0);
 		pdata->h5 = ((e6 & 0xff) << 4) | ((e5 & 0xf0) >> 4);
-		pdata->h6 = cal_data[bmx280_cal_0xe7_dig_h6];
+		pdata->h6 = i2c_data.at(bmx280_cal_0xe7_dig_h6);
 	}
 
 	return(true);
 }
 
-static sensor_detect_t bmx280_detect(i2c_slave_t slave)
+static sensor_detect_t bmx280_detect(I2C::Device* device)
 {
-	uint8_t	buffer[1];
+	I2C::data_t i2c_data;
 
-	if(!i2c_send_1_receive(slave, bmx280_reg_id, sizeof(buffer), buffer))
+	device->send_receive(bmx280_reg_id, 1, i2c_data);
 		return(sensor_not_found);
 
-	if((buffer[0] != bmx280_reg_id_bmp280) && (buffer[0] != bmx280_reg_id_bme280))
+	if((i2c_data.at(0) != bmx280_reg_id_bmp280) && (i2c_data.at(0) != bmx280_reg_id_bme280))
 		return(sensor_not_found);
 
 	return(sensor_found);
@@ -2049,7 +1988,7 @@ static sensor_detect_t bmx280_detect(i2c_slave_t slave)
 static bool bmx280_init(data_t *data)
 {
 	bmx280_private_data_t *pdata = static_cast<bmx280_private_data_t *>(data->private_data);
-	uint8_t	buffer[1];
+	I2C::data_t i2c_data;
 
 	assert(pdata);
 
@@ -2061,19 +2000,10 @@ static bool bmx280_init(data_t *data)
 	pdata->t_fine_2 = 0;
 	pdata->state = bmx280_state_init;
 
-	if(!i2c_send_2(data->slave, bmx280_reg_reset, bmx280_reg_reset_value))
-	{
-		Log::get() << "bmx280: init error 1";
-		return(false);
-	}
+	data->device->send(bmx280_reg_reset, bmx280_reg_reset_value);
+	data->device->send_receive(bmx280_reg_reset, 1, i2c_data);
 
-	if(!i2c_send_1_receive(data->slave, bmx280_reg_reset, sizeof(buffer), buffer))
-	{
-		Log::get() << "bmx280: init error 2";
-		return(false);
-	}
-
-	if(buffer[0] != 0x00)
+	if(i2c_data.at(0) != 0x00)
 	{
 		Log::get() << "bmx280: init error 3";
 		return(false);
@@ -2087,7 +2017,7 @@ static bool bmx280_init(data_t *data)
 static bool bmx280_poll(data_t *data)
 {
 	bmx280_private_data_t *pdata = static_cast<bmx280_private_data_t *>(data->private_data);
-	uint8_t buffer[8];
+	I2C::data_t i2c_data;
 	float var1, var2, airpressure, humidity;
 
 	assert(pdata);
@@ -2119,35 +2049,17 @@ static bool bmx280_poll(data_t *data)
 		case(bmx280_state_ready):
 		case(bmx280_state_finished):
 		{
-			if(!i2c_send_1_receive(data->slave, bmx280_reg_ctrl_meas, 1, buffer))
-			{
-				Log::get() << "bmx280: poll error 1";
-				return(false);
-			}
+			data->device->send_receive(bmx280_reg_ctrl_meas, 1, i2c_data);
 
-			if((buffer[0] & bmx280_reg_ctrl_meas_mode_mask) != bmx280_reg_ctrl_meas_mode_sleep)
+			if((i2c_data.at(0) & bmx280_reg_ctrl_meas_mode_mask) != bmx280_reg_ctrl_meas_mode_sleep)
 			{
 				Log::get() << "bmx280: poll error 2";
 				return(false);
 			}
 
-			if(!i2c_send_2(data->slave, bmx280_reg_ctrl_hum, bmx280_reg_ctrl_hum_osrs_h_16))
-			{
-				Log::get() << "bmx280: poll error 3";
-				return(false);
-			}
-
-			if(!i2c_send_2(data->slave, bmx280_reg_config, bmx280_reg_config_filter_2))
-			{
-				Log::get() << "bmx280: poll error 4";
-				return(false);
-			}
-
-			if(!i2c_send_2(data->slave, bmx280_reg_ctrl_meas, bmx280_reg_ctrl_meas_osrs_t_16 | bmx280_reg_ctrl_meas_osrs_p_16 | bmx280_reg_ctrl_meas_mode_forced))
-			{
-				Log::get() << "bmx280: poll error 5";
-				return(false);
-			}
+			data->device->send(bmx280_reg_ctrl_hum, bmx280_reg_ctrl_hum_osrs_h_16);
+			data->device->send(bmx280_reg_config, bmx280_reg_config_filter_2);
+			data->device->send(bmx280_reg_ctrl_meas, bmx280_reg_ctrl_meas_osrs_t_16 | bmx280_reg_ctrl_meas_osrs_p_16 | bmx280_reg_ctrl_meas_mode_forced);
 
 			pdata->state = bmx280_state_measuring;
 
@@ -2156,15 +2068,11 @@ static bool bmx280_poll(data_t *data)
 
 		case(bmx280_state_measuring):
 		{
-			if(!i2c_send_1_receive(data->slave, bmx280_reg_adc, sizeof(buffer), buffer))
-			{
-				Log::get() << "bmx280: poll error 6";
-				return(false);
-			}
+			data->device->send_receive(bmx280_reg_adc, 8, i2c_data);
 
-			pdata->adc_airpressure = unsigned_20_top_be(&buffer[0]);
-			pdata->adc_temperature = unsigned_20_top_be(&buffer[3]);
-			pdata->adc_humidity = unsigned_16_be(&buffer[6]);
+			pdata->adc_airpressure = unsigned_20_top_be(i2c_data, 0);
+			pdata->adc_temperature = unsigned_20_top_be(i2c_data, 3);
+			pdata->adc_humidity = unsigned_16_be(i2c_data, 6);
 
 			var1 = ((pdata->adc_temperature / 16384.0f) - (pdata->t1 / 1024.0f)) * pdata->t2;
 			var2 = ((pdata->adc_temperature / 131072.0f) - (pdata->t1 / 8192.0f)) * ((pdata->adc_temperature / 131072.0f) - (pdata->t1 / 8192.0f)) * pdata->t3;
@@ -2308,7 +2216,7 @@ typedef struct
 	unsigned int raw_humidity;
 } htu21_private_data_t;
 
-static uint8_t htu21_crc8(int length, const uint8_t *data)
+static uint8_t htu21_crc8(int length, const I2C::data_t &data, int offset = 0)
 {
 	uint8_t outer, inner, testbit, crc;
 
@@ -2316,7 +2224,7 @@ static uint8_t htu21_crc8(int length, const uint8_t *data)
 
 	for(outer = 0; (int)outer < length; outer++)
 	{
-		crc ^= data[outer];
+		crc ^= data.at(outer + offset);
 
 		for(inner = 0; inner < 8; inner++)
 		{
@@ -2332,17 +2240,13 @@ static uint8_t htu21_crc8(int length, const uint8_t *data)
 
 static bool htu21_get_data(data_t *data, unsigned int *result)
 {
-	uint8_t	buffer[4];
+	I2C::data_t i2c_data;
 	uint8_t crc1, crc2;
 
-	if(!i2c_receive(data->slave, sizeof(buffer), buffer))
-	{
-		Log::get() << "htu21_get_data: error\n";
-		return(false);
-	}
+	data->device->receive(4, i2c_data);
 
-	crc1 = buffer[2];
-	crc2 = htu21_crc8(2, &buffer[0]);
+	crc1 = i2c_data.at(2);
+	crc2 = htu21_crc8(2, i2c_data, 0);
 
 	if(crc1 != crc2)
 	{
@@ -2350,17 +2254,16 @@ static bool htu21_get_data(data_t *data, unsigned int *result)
 		return(false);
 	}
 
-	*result = unsigned_16_be(buffer) & ~htu21_status_mask;
+	*result = unsigned_16_be(i2c_data) & ~htu21_status_mask;
 
 	return(true);
 }
 
-static sensor_detect_t htu21_detect(i2c_slave_t slave)
+static sensor_detect_t htu21_detect(I2C::Device* device)
 {
-	uint8_t buffer[1];
+	I2C::data_t i2c_data;
 
-	if(!i2c_send_1_receive(slave, htu21_cmd_read_user, sizeof(buffer), buffer))
-		return(sensor_not_found);
+	device->send_receive(htu21_cmd_read_user, 1, i2c_data);
 
 	return(sensor_found);
 }
@@ -2384,8 +2287,8 @@ static bool htu21_poll(data_t *data)
 	htu21_private_data_t *pdata = static_cast<htu21_private_data_t *>(data->private_data);
 	unsigned int result;
 	float temperature, humidity;
-	uint8_t cmd[2];
-	uint8_t buffer[1];
+	I2C::data_t i2c_data;
+	unsigned char cmd;
 
 	assert(pdata);
 
@@ -2393,7 +2296,7 @@ static bool htu21_poll(data_t *data)
 	{
 		case(htu21_state_init):
 		{
-			i2c_send_1(data->slave, htu21_cmd_reset);
+			data->device->send(htu21_cmd_reset);
 
 			pdata->state = htu21_state_reset;
 
@@ -2402,31 +2305,19 @@ static bool htu21_poll(data_t *data)
 
 		case(htu21_state_reset):
 		{
-			if((!i2c_send_1_receive(data->slave, htu21_cmd_read_user, 1, &cmd[1])))
-			{
-				Log::get() << "htu21: poll: error 1";
-				break;
-			}
+			data->device->send_receive(htu21_cmd_read_user, 1, i2c_data);
 
-			cmd[0] = htu21_cmd_write_user;
-			cmd[1] &= (htu21_user_reg_reserved | htu21_user_reg_bat_stat);
-			cmd[1] |= htu21_user_reg_rh11_temp11 | htu21_user_reg_otp_reload_disable;
+			cmd = i2c_data.at(0);
+			cmd &= (htu21_user_reg_reserved | htu21_user_reg_bat_stat);
+			cmd |= htu21_user_reg_rh11_temp11 | htu21_user_reg_otp_reload_disable;
 
-			if(!i2c_send(data->slave, sizeof(cmd), cmd))
-			{
-				Log::get() << "htu21: poll: error 2";
-				break;
-			}
+			data->device->send(htu21_cmd_write_user, cmd);
+			data->device->send_receive(htu21_cmd_read_user, 1, i2c_data);
 
-			if(!i2c_send_1_receive(data->slave, htu21_cmd_read_user, sizeof(buffer), buffer))
-			{
-				Log::get() << "htu21: poll: error 3";
-				break;
-			}
+			cmd = i2c_data.at(0);
+			cmd &= ~(htu21_user_reg_reserved | htu21_user_reg_bat_stat);
 
-			buffer[0] &= ~(htu21_user_reg_reserved | htu21_user_reg_bat_stat);
-
-			if(buffer[0] != (htu21_user_reg_rh11_temp11 | htu21_user_reg_otp_reload_disable))
+			if(cmd != (htu21_user_reg_rh11_temp11 | htu21_user_reg_otp_reload_disable))
 			{
 				Log::get() << "htu21: poll: error 4";
 				data->state = sensor_disabled;
@@ -2441,11 +2332,7 @@ static bool htu21_poll(data_t *data)
 		case(htu21_state_ready):
 		case(htu21_state_finished):
 		{
-			if(!i2c_send_1(data->slave, htu21_cmd_meas_temp_no_hold_master))
-			{
-				Log::get() << "htu21 poll: error 5";
-				break;
-			}
+			data->device->send(htu21_cmd_meas_temp_no_hold_master);
 
 			pdata->state = htu21_state_measuring_temperature;
 
@@ -2465,11 +2352,7 @@ static bool htu21_poll(data_t *data)
 
 		case(htu21_state_finished_temperature):
 		{
-			if(!i2c_send_1(data->slave, htu21_cmd_meas_hum_no_hold_master))
-			{
-				Log::get() << "htu21: poll: error 6";
-				break;
-			}
+			data->device->send(htu21_cmd_meas_hum_no_hold_master);
 
 			pdata->state = htu21_state_measuring_humidity;
 
@@ -2593,14 +2476,13 @@ typedef struct
 	unsigned int raw_white;
 } veml7700_private_data_t;
 
-static sensor_detect_t veml7700_detect(i2c_slave_t slave)
+static sensor_detect_t veml7700_detect(I2C::Device* device)
 {
-	uint8_t buffer[2];
+	I2C::data_t i2c_data;
 
-	if(!i2c_send_1_receive(slave, veml7700_reg_id, sizeof(buffer), buffer))
-		return(sensor_not_found);
+	device->send_receive(veml7700_reg_id, 2, i2c_data);
 
-	if((buffer[0] != veml7700_reg_id_id_1) || (buffer[1] != veml7700_reg_id_id_2))
+	if((i2c_data.at(0) != veml7700_reg_id_id_1) || (i2c_data.at(1) != veml7700_reg_id_id_2))
 		return(sensor_not_found);
 
 	return(sensor_found);
@@ -2625,7 +2507,7 @@ static bool veml7700_init(data_t *data)
 static bool veml7700_poll(data_t *data)
 {
 	veml7700_private_data_t *pdata = static_cast<veml7700_private_data_t *>(data->private_data);
-	uint8_t buffer[3];
+	I2C::data_t i2c_data;
 	unsigned int scale_down_threshold, scale_up_threshold;
 	float raw_lux;
 	unsigned int opcode;
@@ -2640,15 +2522,7 @@ static bool veml7700_poll(data_t *data)
 			opcode =	veml7700_autoranging_data[pdata->scaling].data[0];
 			opcode |=	veml7700_autoranging_data[pdata->scaling].data[1];
 
-			buffer[0] = veml7700_reg_conf;
-			buffer[1] = (opcode & 0x00ff) >> 0;
-			buffer[2] = (opcode & 0xff00) >> 8;
-
-			if(!i2c_send(data->slave, sizeof(buffer), buffer))
-			{
-				Log::get() << "veml7700: poll: error 1";
-				break;
-			}
+			data->device->send(veml7700_reg_conf, (opcode & 0x00ff) >> 0, (opcode & 0xff00) >> 8);
 
 			pdata->state = veml7700_state_measuring;
 
@@ -2662,21 +2536,13 @@ static bool veml7700_poll(data_t *data)
 
 			pdata->state = veml7700_state_finished;
 
-			if(!i2c_send_1_receive(data->slave, veml7700_reg_white, sizeof(buffer), buffer))
-			{
-				Log::get() << "veml7700: poll: error 2";
-				break;
-			}
+			data->device->send_receive(veml7700_reg_white, 3, i2c_data);
 
-			pdata->raw_white = unsigned_16_le(buffer);
+			pdata->raw_white = unsigned_16_le(i2c_data);
 
-			if(!i2c_send_1_receive(data->slave, veml7700_reg_als, sizeof(buffer), buffer))
-			{
-				Log::get() << "veml7700: poll: error 3";
-				break;
-			}
+			data->device->send_receive(veml7700_reg_als, 3, i2c_data);
 
-			pdata->raw_als = unsigned_16_le(buffer);
+			pdata->raw_als = unsigned_16_le(i2c_data);
 
 			if((pdata->raw_als < scale_down_threshold) && (pdata->scaling > 0))
 			{
@@ -2854,50 +2720,51 @@ typedef struct
 static bool bme680_read_otp(data_t *data)
 {
 	bme680_private_data_t *pdata = static_cast<bme680_private_data_t *>(data->private_data);
-	uint8_t calibration[bme680_calibration_1_size + bme680_calibration_2_size];
+	//uint8_t calibration[bme680_calibration_1_size + bme680_calibration_2_size];
+	I2C::data_t i2c_data1;
+	I2C::data_t i2c_data2;
+	I2C::data_t i2c_data;
 
 	assert(pdata);
 
-	if(!i2c_send_1_receive(data->slave, bme680_reg_calibration_1, bme680_calibration_1_size, &calibration[0]))
-		return(false);
+	data->device->send_receive(bme680_reg_calibration_1, bme680_calibration_1_size, i2c_data1);
+	data->device->send_receive(bme680_reg_calibration_2, bme680_calibration_2_size, i2c_data2);
 
-	if(!i2c_send_1_receive(data->slave, bme680_reg_calibration_2, bme680_calibration_2_size, &calibration[bme680_calibration_1_size]))
-		return(false);
+	i2c_data = i2c_data1 + i2c_data2;
 
-	pdata->t1 =		unsigned_16_le(&calibration[bme680_calibration_offset_t1]);
-	pdata->t2 =		signed_16_le(&calibration[bme680_calibration_offset_t2]);
-	pdata->t3 =		signed_8(&calibration[bme680_calibration_offset_t3]);
+	pdata->t1 =		unsigned_16_le(i2c_data, bme680_calibration_offset_t1);
+	pdata->t2 =		signed_16_le(i2c_data, bme680_calibration_offset_t2);
+	pdata->t3 =		signed_8(i2c_data, bme680_calibration_offset_t3);
 
-	pdata->p1 =		unsigned_16_le(&calibration[bme680_calibration_offset_p1]);
-	pdata->p2 =		signed_16_le(&calibration[bme680_calibration_offset_p2]);
-	pdata->p3 =		signed_8(&calibration[bme680_calibration_offset_p3]);
-	pdata->p4 =		signed_16_le(&calibration[bme680_calibration_offset_p4]);
-	pdata->p5 =		signed_16_le(&calibration[bme680_calibration_offset_p5]);
-	pdata->p6 =		signed_8(&calibration[bme680_calibration_offset_p6]);
-	pdata->p7 =		signed_8(&calibration[bme680_calibration_offset_p7]);
-	pdata->p8 =		signed_16_le(&calibration[bme680_calibration_offset_p8]);
-	pdata->p9 =		signed_16_le(&calibration[bme680_calibration_offset_p9]);
-	pdata->p10 =	unsigned_8(&calibration[bme680_calibration_offset_p10]);
+	pdata->p1 =		unsigned_16_le(i2c_data, bme680_calibration_offset_p1);
+	pdata->p2 =		signed_16_le(i2c_data, bme680_calibration_offset_p2);
+	pdata->p3 =		signed_8(i2c_data, bme680_calibration_offset_p3);
+	pdata->p4 =		signed_16_le(i2c_data, bme680_calibration_offset_p4);
+	pdata->p5 =		signed_16_le(i2c_data, bme680_calibration_offset_p5);
+	pdata->p6 =		signed_8(i2c_data, bme680_calibration_offset_p6);
+	pdata->p7 =		signed_8(i2c_data, bme680_calibration_offset_p7);
+	pdata->p8 =		signed_16_le(i2c_data, bme680_calibration_offset_p8);
+	pdata->p9 =		signed_16_le(i2c_data, bme680_calibration_offset_p9);
+	pdata->p10 =	unsigned_8(i2c_data, bme680_calibration_offset_p10);
 
-	pdata->h1 =		unsigned_12_bottom_le(&calibration[bme680_calibration_offset_h1]);
-	pdata->h2 =		unsigned_12_top_be(&calibration[bme680_calibration_offset_h2]);
-	pdata->h3 =		signed_8(&calibration[bme680_calibration_offset_h3]);
-	pdata->h4 =		signed_8(&calibration[bme680_calibration_offset_h4]);
-	pdata->h5 =		signed_8(&calibration[bme680_calibration_offset_h5]);
-	pdata->h6 =		unsigned_8(&calibration[bme680_calibration_offset_h6]);
-	pdata->h7 =		signed_8(&calibration[bme680_calibration_offset_h7]);
+	pdata->h1 =		unsigned_12_bottom_le(i2c_data, bme680_calibration_offset_h1);
+	pdata->h2 =		unsigned_12_top_be(i2c_data, bme680_calibration_offset_h2);
+	pdata->h3 =		signed_8(i2c_data, bme680_calibration_offset_h3);
+	pdata->h4 =		signed_8(i2c_data, bme680_calibration_offset_h4);
+	pdata->h5 =		signed_8(i2c_data, bme680_calibration_offset_h5);
+	pdata->h6 =		unsigned_8(i2c_data, bme680_calibration_offset_h6);
+	pdata->h7 =		signed_8(i2c_data, bme680_calibration_offset_h7);
 
 	return(true);
 }
 
-static sensor_detect_t bme680_detect(i2c_slave_t slave)
+static sensor_detect_t bme680_detect(I2C::Device* device)
 {
-	uint8_t buffer[1];
+	I2C::data_t i2c_data;
 
-	if(!i2c_send_1_receive(slave, bme680_reg_id, sizeof(buffer), buffer))
-		return(sensor_not_found);
+	device->send_receive(bme680_reg_id, 1, i2c_data);
 
-	if(buffer[0] != bme680_reg_id_bme680)
+	if(i2c_data.at(0) != bme680_reg_id_bme680)
 		return(sensor_not_found);
 
 	return(sensor_found);
@@ -2909,8 +2776,7 @@ static bool bme680_init(data_t *data)
 
 	assert(pdata);
 
-	if(!i2c_send_2(data->slave, bme680_reg_reset, bme680_reg_reset_value))
-		return(false);
+	data->device->send(bme680_reg_reset, bme680_reg_reset_value);
 
 	pdata->state = bme680_state_init;
 
@@ -2919,7 +2785,7 @@ static bool bme680_init(data_t *data)
 
 static bool bme680_poll(data_t *data)
 {
-	uint8_t buffer[3];
+	I2C::data_t i2c_data;
 	float temperature, humidity, airpressure, airpressure_256;
 	float var1, var2, var3, var4;
 	float t1_scaled;
@@ -2931,11 +2797,8 @@ static bool bme680_poll(data_t *data)
 	{
 		case(bme680_state_init):
 		{
-			if(!i2c_send_2(data->slave, bme680_reg_config, bme680_reg_config_filter_127))
-				return(false);
-
-			if(!i2c_send_2(data->slave, bme680_reg_ctrl_gas_0, bme680_reg_ctrl_gas_0_heat_off))
-				return(false);
+			data->device->send(bme680_reg_config, bme680_reg_config_filter_127);
+			data->device->send(bme680_reg_ctrl_gas_0, bme680_reg_ctrl_gas_0_heat_off);
 
 			if(!bme680_read_otp(data))
 				return(false);
@@ -2950,41 +2813,22 @@ static bool bme680_poll(data_t *data)
 
 		case(bme680_state_measuring):
 		{
-			if(!i2c_send_1_receive(data->slave, bme680_reg_meas_status_0, 1, buffer))
-			{
-				Log::get() << "sensors: bme680: poll error 1";
-				return(false);
-			}
+			data->device->send_receive(bme680_reg_meas_status_0, 1, i2c_data);
 
-			if(buffer[0] & bme680_reg_meas_status_0_measuring)
+			if(i2c_data.at(0) & bme680_reg_meas_status_0_measuring)
 			{
 				Log::get() << "sensors: bme680: sensor not ready";
 				return(true);
 			}
 
-			if(!i2c_send_1_receive(data->slave, bme680_reg_temp, sizeof(buffer), buffer))
-			{
-				Log::get() << "sensors: bme680: poll error 2";
-				return(false);
-			}
+			data->device->send_receive(bme680_reg_temp, 3, i2c_data);
+			pdata->adc_temperature = unsigned_20_top_be(i2c_data);
 
-			pdata->adc_temperature = unsigned_20_top_be(buffer);
+			data->device->send_receive(bme680_reg_press, 3, i2c_data);
+			pdata->adc_airpressure = unsigned_20_top_be(i2c_data);
 
-			if(!i2c_send_1_receive(data->slave, bme680_reg_press, sizeof(buffer), buffer))
-			{
-				Log::get() << "sensors: bme680: poll error 3";
-				return(false);
-			}
-
-			pdata->adc_airpressure = unsigned_20_top_be(buffer);
-
-			if(!i2c_send_1_receive(data->slave, bme680_reg_hum, sizeof(buffer), buffer))
-			{
-				Log::get() << "sensors: bme680: poll error 4";
-				return(false);
-			}
-
-			pdata->adc_humidity = unsigned_16_be(buffer);
+			data->device->send_receive(bme680_reg_hum, 3, i2c_data);
+			pdata->adc_humidity = unsigned_16_be(i2c_data);
 
 			t1_scaled =		(pdata->adc_temperature / 131072.0f) - (pdata->t1 / 8192.0f);
 			pdata->t_fine =	((pdata->adc_temperature / 16384.0f) - (pdata->t1 / 1024.0f)) * pdata->t2 + (t1_scaled * t1_scaled * pdata->t3 * 16.0f);
@@ -3044,17 +2888,8 @@ static bool bme680_poll(data_t *data)
 		case(bme680_state_finished):
 		case(bme680_state_otp_ready):
 		{
-			if(!i2c_send_2(data->slave, bme680_reg_ctrl_hum, bme680_reg_ctrl_hum_osrh_h_16))
-			{
-				Log::get() << "sensors: bme680: poll error 5";
-				return(false);
-			}
-
-			if(!i2c_send_2(data->slave, bme680_reg_ctrl_meas, bme680_reg_ctrl_meas_osrs_t_16 | bme680_reg_ctrl_meas_osrs_p_8 | bme680_reg_ctrl_meas_forced))
-			{
-				Log::get() << "sensors: bme680: poll error 6";
-				return(false);
-			}
+			data->device->send(bme680_reg_ctrl_hum, bme680_reg_ctrl_hum_osrh_h_16);
+			data->device->send(bme680_reg_ctrl_meas, bme680_reg_ctrl_meas_osrs_t_16 | bme680_reg_ctrl_meas_osrs_p_8 | bme680_reg_ctrl_meas_forced);
 
 			pdata->state = bme680_state_measuring;
 
@@ -3209,52 +3044,41 @@ typedef struct
 	const device_autoranging_data_t *autoranging_data;
 } apds9930_private_data_t;
 
-static bool apds9930_write_register(i2c_slave_t slave, unsigned int reg, unsigned int value)
+static bool apds9930_write_register(I2C::Device* device, unsigned int reg, unsigned int value)
 {
-	uint8_t buffer[2];
-
-	buffer[0] = apds9930_command_select | apds9930_command_type_autoincrement | (reg & apds9930_command_address_mask);
-	buffer[1] = value;
-
-	return(i2c_send(slave, sizeof(buffer), buffer));
-}
-
-static bool apds9930_read_register(i2c_slave_t slave, unsigned int reg, unsigned int *value)
-{
-	uint8_t buffer_in[1];
-	uint8_t buffer_out[1];
-
-	buffer_in[0] = apds9930_command_select | apds9930_command_type_autoincrement | (reg & apds9930_command_address_mask);
-
-	if(!i2c_send_receive(slave, sizeof(buffer_in), buffer_in, sizeof(buffer_out), buffer_out))
-		return(false);
-
-	*value = buffer_out[0];
+	device->send(apds9930_command_select | apds9930_command_type_autoincrement | (reg & apds9930_command_address_mask), value);
 
 	return(true);
 }
 
-static bool apds9930_read_register_2x2(i2c_slave_t slave, unsigned int reg, unsigned int value[])
+static bool apds9930_read_register(I2C::Device* device, unsigned int reg, unsigned int *value)
 {
-	uint8_t buffer_in[1];
-	uint8_t buffer_out[4];
+	I2C::data_t i2c_data;
 
-	buffer_in[0] = apds9930_command_select | apds9930_command_type_autoincrement | (reg & apds9930_command_address_mask);
+	device->send_receive(apds9930_command_select | apds9930_command_type_autoincrement | (reg & apds9930_command_address_mask), 1, i2c_data);
 
-	if(!i2c_send_receive(slave, sizeof(buffer_in), buffer_in, sizeof(buffer_out), buffer_out))
-		return(false);
-
-	value[0] = unsigned_16_le(&buffer_out[0]);
-	value[1] = unsigned_16_le(&buffer_out[2]);
+	*value = i2c_data.at(0);
 
 	return(true);
 }
 
-static sensor_detect_t apds9930_detect(i2c_slave_t slave)
+static bool apds9930_read_register_2x2(I2C::Device* device, unsigned int reg, unsigned int value[])
+{
+	I2C::data_t i2c_data;
+
+	device->send_receive(apds9930_command_select | apds9930_command_type_autoincrement | (reg & apds9930_command_address_mask), 4, i2c_data);
+
+	value[0] = unsigned_16_le(i2c_data, 0);
+	value[1] = unsigned_16_le(i2c_data, 2);
+
+	return(true);
+}
+
+static sensor_detect_t apds9930_detect(I2C::Device* device)
 {
 	unsigned int id;
 
-	if(!apds9930_read_register(slave, apds9930_reg_id, &id))
+	if(!apds9930_read_register(device, apds9930_reg_id, &id))
 		return(sensor_not_found);
 
 	if((id != apds9930_id_apds9930) && (id != apds9930_id_tmd27711) && (id != apds9930_id_tmd27713))
@@ -3269,7 +3093,7 @@ static bool apds9930_init(data_t *data)
 
 	assert(pdata);
 
-	if(!apds9930_read_register(data->slave, apds9930_reg_id, &pdata->type))
+	if(!apds9930_read_register(data->device, apds9930_reg_id, &pdata->type))
 		return(false);
 
 	switch(pdata->type)
@@ -3348,31 +3172,31 @@ static bool apds9930_poll(data_t *data)
 				again &= ~apds9930_autoranging_enable_agl;
 			}
 
-			if(!apds9930_write_register(data->slave, apds9930_reg_enable, apds9930_enable_poff))
+			if(!apds9930_write_register(data->device, apds9930_reg_enable, apds9930_enable_poff))
 			{
 				Log::get() << "apds9930: poll: error 1";
 				return(false);
 			}
 
-			if(!apds9930_write_register(data->slave, apds9930_reg_atime, atime))
+			if(!apds9930_write_register(data->device, apds9930_reg_atime, atime))
 			{
 				Log::get() << "apds9930: poll: error 2";
 				return(false);
 			}
 
-			if(!apds9930_write_register(data->slave, apds9930_reg_config, reg_config))
+			if(!apds9930_write_register(data->device, apds9930_reg_config, reg_config))
 			{
 				Log::get() << "apds9930: poll: error 3";
 				return(false);
 			}
 
-			if(!apds9930_write_register(data->slave, apds9930_reg_control, apds9930_ctrl_pdrive_100 | apds9930_ctrl_pdiode_ch1 | again))
+			if(!apds9930_write_register(data->device, apds9930_reg_control, apds9930_ctrl_pdrive_100 | apds9930_ctrl_pdiode_ch1 | again))
 			{
 				Log::get() << "apds9930: poll: error 4";
 				return(false);
 			}
 
-			if(!apds9930_write_register(data->slave, apds9930_reg_enable, apds9930_enable_aen | apds9930_enable_pon))
+			if(!apds9930_write_register(data->device, apds9930_reg_enable, apds9930_enable_aen | apds9930_enable_pon))
 			{
 				Log::get() << "apds9930: poll: error 5";
 				return(false);
@@ -3387,7 +3211,7 @@ static bool apds9930_poll(data_t *data)
 		{
 			pdata->state = apds9930_state_finished;
 
-			if(!apds9930_read_register(data->slave, apds9930_reg_status, &value))
+			if(!apds9930_read_register(data->device, apds9930_reg_status, &value))
 			{
 				Log::get() << "apds9930: poll: error 6";
 				return(false);
@@ -3399,7 +3223,7 @@ static bool apds9930_poll(data_t *data)
 				break;
 			}
 
-			if(!apds9930_read_register_2x2(data->slave, apds9930_reg_c0data, pdata->raw_channel))
+			if(!apds9930_read_register_2x2(data->device, apds9930_reg_c0data, pdata->raw_channel))
 			{
 				Log::get() << "apds9930: poll: error 2";
 				return(false);
@@ -3589,39 +3413,29 @@ static const device_autoranging_data_t apds9960_autoranging_data[apds9960_autora
 	{{	apds9960_atime_2_78,	apds9960_ctrl_again_1	},	{ 100,	65536	}, 0,	2.78 * 1	},
 };
 
-static bool apds9960_read_register(i2c_slave_t slave, unsigned int reg, unsigned int *value)
+static bool apds9960_read_register(I2C::Device* device, unsigned int reg, unsigned int *value)
 {
-	uint8_t buffer_in[1];
-	uint8_t buffer_out[1];
+	I2C::data_t i2c_data;
 
-	buffer_in[0] = reg;
+	device->send_receive(reg, 1, i2c_data);
 
-	if(!i2c_send_receive(slave, sizeof(buffer_in), buffer_in, sizeof(buffer_out), buffer_out))
-		return(false);
-
-	*value = buffer_out[0];
+	*value = i2c_data.at(0);
 
 	return(true);
 }
 
-static bool apds9960_write_register(i2c_slave_t slave, unsigned int reg, unsigned int value)
+static bool apds9960_write_register(I2C::Device* device, unsigned int reg, unsigned int value)
 {
-	uint8_t buffer_in[2];
-
-	buffer_in[0] = reg;
-	buffer_in[1] = value;
-
-	if(!i2c_send(slave, sizeof(buffer_in), buffer_in))
-		return(false);
+	device->send(reg, value);
 
 	return(true);
 }
 
-static sensor_detect_t apds9960_detect(i2c_slave_t slave)
+static sensor_detect_t apds9960_detect(I2C::Device* device)
 {
 	unsigned int id;
 
-	if(!apds9960_read_register(slave, apds9960_reg_id, &id))
+	if(!apds9960_read_register(device, apds9960_reg_id, &id))
 		return(sensor_not_found);
 
 	if((id != apds9960_id_apds9960_a8) && (id != apds9960_id_apds9960_ab) && (id != apds9960_id_apds9960_9c))
@@ -3637,19 +3451,19 @@ static bool apds9960_init(data_t *data)
 
 	assert(pdata);
 
-	if(!apds9960_read_register(data->slave, apds9960_reg_id, &id))
+	if(!apds9960_read_register(data->device, apds9960_reg_id, &id))
 	{
 		Log::get() << "apds9960: init: error 1";
 		return(false);
 	}
 
-	if(!apds9960_write_register(data->slave, apds9960_reg_config1, apds9960_config1_no_wlong))
+	if(!apds9960_write_register(data->device, apds9960_reg_config1, apds9960_config1_no_wlong))
 	{
 		Log::get() << "apds9960: init: error 2";
 		return(false);
 	}
 
-	if(!apds9960_write_register(data->slave, apds9960_reg_config2, apds9960_config2_none))
+	if(!apds9960_write_register(data->device, apds9960_reg_config2, apds9960_config2_none))
 	{
 		Log::get() << "apds9960: init: error 3";
 		return(false);
@@ -3672,7 +3486,7 @@ static bool apds9960_init(data_t *data)
 
 static bool apds9960_poll(data_t *data)
 {
-	uint8_t buffer[8];
+	I2C::data_t i2c_data;
 	unsigned int value, r, g, b, again, atime;
 	apds9960_private_data_t *pdata = static_cast<apds9960_private_data_t *>(data->private_data);
 	unsigned int scale_down_threshold, scale_up_threshold;
@@ -3687,25 +3501,25 @@ static bool apds9960_poll(data_t *data)
 			atime = apds9960_autoranging_data[pdata->scaling].data[0];
 			again = apds9960_autoranging_data[pdata->scaling].data[1];
 
-			if(!apds9960_write_register(data->slave, apds9960_reg_enable, apds9960_enable_poff))
+			if(!apds9960_write_register(data->device, apds9960_reg_enable, apds9960_enable_poff))
 			{
 				Log::get() << "apds9960: poll: error 1";
 				return(false);
 			}
 
-			if(!apds9960_write_register(data->slave, apds9960_reg_atime, atime))
+			if(!apds9960_write_register(data->device, apds9960_reg_atime, atime))
 			{
 				Log::get() << "apds9960: poll: error 2";
 				return(false);
 			}
 
-			if(!apds9960_write_register(data->slave, apds9960_reg_control, again))
+			if(!apds9960_write_register(data->device, apds9960_reg_control, again))
 			{
 				Log::get() << "apds9960: poll: error 3";
 				return(false);
 			}
 
-			if(!apds9960_write_register(data->slave, apds9960_reg_enable, apds9960_enable_aen | apds9960_enable_pon))
+			if(!apds9960_write_register(data->device, apds9960_reg_enable, apds9960_enable_aen | apds9960_enable_pon))
 			{
 				Log::get() << "apds9960: poll: error 4";
 				return(false);
@@ -3722,7 +3536,7 @@ static bool apds9960_poll(data_t *data)
 
 			pdata->state = apds9960_state_finished;
 
-			if(!apds9960_read_register(data->slave, apds9960_reg_status, &value))
+			if(!apds9960_read_register(data->device, apds9960_reg_status, &value))
 			{
 				Log::get() << "apds9960: poll: error 1";
 				return(false);
@@ -3748,16 +3562,12 @@ static bool apds9960_poll(data_t *data)
 				break;
 			}
 
-			if(!i2c_send_1_receive(data->slave, apds9960_reg_cdata, sizeof(buffer), buffer))
-			{
-				Log::get() << "apds9960: poll: error 3";
-				return(false);
-			}
+			data->device->send_receive(apds9960_reg_cdata, 8, i2c_data);
 
-			pdata->data.clear = unsigned_16_le(&buffer[0]);
-			r = unsigned_16_le(&buffer[2]);
-			g = unsigned_16_le(&buffer[4]);
-			b = unsigned_16_le(&buffer[6]);
+			pdata->data.clear = unsigned_16_le(i2c_data);
+			r = unsigned_16_le(i2c_data, 2);
+			g = unsigned_16_le(i2c_data, 4);
+			b = unsigned_16_le(i2c_data, 6);
 
 			if((pdata->data.clear < scale_down_threshold) && (pdata->scaling > 0))
 			{
@@ -3931,31 +3741,32 @@ typedef struct
 	float			factor[2];
 } tsl2591_private_data_t;
 
-static bool tsl2591_write(i2c_slave_t slave, tsl2591_reg_t reg, unsigned int value)
+static bool tsl2591_write(I2C::Device* device, tsl2591_reg_t reg, unsigned int value)
 {
-	return(i2c_send_2(slave, tsl2591_cmd_cmd | static_cast<unsigned int>(reg), value));
-}
-
-static bool tsl2591_read_byte(i2c_slave_t slave, tsl2591_reg_t reg, unsigned int *value)
-{
-	uint8_t buffer_out[1];
-
-	if(!i2c_send_1_receive(slave, tsl2591_cmd_cmd | static_cast<unsigned int>(reg), sizeof(buffer_out), buffer_out))
-		return(false);
-
-	*value = buffer_out[0];
+	device->send(tsl2591_cmd_cmd | static_cast<unsigned int>(reg), value);
 
 	return(true);
 }
 
-static bool tsl2591_write_check(i2c_slave_t slave, tsl2591_reg_t reg, unsigned int value)
+static bool tsl2591_read_byte(I2C::Device* device, tsl2591_reg_t reg, unsigned int *value)
+{
+	I2C::data_t i2c_data;
+
+	device->send_receive(tsl2591_cmd_cmd | static_cast<unsigned int>(reg), 1, i2c_data);
+
+	*value = i2c_data.at(0);
+
+	return(true);
+}
+
+static bool tsl2591_write_check(I2C::Device* device, tsl2591_reg_t reg, unsigned int value)
 {
 	unsigned int rv;
 
-	if(!tsl2591_write(slave, reg, value))
+	if(!tsl2591_write(device, reg, value))
 		return(false);
 
-	if(!tsl2591_read_byte(slave, reg, &rv))
+	if(!tsl2591_read_byte(device, reg, &rv))
 		return(false);
 
 	if(value != rv)
@@ -3964,23 +3775,23 @@ static bool tsl2591_write_check(i2c_slave_t slave, tsl2591_reg_t reg, unsigned i
 	return(true);
 }
 
-static sensor_detect_t tsl2591_detect(i2c_slave_t slave)
+static sensor_detect_t tsl2591_detect(I2C::Device* device)
 {
 	unsigned int regval;
 
-	if(!tsl2591_read_byte(slave, tsl2591_reg_pid, &regval))
+	if(!tsl2591_read_byte(device, tsl2591_reg_pid, &regval))
 		return(sensor_not_found);
 
 	if((regval & tsl2591_pid_mask) != tsl2591_pid_value)
 		return(sensor_not_found);
 
-	if(!tsl2591_read_byte(slave, tsl2591_reg_id, &regval))
+	if(!tsl2591_read_byte(device, tsl2591_reg_id, &regval))
 		return(sensor_not_found);
 
 	if((regval & tsl2591_id_mask) != tsl2591_id_value)
 		return(sensor_not_found);
 
-	if(tsl2591_write_check(slave, tsl2591_reg_id, 0x00)) // id register should not be writable
+	if(tsl2591_write_check(device, tsl2591_reg_id, 0x00)) // id register should not be writable
 		return(sensor_not_found);
 
 	return(sensor_found);
@@ -4010,7 +3821,7 @@ static bool tsl2591_init(data_t *data)
 static bool tsl2591_poll(data_t *data)
 {
 	tsl2591_private_data_t *pdata = static_cast<tsl2591_private_data_t *>(data->private_data);
-	uint8_t buffer[4];
+	I2C::data_t i2c_data;
 	unsigned int overflow, scale_down_threshold, scale_up_threshold;
 	unsigned int control_opcode;
 	bool found;
@@ -4021,7 +3832,7 @@ static bool tsl2591_poll(data_t *data)
 	{
 		case(tsl2591_state_init):
 		{
-			tsl2591_write(data->slave, tsl2591_reg_control, tsl2591_control_sreset);
+			tsl2591_write(data->device, tsl2591_reg_control, tsl2591_control_sreset);
 			pdata->state = tsl2591_state_reset;
 
 			break;
@@ -4029,7 +3840,7 @@ static bool tsl2591_poll(data_t *data)
 
 		case(tsl2591_state_reset):
 		{
-			if(!tsl2591_write_check(data->slave, tsl2591_reg_enable, tsl2591_enable_aen | tsl2591_enable_pon))
+			if(!tsl2591_write_check(data->device, tsl2591_reg_enable, tsl2591_enable_aen | tsl2591_enable_pon))
 			{
 				Log::get() << "tsl2591: poll: error 1";
 				break;
@@ -4045,7 +3856,7 @@ static bool tsl2591_poll(data_t *data)
 		{
 			control_opcode = tsl2591_autoranging_data[pdata->scaling].data[0] | tsl2591_autoranging_data[pdata->scaling].data[1] ;
 
-			if(!tsl2591_write_check(data->slave, tsl2591_reg_control, control_opcode))
+			if(!tsl2591_write_check(data->device, tsl2591_reg_control, control_opcode))
 			{
 				Log::get() << "tsl2591: poll: error 2";
 				break;
@@ -4063,14 +3874,10 @@ static bool tsl2591_poll(data_t *data)
 			scale_up_threshold =	tsl2591_autoranging_data[pdata->scaling].threshold.up;
 			overflow =				tsl2591_autoranging_data[pdata->scaling].overflow;
 
-			if(!i2c_send_1_receive(data->slave, tsl2591_cmd_cmd | static_cast<unsigned int>(tsl2591_reg_c0datal), sizeof(buffer), buffer))
-			{
-				Log::get() << "tsl2591: poll: error 3";
-				break;
-			}
+			data->device->send_receive(tsl2591_cmd_cmd | static_cast<unsigned int>(tsl2591_reg_c0datal), 4, i2c_data);
 
-			pdata->channel[0] = unsigned_16_le(&buffer[0]);
-			pdata->channel[1] = unsigned_16_le(&buffer[2]);
+			pdata->channel[0] = unsigned_16_le(i2c_data, 0);
+			pdata->channel[1] = unsigned_16_le(i2c_data, 2);
 
 			if(((pdata->channel[0] < scale_down_threshold) || (pdata->channel[1] < scale_down_threshold)) && (pdata->scaling > 0))
 			{
@@ -4141,19 +3948,26 @@ static void tsl2591_dump(const data_t *data, std::string &output)
 	output += (boost::format("factor 1: %f") % (double)pdata->factor[1]).str();
 }
 
-static sensor_detect_t tsl2591_28_detect(i2c_slave_t slave)
+static sensor_detect_t tsl2591_28_detect(I2C::Device* this_device)
 {
 	const data_t *data;
-	i2c_module_t this_module, module;
-	i2c_bus_t this_bus, bus;
-	unsigned int this_address, address;
-	const char *this_name, *name;
+	int this_module, module;
+	int this_bus, bus;
+	int this_address, address;
+	std::string this_name, name;
 
-	if(i2c_get_slave_info(slave, &this_module, &this_bus, &this_address, &this_name))
-		for(data = data_root; data; data = data->next)
-			if(i2c_get_slave_info(data->slave, &module, &bus, &address, &name) &&
-						(data->state == sensor_found) && (module == this_module) && (bus == this_bus) && (data->info->id == sensor_tsl2591))
+	this_device->data(this_module, this_bus, this_address, this_name);
+
+	for(data = data_root; data; data = data->next)
+	{
+		if(data->state == sensor_found)
+		{
+			data->device->data(module, bus, address, name);
+
+			if((module == this_module) && (bus == this_bus) && (data->info->id == sensor_tsl2591))
 				return(sensor_disabled);
+		}
+	}
 
 	return(sensor_not_found);
 }
@@ -4185,7 +3999,7 @@ typedef struct
 	uint32_t raw_temperature_data;
 } am2320_private_data_t;
 
-static unsigned int am2320_crc16(int length, const uint8_t *data)
+static unsigned int am2320_crc16(int length, const I2C::data_t &data, int offset = 0)
 {
 	uint8_t outer, inner, testbit;
 	uint16_t crc;
@@ -4194,7 +4008,7 @@ static unsigned int am2320_crc16(int length, const uint8_t *data)
 
 	for(outer = 0; outer < length; outer++)
 	{
-		crc ^= data[outer];
+		crc ^= data.at(outer + offset);
 
 		for(inner = 0; inner < 8; inner++)
 		{
@@ -4208,39 +4022,32 @@ static unsigned int am2320_crc16(int length, const uint8_t *data)
 	return(crc);
 }
 
-static sensor_detect_t am2320_detect(i2c_slave_t slave)
+static sensor_detect_t am2320_detect(I2C::Device* device)
 {
 	unsigned int crc1, crc2;
-	uint8_t buffer[am2320_register_id_length + 4];
-	i2c_module_t module;
-	i2c_bus_t bus;
-	unsigned int address;
-	const char *name;
+	int module;
+	int bus;
+	int address;
+	std::string name;
+	I2C::data_t i2c_data;
 
-	if(!i2c_get_slave_info(slave, &module, &bus, &address, &name))
-	{
-		Log::get() << "am2320: detect: get_slave_info failed";
-		return(sensor_not_found);
-	}
+	device->data(module, bus, address, name);
 
-	i2c_probe_slave(module, bus, address);
+	I2C::get().probe(module, bus, address);
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-	if(!i2c_probe_slave(module, bus, address))
+	if(!I2C::get().probe(module, bus, address))
 		return(sensor_not_found);
 
 	// request ID (but do not check it, it's unreliable)
-	if(!i2c_send_3(slave, am2320_command_read_register, am2320_register_id, am2320_register_id_length))
+	device->send(am2320_command_read_register, am2320_register_id, am2320_register_id_length);
+	device->receive(am2320_register_id_length + 4, i2c_data);
+
+	if((i2c_data.at(0) != am2320_command_read_register) || (i2c_data.at(1) != am2320_register_id_length))
 		return(sensor_not_found);
 
-	if(!i2c_receive(slave, sizeof(buffer), buffer))
-		return(sensor_not_found);
-
-	if((buffer[0] != am2320_command_read_register) || (buffer[1] != am2320_register_id_length))
-		return(sensor_not_found);
-
-	crc1 = unsigned_16_le(&buffer[am2320_register_id_length + 2]);
-	crc2 = am2320_crc16(am2320_register_id_length + 2, buffer);
+	crc1 = unsigned_16_le(i2c_data, am2320_register_id_length + 2);
+	crc2 = am2320_crc16(am2320_register_id_length + 2, i2c_data);
 
 	if(crc1 != crc2)
 		return(sensor_not_found);
@@ -4262,19 +4069,13 @@ static bool am2320_init(data_t *data)
 static bool am2320_poll(data_t *data)
 {
 	am2320_private_data_t *pdata = static_cast<am2320_private_data_t *>(data->private_data);
-	uint8_t buffer[am2320_register_values_length + 4];
 	unsigned int crc1, crc2;
 	int humidity, temperature;
-	i2c_module_t module;
-	i2c_bus_t bus;
-	unsigned int address;
-	const char *name;
+	int module, bus, address;
+	std::string name;
+	I2C::data_t i2c_data;
 
-	if(!i2c_get_slave_info(data->slave, &module, &bus, &address, &name))
-	{
-		Log::get() << "am2320: poll: get_slave_info failed";
-		return(sensor_not_found);
-	}
+	data->device->data(module, bus, address, name);
 
 	assert(pdata);
 
@@ -4283,8 +4084,7 @@ static bool am2320_poll(data_t *data)
 		case(am2320_state_init):
 		case(am2320_state_waking):
 		{
-			i2c_probe_slave(module, bus, address); // FIXME
-
+			I2C::get().probe(module, bus, address);
 			pdata->state = am2320_state_measuring;
 			break;
 		}
@@ -4293,23 +4093,19 @@ static bool am2320_poll(data_t *data)
 		{
 			pdata->state = am2320_state_waking;
 
-			if(!i2c_send_3(data->slave, am2320_command_read_register, am2320_register_values, am2320_register_values_length))
+			data->device->send(am2320_command_read_register, am2320_register_values, am2320_register_values_length);
 				return(false);
 
-			if(!i2c_receive(data->slave, sizeof(buffer), buffer))
-			{
-				Log::get() << "am2320: poll error 1";
-				return(false);
-			}
+			data->device->receive(am2320_register_values_length + 4, i2c_data);
 
-			if((buffer[0] != am2320_command_read_register) || (buffer[1] != am2320_register_values_length))
+			if((i2c_data.at(0) != am2320_command_read_register) || (i2c_data.at(1) != am2320_register_values_length))
 			{
 				Log::get() << "am2320: poll error 2";
 				return(false);
 			}
 
-			crc1 = unsigned_16_le(&buffer[am2320_register_values_length + 2]);
-			crc2 = am2320_crc16(am2320_register_values_length + 2, buffer);
+			crc1 = unsigned_16_le(i2c_data, am2320_register_values_length + 2);
+			crc2 = am2320_crc16(am2320_register_values_length + 2, i2c_data);
 
 			if(crc1 != crc2)
 			{
@@ -4317,8 +4113,8 @@ static bool am2320_poll(data_t *data)
 				return(false);
 			}
 
-			pdata->raw_temperature_data = unsigned_16_be(&buffer[4]);
-			pdata->raw_humidity_data = unsigned_16_be(&buffer[2]);
+			pdata->raw_temperature_data = unsigned_16_be(i2c_data, 4);
+			pdata->raw_humidity_data = unsigned_16_be(i2c_data, 2);
 
 			temperature = (unsigned int)pdata->raw_temperature_data;
 
@@ -4621,162 +4417,195 @@ static const info_t info[sensor_size] =
 
 static void run_sensors(void *parameters)
 {
-	const info_t *infoptr;
-	sensor_t sensor;
-	data_t *dataptr, *new_data;
-	i2c_module_t module;
-	i2c_bus_t bus;
-	i2c_slave_t slave;
-	unsigned int buses;
-	sensor_type_t type;
-	sensor_detect_t detected;
-	auto run = (const run_parameters_t *)parameters;
-
-	module = run->module;
-	buses = i2c_buses(module);
-
-	for(bus = i2c_bus_first; bus < buses; bus = static_cast<i2c_bus_t>(bus + 1))
+	try
 	{
-		for(sensor = sensor_first; sensor < sensor_size; sensor = static_cast<sensor_t>(sensor + 1))
+		const info_t *infoptr;
+		sensor_t sensor;
+		data_t *dataptr, *new_data;
+		I2C::Device* device;
+		sensor_type_t type;
+		sensor_detect_t detected;
+		auto run = static_cast<const run_parameters_t *>(parameters);
+		auto module = I2C::get().modules().find(run->module);
+
+		for(auto &bus : module->second->buses())
 		{
-			infoptr = &info[sensor];
-
-			if(i2c_ulp(module) && infoptr->flags.no_constrained)
+			for(sensor = sensor_first; sensor < sensor_size; sensor = static_cast<sensor_t>(sensor + 1))
 			{
-				stat_sensors_not_considered[module]++;
-				continue;
-			}
+				infoptr = &info[sensor];
 
-			if(i2c_find_slave(module, bus, infoptr->address))
-			{
-				stat_sensors_skipped[module]++;
-				continue;
-			}
-
-			stat_sensors_not_skipped[module]++;
-
-			if(!infoptr->flags.force_detect && !i2c_probe_slave(module, bus, infoptr->address))
-				continue;
-
-			stat_sensors_probed[module]++;
-
-			if(!(slave = i2c_register_slave(infoptr->name, module, bus, infoptr->address)))
-			{
-				Log::get() << std::format("sensor: warning: cannot register sensor {}", infoptr->name);
-				continue;
-			}
-
-			assert(infoptr->detect_fn);
-
-			detected = infoptr->detect_fn(slave);
-
-			if(detected == sensor_not_found)
-			{
-				i2c_unregister_slave(&slave);
-				continue;
-			}
-
-			stat_sensors_found[module]++;
-
-			new_data = new data_t;
-
-			for(type = sensor_type_first; type < sensor_type_size; type = static_cast<sensor_type_t>(type + 1))
-			{
-				new_data->values[type].value = 0;
-				new_data->values[type].stamp = (time_t)0;
-			}
-
-			new_data->state = detected;
-			new_data->slave = slave;
-			new_data->info = infoptr;
-
-			new_data->private_data = nullptr;
-			new_data->next = nullptr;
-
-			if(infoptr->private_data_size > 0)
-				new_data->private_data = malloc(infoptr->private_data_size);
-
-			if(detected == sensor_disabled)
-				stat_sensors_disabled[module]++;
-			else
-			{
-				assert(infoptr->init_fn);
-
-				if(!infoptr->init_fn(new_data))
+				if(module->second->restricted() && infoptr->flags.no_constrained)
 				{
-					Log::get() << std::format("sensor: warning: failed to init sensor {} on bus {:d}", infoptr->name, static_cast<unsigned int>(bus));
-					i2c_unregister_slave(&slave);
-					if(new_data->private_data)
-						free(new_data->private_data);
-					delete new_data;
+					stat_sensors_not_considered[module->first]++;
 					continue;
 				}
 
-				stat_sensors_confirmed[module]++;
-			}
+				if(I2C::get().find(module->first, bus.first, infoptr->address))
+				{
+					stat_sensors_skipped[module->first]++;
+					continue;
+				}
 
-			data_mutex_take();
+				stat_sensors_not_skipped[module->first]++;
 
-			if(!(dataptr = data_root))
-				data_root = new_data;
-			else
-			{
-				for(; dataptr && dataptr->next; dataptr = dataptr->next)
-					(void)0;
+				if(!infoptr->flags.force_detect && !I2C::get().probe(module->first, bus.first, infoptr->address))
+					continue;
 
-				assert(dataptr);
+				stat_sensors_probed[module->first]++;
 
-				dataptr->next = new_data;
-			}
+				if(!(device = I2C::get().new_device(module->first, bus.first, infoptr->address, infoptr->name)))
+				{
+					Log::get() << std::format("sensor: warning: cannot register sensor {}", infoptr->name);
+					continue;
+				}
 
-			data_mutex_give();
-		}
-	}
+				assert(infoptr->detect_fn);
 
-	if(stat_sensors_confirmed[module] == 0)
-		vTaskDelete(nullptr);
+				try
+				{
+					detected = infoptr->detect_fn(device);
+				}
+				catch(const transient_exception &e)
+				{
+					detected = sensor_not_found;
+				}
 
-	for(;;)
-	{
-		stat_poll_run[module]++;
+				if(detected == sensor_not_found)
+				{
+					delete device;
+					continue;
+				}
 
-		for(dataptr = data_root; dataptr; dataptr = dataptr->next)
-			if(dataptr->state == sensor_disabled)
-				stat_poll_skipped[module]++;
-			else
-				if(dataptr->info->poll_fn)
-					if(dataptr->info->poll_fn(dataptr))
-						stat_poll_ok[module]++;
-					else
-						stat_poll_error[module]++;
+				stat_sensors_found[module->first]++;
+
+				new_data = new data_t;
+
+				for(type = sensor_type_first; type < sensor_type_size; type = static_cast<sensor_type_t>(type + 1))
+				{
+					new_data->values[type].value = 0;
+					new_data->values[type].stamp = (time_t)0;
+				}
+
+				new_data->state = detected;
+				new_data->device = device;
+				new_data->info = infoptr;
+
+				new_data->private_data = nullptr;
+				new_data->next = nullptr;
+
+				if(infoptr->private_data_size > 0)
+					new_data->private_data = malloc(infoptr->private_data_size);
+
+				if(detected == sensor_disabled)
+					stat_sensors_disabled[module->first]++;
 				else
-					Log::get() << std::format("sensor: error: no poll function for sensor {}", dataptr->info->name);
+				{
+					assert(infoptr->init_fn);
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+					try
+					{
+						infoptr->init_fn(new_data);
+					}
+					catch(const transient_exception &e)
+					{
+						Log::get() << std::format("sensor: warning: failed to init sensor {} on bus {:d}: {}", infoptr->name, static_cast<unsigned int>(bus.first), e.what());
+						delete device;
+						if(new_data->private_data)
+							free(new_data->private_data);
+						delete new_data;
+						continue;
+					}
+
+					stat_sensors_confirmed[module->first]++;
+				}
+
+				data_mutex_take();
+
+				if(!(dataptr = data_root))
+					data_root = new_data;
+				else
+				{
+					for(; dataptr && dataptr->next; dataptr = dataptr->next)
+						(void)0;
+
+					assert(dataptr);
+
+					dataptr->next = new_data;
+				}
+
+				data_mutex_give();
+			}
+		}
+
+		if(stat_sensors_confirmed[module->first] == 0)
+			vTaskDelete(nullptr);
+
+		for(;;)
+		{
+			bool ok;
+
+			stat_poll_run[module->first]++;
+
+			for(dataptr = data_root; dataptr; dataptr = dataptr->next)
+				if(dataptr->state == sensor_disabled)
+					stat_poll_skipped[module->first]++;
+				else
+					if(dataptr->info->poll_fn)
+					{
+						ok = false;
+
+						try
+						{
+							dataptr->info->poll_fn(dataptr);
+							ok = true;
+						}
+						catch(const transient_exception &e)
+						{
+							Log::get() << std::format("sensor poll: %s", e.what());
+						}
+
+						if(ok)
+							stat_poll_ok[module->first]++;
+						else
+							stat_poll_error[module->first]++;
+					}
+					else
+						Log::get() << std::format("sensor: error: no poll function for sensor {}", dataptr->info->name);
+
+			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+		}
+
+		throw(hard_exception("loop broken"));
 	}
-
-	Log::get().abort("sensor: poll task returned");
+	catch(const transient_exception &e)
+	{
+		Log::get().abort(std::format("sensor thread: uncaught transient exception: %s", e.what()));
+	}
+	catch(const hard_exception &e)
+	{
+		Log::get().abort(std::format("sensor thread: uncaught hard exception: %s", e.what()));
+	}
+	catch(const std::exception &e)
+	{
+		Log::get().abort(std::format("sensor thread: uncaught standard exception: %s", e.what()));
+	}
+	catch(...)
+	{
+		Log::get().abort("sensor thread: uncaught unknown exception");
+	}
 }
 
 void sensor_init(void)
 {
-	static run_parameters_t run[i2c_module_size] =
+	static run_parameters_t run[3] =
 	{
-		[i2c_module_0] =
-		{
-			.module = i2c_module_0,
-		},
-		[i2c_module_1] =
-		{
-			.module = i2c_module_1,
-		},
-		[i2c_module_2_ulp] =
-		{
-			.module = i2c_module_2_ulp,
-		},
+		{ .module = 0 },
+		{ .module = 1 },
+		{ .module = 2 },
 	};
-	i2c_module_t thread;
-	char name[16];
+
+	esp_err_t rv;
+	esp_pthread_cfg_t thread_config = esp_pthread_get_default_config();
 
 	assert(!inited);
 
@@ -4785,28 +4614,31 @@ void sensor_init(void)
 
 	inited = true;
 
-	for(thread = i2c_module_first; thread < i2c_module_size; thread = static_cast<i2c_module_t>(thread + 1))
+	for(auto& module : I2C::get().modules())
 	{
-		if(i2c_module_available(thread))
-		{
-			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-			snprintf(name, sizeof(name), "sensors %d", thread);
+		thread_config.thread_name = std::format("sensors {:d}", module.first).c_str();
+		thread_config.pin_to_core = 1;
+		thread_config.stack_size = 3 * 1024;
+		thread_config.prio = 1;
+		thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
 
-			if(xTaskCreatePinnedToCore(run_sensors, name, 3 * 1024, &run[thread], 1, nullptr, 1) != pdPASS)
-				Log::get().abort("sensor: xTaskCreatePinnedToNode sensors thread");
-		}
+		if((rv = esp_pthread_set_cfg(&thread_config)) != ESP_OK)
+			throw(hard_exception(Log::get().esp_string_error(rv, "esp_pthread_set_cfg")));
+
+		std::thread new_thread([module]() { run_sensors(&run[module.first]); });
+
+		new_thread.detach();
 	}
 }
 
 void command_sensor_info(cli_command_call_t *call)
 {
 	data_t *dataptr;
-	i2c_slave_t slave;
-	const char *name;
-	i2c_module_t module;
-	i2c_bus_t bus;
-	unsigned int address;
+	I2C::Device* device;
+	std::string name;
+	int module, bus, address;
 	sensor_type_t type;
 	bool include_disabled;
 
@@ -4827,37 +4659,34 @@ void command_sensor_info(cli_command_call_t *call)
 
 	for(dataptr = data_root; dataptr; dataptr = dataptr->next)
 	{
-		slave = dataptr->slave;
+		device = dataptr->device;
 
 		if((dataptr->state == sensor_disabled) && !include_disabled)
 			continue;
 
-		if(!slave)
+		if(!device)
 		{
-			call->result += "\nslave = NULL";
+			call->result += "\ndevice = NULL";
 			continue;
 		}
 
-		if(!i2c_get_slave_info(slave, &module, &bus, &address, &name))
-			call->result += "\n- unknown slave";
+		device->data(module, bus, address, name);
+
+		call->result += (boost::format("\n- %s@%d/%d/%x:") % name % module % bus % address).str();
+
+		if(dataptr->state == sensor_disabled)
+			call->result += " [disabled]";
 		else
-		{
-			call->result += (boost::format("\n- %s@%d/%d/%x:") % name % module % bus % address).str();
+			for(type = sensor_type_first; type < sensor_type_size; type = static_cast<sensor_type_t>(type + 1))
+				if(dataptr->info->type & (1 << type))
+				{
+					std::string format_string = (boost::format(" %%s: %%.%uf %%s") % dataptr->info->precision).str();
 
-			if(dataptr->state == sensor_disabled)
-				call->result += " [disabled]";
-			else
-				for(type = sensor_type_first; type < sensor_type_size; type = static_cast<sensor_type_t>(type + 1))
-					if(dataptr->info->type & (1 << type))
-					{
-						std::string format_string = (boost::format(" %%s: %%.%uf %%s") % dataptr->info->precision).str();
-
-						call->result += (boost::format(format_string) %
-								sensor_type_info[type].type %
-								dataptr->values[type].value %
-								sensor_type_info[type].unity).str();
-					}
-		}
+					call->result += (boost::format(format_string) %
+							sensor_type_info[type].type %
+							dataptr->values[type].value %
+							sensor_type_info[type].unity).str();
+				}
 	}
 
 	data_mutex_give();
@@ -4866,14 +4695,12 @@ void command_sensor_info(cli_command_call_t *call)
 void command_sensor_json(cli_command_call_t *call)
 {
 	data_t *dataptr;
-	i2c_slave_t slave;
-	const char *name;
-	i2c_module_t module;
-	i2c_bus_t bus;
-	unsigned int address;
+	I2C::Device* device;
+	int module, bus, address;
 	sensor_type_t type;
 	bool first_sensor;
 	bool first_value;
+	std::string name;
 
 	assert(call->parameter_count == 0);
 
@@ -4889,10 +4716,12 @@ void command_sensor_json(cli_command_call_t *call)
 		if(dataptr->state == sensor_disabled)
 			continue;
 
-		slave = dataptr->slave;
+		device = dataptr->device;
 
-		if(slave && i2c_get_slave_info(slave, &module, &bus, &address, &name))
+		if(device)
 		{
+			device->data(module, bus, address, name);
+
 			call->result += first_sensor ? "" : ",";
 			call->result += (boost::format("\n\"%u-%u-%x\":") % module % bus % address).str();
 			call->result +=	"\n[";
@@ -4937,13 +4766,11 @@ void command_sensor_json(cli_command_call_t *call)
 void command_sensor_dump(cli_command_call_t *call)
 {
 	data_t *dataptr;
-	i2c_slave_t slave;
-	const char *name;
-	i2c_module_t module;
-	i2c_bus_t bus;
-	unsigned int address;
+	I2C::Device* device;
+	int module, bus, address;
 	sensor_type_t type;
 	unsigned int index;
+	std::string name;
 
 	assert(call->parameter_count < 2);
 
@@ -4962,42 +4789,39 @@ void command_sensor_dump(cli_command_call_t *call)
 		if((call->parameter_count > 0) && (call->parameters[0].unsigned_int != index))
 			continue;
 
-		slave = dataptr->slave;
+		device = dataptr->device;
 
-		if(!slave)
+		if(!device)
 		{
-			call->result += "\nslave = NULL";
+			call->result += "\ndevice = NULL";
 			continue;
 		}
 
-		if(!i2c_get_slave_info(slave, &module, &bus, &address, &name))
-			call->result += "\n- unknown slave";
+		device->data(module, bus, address, name);
+
+		call->result += (boost::format("\n- sensor %s at module %u, bus %u, address 0x%x") % name % module % bus % address).str();
+
+		if(dataptr->state == sensor_disabled)
+			call->result += ": [disabled]";
 		else
 		{
-			call->result += (boost::format("\n- sensor %s at module %u, bus %u, address 0x%x") % name % module % bus % address).str();
+			call->result += "\n  values:";
 
-			if(dataptr->state == sensor_disabled)
-				call->result += ": [disabled]";
-			else
+			for(type = sensor_type_first; type < sensor_type_size; type = static_cast<sensor_type_t>(type + 1))
 			{
-				call->result += "\n  values:";
-
-				for(type = sensor_type_first; type < sensor_type_size; type = static_cast<sensor_type_t>(type + 1))
+				if(dataptr->info->type & (1 << type))
 				{
-					if(dataptr->info->type & (1 << type))
-					{
-						std::string format_string = (boost::format(" %%s=%%.%uf [%%s]") % dataptr->info->precision).str();
-						call->result += (boost::format(format_string) %
-								sensor_type_info[type].type % dataptr->values[type].value %
-								Util::get().time_to_string(dataptr->values[type].stamp)).str();
-					}
+					std::string format_string = (boost::format(" %%s=%%.%uf [%%s]") % dataptr->info->precision).str();
+					call->result += (boost::format(format_string) %
+							sensor_type_info[type].type % dataptr->values[type].value %
+							Util::get().time_to_string(dataptr->values[type].stamp)).str();
 				}
+			}
 
-				if(dataptr->info->dump_fn)
-				{
-					call->result += "\n  private data: ";
-					dataptr->info->dump_fn(dataptr, call->result);
-				}
+			if(dataptr->info->dump_fn)
+			{
+				call->result += "\n  private data: ";
+				dataptr->info->dump_fn(dataptr, call->result);
 			}
 		}
 	}
@@ -5007,25 +4831,23 @@ void command_sensor_dump(cli_command_call_t *call)
 
 void command_sensor_stats(cli_command_call_t *call)
 {
-	i2c_module_t module;
-
 	assert(call->parameter_count == 0);
 
 	call->result = "SENSOR statistics";
 
-	for(module = i2c_module_first; module < i2c_module_size; module = static_cast<i2c_module_t>(module + 1))
+	for(auto& module : I2C::get().modules())
 	{
-		call->result += (boost::format("\n- module %u") % module).str();
-		call->result += (boost::format("\n-  sensors not considered: %u") % stat_sensors_not_considered[module]).str();
-		call->result += (boost::format("\n-  sensors skipped: %u") % stat_sensors_skipped[module]).str();
-		call->result += (boost::format("\n-  sensors not skipped: %u") % stat_sensors_not_skipped[module]).str();
-		call->result += (boost::format("\n-  sensors probed: %u") % stat_sensors_probed[module]).str();
-		call->result += (boost::format("\n-  sensors found: %u") % stat_sensors_found[module]).str();
-		call->result += (boost::format("\n-  sensors confirmed: %u") % stat_sensors_confirmed[module]).str();
-		call->result += (boost::format("\n-  sensors disabled: %u") % stat_sensors_disabled[module]).str();
-		call->result += (boost::format("\n-  complete poll runs: %u") % stat_poll_run[module]).str();
-		call->result += (boost::format("\n-  sensor poll succeeded: %u") % stat_poll_ok[module]).str();
-		call->result += (boost::format("\n-  sensor poll skipped: %u") % stat_poll_skipped[module]).str();
-		call->result += (boost::format("\n-  sensor poll failed: %u") % stat_poll_error[module]).str();
+		call->result += std::format("\n- module {:d}", module.first);
+		call->result += std::format("\n-  sensors not considered: {:d}", stat_sensors_not_considered[module.first]);
+		call->result += std::format("\n-  sensors skipped: {:d}", stat_sensors_skipped[module.first]);
+		call->result += std::format("\n-  sensors not skipped: {:d}", stat_sensors_not_skipped[module.first]);
+		call->result += std::format("\n-  sensors probed: {:d}", stat_sensors_probed[module.first]);
+		call->result += std::format("\n-  sensors found: {:d}", stat_sensors_found[module.first]);
+		call->result += std::format("\n-  sensors confirmed: {:d}", stat_sensors_confirmed[module.first]);
+		call->result += std::format("\n-  sensors disabled: {:d}", stat_sensors_disabled[module.first]);
+		call->result += std::format("\n-  complete poll runs: {:d}", stat_poll_run[module.first]);
+		call->result += std::format("\n-  sensor poll succeeded: {:d}", stat_poll_ok[module.first]);
+		call->result += std::format("\n-  sensor poll skipped: {:d}", stat_poll_skipped[module.first]);
+		call->result += std::format("\n-  sensor poll failed: {:d}", stat_poll_error[module.first]);
 	}
 }

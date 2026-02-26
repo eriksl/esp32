@@ -14,6 +14,7 @@
 #include "wlan.h"
 #include "udp.h"
 #include "tcp.h"
+#include "i2c.h"
 #include "exception.h"
 #include "cli-command.h"
 
@@ -84,7 +85,6 @@ class Command final
 		static void display_page_add_image(cli_command_call_t *);
 		static void display_page_remove(cli_command_call_t *);
 		static void i2c_info(cli_command_call_t *);
-		static void i2c_speed(cli_command_call_t *);
 		static void sensor_dump(cli_command_call_t *);
 		static void sensor_info(cli_command_call_t *);
 		static void sensor_json(cli_command_call_t *);
@@ -100,8 +100,10 @@ class Command final
 		static void cat(cli_command_call_t *);
 		static void script_info(cli_command_call_t *);
 		static void script_stop(cli_command_call_t *);
+		static void i2c_speed(cli_command_call_t *);
+		static void i2c_probe(cli_command_call_t *);
 
-		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &, Util &, PDM &, MCPWM &, FS &, BT &, WLAN &, UDP &, TCP &);
+		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &, Util &, PDM &, MCPWM &, FS &, BT &, WLAN &, UDP &, TCP &, I2C &);
 		Command() = delete;
 		Command(const Command &) = delete;
 
@@ -225,6 +227,7 @@ class Command final
 		static WLAN *wlan_;
 		static UDP *udp_;
 		static TCP *tcp_;
+		static I2C *i2c_;
 
 		typedef std::map<std::string, std::string> string_string_map;
 		string_string_map aliases;
@@ -244,6 +247,7 @@ class Command final
 		WLAN &wlan;
 		UDP &udp;
 		TCP &tcp;
+		I2C &i2c;
 
 		QueueHandle_t receive_queue_handle;
 		QueueHandle_t send_queue_handle;

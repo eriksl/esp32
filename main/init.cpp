@@ -21,9 +21,9 @@ extern "C"
 #include "command.h"
 #include "udp.h"
 #include "tcp.h"
+#include "i2c.h"
 
 #include "display.h"
-#include "i2c.h"
 #include "io.h"
 #include "sensor.h"
 
@@ -54,13 +54,13 @@ void app_main()
 		WLAN wlan(log, config, notify, system);
 		UDP udp(log);
 		TCP tcp(log);
-		Command command(config, console, ledpixel, ledpwm, notify, log, system, util, pdm, mcpwm, fs, bt, wlan, udp, tcp);
+		I2C i2c(log, config);
+		Command command(config, console, ledpixel, ledpwm, notify, log, system, util, pdm, mcpwm, fs, bt, wlan, udp, tcp, i2c);
 		console.set(&command);
 		bt.set(&command);
 		udp.set(&command);
 		tcp.set(&command);
 		display_init();
-		i2c_init();
 		io_init();
 		sensor_init();
 		wlan.run();

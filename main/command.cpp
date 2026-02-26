@@ -5,10 +5,10 @@
 #include "log.h"
 #include "console.h"
 #include "wlan.h"
-#include "i2c.h"
 #include "bt.h"
 #include "udp.h"
 #include "tcp.h"
+#include "i2c.h"
 #include "bt.h"
 #include "exception.h"
 #include "packet.h"
@@ -49,8 +49,6 @@ void command_display_info(cli_command_call_t *call);
 void command_display_page_add_text(cli_command_call_t *call);
 void command_display_page_add_image(cli_command_call_t *call);
 void command_display_page_remove(cli_command_call_t *call);
-void command_i2c_info(cli_command_call_t *call);
-void command_i2c_speed(cli_command_call_t *call);
 void command_sensor_dump(cli_command_call_t *call);
 void command_sensor_info(cli_command_call_t *call);
 void command_sensor_json(cli_command_call_t *call);
@@ -293,10 +291,20 @@ const Command::cli_command_t Command::cli_commands[] =
 	{ "i2c-speed", "i2s", "set speed of I2C interface", Command::i2c_speed,
 		{	2,
 			{
-				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "module", { .unsigned_int = { i2c_module_first, i2c_module_last }}},
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "module", { .unsigned_int = { 0, 2 }}}, // FIXME
 				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "speed in kHz", { .unsigned_int = { 0, 500 }}},
 			},
 		}
+	},
+
+	{ "i2c-probe", "i2p", "probe I2C device", Command::i2c_probe,
+		{	3,
+			{
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "module", { .unsigned_int = { 0, 2 }}}, // FIXME
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "bus", { .unsigned_int = { 0, 7 }}}, // FIXME
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "address", { .unsigned_int = { 0, 127 }}}, // FIXME
+			},
+		},
 	},
 
 	{ "info", (const char *)0, "show some generic information", Command::system_info, {}},
@@ -507,14 +515,15 @@ BT *Command::bt_ = nullptr;
 WLAN *Command::wlan_ = nullptr;
 UDP *Command::udp_ = nullptr;
 TCP *Command::tcp_ = nullptr;
+I2C *Command::i2c_ = nullptr;
 
 Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, LedPWM &ledpwm_in,
 		Notify &notify_in, Log &log_in, System &system_in, Util &util_in, PDM &pdm_in, MCPWM &mcpwm_in,
-		FS &fs_in, BT &bt_in, WLAN &wlan_in, UDP &udp_in, TCP &tcp_in)
+		FS &fs_in, BT &bt_in, WLAN &wlan_in, UDP &udp_in, TCP &tcp_in, I2C &i2c_in)
 	:
 		config(config_in), console(console_in), ledpixel(ledpixel_in), ledpwm(ledpwm_in),
 		notify(notify_in), log(log_in), system(system_in), util(util_in), pdm(pdm_in), mcpwm(mcpwm_in),
-		fs(fs_in), bt(bt_in), wlan(wlan_in), udp(udp_in), tcp(tcp_in)
+		fs(fs_in), bt(bt_in), wlan(wlan_in), udp(udp_in), tcp(tcp_in), i2c(i2c_in)
 {
 	if(this->singleton)
 		throw(hard_exception("Command: already activated"));
@@ -543,6 +552,7 @@ Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, 
 	this->wlan_ = &wlan;
 	this->udp_ = &udp;
 	this->tcp_ = &tcp;
+	this->i2c_ = &i2c;
 }
 
 Command &Command::get()
@@ -1322,22 +1332,6 @@ void Command::display_page_remove(cli_command_call_t *call)
 	command_display_page_remove(call); // FIXME
 }
 
-void Command::i2c_info(cli_command_call_t *call)
-{
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
-	command_i2c_info(call); // FIXME
-}
-
-void Command::i2c_speed(cli_command_call_t *call)
-{
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
-	command_i2c_speed(call); // FIXME
-}
-
 void Command::sensor_dump(cli_command_call_t *call)
 {
 	if(!Command::singleton)
@@ -1654,6 +1648,46 @@ void Command::script_stop(cli_command_call_t *call)
 	}
 
 	Command::singleton->script_thread_mutex.unlock();
+}
+
+void Command::i2c_speed(cli_command_call_t *call)
+{
+	int module;
+	int speed;
+
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	module = call->parameters[0].unsigned_int;
+
+	if(call->parameter_count > 1)
+		i2c_->speed(module, call->parameters[1].unsigned_int);
+
+	speed = i2c_->speed(module);
+
+	call->result = std::format("i2c speed of module {:d} is {:d} kHz", module, speed);
+}
+
+void Command::i2c_probe(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	call->result = std::format("probe {:d}/{:d}/{:#04x}: {}",
+			call->parameters[0].unsigned_int,
+			call->parameters[1].unsigned_int,
+			call->parameters[2].unsigned_int,
+			i2c_->probe(call->parameters[0].unsigned_int, call->parameters[1].unsigned_int, call->parameters[2].unsigned_int) ? "ok" : "not found");
+}
+
+void Command::i2c_info(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	call->result = "I2C INFO";
+
+	i2c_->info(call->result);
 }
 
 command_response_t *Command::receive_queue_pop()
