@@ -213,19 +213,22 @@ void I2C::Module::create_buses(int amount)
 	}
 }
 
-void I2C::Module::set_mux(int bus)
+void I2C::Module::select_bus(int bus)
 {
-	int bus_bits;
-
 	if(this->_buses.find(bus) == this->_buses.end())
-		throw(hard_exception(std::format("I2C::Module::set_mux: invalid bus {:d}", bus)));
+		throw(hard_exception(std::format("I2C::Module::select_bus: invalid bus {:d}", bus)));
 
-	if(bus == 0)
-		bus_bits = 0;
-	else
-		bus_bits = 1 << (bus - 1);
+	if(this->has_mux)
+	{
+		int bus_bits;
 
-	this->_set_mux(bus_bits);
+		if(bus == 0)
+			bus_bits = 0;
+		else
+			bus_bits = 1 << (bus - 1);
+
+		this->_set_mux(bus_bits);
+	}
 }
 
 void I2C::Module::speed(int speed_in)
@@ -266,19 +269,7 @@ bool I2C::Module::probe(int bus, int address)
 {
 	std::lock_guard<std::mutex> mutex_guard(this->mutex);
 
-	if(this->has_mux)
-	{
-		try
-		{
-			this->set_mux(bus);
-		}
-		catch(const transient_exception &e)
-		{
-			this->log << std::format("I2C::Module::probe({:d},{:d}): set_mux: {}", this->module_index, bus, address, e.what());
-			return(false);
-		}
-	}
-
+	this->select_bus(bus);
 	return(this->_probe(address));
 }
 
@@ -298,7 +289,7 @@ void I2C::Module::send(int bus, int address, const data_t &data)
 {
 	std::lock_guard<std::mutex> mutex_guard(this->mutex);
 
-	this->set_mux(bus);
+	this->select_bus(bus);
 	return(this->_send(address, data));
 }
 
@@ -306,7 +297,7 @@ void I2C::Module::receive(int bus, int address, int length, data_t &data)
 {
 	std::lock_guard<std::mutex> mutex_guard(this->mutex);
 
-	this->set_mux(bus);
+	this->select_bus(bus);
 	return(this->_receive(address, length, data));
 }
 
@@ -314,7 +305,7 @@ void I2C::Module::send_receive(int bus, int address, const data_t &send_buffer, 
 {
 	std::lock_guard<std::mutex> mutex_guard(this->mutex);
 
-	this->set_mux(bus);
+	this->select_bus(bus);
 	return(this->_send_receive(address, send_buffer, length, receive_buffer));
 }
 
@@ -467,7 +458,7 @@ void I2C::MainModule::_receive(int address_in, int length, data_t &in)
 
 	i2c_operations[current].command = I2C_MASTER_CMD_READ;
 	i2c_operations[current].read.ack_value = I2C_NACK_VAL;
-	i2c_operations[current].read.data = in.data() + in.size() - 1;
+	i2c_operations[current].read.data = in.data() + (length - 1);
 	i2c_operations[current].read.total_bytes = 1;
 	current++;
 

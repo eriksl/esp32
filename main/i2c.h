@@ -79,7 +79,7 @@ class I2C final
 
 				bool probe_mux();
 				void create_buses(int amount);
-				void set_mux(int bus);
+				void select_bus(int bus);
 
 				virtual void _set_mux(int bus_bits) = 0;
 				virtual bool _probe(int address) = 0;
