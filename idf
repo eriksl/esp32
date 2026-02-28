@@ -52,12 +52,6 @@ case "$1" in
 		exec ninja ${args[*]}
 		;;
 
-	monitor)
-		cd "$IDF_BUILD"
-		shift
-		exec ninja "$@"
-		;;
-
 	run)
 		exec idf.py -B "${IDF_BUILD}" -D "${IDF_DEFAULTS}" -p /dev/ttyACM0 app-flash monitor
 		;;
