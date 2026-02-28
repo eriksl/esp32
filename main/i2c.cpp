@@ -93,10 +93,11 @@ std::map<int, I2C::Module *>& I2C::modules()
 	return(this->_modules);
 }
 
-I2C::Device *I2C::new_device(int module_index, int bus_index, int address, std::string_view name)
+I2C::Device* I2C::new_device(int module_index, int bus_index, int address, std::string_view name)
 {
 	std::map<int, Module *>::const_iterator module;
-	Bus *bus;
+	Bus* bus;
+	Bus* bus0;
 	Device *device;
 
 	if((module = this->_modules.find(module_index)) == this->_modules.end())
@@ -113,7 +114,22 @@ I2C::Device *I2C::new_device(int module_index, int bus_index, int address, std::
 
 	try
 	{
-		device = bus->new_device(address, name);
+		if(bus_index != 0)
+		{
+			bus0 = module->second->bus(0);
+
+			if(bus0->find(address))
+				throw(transient_exception(std::format("I2C::new_device: {}: device on bus {:d} already registered on root bus", name, bus_index)));
+		}
+	}
+	catch(const transient_exception &e)
+	{
+	}
+
+	try
+	{
+		if(!(device = bus->new_device(address, name)))
+			throw(hard_exception("bus->new_device returns nullptr"));
 	}
 	catch(const transient_exception &e)
 	{
