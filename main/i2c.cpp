@@ -791,6 +791,11 @@ void I2C::Device::data(int &module_in, int &bus_in, int &address_in, std::string
 	name_in = this->name;
 }
 
+std::string I2C::Device::data()
+{
+	return(std::format("{}@{:d}/{:d}/{:02x}", this->name, this->bus_ref.module().index(), this->bus_ref.index(), this->address));
+}
+
 void I2C::Device::send(const data_t &data)
 {
 	this->bus_ref.send(this->address, data);

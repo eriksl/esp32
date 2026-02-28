@@ -172,6 +172,7 @@ class I2C final
 
 				std::string info();
 				void data(int &module, int &bus, int &address, std::string &name);
+				std::string data();
 				void send(const data_t &);
 				void send(unsigned char b1);
 				void send(unsigned char b1, unsigned char b2);
