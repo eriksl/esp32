@@ -293,7 +293,7 @@ int BT::gap_event(struct ble_gap_event *event, void *arg)
 
 		case(BLE_GAP_EVENT_ADV_COMPLETE):
 		{
-			log << "bt: gap event complete";
+			//log << "bt: gap event complete";
 
 			server_advertise();
 
@@ -314,7 +314,7 @@ int BT::gap_event(struct ble_gap_event *event, void *arg)
 
 		case(BLE_GAP_EVENT_NOTIFY_TX):
 		{
-			log << "BLE_GAP_EVENT_NOTIFY_TX";
+			// log << "BLE_GAP_EVENT_NOTIFY_TX";
 
 			/* NOTE: this event doesn't mean the notification is actually sent! */
 			/* it's just called synchronously from within ble_gatts_indicate_custom */
@@ -336,13 +336,13 @@ int BT::gap_event(struct ble_gap_event *event, void *arg)
 
 		case(BLE_GAP_EVENT_SUBSCRIBE):
 		{
-			log << "BLE_GAP_EVENT_SUBSCRIBE";
+			// log << "BLE_GAP_EVENT_SUBSCRIBE";
 			break;
 		}
 
 		case(BLE_GAP_EVENT_MTU):
 		{
-			log << "BLE_GAP_EVENT_MTU";
+			//log << "BLE_GAP_EVENT_MTU";
 			break;
 		}
 
@@ -378,7 +378,7 @@ int BT::gap_event(struct ble_gap_event *event, void *arg)
 
 		case(BLE_GAP_EVENT_DATA_LEN_CHG):
 		{
-			log << "BLE_GAP_EVENT_DATA_LEN_CHG";
+			//log << "BLE_GAP_EVENT_DATA_LEN_CHG";
 			break;
 		}
 
@@ -457,7 +457,7 @@ void BT::received(unsigned int connection_handle, unsigned int attribute_handle,
 	{
 		decrypt_buffer = Crypt::aes256(false, Crypt::password_to_aes256_key(encryption_key), receive_buffer);
 	}
-	catch(const hard_exception &e)
+	catch(const hard_exception &)
 	{
 		this->stats_received_decryption_failed++;
 		return;
