@@ -133,7 +133,7 @@ I2C::Device* I2C::new_device(int module_index, int bus_index, int address, std::
 	}
 	catch(const transient_exception &e)
 	{
-		throw(transient_exception(std::format("I2C::new_device: {}: invalid device/address {:d}: {}", name, address, e.what())));
+		throw(transient_exception(std::format("I2C::new_device: {}: invalid device/address {:#04x}@{:d}/{:d}: {}", name, address, module_index, bus_index,  e.what())));
 	}
 
 	return(device);
