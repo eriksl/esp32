@@ -11,7 +11,7 @@ class FS final
 
 		explicit FS() = delete;
 		explicit FS(const FS &) = delete;
-		explicit FS(Log &, Ramdisk::Root &);
+		explicit FS(Log &, Ramdisk &);
 
 		static FS& get();
 
@@ -29,5 +29,5 @@ class FS final
 
 		static FS *singleton;
 		Log &log;
-		Ramdisk::Root &ramdisk;
+		Ramdisk &ramdisk;
 };
