@@ -515,11 +515,11 @@ BT *Command::bt_ = nullptr;
 WLAN *Command::wlan_ = nullptr;
 UDP *Command::udp_ = nullptr;
 TCP *Command::tcp_ = nullptr;
-I2C *Command::i2c_ = nullptr;
+I2c *Command::i2c_ = nullptr;
 
 Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, LedPWM &ledpwm_in,
 		Notify &notify_in, Log &log_in, System &system_in, Util &util_in, PDM &pdm_in, MCPWM &mcpwm_in,
-		FS &fs_in, BT &bt_in, WLAN &wlan_in, UDP &udp_in, TCP &tcp_in, I2C &i2c_in)
+		FS &fs_in, BT &bt_in, WLAN &wlan_in, UDP &udp_in, TCP &tcp_in, I2c &i2c_in)
 	:
 		config(config_in), console(console_in), ledpixel(ledpixel_in), ledpwm(ledpwm_in),
 		notify(notify_in), log(log_in), system(system_in), util(util_in), pdm(pdm_in), mcpwm(mcpwm_in),

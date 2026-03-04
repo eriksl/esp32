@@ -10,12 +10,25 @@
 
 #include <format>
 
-I2C *I2C::singleton = nullptr;
-
-I2C::I2C(Log &log_in, Config &config_in) : log(log_in), config(config_in)
+namespace I2C
 {
-	if(this->singleton)
-		throw(hard_exception("I2C: already active"));
+	I2c* singleton = nullptr;
+}
+
+using namespace I2C;
+
+I2c& I2C::get()
+{
+	if(!singleton)
+		throw(hard_exception("I2c::get not active"));
+
+	return(*singleton);
+}
+
+I2c::I2c(Log &log_in, Config &config_in) : log(log_in), config(config_in)
+{
+	if(singleton)
+		throw(hard_exception("I2c: already active"));
 
 #if((CONFIG_BSP_I2C0_SDA >= 0) && (CONFIG_BSP_I2C0_SCL >= 0))
 	this->_modules[0] = new MainModule(log, config, *this, 0, 0, CONFIG_BSP_I2C0_SDA, CONFIG_BSP_I2C0_SCL);
@@ -29,28 +42,20 @@ I2C::I2C(Log &log_in, Config &config_in) : log(log_in), config(config_in)
 	this->_modules[2] = new ULPModule(log, config, *this, 2, 0, CONFIG_BSP_I2C2_SDA, CONFIG_BSP_I2C2_SCL);
 #endif
 
-	this->singleton = this;
+	singleton = this;
 }
 
-I2C &I2C::get()
-{
-	if(!I2C::singleton)
-		throw(hard_exception("I2C::get not active"));
-
-	return(*I2C::singleton);
-}
-
-bool I2C::probe(int module_index, int bus_index, int address)
+bool I2c::probe(int module_index, int bus_index, int address)
 {
 	std::map<int, Module *>::const_iterator module;
 
 	if((module = this->_modules.find(module_index)) == this->_modules.end())
-		throw(transient_exception(std::format("I2C::probe: invalid module {:d}", module_index)));
+		throw(transient_exception(std::format("I2c::probe: invalid module {:d}", module_index)));
 
 	return(module->second->probe(bus_index, address));
 }
 
-I2C::Device* I2C::find(int module, int bus, int address)
+Device* I2c::find(int module, int bus, int address)
 {
 	std::map<int, Module *>::const_iterator it;
 
@@ -60,7 +65,7 @@ I2C::Device* I2C::find(int module, int bus, int address)
 	return(it->second->find(bus, address));
 }
 
-void I2C::speed(int module_index, int speed)
+void I2c::speed(int module_index, int speed)
 {
 	std::map<int, Module *>::iterator it;
 
@@ -70,7 +75,7 @@ void I2C::speed(int module_index, int speed)
 	it->second->speed(speed);
 }
 
-void I2C::info(std::string &out)
+void I2c::info(std::string &out)
 {
 	std::map<int, Module *>::const_iterator it;
 
@@ -78,7 +83,7 @@ void I2C::info(std::string &out)
 		out += it->second->info();
 }
 
-int I2C::speed(int module_index)
+int I2c::speed(int module_index)
 {
 	std::map<int, Module *>::iterator it;
 
@@ -88,12 +93,12 @@ int I2C::speed(int module_index)
 	return(it->second->speed());
 }
 
-std::map<int, I2C::Module *>& I2C::modules()
+std::map<int, Module *>& I2c::modules()
 {
 	return(this->_modules);
 }
 
-I2C::Device* I2C::new_device(int module_index, int bus_index, int address, std::string_view name)
+Device* I2c::new_device(int module_index, int bus_index, int address, std::string_view name)
 {
 	std::map<int, Module *>::const_iterator module;
 	Bus* bus;
@@ -101,7 +106,7 @@ I2C::Device* I2C::new_device(int module_index, int bus_index, int address, std::
 	Device *device;
 
 	if((module = this->_modules.find(module_index)) == this->_modules.end())
-		throw(transient_exception(std::format("I2C::new_device: {}: invalid module {:d}", name, module_index)));
+		throw(transient_exception(std::format("I2c::new_device: {}: invalid module {:d}", name, module_index)));
 
 	try
 	{
@@ -109,7 +114,7 @@ I2C::Device* I2C::new_device(int module_index, int bus_index, int address, std::
 	}
 	catch(const transient_exception &e)
 	{
-		throw(transient_exception(std::format("I2C::new_device: {}: invalid bus {:d}", name, bus_index)));
+		throw(transient_exception(std::format("I2c::new_device: {}: invalid bus {:d}", name, bus_index)));
 	}
 
 	try
@@ -119,7 +124,7 @@ I2C::Device* I2C::new_device(int module_index, int bus_index, int address, std::
 			bus0 = module->second->bus(0);
 
 			if(bus0->find(address))
-				throw(transient_exception(std::format("I2C::new_device: {}: device on bus {:d} already registered on root bus", name, bus_index)));
+				throw(transient_exception(std::format("I2c::new_device: {}: device on bus {:d} already registered on root bus", name, bus_index)));
 		}
 	}
 	catch(const transient_exception &e)
@@ -133,46 +138,46 @@ I2C::Device* I2C::new_device(int module_index, int bus_index, int address, std::
 	}
 	catch(const transient_exception &e)
 	{
-		throw(transient_exception(std::format("I2C::new_device: {}: invalid device/address {:#04x}@{:d}/{:d}: {}", name, address, module_index, bus_index,  e.what())));
+		throw(transient_exception(std::format("I2c::new_device: {}: invalid device/address {:#04x}@{:d}/{:d}: {}", name, address, module_index, bus_index,  e.what())));
 	}
 
 	return(device);
 }
 
-I2C::Module::Module(Log &log_in, Config &config_in, I2C &root_in, int module_index_in, int device_port_in, int sda_in, int scl_in)
-	: log(log_in), config(config_in), module_index(module_index_in), device_port(device_port_in), sda(sda_in), scl(scl_in), root_ref(root_in)
+Module::Module(Log &log_in, Config &config_in, I2c &root_in, int module_index_in, int device_port_in, int sda_in, int scl_in)
+	: log(log_in), config(config_in), sda(sda_in), scl(scl_in), module_index(module_index_in), device_port(device_port_in), root_ref(root_in)
 {
 }
 
-I2C::Module::~Module()
+Module::~Module()
 {
 }
 
-I2C& I2C::Module::root()
+I2c& Module::root()
 {
 	return(this->root_ref);
 }
 
-I2C::Bus* I2C::Module::bus(int bus_index)
+Bus* Module::bus(int bus_index)
 {
 	std::map<int, Bus *>::iterator it;
 
 	if((it = this->_buses.find(bus_index)) == this->_buses.end())
-		throw(transient_exception("I2C::Module::bus invalid bus"));
+		throw(transient_exception("I2c::Module::bus invalid bus"));
 
 	return(it->second);
 }
 
-bool I2C::Module::probe_mux()
+bool Module::probe_mux()
 {
 	data_t buffer;
 
-	if(!this->_probe(I2C::i2c_bus_mux_address))
+	if(!this->_probe(bus_mux_address))
 		return(false);
 
 	try
 	{
-		this->_send_receive(I2C::i2c_bus_mux_address, data_t(1, 0xff), 1, buffer);
+		this->_send_receive(bus_mux_address, data_t(1, 0xff), 1, buffer);
 	}
 	catch(const transient_exception &e)
 	{
@@ -184,7 +189,7 @@ bool I2C::Module::probe_mux()
 
 	try
 	{
-		this->_send_receive(I2C::i2c_bus_mux_address, data_t(1, 0x00), 1, buffer);
+		this->_send_receive(bus_mux_address, data_t(1, 0x00), 1, buffer);
 	}
 	catch(const transient_exception &e)
 	{
@@ -197,7 +202,7 @@ bool I2C::Module::probe_mux()
 	return(true);
 }
 
-void I2C::Module::create_buses(int amount)
+void Module::create_buses(int amount)
 {
 	int bus_index;
 	std::string bus_name;
@@ -213,10 +218,10 @@ void I2C::Module::create_buses(int amount)
 	}
 }
 
-void I2C::Module::select_bus(int bus)
+void Module::select_bus(int bus)
 {
 	if(this->_buses.find(bus) == this->_buses.end())
-		throw(hard_exception(std::format("I2C::Module::select_bus: invalid bus {:d}", bus)));
+		throw(hard_exception(std::format("I2c::Module::select_bus: invalid bus {:d}", bus)));
 
 	if(this->has_mux)
 	{
@@ -231,18 +236,18 @@ void I2C::Module::select_bus(int bus)
 	}
 }
 
-void I2C::Module::speed(int speed_in)
+void Module::speed(int speed_in)
 {
 	this->speed_khz = speed_in;
 	this->config.set_int(std::format("i2c.%d.speed", this->module_index), speed_in);
 }
 
-int I2C::Module::speed()
+int Module::speed()
 {
 	return(this->speed_khz);
 }
 
-std::string I2C::Module::info()
+std::string Module::info()
 {
 	std::map<int, Bus *>::const_iterator it;
 	std::string out;
@@ -255,17 +260,17 @@ std::string I2C::Module::info()
 	return(out);
 }
 
-int I2C::Module::index()
+int Module::index()
 {
 	return(this->module_index);
 };
 
-std::map<int, I2C::Bus *>& I2C::Module::buses()
+std::map<int, Bus *>& Module::buses()
 {
 	return(this->_buses);
 }
 
-bool I2C::Module::probe(int bus, int address)
+bool Module::probe(int bus, int address)
 {
 	std::lock_guard<std::mutex> mutex_guard(this->mutex);
 
@@ -273,7 +278,7 @@ bool I2C::Module::probe(int bus, int address)
 	return(this->_probe(address));
 }
 
-I2C::Device* I2C::Module::find(int bus, int address)
+Device* Module::find(int bus, int address)
 {
 	std::map<int, Bus *>::const_iterator it;
 
@@ -285,7 +290,7 @@ I2C::Device* I2C::Module::find(int bus, int address)
 	return(it->second->find(address));
 }
 
-void I2C::Module::send(int bus, int address, const data_t &data)
+void Module::send(int bus, int address, const data_t &data)
 {
 	std::lock_guard<std::mutex> mutex_guard(this->mutex);
 
@@ -293,7 +298,7 @@ void I2C::Module::send(int bus, int address, const data_t &data)
 	return(this->_send(address, data));
 }
 
-void I2C::Module::receive(int bus, int address, int length, data_t &data)
+void Module::receive(int bus, int address, int length, data_t &data)
 {
 	std::lock_guard<std::mutex> mutex_guard(this->mutex);
 
@@ -301,7 +306,7 @@ void I2C::Module::receive(int bus, int address, int length, data_t &data)
 	return(this->_receive(address, length, data));
 }
 
-void I2C::Module::send_receive(int bus, int address, const data_t &send_buffer, int length, data_t &receive_buffer)
+void Module::send_receive(int bus, int address, const data_t &send_buffer, int length, data_t &receive_buffer)
 {
 	std::lock_guard<std::mutex> mutex_guard(this->mutex);
 
@@ -309,13 +314,13 @@ void I2C::Module::send_receive(int bus, int address, const data_t &send_buffer, 
 	return(this->_send_receive(address, send_buffer, length, receive_buffer));
 }
 
-bool I2C::Module::restricted()
+bool Module::restricted()
 {
 	return(this->_restricted());
 }
 
-I2C::MainModule::MainModule(Log &log_in, Config &config_in, I2C &root_in, int module_index_in, int device_port_in, int sda_in, int scl_in)
-	: I2C::Module(log_in, config_in, root_in, module_index_in, device_port_in, sda_in, scl_in)
+MainModule::MainModule(Log &log_in, Config &config_in, I2c &root_in, int module_index_in, int device_port_in, int sda_in, int scl_in)
+	: Module(log_in, config_in, root_in, module_index_in, device_port_in, sda_in, scl_in)
 {
 	i2c_master_bus_config_t module_config =
 	{
@@ -361,26 +366,26 @@ I2C::MainModule::MainModule(Log &log_in, Config &config_in, I2C &root_in, int mo
 	device_config.scl_speed_hz = this->speed_khz * 1000;
 
 	if((rv = i2c_new_master_bus(&module_config, &this->module_handle)) != ESP_OK)
-		throw(hard_exception(log.esp_string_error(rv, "I2C: i2c_new_master_bus")));
+		throw(hard_exception(log.esp_string_error(rv, "I2c: i2c_new_master_bus")));
 
 	if((rv = i2c_master_bus_add_device(this->module_handle, &device_config, &this->device_handle)) != ESP_OK)
-		throw(hard_exception(log.esp_string_error(rv, "I2C: i2c_master_bus_add_device")));
+		throw(hard_exception(log.esp_string_error(rv, "I2c: i2c_master_bus_add_device")));
 
 	this->has_mux = this->probe_mux();
 	this->create_buses(this->has_mux ? 9 : 1);
 	this->name = std::format("main module {:d}", this->device_port);
 }
 
-void I2C::MainModule::_set_mux(int bus_bits)
+void MainModule::_set_mux(int bus_bits)
 {
 	data_t data;
 
 	data.push_back(bus_bits);
 
-	this->_send(I2C::i2c_bus_mux_address, data);
+	this->_send(bus_mux_address, data);
 }
 
-bool I2C::MainModule::_probe(int address)
+bool MainModule::_probe(int address)
 {
 	try
 	{
@@ -394,14 +399,14 @@ bool I2C::MainModule::_probe(int address)
 	return(true);
 }
 
-void I2C::MainModule::_send(int address, const data_t& out)
+void MainModule::_send(int address, const data_t& out)
 {
 	esp_err_t rv;
 	int current;
 	i2c_operation_job_t i2c_operations[3];
 	data_t cooked_out;
 
-	cooked_out.push_back((address << I2C::i2c_address_shift) | I2C::i2c_write_flag);
+	cooked_out.push_back((address << address_shift) | write_flag);
 	cooked_out += out;
 
 	current = 0;
@@ -416,10 +421,10 @@ void I2C::MainModule::_send(int address, const data_t& out)
 	i2c_operations[current++].command = I2C_MASTER_CMD_STOP;
 
 	if((rv = i2c_master_execute_defined_operations(this->device_handle, i2c_operations, current, 500)) != ESP_OK)
-		throw(transient_exception(this->log.esp_string_error(rv, "I2C::MainModule::send: i2c_master_execute_defined_operations")));
+		throw(transient_exception(this->log.esp_string_error(rv, "I2c::MainModule::send: i2c_master_execute_defined_operations")));
 }
 
-void I2C::MainModule::_receive(int address_in, int length, data_t &in)
+void MainModule::_receive(int address_in, int length, data_t &in)
 {
 	esp_err_t rv;
 	unsigned char address;
@@ -430,12 +435,12 @@ void I2C::MainModule::_receive(int address_in, int length, data_t &in)
 	// When that's fixed, this code and the next comment can be removed.
 
 	if(length == 0)
-		throw(hard_exception(std::format("I2C::MainModule::receive: address {:#x}: cannot handle zero byte reads", address_in)));
+		throw(hard_exception(std::format("I2c::MainModule::receive: address {:#x}: cannot handle zero byte reads", address_in)));
 
 	in.clear();
 	in.resize(length);
 
-	address = ((address_in << I2C::i2c_address_shift) | I2C::i2c_read_flag);
+	address = ((address_in << address_shift) | read_flag);
 
 	current = 0;
 
@@ -465,10 +470,10 @@ void I2C::MainModule::_receive(int address_in, int length, data_t &in)
 	i2c_operations[current++].command = I2C_MASTER_CMD_STOP;
 
 	if((rv = i2c_master_execute_defined_operations(this->device_handle, i2c_operations, current, 500)) != ESP_OK)
-		throw(transient_exception(this->log.esp_string_error(rv, "I2C::MainModule::receive: i2c_master_defined_operations")));
+		throw(transient_exception(this->log.esp_string_error(rv, "I2c::MainModule::receive: i2c_master_defined_operations")));
 }
 
-void I2C::MainModule::_send_receive(int address, const data_t& out, int length, data_t& in)
+void MainModule::_send_receive(int address, const data_t& out, int length, data_t& in)
 {
 	esp_err_t rv;
 	int current;
@@ -476,8 +481,8 @@ void I2C::MainModule::_send_receive(int address, const data_t& out, int length, 
 	unsigned char read_address;
 	data_t cooked_out;
 
-	read_address = ((address << I2C::i2c_address_shift) | I2C::i2c_read_flag);
-	cooked_out.push_back((address << I2C::i2c_address_shift) | I2C::i2c_write_flag);
+	read_address = ((address << address_shift) | read_flag);
+	cooked_out.push_back((address << address_shift) | write_flag);
 	cooked_out += out;
 
 	in.resize(length);
@@ -515,16 +520,16 @@ void I2C::MainModule::_send_receive(int address, const data_t& out, int length, 
 	i2c_operations[current++].command = I2C_MASTER_CMD_STOP;
 
 	if((rv = i2c_master_execute_defined_operations(this->device_handle, i2c_operations, current, 500)) != ESP_OK)
-		throw(transient_exception(this->log.esp_string_error(rv, "I2C::MainModule::send_receive: i2c_master_defined_operations")));
+		throw(transient_exception(this->log.esp_string_error(rv, "I2c::MainModule::send_receive: i2c_master_defined_operations")));
 }
 
-bool I2C::MainModule::_restricted()
+bool MainModule::_restricted()
 {
 	return(false);
 }
 
-I2C::ULPModule::ULPModule(Log &log_in, Config &config_in, I2C &root_in, int module_index_in, int device_port_in, int sda_in, int scl_in)
-	: I2C::Module(log_in, config_in, root_in, module_index_in, device_port_in, sda_in, scl_in)
+ULPModule::ULPModule(Log &log_in, Config &config_in, I2c &root_in, int module_index_in, int device_port_in, int sda_in, int scl_in)
+	: Module(log_in, config_in, root_in, module_index_in, device_port_in, sda_in, scl_in)
 {
 	ulp_riscv_i2c_cfg_t module_config_slow =
 	{
@@ -598,24 +603,24 @@ I2C::ULPModule::ULPModule(Log &log_in, Config &config_in, I2C &root_in, int modu
 	module_config->i2c_pin_cfg.scl_io_num = scl;
 
 	if((rv = ulp_riscv_i2c_master_init(module_config)) != ESP_OK)
-		throw(hard_exception(log.esp_string_error(rv, "I2C::ULPModule: ulp_riscv_i2c_master_init")));
+		throw(hard_exception(log.esp_string_error(rv, "I2c::ULPModule: ulp_riscv_i2c_master_init")));
 
 	this->has_mux = this->probe_mux();
 	this->create_buses(this->has_mux ? 9 : 1);
 	this->name = std::format("ULP module {:d}", this->device_port);
 }
 
-void I2C::ULPModule::_set_mux(int bus_bits)
+void ULPModule::_set_mux(int bus_bits)
 {
 	data_t data;
 
 	data.push_back(bus_bits);
 	data.push_back(bus_bits);
 
-	this->_send(I2C::i2c_bus_mux_address, data);
+	this->_send(bus_mux_address, data);
 }
 
-bool I2C::ULPModule::_probe(int address)
+bool ULPModule::_probe(int address)
 {
 	data_t buffer;
 
@@ -631,13 +636,13 @@ bool I2C::ULPModule::_probe(int address)
 	return(true);
 }
 
-void I2C::ULPModule::_send(int address, const data_t& data)
+void ULPModule::_send(int address, const data_t& data)
 {
 	esp_err_t rv;
 	unsigned char dummy[1];
 
 	if(data.size() == 0)
-		throw(hard_exception(std::format("I2C::ULPModule::send: address {:#x}: cannot send 0 bytes using ULP I2C", address)));
+		throw(hard_exception(std::format("I2c::ULPModule::send: address {:#x}: cannot send 0 bytes using ULP I2c", address)));
 
 	ulp_riscv_i2c_master_set_slave_addr(address);
 	ulp_riscv_i2c_master_set_slave_reg_addr(data.at(0));
@@ -645,31 +650,31 @@ void I2C::ULPModule::_send(int address, const data_t& data)
 	if(data.size() > 1)
 	{
 		if((rv = ulp_riscv_i2c_master_write_to_device(data.data() + 1, data.size() - 1)) != ESP_OK)
-			throw(transient_exception(this->log.esp_string_error(rv, "I2C::ULPModule::send: ulp_riscv_i2c_master_write_to_device")));
+			throw(transient_exception(this->log.esp_string_error(rv, "I2c::ULPModule::send: ulp_riscv_i2c_master_write_to_device")));
 	}
 	else
 	{
-		// workaround for writing only one byte, which the ULP I2C can't do
+		// workaround for writing only one byte, which the ULP I2c can't do
 		// instead write one byte, then read one (dummy) byte, which it can do
 
-		this->log << std::format("I2C::ULPModule::send: address: {:#x}, emulating one byte write by a write/read cycle", address);
+		this->log << std::format("I2c::ULPModule::send: address: {:#x}, emulating one byte write by a write/read cycle", address);
 
 		if((rv = ulp_riscv_i2c_master_read_from_device(dummy, sizeof(dummy))) != ESP_OK)
-			throw(transient_exception(this->log.esp_string_error(rv, "I2C::ULPModule::send: ulp_riscv_i2c_master_write_to_device")));
+			throw(transient_exception(this->log.esp_string_error(rv, "I2c::ULPModule::send: ulp_riscv_i2c_master_write_to_device")));
 	}
 }
 
-void I2C::ULPModule::_receive(int address, int, data_t&)
+void ULPModule::_receive(int address, int, data_t&)
 {
-	throw(hard_exception(std::format("I2C::receive: address {:#x}: reading without writing unsupported on ULP module", address)));
+	throw(hard_exception(std::format("I2c::receive: address {:#x}: reading without writing unsupported on ULP module", address)));
 }
 
-void I2C::ULPModule::_send_receive(int address, const data_t &send_buffer, int length, data_t &receive_buffer)
+void ULPModule::_send_receive(int address, const data_t &send_buffer, int length, data_t &receive_buffer)
 {
 	esp_err_t rv;
 
 	if(send_buffer.size() != 1)
-		throw(hard_exception(std::format("I2C::ULPModule::send_receive: address {:#x}: can only send one byte in write/read transaction", address)));
+		throw(hard_exception(std::format("I2c::ULPModule::send_receive: address {:#x}: can only send one byte in write/read transaction", address)));
 
 	ulp_riscv_i2c_master_set_slave_addr(address);
 	ulp_riscv_i2c_master_set_slave_reg_addr(send_buffer.at(0));
@@ -677,35 +682,35 @@ void I2C::ULPModule::_send_receive(int address, const data_t &send_buffer, int l
 	receive_buffer.resize(length);
 
 	if((rv = ulp_riscv_i2c_master_read_from_device(receive_buffer.data(), receive_buffer.size())) != ESP_OK)
-		throw(transient_exception(this->log.esp_string_error(rv, "I2C::ULPModule::send_receive: ulp_riscv_i2c_master_write_to_device")));
+		throw(transient_exception(this->log.esp_string_error(rv, "I2c::ULPModule::send_receive: ulp_riscv_i2c_master_write_to_device")));
 }
 
-bool I2C::ULPModule::_restricted()
+bool ULPModule::_restricted()
 {
 	return(true);
 }
 
-I2C::Bus::Bus(Log &log_in, Module &module_in, int bus_index_in, std::string_view bus_name) :
+Bus::Bus(Log &log_in, Module &module_in, int bus_index_in, std::string_view bus_name) :
 		log(log_in), module_ref(module_in), bus_index(bus_index_in), name(bus_name)
 {
 }
 
-I2C::Module& I2C::Bus::module()
+Module& Bus::module()
 {
 	return(this->module_ref);
 }
 
-int I2C::Bus::index()
+int Bus::index()
 {
 	return(this->bus_index);
 }
 
-I2C::Device* I2C::Bus::new_device(int address, std::string_view device_name)
+Device* Bus::new_device(int address, std::string_view device_name)
 {
 	Device *device;
 
 	if(this->devices.find(address) != this->devices.end())
-		throw(transient_exception("I2C::module::new_device: address in use"));
+		throw(transient_exception("I2c::module::new_device: address in use"));
 
 	device = new Device(this->log, *this, address, device_name);
 
@@ -714,7 +719,7 @@ I2C::Device* I2C::Bus::new_device(int address, std::string_view device_name)
 	return(device);
 }
 
-I2C::Device* I2C::Bus::find(int address)
+Device* Bus::find(int address)
 {
 	std::map<int, Device *>::const_iterator it;
 
@@ -724,7 +729,7 @@ I2C::Device* I2C::Bus::find(int address)
 	return(it->second);
 }
 
-std::string I2C::Bus::info()
+std::string Bus::info()
 {
 	std::map<int, Device *>::const_iterator it;
 	std::string out;
@@ -737,44 +742,44 @@ std::string I2C::Bus::info()
 	return(out);
 }
 
-void I2C::Bus::delete_device(Device *device)
+void Bus::delete_device(Device *device)
 {
 	std::map<int, Device *>::iterator it;
 
 	if(!device)
-		throw(hard_exception("I2C::Bus::delete_device: invalid argument"));
+		throw(hard_exception("I2c::Bus::delete_device: invalid argument"));
 
 	for(it = this->devices.begin(); it != this->devices.end(); it++)
 		if(it->second == device)
 			this->devices.erase(it->first);
 }
 
-void I2C::Bus::send(int address, const data_t &data)
+void Bus::send(int address, const data_t &data)
 {
 	this->module_ref.send(this->bus_index, address, data);
 }
 
-void I2C::Bus::receive(int address, int length, data_t &data)
+void Bus::receive(int address, int length, data_t &data)
 {
 	this->module_ref.receive(this->bus_index, address, length, data);
 }
 
-void I2C::Bus::send_receive(int address, const data_t &out, int length, data_t &in)
+void Bus::send_receive(int address, const data_t &out, int length, data_t &in)
 {
 	this->module_ref.send_receive(this->bus_index, address, out, length, in);
 }
 
-I2C::Device::Device(Log &log_in, Bus &bus_in, int address_in, std::string_view name_in) : 
+Device::Device(Log &log_in, Bus &bus_in, int address_in, std::string_view name_in) : 
 		log(log_in), bus_ref(bus_in), address(address_in), name(name_in)
 {
 }
  
-std::string I2C::Device::info()
+std::string Device::info()
 {
 	return(std::format("\n-   device: address {:#04x}, name: \"{}\"", this->address, this->name));
 }
 
-void I2C::Device::data(int &module_in, int &bus_in, int &address_in, std::string &name_in)
+void Device::data(int &module_in, int &bus_in, int &address_in, std::string &name_in)
 {
 	address_in = this->address;
 	bus_in = this->bus_ref.index();
@@ -782,17 +787,17 @@ void I2C::Device::data(int &module_in, int &bus_in, int &address_in, std::string
 	name_in = this->name;
 }
 
-std::string I2C::Device::data()
+std::string Device::data()
 {
 	return(std::format("{}@{:d}/{:d}/{:02x}", this->name, this->bus_ref.module().index(), this->bus_ref.index(), this->address));
 }
 
-void I2C::Device::send(const data_t &data)
+void Device::send(const data_t &data)
 {
 	this->bus_ref.send(this->address, data);
 }
 
-void I2C::Device::send(unsigned char b1)
+void Device::send(unsigned char b1)
 {
 	data_t data;
 
@@ -800,7 +805,7 @@ void I2C::Device::send(unsigned char b1)
 	this->bus_ref.send(this->address, data);
 }
 
-void I2C::Device::send(unsigned char b1, unsigned char b2)
+void Device::send(unsigned char b1, unsigned char b2)
 {
 	data_t data;
 
@@ -809,7 +814,7 @@ void I2C::Device::send(unsigned char b1, unsigned char b2)
 	this->bus_ref.send(this->address, data);
 }
 
-void I2C::Device::send(unsigned char b1, unsigned char b2, unsigned char b3)
+void Device::send(unsigned char b1, unsigned char b2, unsigned char b3)
 {
 	data_t data;
 
@@ -819,17 +824,17 @@ void I2C::Device::send(unsigned char b1, unsigned char b2, unsigned char b3)
 	this->bus_ref.send(this->address, data);
 }
 
-void I2C::Device::receive(int length, data_t &data)
+void Device::receive(int length, data_t &data)
 {
 	this->bus_ref.receive(this->address, length, data);
 }
 
-void I2C::Device::send_receive(const data_t &out, int length, data_t &in)
+void Device::send_receive(const data_t &out, int length, data_t &in)
 {
 	this->bus_ref.send_receive(this->address, out, length, in);
 }
 
-void I2C::Device::send_receive(unsigned char b1, int length, data_t &in)
+void Device::send_receive(unsigned char b1, int length, data_t &in)
 {
 	data_t data;
 
@@ -837,7 +842,7 @@ void I2C::Device::send_receive(unsigned char b1, int length, data_t &in)
 	this->bus_ref.send_receive(this->address, data, length, in);
 }
 
-void I2C::Device::send_receive(unsigned char b1, unsigned char b2, int length, data_t &in)
+void Device::send_receive(unsigned char b1, unsigned char b2, int length, data_t &in)
 {
 	data_t data;
 
@@ -846,7 +851,7 @@ void I2C::Device::send_receive(unsigned char b1, unsigned char b2, int length, d
 	this->bus_ref.send_receive(this->address, data, length, in);
 }
 
-void I2C::Device::send_receive(unsigned char b1, unsigned char b2, unsigned char b3, int length, data_t &in)
+void Device::send_receive(unsigned char b1, unsigned char b2, unsigned char b3, int length, data_t &in)
 {
 	data_t data;
 
@@ -856,7 +861,7 @@ void I2C::Device::send_receive(unsigned char b1, unsigned char b2, unsigned char
 	this->bus_ref.send_receive(this->address, data, length, in);
 }
 
-I2C::Device::~Device()
+Device::~Device()
 {
 	this->bus_ref.delete_device(this);
 }

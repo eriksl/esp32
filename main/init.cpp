@@ -54,7 +54,7 @@ void app_main()
 		WLAN wlan(log, config, notify, system);
 		UDP udp(log);
 		TCP tcp(log);
-		I2C i2c(log, config);
+		I2c i2c(log, config);
 		Command command(config, console, ledpixel, ledpwm, notify, log, system, util, pdm, mcpwm, fs, bt, wlan, udp, tcp, i2c);
 		console.set(&command);
 		bt.set(&command);
