@@ -9,9 +9,17 @@
 
 #include <string>
 #include <map>
+#include <cstdint>
 
-namespace Ramdisk
+namespace RAMDISK
 {
+	class File;
+	class Dirent;
+	class FileDescriptor;
+	class Ramdisk;
+
+	Ramdisk& get();
+
 	enum
 	{
 		IO_RAMDISK_GET_USED,
@@ -22,143 +30,70 @@ namespace Ramdisk
 
 	class Mutex final
 	{
-		public:
+		friend Ramdisk;
 
-			explicit Mutex() = delete;
-			explicit Mutex(SemaphoreHandle_t *mutex);
-			~Mutex();
+		explicit Mutex() = delete;
+		explicit Mutex(const Mutex &) = delete;
+		explicit Mutex(const Mutex &&) = delete;
+		explicit Mutex(SemaphoreHandle_t *mutex);
+		Mutex& operator =(const Mutex&) = delete;
+		~Mutex();
 
-		private:
-
-			SemaphoreHandle_t *mutex;
-	};
-
-	class File final
-	{
-		public:
-
-			std::string get_filename() const;
-			unsigned int get_fileno() const;
-			unsigned int get_length() const;
-			unsigned int get_allocated() const;
-			struct timespec get_ctime() const;
-			struct timespec get_mtime() const;
-
-			void time_update(bool update_ctime = false);
-			int read(unsigned int offset, unsigned int size, uint8_t *data) const;
-			int write(unsigned int offset, unsigned int length, const uint8_t *data);
-			int truncate(unsigned int length);
-			int rename(const std::string &filename);
-
-			explicit File() = delete;
-			explicit File(const std::string &filename, unsigned int fileno);
-
-		private:
-
-			typedef std::basic_string<uint8_t> Data;
-
-			std::string filename;
-			unsigned int fileno;
-			struct timespec c_time;
-			struct timespec m_time;
-			Data contents;
-	};
-
-	class Dirent final
-	{
-		public:
-
-			void set(int next_fileno, unsigned int fileno = 0, const std::string &filename = "");
-			int get_next_fileno() const;
-			DIR *get_DIR();
-			struct dirent *get_dirent();
-
-			explicit Dirent(int next_fileno = -1);
-
-		private:
-
-			struct dirent dirent;
-			DIR dir;
-			int next_fileno;
+		SemaphoreHandle_t *mutex;
 	};
 
 	class Directory final
 	{
-		public:
+		friend Ramdisk;
 
-			File *get_file_by_fileno(unsigned int fileno);
-			const File *get_file_by_fileno_const(unsigned int fileno) const;
-			File *get_file_by_name(const std::string &filename);
-			const File *get_file_by_name_const(const std::string &filename) const;
-			unsigned int get_used() const;
+		explicit Directory() = delete;
+		explicit Directory(const Directory &) = delete;
+		explicit Directory(const Directory &&) = delete;
+		explicit Directory(const std::string &path);
+		Directory& operator =(const Directory &) = delete;
 
-			int opendir(const std::string &path) const;
-			int readdir(Dirent *dirent) const;
-			int closedir(const Dirent *dirent) const;
+		using FileMap = std::map<unsigned int /*fileno*/, File>;
 
-			int open(const std::string &filename, int fcntl_flags, unsigned int new_fileno);
-			int close(int fd) const;
-			int read(unsigned int fileno, unsigned int offset, unsigned int size, uint8_t *data) const;
-			int write(unsigned int fileno, unsigned int offset, unsigned int length, const uint8_t *data);
+		std::string path;
+		FileMap files;
 
-			int unlink(const std::string &path);
-			int rename(const std::string &from, const std::string &to);
+		File *get_file_by_fileno(unsigned int fileno);
+		const File *get_file_by_fileno_const(unsigned int fileno) const;
+		File *get_file_by_name(const std::string &filename);
+		const File *get_file_by_name_const(const std::string &filename) const;
+		unsigned int get_used() const;
 
-			int clear();
+		int opendir(const std::string &path) const;
+		int readdir(Dirent *dirent) const;
+		int closedir(const Dirent *dirent) const;
 
-			explicit Directory() = delete;
-			explicit Directory(const std::string &path);
+		int open(const std::string &filename, int fcntl_flags, unsigned int new_fileno);
+		int close(int fd) const;
+		int read(unsigned int fileno, unsigned int offset, unsigned int size, std::uint8_t *data) const;
+		int write(unsigned int fileno, unsigned int offset, unsigned int length, const std::uint8_t *data);
 
-		private:
+		int unlink(const std::string &path);
+		int rename(const std::string &from, const std::string &to);
 
-			typedef std::map<unsigned int /*fileno*/, File> FileMap;
-
-			std::string path;
-			FileMap files;
+		int clear();
 	};
 
-	class FileDescriptor final
+	class Ramdisk final
 	{
 		public:
 
-			unsigned int get_fd() const;
-			unsigned int get_fileno() const;
-			unsigned int get_fcntl_flags() const;
-			unsigned int get_offset() const;
-			bool is_fs() const;
-
-			void set_offset(unsigned int offset);
-
-			explicit FileDescriptor() = delete;
-			explicit FileDescriptor(unsigned int fd, unsigned int fileno, unsigned int fcntl_flags, unsigned int offset, bool fs);
-
-		private:
-
-			unsigned int fd;
-			unsigned int fileno;
-			unsigned int fcntl_flags;
-			unsigned int offset;
-			bool fs;
-	};
-
-	class Root final
-	{
-		public:
-
-			explicit Root() = delete;
-			explicit Root(const Root &) = delete;
-			explicit Root(Log &, const std::string &mountpoint, unsigned int size);
-
-			static Root &get();
+			explicit Ramdisk() = delete;
+			explicit Ramdisk(const Ramdisk &) = delete;
+			explicit Ramdisk(const Ramdisk &&) = delete;
+			explicit Ramdisk(Log &, const std::string &mountpoint, unsigned int size);
+			Ramdisk& operator =(const Ramdisk &) = delete;
 
 		private:
 
 			static constexpr unsigned int fd_max = 8;
 
-			typedef std::map<unsigned int /* file descriptor index */, FileDescriptor> FileDescriptorTable;
-			typedef std::map<DIR *, Dirent *> DirentTable;
-
-			static Root *singleton;
+			using FileDescriptorTable = std::map<unsigned int /* file descriptor index */, FileDescriptor>;
+			using DirentTable = std::map<DIR *, Dirent *>;
 
 			Log &log;
 			std::string mountpoint;
@@ -178,8 +113,8 @@ namespace Ramdisk
 			int ioctl(int fd, int op, int *intp);
 			int open(const std::string &path, int fcntl_flags);
 			int close(int fd);
-			int read(int fd, unsigned int size, uint8_t *data);
-			int write(int fd, unsigned int length, const uint8_t *data);
+			int read(int fd, unsigned int size, std::uint8_t *data);
+			int write(int fd, unsigned int length, const std::uint8_t *data);
 			int lseek(int fd, unsigned int mode, int offset);
 			int truncate(const std::string &path, unsigned int length);
 			int ftruncate(int fd, unsigned int length);
@@ -205,4 +140,85 @@ namespace Ramdisk
 			bool file_in_use(const std::string &filename, unsigned int fcntl_flags) const;
 			void all_stat(const File *fp, struct stat *st) const;
 	};
+
+	class File final
+	{
+		friend Ramdisk;
+		friend Directory;
+
+		explicit File() = delete;
+		//explicit File(const File &) = delete;
+		//explicit File(const File &&) = delete;
+		explicit File(const std::string &filename, unsigned int fileno);
+		//File& operator =(const File &) = delete;
+
+		using Data = std::basic_string<std::uint8_t>;
+
+		std::string filename;
+		unsigned int fileno;
+		struct timespec c_time;
+		struct timespec m_time;
+		Data contents;
+
+		std::string get_filename() const;
+		unsigned int get_fileno() const;
+		unsigned int get_length() const;
+		unsigned int get_allocated() const;
+		struct timespec get_ctime() const;
+		struct timespec get_mtime() const;
+
+		void time_update(bool update_ctime = false);
+		int read(unsigned int offset, unsigned int size, std::uint8_t *data) const;
+		int write(unsigned int offset, unsigned int length, const std::uint8_t *data);
+		int truncate(unsigned int length);
+		int rename(const std::string &filename);
+	};
+
+	class Dirent final
+	{
+		friend Ramdisk;
+		friend Directory;
+
+		explicit Dirent() = delete;
+		explicit Dirent(const Dirent &) = delete;
+		explicit Dirent(const Dirent &&) = delete;
+		explicit Dirent(int next_fileno = -1);
+		Dirent& operator =(const Dirent &) = delete;
+
+		struct dirent dirent;
+		DIR dir;
+		int next_fileno;
+
+		void set(int next_fileno, unsigned int fileno = 0, const std::string &filename = "");
+		int get_next_fileno() const;
+		DIR *get_DIR();
+		struct dirent *get_dirent();
+	};
+
+	class FileDescriptor final
+	{
+		friend Ramdisk;
+
+		explicit FileDescriptor() = delete;
+		//explicit FileDescriptor(const FileDescriptor &) = delete;
+		//explicit FileDescriptor(const FileDescriptor &&) = delete;
+		explicit FileDescriptor(unsigned int fd, unsigned int fileno, unsigned int fcntl_flags, unsigned int offset, bool fs);
+		//FileDescriptor& operator =(const FileDescriptor &) = delete;
+
+		unsigned int fd;
+		unsigned int fileno;
+		unsigned int fcntl_flags;
+		unsigned int offset;
+		bool fs;
+
+		unsigned int get_fd() const;
+		unsigned int get_fileno() const;
+		unsigned int get_fcntl_flags() const;
+		unsigned int get_offset() const;
+		bool is_fs() const;
+
+		void set_offset(unsigned int offset);
+	};
 };
+
+using Ramdisk = RAMDISK::Ramdisk;
