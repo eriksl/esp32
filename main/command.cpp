@@ -57,8 +57,6 @@ void command_io_dump(cli_command_call_t *call);
 void command_io_read(cli_command_call_t *call);
 void command_io_stats(cli_command_call_t *call);
 void command_io_write(cli_command_call_t *call);
-void command_alias(cli_command_call_t *call);
-void command_run(cli_command_call_t *call);
 
 //FIXME
 int Command::cli_stats_commands_received = 0;
@@ -291,7 +289,7 @@ const Command::cli_command_t Command::cli_commands[] =
 	{ "i2c-speed", "i2s", "set speed of I2C interface", Command::i2c_speed,
 		{	2,
 			{
-				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "module", { .unsigned_int = { 0, 2 }}}, // FIXME
+				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "module", { .unsigned_int = { 0, 2 }}},
 				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "speed in kHz", { .unsigned_int = { 0, 500 }}},
 			},
 		}
@@ -300,9 +298,9 @@ const Command::cli_command_t Command::cli_commands[] =
 	{ "i2c-probe", "i2p", "probe I2C device", Command::i2c_probe,
 		{	3,
 			{
-				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "module", { .unsigned_int = { 0, 2 }}}, // FIXME
-				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "bus", { .unsigned_int = { 0, 7 }}}, // FIXME
-				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "address", { .unsigned_int = { 0, 127 }}}, // FIXME
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "module", { .unsigned_int = { 0, 2 }}},
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "bus", { .unsigned_int = { 0, 8 }}},
+				{ cli_parameter_unsigned_int, 0, 1, 1, 1, "address", { .unsigned_int = { 0, 127 }}},
 			},
 		},
 	},
@@ -467,6 +465,7 @@ const Command::cli_command_t Command::cli_commands[] =
 
 	{ "sensor-json", "sj", "sensors values in json layout", Command::sensor_json, {}},
 	{ "sensor-stats", "ss", "sensors statistics", Command::sensor_stats, {}},
+
 	{ "tcp-info", "ti", "show information about tcp", Command::tcp_info, {}},
 	{ "udp-info", "ui", "show information about udp", Command::udp_info, {}},
 	{ "util-info", "uti", "show information about utils the module", Command::util_info, {}},
