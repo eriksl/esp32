@@ -427,7 +427,7 @@ void MainModule::_send(int address, const data_t& out)
 
 	i2c_operations[current++].command = I2C_MASTER_CMD_STOP;
 
-	if((rv = i2c_master_execute_defined_operations(this->device_handle, i2c_operations, current, 500)) != ESP_OK)
+	if((rv = i2c_master_execute_defined_operations(this->device_handle, i2c_operations, current, 100)) != ESP_OK)
 		throw(transient_exception(this->log.esp_string_error(rv, "I2c::MainModule::send: i2c_master_execute_defined_operations")));
 }
 
@@ -476,7 +476,7 @@ void MainModule::_receive(int address_in, int length, data_t &in)
 
 	i2c_operations[current++].command = I2C_MASTER_CMD_STOP;
 
-	if((rv = i2c_master_execute_defined_operations(this->device_handle, i2c_operations, current, 500)) != ESP_OK)
+	if((rv = i2c_master_execute_defined_operations(this->device_handle, i2c_operations, current, 100)) != ESP_OK)
 		throw(transient_exception(this->log.esp_string_error(rv, "I2c::MainModule::receive: i2c_master_defined_operations")));
 }
 
@@ -526,7 +526,7 @@ void MainModule::_send_receive(int address, const data_t& out, int length, data_
 
 	i2c_operations[current++].command = I2C_MASTER_CMD_STOP;
 
-	if((rv = i2c_master_execute_defined_operations(this->device_handle, i2c_operations, current, 500)) != ESP_OK)
+	if((rv = i2c_master_execute_defined_operations(this->device_handle, i2c_operations, current, 100)) != ESP_OK)
 		throw(transient_exception(this->log.esp_string_error(rv, "I2c::MainModule::send_receive: i2c_master_defined_operations")));
 }
 
