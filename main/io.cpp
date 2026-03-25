@@ -448,7 +448,14 @@ static bool pcf8574_init(io_data_t *dataptr)
 	dataptr->int_value[pcf8574_int_value_cache_in] = 0xff;
 	dataptr->int_value[pcf8574_int_value_cache_out] = 0xff;
 
-	dataptr->i2c.device->send(0xff);
+	try
+	{
+		dataptr->i2c.device->send(0xff);
+	}
+	catch(transient_exception &)
+	{
+		return(false);
+	}
 
 	return(true);
 }
