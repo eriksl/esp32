@@ -22,10 +22,10 @@ extern "C"
 #include "udp.h"
 #include "tcp.h"
 #include "i2c.h"
+#include "sensor.h"
 
 #include "display.h"
 #include "io.h"
-#include "sensor.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -48,26 +48,27 @@ void app_main()
 		System system(log);
 		PDM pdm(log);
 		MCPWM mcpwm(log);
-		Ramdisk::Root ramdisk(log, "/ramdisk", system.get_initial_free_spiram() / 2);
+		Ramdisk ramdisk(log, "/ramdisk", system.get_initial_free_spiram() / 2);
 		FS fs(log, ramdisk);
 		BT bt(log, config);
 		WLAN wlan(log, config, notify, system);
 		UDP udp(log);
 		TCP tcp(log);
 		I2c i2c(log, config);
-		Command command(config, console, ledpixel, ledpwm, notify, log, system, util, pdm, mcpwm, fs, bt, wlan, udp, tcp, i2c);
+		Sensors sensors(log, i2c);
+		Command command(config, console, ledpixel, ledpwm, notify, log, system, util, pdm, mcpwm, fs, bt, wlan, udp, tcp, i2c, sensors);
 		console.set(&command);
 		bt.set(&command);
 		udp.set(&command);
 		tcp.set(&command);
 		display_init();
 		io_init();
-		sensor_init();
 		wlan.run();
 		bt.run();
 		udp.run();
 		tcp.run();
 		console.run();
+		sensors.run();
 		command.run();
 		notify.notify(Notify::Notification::sys_booting_finished);
 		vTaskSuspend(NULL);

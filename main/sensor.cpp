@@ -2,8 +2,9 @@
 
 #include "log.h"
 #include "i2c.h"
-#include <exception.h>
+#include "exception.h"
 #include "cli-command.h"
+#include "crypt.h"
 
 #include <stdint.h>
 #include <time.h>
@@ -16,186 +17,355 @@
 #include <thread>
 #include <chrono>
 
+#include "magic_enum/magic_enum.hpp"
+
 #include <esp_pthread.h>
 
-typedef struct
+using namespace magic_enum;
+using namespace magic_enum::bitwise_operators;
+using namespace SENSORS;
+
+Sensors *Sensors::singleton = nullptr;
+
+Sensors::Sensors(Log &log_in, I2c &i2c_in) : log(log_in), i2c(i2c_in)
 {
-	float value;
-	time_t stamp;
-} sensor_value_t;
+	if(this->singleton)
+		throw(hard_exception("Sensors: already active"));
 
-typedef enum : unsigned int
-{
-	sensor_found,
-	sensor_not_found,
-	sensor_disabled,
-} sensor_detect_t;
-
-typedef struct
-{
-	unsigned int force_detect:1; // if the device does all of it's probing itself (e.g. if it needs additional steps before the device can be probed)
-	unsigned int no_constrained:1; // if the device cannot work with constrained I2C functionality (i.e. the RTC/ULP I2C module feature set)
-} sensor_flags_t;
-
-typedef struct data_T
-{
-	sensor_detect_t state;
-	I2C::Device *device;
-	sensor_value_t values[sensor_type_size];
-	const struct info_T *info;
-	void *private_data;
-	struct data_T *next;
-} data_t;
-
-typedef struct info_T
-{
-	const char *name;
-	sensor_t id;
-	unsigned int address;
-	sensor_type_t type; // bitmask!
-	sensor_flags_t flags;
-	unsigned int precision;
-	size_t private_data_size;
-	sensor_detect_t (*const detect_fn)(I2C::Device *);
-	bool (*const init_fn)(data_t *);
-	bool (*const poll_fn)(data_t *);
-	void (*const dump_fn)(const data_t *, std::string &);
-} info_t;
-
-typedef struct
-{
-	const char *type;
-	const char *unity;
-} sensor_type_info_t;
-
-typedef struct
-{
-	int module;
-} run_parameters_t;
-
-static const sensor_type_info_t sensor_type_info[sensor_type_size] =
-{
-	[sensor_type_visible_light] =
-	{
-		.type = "visible light",
-		.unity = "lx",
-	},
-	[sensor_type_temperature] =
-	{
-		.type = "temperature",
-		.unity = "°C",
-	},
-	[sensor_type_humidity] =
-	{
-		.type = "humidity",
-		.unity = "%",
-	},
-	[sensor_type_airpressure] =
-	{
-		.type = "air pressure",
-		.unity = "hPa",
-	},
-};
-
-static bool inited = false;
-static SemaphoreHandle_t data_mutex;
-static data_t *data_root = nullptr;
-
-static unsigned int stat_sensors_not_considered[3] = { 0 };
-static unsigned int stat_sensors_skipped[3] = { 0 };
-static unsigned int stat_sensors_not_skipped[3] = { 0 };
-static unsigned int stat_sensors_probed[3] = { 0 };
-static unsigned int stat_sensors_found[3] = { 0 };
-static unsigned int stat_sensors_disabled[3] = { 0 };
-static unsigned int stat_sensors_confirmed[3] = { 0 };
-static unsigned int stat_poll_run[3] = { 0 };
-static unsigned int stat_poll_ok[3] = { 0 };
-static unsigned int stat_poll_error[3] = { 0 };
-static unsigned int stat_poll_skipped[3] = { 0 };
-
-static inline void data_mutex_take(void)
-{
-	assert(xSemaphoreTake(data_mutex, portMAX_DELAY));
+	this->singleton = this;
 }
 
-static inline void data_mutex_give(void)
+template<typename T> void Sensors::detect_internal(int dummy_module)
 {
-	assert(xSemaphoreGive(data_mutex));
+	Sensor* new_sensor;
+
+	this->_stats["internal sensors probed"]++;
+	new_sensor = new T(this->log, dummy_module);
+	this->_stats["internal sensors found"]++;
+	this->_sensors.push_back(new_sensor);
 }
 
-typedef struct
+template<typename T> void Sensors::detect_i2c()
 {
-	unsigned int data[2];
-	struct
-	{
-		unsigned int down;
-		unsigned int up;
-	} threshold;
-	unsigned int overflow;
-	float factor;
-} device_autoranging_data_t;
+	I2C::Device* new_device;
+	Sensor* new_sensor;
 
-static void log_sensor(I2C::Device *device, std::string_view message)
+	for(auto& module : this->i2c.modules())
+	{
+		for(auto& bus : module.second->buses())
+		{
+			for(auto const& address : T::addresses)
+			{
+				this->_stats["I2C sensors searched"]++;
+
+				if(T::probe(this->i2c, module.first, bus.first, address, module.second->restricted()))
+				{
+					new_device = nullptr;
+					new_sensor = nullptr;
+
+					this->_stats["I2C sensors probed"]++;
+
+					try
+					{
+						try
+						{
+							new_device = i2c.new_device(module.first, bus.first, address, T::basic_name());
+						}
+						catch(const transient_exception &)
+						{
+							this->_stats["I2C sensors address in use"]++;
+							throw(transient_exception());
+						}
+
+						this->_stats["I2C sensors identified"]++;
+						new_sensor = new T(this->log, new_device);
+						this->_stats["I2C sensors found"]++;
+						this->_sensors.push_back(new_sensor);
+					}
+					catch(const transient_exception &)
+					{
+						this->_stats["I2C sensors init aborted"]++;
+
+						if(new_device)
+							delete new_device;
+
+						if(new_sensor)
+							delete new_sensor;
+					}
+				}
+			}
+		}
+	}
+}
+
+void Sensors::run_thread()
 {
-	std::string name;
+	try
+	{
+		this->detect_internal<SensorInternalTemperature>(this->i2c.modules().size());
+		this->detect_i2c<SensorGeneric75>();
+		this->detect_i2c<SensorMCP9808>();
+		this->detect_i2c<SensorHTU21>();
+		this->detect_i2c<SensorAsair>();
+		this->detect_i2c<SensorSHT3X>();
+		this->detect_i2c<SensorSHT4X>();
+		this->detect_i2c<SensorHDC1080>();
+		this->detect_i2c<SensorBMP280>();
+		this->detect_i2c<SensorBME280>();
+		this->detect_i2c<SensorBME680>();
+		this->detect_i2c<SensorBH1750>();
+		this->detect_i2c<SensorOPT3001>();
+		this->detect_i2c<SensorMAX44009>();
+		this->detect_i2c<SensorTSL2561>();
+		this->detect_i2c<SensorTSL2591RO>();
+		this->detect_i2c<SensorTSL2591RW>();
+		this->detect_i2c<SensorVEML7700>();
+		this->detect_i2c<SensorLTR390>();
+
+		if(this->_sensors.size() != 0)
+		{
+			for(;;)
+			{
+				uint64_t begin, end;
+				begin = esp_timer_get_time();
+
+				this->_stats["poll loop runs"]++;
+
+				for(auto& sensor : this->_sensors)
+				{
+					bool ok = true;
+
+					try
+					{
+						sensor->poll();
+					}
+					catch(const transient_exception &e)
+					{
+						this->log << std::format("Sensors::poll:{} {}", sensor->name, e.what());
+						ok = false;
+					}
+
+					if(ok)
+						this->_stats["poll succeeds"]++;
+					else
+						this->_stats["poll errors"]++;
+				}
+
+				end = esp_timer_get_time();
+
+				this->_stats["poll time"] = (end - begin) / 1000;
+				std::this_thread::sleep_for(std::chrono::milliseconds(500));
+			}
+		}
+	}
+	catch(const transient_exception &e)
+	{
+		Log::get().abort(std::format("sensor thread: uncaught transient exception: {}", e.what()));
+	}
+	catch(const hard_exception &e)
+	{
+		Log::get().abort(std::format("sensor thread: uncaught hard exception: {}", e.what()));
+	}
+	catch(const std::exception &e)
+	{
+		Log::get().abort(std::format("sensor thread: uncaught standard exception: {}", e.what()));
+	}
+	catch(...)
+	{
+		Log::get().abort("sensor thread: uncaught unknown exception");
+	}
+}
+
+void Sensors::run()
+{
+	esp_err_t rv;
+	esp_pthread_cfg_t thread_config = esp_pthread_get_default_config();
+
+	thread_config.thread_name = "sensors";
+	thread_config.pin_to_core = 1;
+	thread_config.stack_size = 3 * 1024;
+	thread_config.prio = 1;
+	thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+
+	if((rv = esp_pthread_set_cfg(&thread_config)) != ESP_OK)
+		throw(hard_exception(Log::get().esp_string_error(rv, "esp_pthread_set_cfg")));
+
+	std::thread new_thread([this]() { this->run_thread(); });
+
+	new_thread.detach();
+}
+
+std::string Sensors::info(int filter)
+{
+	int index = 0;
+	std::string out;
+
+	for(auto& sensor : this->_sensors)
+	{
+		if((filter < 0) || (filter == index))
+			out += std::format("- {}\n", sensor->info(index));
+
+		index++;
+	}
+
+	return(out);
+}
+
+std::string Sensors::dump(int filter)
+{
+	int index = 0;
+	std::string out;
+
+	for(auto& sensor : this->_sensors)
+	{
+		if((filter < 0) || (filter == index))
+			out += std::format("- {}\n", sensor->dump(index));
+
+		index++;
+	}
+
+	return(out);
+}
+
+std::string Sensors::json()
+{
+	int index;
+	std::string out;
+
+	out = "{\n";
+
+	index = 0;
+
+	for(auto& sensor : this->_sensors)
+	{
+		if(index != 0)
+			out += ",\n";
+
+		out += sensor->json(index++);
+	}
+
+	out += "\n}";
+
+	return(out);
+}
+
+std::string Sensors::stats()
+{
+	std::string out;
+
+	for(const auto& stat : this->_stats)
+		out += std::format("- {:<24} {:d}\n", std::string(stat.first) + ": ", stat.second);
+
+	return(out);
+}
+
+Sensor::Sensor(Log& log_in, std::string_view name_in) : log(log_in), name(name_in), state(state_t::init)
+{
+}
+
+void Sensor::poll()
+{
+	this->_poll();
+}
+
+std::string Sensor::info(int index)
+{
+	std::string out;
 	int module, bus, address;
 
-	device->data(module, bus, address, name);
+	this->_address(module, bus, address);
 
-	Log::get() << std::format("{} @ {:d}/{:d}/{:#04x}: {}", name, module, bus, address, message);
+	out = std::format("{:d}:{}@{:d}/{:d}/{:x}", index, this->name, module, bus, address);
+
+	for(auto const& value : this->values)
+		out += std::format(", {0}: {1:.{3}f} {2}", value.first, value.second.value, value.second.unity, value.second.precision);
+
+	return(out);
 }
 
-[[nodiscard]] static unsigned int unsigned_20_top_be(const uint8_t ptr[])
+std::string Sensor::dump(int index)
 {
-	return((((ptr[0] & 0xff) >> 0) << 12) | (((ptr[1] & 0xff) >> 0) << 4) | (((ptr[2] & 0xf0) >> 4) << 0));
+	std::string out;
+	int module, bus, address;
+	int value_index;
+
+	this->_address(module, bus, address);
+
+	out = std::format("{:d}:{}@{:d}/{:d}/{:x}", index, this->name, module, bus, address);
+
+	for(auto const& value : this->values)
+		out += std::format(", {} {:f} {}, last update: {}", value.first, value.second.value, value.second.unity, this->time_string(value.second.stamp));
+
+	out += std::format(", state: {} [{:d}]", enum_name(this->state), enum_integer(this->state));
+
+	if(this->raw_values.size() > 0)
+	{
+		out += ", raw values: ";
+
+		value_index = 0;
+
+		for(auto const& raw_value : this->raw_values)
+		{
+			if(value_index > 0)
+				out += ", ";
+
+			out += std::format("{}: {:d}/{:#04x}", raw_value.first, raw_value.second, raw_value.second);
+
+			value_index++;
+		}
+	}
+
+	return(out);
 }
 
-[[nodiscard]] static unsigned int unsigned_20_top_be(const I2C::data_t &data, int offset = 0)
+std::string Sensor::json(int index)
 {
-	return((((data.at(offset + 0) & 0xff) >> 0) << 12) | (((data.at(offset + 1) & 0xff) >> 0) << 4) | (((data.at(offset + 2) & 0xf0) >> 4) << 0));
+	int module, bus, address, subaddress;
+	std::string out;
+
+	this->_address(module, bus, address);
+
+	out = std::format("\"{:d}-{:d}-{:x}\":", module, bus, address);
+	out +=	"\n[";
+	out +=	"\n{";
+	out += std::format("\n\"module\": {:d},", module);
+	out += std::format("\n\"bus\": {:d},", bus);
+	out += std::format("\n\"name\": \"{}\",", this->name);
+	out +=	"\n\"values\":";
+	out +=	"\n[";
+
+	subaddress = 0; // sensor sub-adress / value
+
+	for(auto const& value : this->values)
+	{
+		if(subaddress > 0)
+			out += ",";
+
+		out +=	"\n{";
+		out += std::format("\n\"type\": \"{}\",", value.first);
+		out += std::format("\n\"id\": {:d},", index);
+		out += std::format("\n\"address\": {:d},", subaddress);
+		out += std::format("\n\"unity\": \"{}\",", value.second.unity);
+		out += std::format("\n\"value\": {:f},", value.second.value);
+		out += std::format("\n\"time\": {:d}", value.second.stamp);
+		out +=	"\n}";
+
+		subaddress++;
+	}
+
+	out += "\n]";
+	out += "\n}";
+	out += "\n]";
+
+	return(out);
 }
 
-[[nodiscard]] static unsigned int unsigned_20_bottom_be(const uint8_t ptr[])
+unsigned char Sensor::u8(const I2C::data_t &data, int offset)
 {
-	return((((ptr[0] & 0x0f) >> 0) << 16) | (((ptr[1] & 0xff) >> 0) << 8) | (((ptr[2] & 0xff) >> 0) << 0));
+	return(static_cast<unsigned char>(data.at(offset) & 0xff));
 }
 
-[[nodiscard]] static unsigned int unsigned_16_be(const I2C::data_t &data, int offset = 0)
-{
-	return(((data.at(offset + 0) & 0xff) << 8) | (data.at(offset + 1) & 0xff));
-}
-
-[[nodiscard]] static unsigned int unsigned_16_le(const I2C::data_t &data, int offset = 0)
-{
-	return(((data.at(offset + 1) & 0xff) << 8) | (data.at(offset + 0) & 0xff));
-}
-
-[[nodiscard]] static int signed_16_le(const I2C::data_t &data, int offset = 0)
-{
-	int rv = ((data.at(offset + 1) & 0xff) << 8) | (data.at(offset + 0) & 0xff);
-
-	if(rv > (1 << 15))
-		rv = 0 - ((1 << 16) - rv);
-
-	return(rv);
-}
-
-[[nodiscard]] static unsigned int unsigned_12_top_be(const I2C::data_t &data, int offset = 0)
-{
-	return((((data.at(offset + 0) & 0xff) >> 0) << 4) | (((data.at(offset + 1) & 0xf0) >> 4) << 0));
-}
-
-[[nodiscard]] static unsigned int unsigned_12_bottom_le(const I2C::data_t &data, int offset = 0)
-{
-	return((((data.at(offset + 0) & 0x0f) >> 0) << 0) | (((data.at(offset + 1) & 0xff) >> 0) << 4));
-}
-
-[[nodiscard]] static unsigned int unsigned_8(const I2C::data_t &data, int offset = 0)
-{
-	return(static_cast<unsigned int>(data.at(offset) & 0xff));
-}
-
-[[nodiscard]] static int signed_8(const I2C::data_t &data, int offset = 0)
+signed char Sensor::s8(const I2C::data_t &data, int offset)
 {
 	int rv = static_cast<unsigned int>(data.at(offset) & 0xff);
 
@@ -205,2175 +375,458 @@ static void log_sensor(I2C::Device *device, std::string_view message)
 	return(rv);
 }
 
-enum : unsigned int
+unsigned int Sensor::u12topbe(const I2C::data_t &data, int offset)
 {
-	bh1750_opcode_powerdown =		0b0000'0000, // 0x00
-	bh1750_opcode_poweron =			0b0000'0001, // 0x01
-	bh1750_opcode_reset =			0b0000'0111, // 0x07
-	bh1750_opcode_cont_hmode =		0b0001'0000, // 0x10
-	bh1750_opcode_cont_hmode2 =		0b0001'0001, // 0x11
-	bh1750_opcode_cont_lmode =		0b0001'0011, // 0x13
-	bh1750_opcode_one_hmode =		0b0010'0000, // 0x20
-	bh1750_opcode_one_hmode2 =		0b0010'0001, // 0x21
-	bh1750_opcode_one_lmode =		0b0010'0011, // 0x23
-	bh1750_opcode_change_meas_hi =	0b0100'0000, // 0x40
-	bh1750_opcode_change_meas_lo =	0b0110'0000, // 0x60
-};
+	return((((data.at(offset + 0) & 0xff) >> 0) << 4) | (((data.at(offset + 1) & 0xf0) >> 4) << 0));
+}
 
-typedef enum : unsigned int
+unsigned int Sensor::u12bottomle(const I2C::data_t &data, int offset)
 {
-	bh1750_state_init,
-	bh1750_state_reset,
-	bh1750_state_measuring,
-	bh1750_state_finished,
-}  bh1750_state_t;
+	return((((data.at(offset + 0) & 0x0f) >> 0) << 0) | (((data.at(offset + 1) & 0xff) >> 0) << 4));
+}
 
-static constexpr unsigned int bh1750_autoranging_data_size = 4;
-
-typedef struct
+unsigned int Sensor::u16be(const I2C::data_t &data, int offset)
 {
-	bh1750_state_t state;
-	unsigned int raw_value;
-	unsigned int scaling;
-	unsigned int scaling_up;
-	unsigned int scaling_down;
-	unsigned int overflows;
-} bh1750_private_data_t;
+	return(((data.at(offset + 0) & 0xff) << 8) | ((data.at(offset + 1) & 0xff) << 0));
+}
 
-static const device_autoranging_data_t bh1750_autoranging_data[bh1750_autoranging_data_size] =
+unsigned int Sensor::u16le(const I2C::data_t &data, int offset)
 {
-	{{	bh1750_opcode_one_hmode2,	254	},	{ 0,	50000 }, 65535, 0.13 },
-	{{	bh1750_opcode_one_hmode2,	69	},	{ 1000, 50000 }, 65535, 0.50 },
-	{{	bh1750_opcode_one_hmode2,	31	},	{ 1000, 50000 }, 65535, 1.10 },
-	{{	bh1750_opcode_one_lmode,	31	},	{ 1000, 65536 }, 65535, 2.40 },
-};
+	return(((data.at(offset + 0) & 0xff) << 0) | ((data.at(offset + 1) & 0xff) << 8));
+}
 
-static sensor_detect_t bh1750_detect(I2C::Device* device)
+signed int Sensor::s16le(const I2C::data_t &data, int offset)
 {
-	I2C::data_t i2c_data;
+	int rv = ((data.at(offset + 1) & 0xff) << 8) | (data.at(offset + 0) & 0xff);
+
+	if(rv > (1 << 15))
+		rv = 0 - ((1 << 16) - rv);
+
+	return(rv);
+}
+
+unsigned int Sensor::u20tople(const I2C::data_t &data, int offset)
+{
+	return((((data.at(offset + 0) & 0xff) >> 0) << 0) | (((data.at(offset + 1) & 0xff) >> 0) << 8) | (((data.at(offset + 2) & 0x0f) >> 0) << 16));
+}
+
+unsigned int Sensor::u20topbe(const I2C::data_t &data, int offset)
+{
+	return((((data.at(offset + 0) & 0xff) >> 0) << 12) | (((data.at(offset + 1) & 0xff) >> 0) << 4) | (((data.at(offset + 2) & 0xf0) >> 4) << 0));
+}
+
+unsigned int Sensor::u20bottombe(const I2C::data_t &data, int offset)
+{
+	return((((data.at(offset + 0) & 0x0f) >> 0) << 16) | (((data.at(offset + 1) & 0xff) >> 0) << 8) | (((data.at(offset + 2) & 0xff) >> 0) << 0));
+}
+
+unsigned char Sensor::u16low(int u16)
+{
+	return((u16 & 0x00ff) >> 0);
+}
+
+unsigned char Sensor::u16high(int u16)
+{
+	return((u16 & 0xff00) >> 8);
+}
+
+void Sensor::update(const std::string &id, float value_in, const std::string &unity, int precision)
+{
+	value_t value;
+
+	value.stamp = time(nullptr);
+	value.value = value_in;
+	value.unity = unity;
+	value.precision = precision;
+
+	this->values.insert_or_assign(id, value);
+}
+
+std::string Sensor::time_string(time_t stamp)
+{
+	time_t now;
+	std::string rv;
+
+	now = time(nullptr);
+
+	if(((now - stamp) > (24 * 60 * 60)) || ((now - stamp) < 0))
+			rv = "never";
+		else
+			rv = std::format("{:d} seconds ago", now - stamp);
+
+	return(rv);
+}
+
+Sensor::~Sensor()
+{
+}
+
+SensorI2C::SensorI2C(Log& log_in, std::string_view name_in, I2C::Device *device_in) : Sensor(log_in, name_in), device(device_in)
+{
+}
+
+SensorI2C::~SensorI2C()
+{
+}
+
+void SensorI2C::_address(int &module, int &bus, int &address)
+{
+	std::string device_name;
+
+	this->device->data(module, bus, address, device_name);
+}
+
+bool SensorGeneric75::probe(I2c &i2c, int module, int bus, int address, bool)
+{
+	return(i2c.probe(module, bus, address));
+}
+
+bool SensorGeneric75::probe_register(int reg)
+{
+	I2C::data_t data;
 
 	try
 	{
-		device->send_receive(bh1750_opcode_powerdown, 8, i2c_data);
+		this->device->send_receive(reg, 1, data);
 	}
 	catch(const transient_exception &)
 	{
-		return(sensor_not_found);
-	}
-
-	if((i2c_data.at(2) != 0xff) || (i2c_data.at(3) != 0xff) || (i2c_data.at(4) != 0xff) ||
-			(i2c_data.at(5) != 0xff) || (i2c_data.at(6) != 0xff) || (i2c_data.at(7) != 0xff))
-		return(sensor_not_found);
-
-	return(sensor_found);
-}
-
-static bool bh1750_init(data_t *data)
-{
-	bh1750_private_data_t *pdata = static_cast<bh1750_private_data_t *>(data->private_data);
-
-	assert(pdata);
-
-	try
-	{
-		data->device->send(bh1750_opcode_poweron);
-	}
-	catch(const transient_exception &e)
-	{
-		Log::get() << std::format("bh1750: init error: %s", e.what());
-		return(false);
-	}
-
-	pdata->raw_value = 0;
-	pdata->scaling = 0;
-	pdata->scaling_up = 0;
-	pdata->scaling_down = 0;
-	pdata->overflows = 0;
-	pdata->state = bh1750_state_init;
-
-	return(true);
-}
-
-static bool bh1750_poll(data_t *data)
-{
-	bh1750_private_data_t *pdata = static_cast<bh1750_private_data_t *>(data->private_data);
-	I2C::data_t i2c_data;
-
-	assert(pdata);
-
-	switch(pdata->state)
-	{
-		case(bh1750_state_init):
-		{
-			data->device->send(bh1750_opcode_reset);
-
-			pdata->state = bh1750_state_reset;
-
-			break;
-		}
-
-		case(bh1750_state_reset):
-		case(bh1750_state_finished):
-		{
-			data->device->send(bh1750_opcode_change_meas_hi | ((bh1750_autoranging_data[pdata->scaling].data[1] >> 5) & 0b0000'0111));
-			data->device->send(bh1750_opcode_change_meas_lo | ((bh1750_autoranging_data[pdata->scaling].data[1] >> 0) & 0b0001'1111));
-			data->device->send(bh1750_autoranging_data[pdata->scaling].data[0]);
-
-			pdata->state = bh1750_state_measuring;
-
-			break;
-		}
-
-		case(bh1750_state_measuring):
-		{
-			pdata->state = bh1750_state_finished;
-
-			data->device->receive(2, i2c_data);
-
-			pdata->raw_value = unsigned_16_be(i2c_data);
-
-			if((pdata->raw_value >= bh1750_autoranging_data[pdata->scaling].overflow) && (pdata->scaling >= (bh1750_autoranging_data_size - 1)))
-			{
-				pdata->overflows++;
-				break;
-			}
-
-			if((pdata->raw_value < bh1750_autoranging_data[pdata->scaling].threshold.down) && (pdata->scaling > 0))
-			{
-				pdata->scaling--;
-				pdata->scaling_down++;
-				break;
-			}
-
-			if((pdata->raw_value >= bh1750_autoranging_data[pdata->scaling].threshold.up) && (pdata->scaling < (bh1750_autoranging_data_size - 1)))
-			{
-				pdata->scaling++;
-				pdata->scaling_up++;
-				break;
-			}
-
-			data->values[sensor_type_visible_light].value = ((float)pdata->raw_value * bh1750_autoranging_data[pdata->scaling].factor);
-			data->values[sensor_type_visible_light].stamp = time(nullptr);
-
-			break;
-		}
-	}
-
-	return(true);
-}
-
-static void bh1750_dump(const data_t *data, std::string &output)
-{
-	bh1750_private_data_t *pdata = static_cast<bh1750_private_data_t *>(data->private_data);
-
-	assert(pdata);
-
-	output += (boost::format("state: %u, ") % pdata->state).str();
-	output += (boost::format("scaling: %u, ") % pdata->scaling).str();
-	output += (boost::format("scaling_up: %u, ") % pdata->scaling_up).str();
-	output += (boost::format("scaling_down: %u, ") % pdata->scaling_down).str();
-	output += (boost::format("overflows: %u, ") % pdata->overflows).str();
-	output += (boost::format("raw: %u") % pdata->raw_value).str();
-};
-
-enum : unsigned int
-{
-	tmp75_reg_temp = 0x00,
-	tmp75_reg_conf = 0x01,
-
-	tmp75_reg_conf_res_12 = 0b0110'0000,
-};
-
-typedef struct
-{
-	unsigned int raw_value[2];
-} tmp75_private_data_t;
-
-static sensor_detect_t tmp75_detect(I2C::Device* device)
-{
-	I2C::data_t i2c_data;
-
-	try
-	{
-		device->send_receive(tmp75_reg_conf, 2, i2c_data);
-	}
-	catch(const transient_exception &e)
-	{
-		return(sensor_not_found);
-	}
-
-	return(sensor_found);
-}
-
-static bool tmp75_init(data_t *data)
-{
-	tmp75_private_data_t *pdata = static_cast<tmp75_private_data_t *>(data->private_data);
-	I2C::data_t i2c_data;
-
-	assert(pdata);
-
-	pdata->raw_value[0] = 0;
-	pdata->raw_value[1] = 0;
-
-	data->device->send(tmp75_reg_conf, tmp75_reg_conf_res_12);
-	data->device->send_receive(tmp75_reg_conf, 2, i2c_data);
-
-	if(i2c_data.at(0) != tmp75_reg_conf_res_12)
-	{
-		log_sensor(data->device, std::format("init: config[0]: {:#04x}, no tmp75", i2c_data.at(0)));
 		return(false);
 	}
 
 	return(true);
 }
 
-static bool tmp75_poll(data_t *data)
+SensorGeneric75::SensorGeneric75(Log &log_in, I2C::Device *device_in) : SensorI2C(log_in, this->basic_name(), device_in)
 {
-	tmp75_private_data_t *pdata = static_cast<tmp75_private_data_t *>(data->private_data);
-	I2C::data_t i2c_data;
-	unsigned int raw_temperature;
+	I2C::data_t data;
+	unsigned int config_value;
+	static const constexpr unsigned int config_value_tmp75 = enum_integer(tmp75_conf_t::res_12 | tmp75_conf_t::no_shutdown);
+	static const constexpr unsigned int config_value_lm75 = enum_integer(lm75_conf_t::no_shutdown);
 
-	assert(pdata);
+	this->model = model_t::generic75;
 
-	data->device->send_receive(tmp75_reg_temp, 2, i2c_data);
-
-	pdata->raw_value[0] = i2c_data.at(0);
-	pdata->raw_value[1] = i2c_data.at(1);
-	raw_temperature = unsigned_16_be(i2c_data);
-	data->values[sensor_type_temperature].value = raw_temperature / 256.0f;
-	data->values[sensor_type_temperature].stamp = time(nullptr);
-
-	return(true);
-}
-
-static void tmp75_dump(const data_t *data, std::string &output)
-{
-	tmp75_private_data_t *pdata = static_cast<tmp75_private_data_t *>(data->private_data);
-
-	assert(pdata);
-
-	output += (boost::format("raw value 0: %u, ") % pdata->raw_value[0]).str();
-	output += (boost::format("raw value 1: %u") % pdata->raw_value[1]).str();
-};
-
-enum : unsigned int
-{
-	opt3001_reg_result =		0x00,
-	opt3001_reg_conf =			0x01,
-	opt3001_reg_limit_low =		0x02,
-	opt3001_reg_limit_high =	0x03,
-	opt3001_reg_id_manuf =		0x7e,
-	opt3001_reg_id_dev =		0x7f,
-};
-
-enum : unsigned int
-{
-	opt3001_id_manuf_ti =		0x5449,
-	opt3001_id_dev_opt3001 =	0x3001,
-};
-
-enum : unsigned int
-{
-	opt3001_conf_fault_count =		0b0000'0000'0000'0011,
-	opt3001_conf_mask_exp =			0b0000'0000'0000'0100,
-	opt3001_conf_pol =				0b0000'0000'0000'1000,
-	opt3001_conf_latch =			0b0000'0000'0001'0000,
-	opt3001_conf_flag_low =			0b0000'0000'0010'0000,
-	opt3001_conf_flag_high =		0b0000'0000'0100'0000,
-	opt3001_conf_flag_ready =		0b0000'0000'1000'0000,
-	opt3001_conf_flag_ovf =			0b0000'0001'0000'0000,
-	opt3001_conf_conv_mode =		0b0000'0110'0000'0000,
-	opt3001_conf_conv_time =		0b0000'1000'0000'0000,
-	opt3001_conf_range =			0b1111'0000'0000'0000,
-
-	opt3001_conf_range_auto =		0b1100'0000'0000'0000,
-	opt3001_conf_conv_time_100 =	0b0000'0000'0000'0000,
-	opt3001_conf_conv_time_800 =	0b0000'1000'0000'0000,
-	opt3001_conf_conv_mode_shut =	0b0000'0000'0000'0000,
-	opt3001_conf_conv_mode_single =	0b0000'0010'0000'0000,
-	opt3001_conf_conv_mode_cont =	0b0000'0110'0000'0000,
-};
-
-static constexpr unsigned int opt3001_config = opt3001_conf_range_auto | opt3001_conf_conv_time_800 | opt3001_conf_conv_mode_single;
-
-typedef enum : unsigned int
-{
-	opt3001_state_init,
-	opt3001_state_measuring,
-	opt3001_state_finished,
-} opt3001_state_t;
-
-typedef struct
-{
-	opt3001_state_t state;
-	unsigned int overflows;
-	unsigned int mantissa;
-	unsigned exponent;
-} opt3001_private_data_t;
-
-static bool opt3001_start_measurement(data_t *data)
-{
-	I2C::data_t i2c_data;
-
-	i2c_data.resize(3);
-
-	i2c_data[0] = opt3001_reg_conf;
-	i2c_data[1] = (opt3001_config & 0xff00) >> 8;
-	i2c_data[2] = (opt3001_config & 0x00ff) >> 0;
-
-	data->device->send(i2c_data);
-	data->device->send_receive(opt3001_reg_conf, 2, i2c_data); // FIXME? check?
-
-	return(true);
-}
-
-static sensor_detect_t opt3001_detect(I2C::Device* device)
-{
-	I2C::data_t i2c_data;
-
-	try
+	if(this->model == model_t::generic75)
 	{
-		device->send_receive(opt3001_reg_id_manuf, 2, i2c_data);
-
-		if(unsigned_16_be(i2c_data) != opt3001_id_manuf_ti)
-			return(sensor_not_found);
-
-		device->send_receive(opt3001_reg_id_dev, 2, i2c_data);
-
-		if(unsigned_16_be(i2c_data) != opt3001_id_dev_opt3001)
-			return(sensor_not_found);
-	}
-	catch(const transient_exception &)
-	{
-		return(sensor_not_found);
-	}
-
-	return(sensor_found);
-}
-
-static bool opt3001_init(data_t *data)
-{
-	opt3001_private_data_t *pdata = static_cast<opt3001_private_data_t *>(data->private_data);
-	I2C::data_t i2c_data;
-	unsigned int read_config;
-
-	assert(pdata);
-
-	pdata->state = opt3001_state_init;
-	pdata->mantissa = 0;
-	pdata->exponent = 0;
-	pdata->overflows = 0;
-
-	if(!opt3001_start_measurement(data))
-	{
-		Log::get() << "opt3001: init error 1";
-		return(false);
-	}
-
-	data->device->send_receive(opt3001_reg_conf, 2, i2c_data);
-
-	read_config = unsigned_16_be(i2c_data) & (opt3001_conf_mask_exp | opt3001_conf_conv_mode | opt3001_conf_conv_time | opt3001_conf_range);
-
-	if(read_config != opt3001_config)
-	{
-		Log::get() << "opt3001: init error 2";
-		return(false);
-	}
-
-	return(true);
-}
-
-static bool opt3001_poll(data_t *data)
-{
-	opt3001_private_data_t *pdata = static_cast<opt3001_private_data_t *>(data->private_data);
-	I2C::data_t i2c_data;
-	unsigned int config;
-
-	assert(pdata);
-
-	switch(pdata->state)
-	{
-		case(opt3001_state_init):
-		case(opt3001_state_finished):
+		try // tmp75
 		{
-			if(!opt3001_start_measurement(data))
-			{
-				Log::get() << "opt3001: poll error 3";
-				return(false);
-			}
+			this->device->send_receive(enum_integer(tmp75_reg_t::conf), 1, data);
 
-			pdata->state = opt3001_state_measuring;
+			if((data.at(0) & enum_integer(tmp75_probe_t::conf_mask)) != enum_integer(tmp75_probe_t::conf))
+				throw(transient_exception("1"));
+
+			this->device->send_receive(enum_integer(tmp75_reg_t::tlow), 2, data);
+
+			if((data.at(0) != enum_integer(tmp75_probe_t::tl_h)) || (data.at(1) != enum_integer(tmp75_probe_t::tl_l)))
+				throw(transient_exception("2"));
+
+			this->device->send_receive(enum_integer(tmp75_reg_t::thigh), 2, data);
+
+			if((data.at(0) != enum_integer(tmp75_probe_t::th_h)) || (data.at(1) != enum_integer(tmp75_probe_t::th_l)))
+				throw(transient_exception("3"));
+
+			if(this->probe_register(enum_integer(tmp75_probe_t::offset_04)))
+				throw(transient_exception("4"));
+			if(this->probe_register(enum_integer(tmp75_probe_t::offset_a1)))
+				throw(transient_exception("5"));
+			if(this->probe_register(enum_integer(tmp75_probe_t::offset_a2)))
+				throw(transient_exception("6"));
+			if(this->probe_register(enum_integer(tmp75_probe_t::offset_aa)))
+				throw(transient_exception("7"));
+			if(this->probe_register(enum_integer(tmp75_probe_t::offset_ac)))
+				throw(transient_exception("8"));
+
+			this->model = model_t::tmp75;
+		}
+		catch(const transient_exception &)
+		{
+		}
+	}
+
+	if(this->model == model_t::generic75)
+	{
+		try // lm75(b)
+		{
+			this->device->send_receive(enum_integer(lm75_reg_t::conf), 1, data);
+
+			if((data.at(0) & enum_integer(lm75_probe_t::conf_mask)) != enum_integer(lm75_probe_t::conf))
+				throw(transient_exception("1"));
+
+			this->device->send_receive(enum_integer(lm75_reg_t::thyst), 2, data);
+
+			if((data.at(0) != enum_integer(lm75_probe_t::thyst_h)) || (data.at(1) != enum_integer(lm75_probe_t::thyst_l)))
+				throw(transient_exception("2"));
+
+			this->device->send_receive(enum_integer(lm75_reg_t::tos), 2, data);
+
+			if(((data.at(0) != enum_integer(lm75_probe_t::tos_1_h)) || (data.at(1) != enum_integer(lm75_probe_t::tos_1_l))) &&
+				((data.at(0) != enum_integer(lm75_probe_t::tos_2_h)) || (data.at(1) != enum_integer(lm75_probe_t::tos_2_l))))
+				throw(transient_exception("3"));
+
+			this->model = model_t::lm75;
+		}
+		catch(const transient_exception &)
+		{
+		}
+	}
+
+	switch(this->model)
+	{
+		case(model_t::tmp75):
+		{
+			config_value = config_value_tmp75;
 
 			break;
 		}
 
-		case(opt3001_state_measuring):
+		case(model_t::lm75):
 		{
-			data->device->send_receive(opt3001_reg_conf, 2, i2c_data);
-
-			config = unsigned_16_be(i2c_data);
-
-			if(!(config & opt3001_conf_flag_ready))
-				return(true);
-
-			pdata->state = opt3001_state_finished;
-
-			if(config & opt3001_conf_flag_ovf)
-			{
-				pdata->overflows++;
-				return(true);
-			}
-
-			data->device->send_receive(opt3001_reg_result, 2, i2c_data);
-
-			pdata->exponent = (i2c_data.at(0) & 0xf0) >> 4;
-			pdata->mantissa = ((i2c_data.at(0) & 0x0f) << 8) | i2c_data.at(1);
-
-			data->values[sensor_type_visible_light].value = 0.01f * (float)(1 << pdata->exponent) * (float)pdata->mantissa;
-			data->values[sensor_type_visible_light].stamp = time(nullptr);
-
-			break;
-		}
-	}
-
-	return(true);
-}
-
-static void opt3001_dump(const data_t *data, std::string &output)
-{
-	opt3001_private_data_t *pdata = static_cast<opt3001_private_data_t *>(data->private_data);
-
-	assert(pdata);
-
-	output += (boost::format("overflows: %u, ") % pdata->overflows).str();
-	output += (boost::format("mantissa: %u, ") % pdata->mantissa).str();
-	output += (boost::format("exponent: %u") % pdata->exponent).str();
-}
-
-enum : unsigned int
-{
-	max44009_reg_ints =			0x00,
-	max44009_reg_inte =			0x01,
-	max44009_reg_conf =			0x02,
-	max44009_reg_data_msb =		0x03,
-	max44009_reg_data_lsb =		0x04,
-	max44009_reg_thresh_msb =	0x05,
-	max44009_reg_thresh_lsb =	0x06,
-	max44009_reg_thresh_timer =	0x07,
-
-	max44009_conf_tim_800 =		(0 << 2) | (0 << 1) | (0 << 0),
-	max44009_conf_tim_400 =		(0 << 2) | (0 << 1) | (1 << 0),
-	max44009_conf_tim_200 =		(0 << 2) | (1 << 1) | (0 << 0),
-	max44009_conf_tim_100 =		(0 << 2) | (1 << 1) | (1 << 0),
-	max44009_conf_tim_50 =		(1 << 2) | (0 << 1) | (0 << 0),
-	max44009_conf_tim_25 =		(1 << 2) | (0 << 1) | (1 << 0),
-	max44009_conf_tim_12 =		(1 << 2) | (1 << 1) | (0 << 0),
-	max44009_conf_tim_6 =		(1 << 2) | (1 << 1) | (1 << 0),
-	max44009_conf_cdr =			(1 << 3),
-	max44009_conf_reserved4 =	(1 << 4),
-	max44009_conf_reserved5 =	(1 << 5),
-	max44009_conf_manual =		(1 << 6),
-	max44009_conf_cont =		(1 << 7),
-
-	max44009_probe_ints =			0x00,
-	max44009_probe_inte =			0x00,
-	max44009_probe_thresh_msb =		0xef,
-	max44009_probe_thresh_lsb =		0x00,
-	max44009_probe_thresh_timer =	0xff,
-};
-
-typedef struct
-{
-	unsigned int overflows;
-	unsigned int mantissa;
-	unsigned int exponent;
-} max44009_private_data_t;
-
-static sensor_detect_t max44009_detect(I2C::Device* device)
-{
-	I2C::data_t i2c_data;
-
-	device->send_receive(max44009_reg_ints, 2, i2c_data);
-
-	if((i2c_data.at(0) != max44009_probe_ints) || (i2c_data.at(1) != max44009_probe_ints))
-		return(sensor_not_found);
-
-	device->send_receive(max44009_reg_inte, 2, i2c_data);
-
-	if((i2c_data.at(0) != max44009_probe_inte) || (i2c_data.at(1) != max44009_probe_inte))
-		return(sensor_not_found);
-
-	device->send_receive(max44009_reg_thresh_msb, 2, i2c_data);
-
-	if((i2c_data.at(0) != max44009_probe_thresh_msb) || (i2c_data.at(1) != max44009_probe_thresh_msb))
-		return(sensor_not_found);
-
-	device->send_receive(max44009_reg_thresh_lsb, 2, i2c_data);
-
-	if((i2c_data.at(0) != max44009_probe_thresh_lsb) || (i2c_data.at(1) != max44009_probe_thresh_lsb))
-		return(sensor_not_found);
-
-	device->send_receive(max44009_reg_thresh_timer, 2, i2c_data);
-
-	if((i2c_data.at(0) != max44009_probe_thresh_timer) || (i2c_data.at(1) != max44009_probe_thresh_timer))
-		return(sensor_not_found);
-
-	return(sensor_found);
-}
-
-static bool max44009_init(data_t *data)
-{
-	max44009_private_data_t *pdata = static_cast<max44009_private_data_t *>(data->private_data);
-	I2C::data_t i2c_data;
-
-	assert(pdata);
-
-	pdata->overflows = 0;
-	pdata->mantissa = 0;
-	pdata->exponent = 0;
-
-	data->device->send(max44009_reg_conf, max44009_conf_cont);
-	data->device->send_receive(max44009_reg_conf, 2, i2c_data);
-
-	if((i2c_data.at(0) & (max44009_conf_cont | max44009_conf_manual)) != max44009_conf_cont)
-	{
-		Log::get() << "sensors: max44009: init error 3";
-		return(false);
-	}
-
-	return(true);
-}
-
-static bool max44009_poll(data_t *data)
-{
-	max44009_private_data_t *pdata = static_cast<max44009_private_data_t *>(data->private_data);
-	I2C::data_t i2c_data;
-
-	assert(pdata);
-
-	data->device->send_receive(max44009_reg_data_msb, 2, i2c_data);
-
-	pdata->exponent =	(i2c_data.at(0) & 0xf0) >> 4;
-	pdata->mantissa =	(i2c_data.at(0) & 0x0f) << 4;
-	pdata->mantissa |=	(i2c_data.at(1) & 0x0f) << 0;
-
-	if(pdata->exponent != 0b1111)
-	{
-		data->values[sensor_type_visible_light].value = (1 << pdata->exponent) * (float)pdata->mantissa * 0.045f;
-		data->values[sensor_type_visible_light].stamp = time(nullptr);
-	}
-	else
-		pdata->overflows++;
-
-	return(true);
-}
-
-static void max44009_dump(const data_t *data, std::string &output)
-{
-	max44009_private_data_t *pdata = static_cast<max44009_private_data_t *>(data->private_data);
-
-	assert(pdata);
-
-	output += (boost::format("overflows: %u, ") % pdata->overflows).str();
-	output += (boost::format("mantissa: %u, ") % pdata->mantissa).str();
-	output += (boost::format("exponent: %u") % pdata->exponent).str();
-};
-
-enum : unsigned int
-{
-	asair_cmd_aht10_init_1 =	0xe1,
-	asair_cmd_aht10_init_2 =	0x08,
-	asair_cmd_aht10_init_3 =	0x00,
-	asair_cmd_aht20_init_1 =	0xbe,
-	asair_cmd_aht20_init_2 =	0x08,
-	asair_cmd_aht20_init_3 =	0x00,
-	asair_cmd_measure_0 =		0xac,
-	asair_cmd_measure_1 =		0x33,
-	asair_cmd_measure_2 =		0x00,
-	asair_cmd_get_status =		0x71,
-	asair_cmd_reset =			0xba,
-};
-
-enum : unsigned int
-{
-	asair_status_busy =		1 << 7,
-	asair_status_ready =	1 << 3,
-};
-
-typedef enum : unsigned int
-{
-	asair_state_init,
-	asair_state_ready,
-	asair_state_start_measure,
-	asair_state_measuring,
-	asair_state_measure_complete,
-} asair_state_t;
-
-typedef struct
-{
-	asair_state_t state;
-	unsigned int type;
-	bool valid;
-	unsigned int raw_temperature;
-	unsigned int raw_humidity;
-} asair_private_data_t;
-
-static bool asair_ready(data_t *data)
-{
-	I2C::data_t i2c_data;
-
-	try
-	{
-		data->device->send_receive(asair_cmd_get_status, 1, i2c_data);
-	}
-	catch(const transient_exception &e)
-	{
-		return(false);
-	}
-
-	if(!(i2c_data.at(0) & asair_status_ready))
-		return(false);
-
-	return(true);
-}
-
-static bool asair_init_chip(data_t *data)
-{
-	asair_private_data_t *pdata = static_cast<asair_private_data_t *>(data->private_data);
-	bool ok;
-
-	ok = true;
-
-	try
-	{
-		data->device->send(asair_cmd_aht10_init_1, asair_cmd_aht10_init_2, asair_cmd_aht10_init_3);
-	}
-	catch(const transient_exception &e)
-	{
-		ok = false;
-	}
-
-	if(ok)
-	{
-		pdata->type = 10;
-		return(true);
-	}
-
-	ok = true;
-
-	try
-	{
-		data->device->send(asair_cmd_aht20_init_1, asair_cmd_aht20_init_2, asair_cmd_aht20_init_3);
-	}
-	catch(const transient_exception &e)
-	{
-		ok = false;
-	}
-
-	if(ok)
-	{
-		pdata->type = 20;
-		return(true);
-	}
-
-	pdata->type = 0;
-	Log::get() << "asair_init: unknown device type";
-
-	return(false);
-}
-
-static sensor_detect_t asair_detect(I2C::Device* device)
-{
-	I2C::data_t i2c_data;
-
-	device->send_receive(asair_cmd_get_status, 1, i2c_data);
-	device->send(asair_cmd_reset);
-
-	return(sensor_found);
-}
-
-static bool asair_init(data_t *data)
-{
-	asair_private_data_t *pdata = static_cast<asair_private_data_t *>(data->private_data);
-
-	assert(pdata);
-
-	pdata->state = asair_state_init;
-	pdata->type = 0;
-	pdata->valid = false;
-	pdata->raw_temperature = 0;
-	pdata->raw_humidity = 0;
-
-	if(asair_ready(data))
-	{
-		if(!asair_init_chip(data))
-		{
-			Log::get() << "asair_init: unknown device type";
-			return(false);
-		}
-
-		pdata->state = asair_state_ready;
-	}
-
-	return(true);
-}
-
-static bool asair_poll(data_t *data)
-{
-	asair_private_data_t *pdata = static_cast<asair_private_data_t *>(data->private_data);
-	I2C::data_t i2c_data;
-
-	assert(pdata);
-
-	switch(pdata->state)
-	{
-		case(asair_state_init):
-		{
-			if(asair_ready(data))
-			{
-				if(!asair_init_chip(data))
-				{
-					Log::get() << "asair_init: unknown device type";
-					return(false);
-				}
-
-				pdata->state = asair_state_ready;
-				break;
-			}
+			config_value = config_value_lm75;
 
 			break;
 		}
 
-		case(asair_state_ready):
+		default:
 		{
-			data->device->send_receive(asair_cmd_get_status, 1, i2c_data);
-
-			if((i2c_data.at(0) & asair_status_busy) || !(i2c_data.at(0) & asair_status_ready))
-			{
-				Log::get() << "sensors: asair: poll error 2";
-				return(false);
-			}
-
-			pdata->valid = false;
-			pdata->state = asair_state_start_measure;
-
-			break;
-		}
-
-		case(asair_state_start_measure):
-		{
-			data->device->send_receive(asair_cmd_get_status, 1, i2c_data);
-
-			if(i2c_data.at(0) & asair_status_busy)
-			{
-				Log::get() << "sensors: asair: poll error 4";
-				return(false);
-			}
-
-			data->device->send(asair_cmd_measure_0, asair_cmd_measure_1, asair_cmd_measure_2);
-
-			pdata->state = asair_state_measuring;
-
-			break;
-		}
-
-		case(asair_state_measuring):
-		{
-			pdata->state = asair_state_measure_complete;
-
-			break;
-		}
-
-		case(asair_state_measure_complete):
-		{
-			data->device->send_receive(asair_cmd_get_status, 8, i2c_data);
-
-			if(i2c_data.at(0) & asair_status_busy)
-			{
-				Log::get() << "sensors: asair: poll error 7";
-				pdata->valid = false;
-				return(false);
-			}
-
-			pdata->raw_temperature = unsigned_20_bottom_be(&i2c_data.at(3));
-			pdata->raw_humidity = unsigned_20_top_be(&i2c_data.at(1));
-
-			data->values[sensor_type_temperature].value = ((200.f * pdata->raw_temperature) / 1048576.f) - 50.0f;
-			data->values[sensor_type_temperature].stamp = time(nullptr);
-
-			data->values[sensor_type_humidity].value = pdata->raw_humidity * 100.f / 1048576.f;
-			data->values[sensor_type_humidity].stamp = time(nullptr);
-
-			pdata->valid = true;
-			pdata->state = asair_state_start_measure;
-
-			break;
+			throw(transient_exception("unknown generic lm75 type"));
 		}
 	}
 
-	return(true);
+	this->name = enum_name(this->model);
+
+	this->device->send(enum_integer(reg_t::conf), config_value);
+	this->device->send_receive(enum_integer(reg_t::conf), 1, data);
+
+	if(data.at(0) != config_value)
+		throw(transient_exception("invalid config register contents"));
 }
 
-static void asair_dump(const data_t *data, std::string &output)
+void SensorGeneric75::_poll()
 {
-	asair_private_data_t *pdata = static_cast<asair_private_data_t *>(data->private_data);
+	I2C::data_t data;
+	unsigned int temperature;
 
-	assert(pdata);
+	this->device->send_receive(enum_integer(reg_t::temp), 2, data);
 
-	output += (boost::format("state: %u, ") % pdata->state).str();
-	output += (boost::format("type: %u, ") % pdata->type).str();
-	output += (boost::format("valid: %u, ") % (unsigned int)pdata->valid).str();
-	output += (boost::format("raw temperature: %u, ") % pdata->raw_temperature).str();
-	output += (boost::format("raw humidity: %u") % pdata->raw_temperature).str();
-};
+	this->raw_values["byte 0"] = data.at(0);
+	this->raw_values["byte 1"] = data.at(1);
 
-typedef enum : unsigned int
-{
-	tsl2561_reg_control =		0x00,
-	tsl2561_reg_timeint =		0x01,
-	tsl2561_reg_threshlow =		0x02,
-	tsl2561_reg_threshhigh =	0x04,
-	tsl2561_reg_interrupt =		0x06,
-	tsl2561_reg_crc =			0x08,
-	tsl2561_reg_id =			0x0a,
-	tsl2561_reg_data0 =			0x0c,
-	tsl2561_reg_data1 =			0x0e,
-} tsl2561_reg_t;
+	temperature = this->u16be(data);
 
-enum : unsigned int
-{
-	tsl2561_cmd_address =	(1 << 0) | (1 << 1) | (1 << 2) | (1 << 3),
-	tsl2561_cmd_block =		1 << 4,
-	tsl2561_cmd_word =		1 << 5,
-	tsl2561_cmd_clear =		1 << 6,
-	tsl2561_cmd_cmd =		1 << 7,
-};
-
-enum : unsigned int
-{
-	tsl2561_tim_integ_13ms	=	(0 << 1) | (0 << 0),
-	tsl2561_tim_integ_101ms	=	(0 << 1) | (1 << 0),
-	tsl2561_tim_integ_402ms	=	(1 << 1) | (0 << 0),
-	tsl2561_tim_manual		=	1 << 3,
-	tsl2561_tim_low_gain	=	0 << 4,
-	tsl2561_tim_high_gain	=	1 << 4,
-};
-
-enum : unsigned int
-{
-	tsl2561_ctrl_power_off =	0x00,
-	tsl2561_ctrl_power_on =		0x03,
-
-	tsl2561_id_tsl2561 =		0x50,
-	tsl2561_probe_threshold =	0x00,
-};
-
-static constexpr unsigned int tsl2561_autoranging_data_size = 4;
-
-typedef enum : unsigned int
-{
-	tsl2561_state_init,
-	tsl2561_state_measuring,
-	tsl2561_state_finished,
-} tsl2561_state_t;
-
-typedef struct
-{
-	tsl2561_state_t state;
-	unsigned int overflows;
-	unsigned int scaling_up;
-	unsigned int scaling_down;
-	unsigned int channel[2];
-	unsigned int scaling;
-} tsl2561_private_data_t;
-
-static const device_autoranging_data_t tsl2561_autoranging_data[tsl2561_autoranging_data_size] =
-{
-	{{	tsl2561_tim_integ_402ms,	tsl2561_tim_high_gain	},	{	0,		50000	},	65535,	0.48	},
-	{{	tsl2561_tim_integ_402ms,	tsl2561_tim_low_gain	},	{	256,	50000	},	65535,	7.4		},
-	{{	tsl2561_tim_integ_101ms,	tsl2561_tim_low_gain	},	{	256,	30000	},	37177,	28		},
-	{{	tsl2561_tim_integ_13ms,		tsl2561_tim_low_gain	},	{	256,	65536	},	5047,	200		},
-};
-
-static bool tsl2561_write_byte(I2C::Device* device, tsl2561_reg_t reg, unsigned int value)
-{
-	device->send(tsl2561_cmd_cmd | tsl2561_cmd_clear | (static_cast<unsigned int>(reg) & tsl2561_cmd_address), value);
-
-	return(true);
+	this->raw_values["raw temperature"] = temperature;
+	this->update("temperature", static_cast<float>(temperature) / 256.0f, "degrees", 1);
+	this->state = state_t::measuring;
 }
 
-static bool tsl2561_read_byte(I2C::Device* device, tsl2561_reg_t reg, unsigned int *value)
+bool SensorMCP9808::probe(I2c &i2c, int module, int bus, int address, bool)
 {
-	I2C::data_t i2c_data;
-
-	device->send_receive(tsl2561_cmd_cmd | (static_cast<unsigned int>(reg) & tsl2561_cmd_address), 1, i2c_data);
-
-	*value = i2c_data.at(0);
-
-	return(true);
+	return(i2c.probe(module, bus, address));
 }
 
-static bool tsl2561_read_word(I2C::Device* device, tsl2561_reg_t reg, unsigned int *value)
+SensorMCP9808::SensorMCP9808(Log &log_in, I2C::Device *device_in) : SensorI2C(log_in, this->basic_name(), device_in)
 {
-	I2C::data_t i2c_data;
+	I2C::data_t data;
 
-	device->send_receive(tsl2561_cmd_cmd | (static_cast<unsigned int>(reg) & tsl2561_cmd_address), 2, i2c_data);
+	this->device->send_receive(enum_integer(reg_t::manufacturer), 2, data);
 
-	*value = unsigned_16_le(i2c_data);
+	if((data.at(0) != enum_integer(id_t::manufacturer_0)) || data.at(1) != enum_integer(id_t::manufacturer_1))
+		throw(transient_exception());
 
-	return(true);
+	this->device->send_receive(enum_integer(reg_t::device), 1, data);
+
+	if(data.at(0) != enum_integer(id_t::device))
+		throw(transient_exception());
+
+	this->device->send(enum_integer(reg_t::config), enum_integer(config_t::int_clear));
+	this->device->send(enum_integer(reg_t::resolution), enum_integer(resolution_t::res_0_0625));
 }
 
-static bool tsl2561_write_check(I2C::Device* device, tsl2561_reg_t reg, unsigned int value)
+void SensorMCP9808::_poll()
 {
-	unsigned rv;
+	I2C::data_t data;
 
-	if(!tsl2561_write_byte(device, reg, value))
-		return(false);
-
-	if(!tsl2561_read_byte(device, reg, &rv))
-		return(false);
-
-	if(value != rv)
-		return(false);
-
-	return(true);
-}
-
-static sensor_detect_t tsl2561_detect(I2C::Device* device)
-{
-	unsigned int regval;
-
-	if(!tsl2561_read_byte(device, tsl2561_reg_id, &regval))
-		return(sensor_not_found);
-
-	if(regval != tsl2561_id_tsl2561)
-		return(sensor_not_found);
-
-	if(!tsl2561_read_word(device, tsl2561_reg_threshlow, &regval))
-		return(sensor_not_found);
-
-	if(regval != tsl2561_probe_threshold)
-		return(sensor_not_found);
-
-	if(!tsl2561_read_word(device, tsl2561_reg_threshhigh, &regval))
-		return(sensor_not_found);
-
-	if(regval != tsl2561_probe_threshold)
-		return(sensor_not_found);
-
-	if(!tsl2561_write_check(device, tsl2561_reg_control, tsl2561_ctrl_power_off))
-		return(sensor_not_found);
-
-	if(tsl2561_write_check(device, tsl2561_reg_id, 0x00)) // id register should not be writable
-		return(sensor_not_found);
-
-	return(sensor_found);
-}
-
-static bool tsl2561_init(data_t *data)
-{
-	tsl2561_private_data_t *pdata = static_cast<tsl2561_private_data_t *>(data->private_data);
-	unsigned int regval;
-
-	assert(pdata);
-
-	pdata->state = tsl2561_state_init;
-	pdata->overflows = 0;
-	pdata->scaling_up = 0;
-	pdata->scaling_down = 0;
-	pdata->scaling = tsl2561_autoranging_data_size - 1;
-	pdata->channel[0] = 0;
-	pdata->channel[1] = 0;
-
-	if(!tsl2561_write_check(data->device, tsl2561_reg_interrupt, 0x00))
+	switch(this->state)
 	{
-		Log::get() << "tsl2561: init: error 1";
-		return(false);
-	}
-
-	if(!tsl2561_write_byte(data->device, tsl2561_reg_control, tsl2561_ctrl_power_on))
-	{
-		Log::get() << "tsl2561: init: error 2";
-		return(false);
-	}
-
-	if(!tsl2561_read_byte(data->device, tsl2561_reg_control, &regval))
-	{
-		Log::get() << "tsl2561: init: error 3";
-		return(false);
-	}
-
-	if((regval & 0x0f) != tsl2561_ctrl_power_on)
-	{
-		Log::get() << "tsl2561: init: error 4";
-		return(false);
-	}
-
-	return(true);
-}
-
-static bool tsl2561_poll(data_t *data)
-{
-	tsl2561_private_data_t *pdata = static_cast<tsl2561_private_data_t *>(data->private_data);
-	unsigned int overflow, scale_down_threshold, scale_up_threshold;
-	float value, ratio;
-
-	assert(pdata);
-
-	switch(pdata->state)
-	{
-		case(tsl2561_state_init):
-		case(tsl2561_state_finished):
+		case(state_t::init):
 		{
-			if(!tsl2561_write_check(data->device, tsl2561_reg_timeint, tsl2561_autoranging_data[pdata->scaling].data[0] | tsl2561_autoranging_data[pdata->scaling].data[1]))
-			{
-				Log::get() << "tsl2561: poll: error 1";
-				return(false);
-			}
+			this->state = state_t::measuring;
+			break;
+		}
 
-			pdata->state = tsl2561_state_measuring;
+		case(state_t::measuring):
+		{
+			unsigned int raw;
+			float temperature;
+
+			this->device->send_receive(enum_integer(reg_t::temperature), 2, data);
+			raw = this->u16be(data);
+
+			this->raw_values["byte 0"] = data.at(0);
+			this->raw_values["byte 1"] = data.at(1);
+			this->raw_values["raw temperature"] = raw;
+
+			temperature = static_cast<float>(raw & 0x0fff) / 16.0f;
+
+			if(raw & (1 << 12))
+				temperature = 256 - temperature;
+
+			this->update("temperature", temperature, "degrees", 1);
+			this->state = state_t::finished;
 
 			break;
 		}
 
-		case(tsl2561_state_measuring):
+		case(state_t::finished):
 		{
-			scale_down_threshold =	tsl2561_autoranging_data[pdata->scaling].threshold.down;
-			scale_up_threshold =	tsl2561_autoranging_data[pdata->scaling].threshold.up;
-			overflow =				tsl2561_autoranging_data[pdata->scaling].overflow;
-
-			pdata->state = tsl2561_state_finished;
-
-			if(!tsl2561_read_word(data->device, tsl2561_reg_data0, &pdata->channel[0]))
-			{
-				Log::get() << "tsl2561: poll: error 2";
-				return(false);
-			}
-
-			if(!tsl2561_read_word(data->device, tsl2561_reg_data1, &pdata->channel[1]))
-			{
-				Log::get() << "tsl2561: poll: error 3";
-				return(false);
-			}
-
-			if(((pdata->channel[0] >= overflow) || (pdata->channel[1] >= overflow)) && (pdata->scaling >= (tsl2561_autoranging_data_size - 1)))
-			{
-				pdata->overflows++;
-				break;
-			}
-
-			if(((pdata->channel[0] < scale_down_threshold) || (pdata->channel[1] < scale_down_threshold)) && (pdata->scaling > 0))
-			{
-				pdata->scaling--;
-				pdata->scaling_down++;
-				break;
-			}
-
-			if(((pdata->channel[0] >= scale_up_threshold) || (pdata->channel[1] >= scale_up_threshold)) && (pdata->scaling < (tsl2561_autoranging_data_size - 1)))
-			{
-				pdata->scaling++;
-				pdata->scaling_up++;
-
-				break;
-			}
-
-			if(pdata->channel[0] == 0)
-				ratio = 0;
-			else
-				ratio = pdata->channel[1] / pdata->channel[0];
-
-			if(ratio > 1.30f)
-				value = -1;
-			else
-			{
-				if(ratio >= 0.80f)
-					value = (0.00146f * pdata->channel[0]) - (0.00112f * pdata->channel[1]);
-				else
-					if(ratio >= 0.61f)
-						value = (0.0128f * pdata->channel[0]) - (0.0153f * pdata->channel[1]);
-					else
-						if(ratio >= 0.50f)
-							value = (0.0224f * pdata->channel[0]) - (0.031f * pdata->channel[1]);
-						else
-							value = (0.0304f * pdata->channel[0]) - (0.062f * pdata->channel[1] * (float)pow(ratio, 1.4f));
-
-				value = (value * tsl2561_autoranging_data[pdata->scaling].factor);
-
-				if(value < 0)
-					value = 0;
-			}
-
-			data->values[sensor_type_visible_light].value = value;
-			data->values[sensor_type_visible_light].stamp = time(nullptr);
-
-			break;
-		}
-	}
-
-	return(true);
-}
-
-static void tsl2561_dump(const data_t *data, std::string &output)
-{
-	tsl2561_private_data_t *pdata = static_cast<tsl2561_private_data_t *>(data->private_data);
-
-	assert(pdata);
-
-	output += (boost::format("state 0: %u, ") % pdata->state).str();
-	output += (boost::format("scaling: %u, ") % pdata->scaling).str();
-	output += (boost::format("scaling up: %u, ") % pdata->scaling_up).str();
-	output += (boost::format("scaling down: %u, ") % pdata->scaling_down).str();
-	output += (boost::format("overflows: %u, ") % pdata->overflows).str();
-	output += (boost::format("channel 0: %u, ") % pdata->channel[0]).str();
-	output += (boost::format("channel 1: %u") % pdata->channel[1]).str();
-}
-
-enum : unsigned int
-{
-	hdc1080_reg_data_temp =	0x00,
-	hdc1080_reg_data_hum =	0x01,
-	hdc1080_reg_conf =		0x02,
-	hdc1080_reg_serial1 =	0xfb,
-	hdc1080_reg_serial2 =	0xfc,
-	hdc1080_reg_serial3 =	0xfd,
-	hdc1080_reg_man_id =	0xfe,
-	hdc1080_reg_dev_id =	0xff,
-
-	hdc1080_man_id =		0x5449,
-	hdc1080_dev_id =		0x1050,
-
-	hdc1080_conf_rst =		0b1000'0000'0000'0000,
-	hdc1080_conf_reservd0 =	0b0100'0000'0000'0000,
-	hdc1080_conf_heat =		0b0010'0000'0000'0000,
-	hdc1080_conf_mode_two =	0b0001'0000'0000'0000,
-	hdc1080_conf_mode_one =	0b0000'0000'0000'0000,
-	hdc1080_conf_btst =		0b0000'1000'0000'0000,
-	hdc1080_conf_tres_11 =	0b0000'0100'0000'0000,
-	hdc1080_conf_tres_14 =	0b0000'0000'0000'0000,
-	hdc1080_conf_hres_8 =	0b0000'0010'0000'0000,
-	hdc1080_conf_hres_11 =	0b0000'0001'0000'0000,
-	hdc1080_conf_hres_14 =	0b0000'0000'0000'0000,
-	hdc1080_conf_reservd1 =	0b0000'0000'1111'1111,
-};
-
-typedef enum : unsigned int
-{
-	hdc1080_state_init,
-	hdc1080_state_reset,
-	hdc1080_state_ready,
-	hdc1080_state_measuring,
-	hdc1080_state_finished,
-} hdc1080_state_t;
-
-typedef struct
-{
-	hdc1080_state_t state;
-	bool valid;
-	unsigned int raw_temperature;
-	unsigned int raw_humidity;
-} hdc1080_private_data_t;
-
-static bool hdc1080_write_word(I2C::Device* device, unsigned int reg, unsigned int word)
-{
-	device->send(reg, (word & 0xff00) >> 8, (word & 0x00ff) >> 0);
-
-	return(true);
-}
-
-static sensor_detect_t hdc1080_detect(I2C::Device* device)
-{
-	I2C::data_t i2c_data;
-
-	device->send_receive(hdc1080_reg_man_id, 2, i2c_data);
-
-	if(unsigned_16_be(i2c_data) != hdc1080_man_id)
-		return(sensor_not_found);
-
-	device->send_receive(hdc1080_reg_dev_id, 2, i2c_data);
-
-	if(unsigned_16_be(i2c_data) != hdc1080_dev_id)
-		return(sensor_not_found);
-
-	return(sensor_found);
-}
-
-static bool hdc1080_init(data_t *data)
-{
-	hdc1080_private_data_t *pdata = static_cast<hdc1080_private_data_t *>(data->private_data);
-
-	assert(pdata);
-
-	pdata->state = hdc1080_state_init;
-
-	if(!hdc1080_write_word(data->device, hdc1080_reg_conf, hdc1080_conf_rst))
-	{
-		Log::get() << "hdc1080: init failed";
-		return(false);
-	}
-
-	pdata->raw_temperature = 0;
-	pdata->raw_humidity = 0;
-	pdata->valid = false;
-
-	pdata->state = hdc1080_state_reset;
-
-	return(true);
-}
-
-static bool hdc1080_poll(data_t *data)
-{
-	hdc1080_private_data_t *pdata = static_cast<hdc1080_private_data_t *>(data->private_data);
-	static constexpr unsigned int conf = hdc1080_conf_tres_14 | hdc1080_conf_hres_14 | hdc1080_conf_mode_two;
-	I2C::data_t i2c_data;
-
-	assert(pdata);
-
-	pdata->valid = false;
-
-	switch(pdata->state)
-	{
-		case(hdc1080_state_init):
-		{
-			Log::get() << "hdc1080: invalid state";
-			pdata->state = hdc1080_state_reset;
+			this->state = state_t::measuring;
 			break;
 		}
 
-		case(hdc1080_state_reset):
+		default:
 		{
-			data->device->send_receive(hdc1080_reg_conf, 2, i2c_data);
-
-			if(unsigned_16_le(i2c_data) & hdc1080_conf_rst)
-			{
-				Log::get() << "hdc1080: poll error 2";
-				return(false);
-			}
-
-			if(!hdc1080_write_word(data->device, hdc1080_reg_conf, conf))
-			{
-				Log::get() << "hdc1080: poll error 3";
-				return(false);
-			}
-
-			pdata->state = hdc1080_state_ready;
-
-			break;
-		}
-
-		case(hdc1080_state_ready):
-		case(hdc1080_state_finished):
-		{
-			pdata->valid = false;
-
-			data->device->send(hdc1080_reg_data_temp);
-
-			pdata->state = hdc1080_state_measuring;
-
-			break;
-		}
-
-		case(hdc1080_state_measuring):
-		{
-			pdata->state = hdc1080_state_finished;
-
-			data->device->receive(4, i2c_data);
-
-			pdata->raw_temperature = unsigned_16_be(i2c_data, 0);
-			pdata->raw_humidity = unsigned_16_be(i2c_data, 2);
-			pdata->valid = true;
-
-			data->values[sensor_type_temperature].value = ((pdata->raw_temperature * 165.0f) / (float)(1 << 16)) - 40.f;
-			data->values[sensor_type_temperature].stamp = time(nullptr);
-			data->values[sensor_type_humidity].value = (pdata->raw_humidity * 100.0f) / 65536.0f;
-			data->values[sensor_type_humidity].stamp = time(nullptr);
-
-			break;
+			throw(hard_exception("invalid state"));
 		}
 	}
-
-	return(true);
 }
 
-static void hdc1080_dump(const data_t *data, std::string &output)
+unsigned int SensorHTU21::get_data()
 {
-	hdc1080_private_data_t *pdata = static_cast<hdc1080_private_data_t *>(data->private_data);
+	I2C::data_t data;
+	unsigned char crc1, crc2;
 
-	assert(pdata);
+	device->receive(4, data);
 
-	output += (boost::format("state: %u, ") % pdata->state).str();
-	output += (boost::format("valid: %u, ") % (unsigned int)pdata->valid).str();
-	output += (boost::format("raw temperature: %u, ") % pdata->raw_temperature).str();
-	output += (boost::format("raw humidity: %u") % pdata->raw_humidity).str();
-}
-
-typedef enum : unsigned int
-{
-	sht3x_cmd_single_meas_clock_high =		0x2c06,
-	sht3x_cmd_single_meas_clock_medium =	0x2c0d,
-	sht3x_cmd_single_meas_clock_low =		0x2c10,
-
-	sht3x_cmd_single_meas_noclock_high =	0x2400,
-	sht3x_cmd_single_meas_noclock_medium =	0x240b,
-	sht3x_cmd_single_meas_noclock_low =		0x2416,
-
-	sht3x_cmd_auto_meas_high_05 =			0x2032,
-	sht3x_cmd_auto_meas_medium_05 =			0x2024,
-	sht3x_cmd_auto_meas_low_05 =			0x202f,
-
-	sht3x_cmd_auto_meas_high_1 =			0x2130,
-	sht3x_cmd_auto_meas_medium_1 =			0x2126,
-	sht3x_cmd_auto_meas_low_1 =				0x212d,
-
-	sht3x_cmd_auto_meas_high_2 =			0x2236,
-	sht3x_cmd_auto_meas_medium_2 =			0x2220,
-	sht3x_cmd_auto_meas_low_2 =				0x222b,
-
-	sht3x_cmd_auto_meas_high_4 =			0x2334,
-	sht3x_cmd_auto_meas_medium_4 =			0x2322,
-	sht3x_cmd_auto_meas_low_4 =				0x2329,
-
-	sht3x_cmd_auto_meas_high_10 =			0x2737,
-	sht3x_cmd_auto_meas_medium_10 =			0x2721,
-	sht3x_cmd_auto_meas_low_10 =			0x272a,
-
-	sht3x_cmd_fetch_data =					0xe000,
-	sht3x_cmd_art =							0x2b32,
-	sht3x_cmd_break =						0x3093,
-	sht3x_cmd_reset =						0x30a2,
-	sht3x_cmd_heater_en =					0x306d,
-	sht3x_cmd_heater_dis =					0x3066,
-	sht3x_cmd_read_status =					0xf32d,
-	sht3x_cmd_clear_status =				0x3041,
-} sht3x_cmd_t;
-
-enum : unsigned int
-{
-	sht3x_status_none =				0x00,
-	sht3x_status_write_checksum =	(1 << 0),
-	sht3x_status_command_status =	(1 << 1),
-	sht3x_status_reset_detected =	(1 << 4),
-	sht3x_status_temp_track_alert =	(1 << 10),
-	sht3x_status_hum_track_alert =	(1 << 11),
-	sht3x_status_heater =			(1 << 13),
-	sht3x_status_alert =			(1 << 15),
-};
-
-typedef enum : unsigned int
-{
-	sht3x_state_init,
-	sht3x_state_reset,
-	sht3x_state_ready,
-	sht3x_state_measuring,
-	sht3x_state_finished,
-} sht3x_state_t;
-
-typedef struct
-{
-	sht3x_state_t state;
-	bool valid;
-	unsigned int raw_temperature;
-	unsigned int raw_humidity;
-} sht3x_private_data_t;
-
-static uint8_t sht3x_crc8(int length, const I2C::data_t &data, int offset = 0)
-{
-	uint8_t outer, inner, testbit, crc;
-
-	crc = 0xff;
-
-	for(outer = 0; (int)outer < length; outer++)
-	{
-		crc ^= data.at(outer + offset);
-
-		for(inner = 0; inner < 8; inner++)
-		{
-			testbit = !!(crc & 0x80);
-			crc <<= 1;
-			if(testbit)
-				crc ^= 0x31;
-		}
-	}
-
-	return(crc);
-}
-
-static bool sht3x_send_command(I2C::Device* device, unsigned int cmd)
-{
-	device->send((cmd & 0xff00) >> 8, (cmd & 0x00ff) >> 0);
-
-	return(true);
-}
-
-static bool sht3x_receive_command(I2C::Device* device, sht3x_cmd_t cmd, unsigned int *result)
-{
-	uint8_t crc_local, crc_remote;
-	I2C::data_t i2c_data;
-
-	device->send_receive((cmd & 0xff00) >> 8, (cmd & 0x00ff) >> 0, 3, i2c_data);
-
-	crc_local = i2c_data.at(2);
-	crc_remote = sht3x_crc8(2, i2c_data);
-
-	if(crc_local != crc_remote)
-	{
-		Log::get() << "sht3x: sht3x_receive_command: invalid crc";
-		return(false);
-	}
-
-	*result = unsigned_16_be(i2c_data);
-
-	return(true);
-}
-
-static bool sht3x_fetch_data(I2C::Device* device, unsigned int *result1, unsigned int *result2)
-{
-	I2C::data_t i2c_data;
-	uint8_t crc_local, crc_remote;
-
-	device->send_receive((sht3x_cmd_fetch_data & 0xff00) >> 8, (sht3x_cmd_fetch_data & 0x00ff) >> 0, 6, i2c_data);
-
-	crc_local = i2c_data.at(2);
-	crc_remote = sht3x_crc8(2, i2c_data);
-
-	if(crc_local != crc_remote)
-	{
-		Log::get() << "sht3x: sht3x_fetch_data: invalid crc [0]";
-		return(false);
-	}
-
-	crc_local = i2c_data.at(5);
-	crc_remote = sht3x_crc8(2, i2c_data, 3);
-
-	if(crc_local != crc_remote)
-	{
-		Log::get() << "sht3x: sht3x_fetch_data: invalid crc [1]";
-		return(false);
-	}
-
-	*result1 = unsigned_16_be(i2c_data, 0);
-	*result2 = unsigned_16_be(i2c_data, 3);
-
-	return(true);
-}
-
-static sensor_detect_t sht3x_detect(I2C::Device* device)
-{
-	if(!sht3x_send_command(device, sht3x_cmd_break))
-	{
-		Log::get() << "sht3x: detect error";
-		return(sensor_not_found);
-	}
-
-	return(sensor_found);
-}
-
-static bool sht3x_init(data_t *data)
-{
-	sht3x_private_data_t *pdata = static_cast<sht3x_private_data_t *>(data->private_data);
-
-	assert(pdata);
-
-	pdata->state = sht3x_state_init;
-	pdata->valid = false;
-	pdata->raw_temperature = 0;
-	pdata->raw_humidity = 0;
-
-	return(true);
-}
-
-static bool sht3x_poll(data_t *data)
-{
-	sht3x_private_data_t *pdata = static_cast<sht3x_private_data_t *>(data->private_data);
-	unsigned int result, results[2];
-
-	assert(pdata);
-
-	switch(pdata->state)
-	{
-		case(sht3x_state_init):
-		{
-			if(!sht3x_send_command(data->device, sht3x_cmd_reset))
-			{
-				Log::get() << "sht3x: poll error 1";
-				return(false);
-			}
-
-			pdata->state = sht3x_state_reset;
-
-			break;
-		}
-
-		case(sht3x_state_reset):
-		{
-			if(!sht3x_receive_command(data->device, sht3x_cmd_read_status, &result))
-			{
-				Log::get() << "sht3x: poll error 2";
-				return(false);
-			}
-
-			if((result & (sht3x_status_write_checksum | sht3x_status_command_status)) != 0x00)
-			{
-				Log::get() << "sht3x: poll error 3";
-				return(false);
-			}
-
-			if(!sht3x_send_command(data->device, sht3x_cmd_clear_status))
-			{
-				Log::get() << "sht3x: poll error 4";
-				return(false);
-			}
-
-			pdata->state = sht3x_state_ready;
-
-			break;
-		}
-
-		case(sht3x_state_ready):
-		{
-			if(!sht3x_receive_command(data->device, sht3x_cmd_read_status, &result))
-			{
-				Log::get() << "sht3x: poll error 5";
-				return(false);
-			}
-
-			if((result & (sht3x_status_write_checksum | sht3x_status_command_status | sht3x_status_reset_detected)) != 0x00)
-			{
-				Log::get() << "sht3x: poll error 6";
-				return(false);
-			}
-
-			pdata->state = sht3x_state_finished;
-
-			break;
-		}
-
-		case(sht3x_state_finished):
-		{
-			pdata->valid = false;
-
-			if(!sht3x_send_command(data->device, sht3x_cmd_single_meas_noclock_high))
-			{
-				Log::get() << "sht3x: poll error 7";
-				return(false);
-			}
-
-			pdata->state = sht3x_state_measuring;
-
-			break;
-		}
-
-		case(sht3x_state_measuring):
-		{
-			pdata->state = sht3x_state_finished;
-
-			if(!sht3x_fetch_data(data->device, &results[0], &results[1]))
-			{
-				Log::get() << "sht3x: poll error 8";
-				return(false);
-			}
-
-			pdata->raw_temperature = results[0];
-			pdata->raw_humidity = results[1];
-
-			data->values[sensor_type_temperature].value = (((float)pdata->raw_temperature * 175.f) / ((1 << 16) - 1.0f)) - 45.0f;
-			data->values[sensor_type_temperature].stamp = time(nullptr);
-			data->values[sensor_type_humidity].value = ((float)pdata->raw_humidity * 100.0f) / ((1 << 16) - 1.0f);
-			data->values[sensor_type_humidity].stamp = time(nullptr);
-
-			pdata->valid = true;
-
-			break;
-		}
-	}
-
-	return(true);
-}
-
-static void sht3x_dump(const data_t *data, std::string &output)
-{
-	sht3x_private_data_t *pdata = static_cast<sht3x_private_data_t *>(data->private_data);
-
-	assert(pdata);
-
-	output += (boost::format("state: %u, ") % pdata->state).str();
-	output += (boost::format("valid: %u, ") % (unsigned int)pdata->valid).str();
-	output += (boost::format("raw temperature: %u, ") % pdata->raw_temperature).str();
-	output += (boost::format("raw humidity: %u") % pdata->raw_humidity).str();
-}
-
-enum : unsigned int
-{
-	bmx280_reg_id =						0xd0,
-	bmx280_reg_reset =					0xe0,
-	bmx280_reg_ctrl_hum =				0xf2,
-	bmx280_reg_status =					0xf3,
-	bmx280_reg_ctrl_meas =				0xf4,
-	bmx280_reg_config =					0xf5,
-	bmx280_reg_adc =					0xf7,
-	bmx280_reg_adc_pressure_msb =		0xf7,
-	bmx280_reg_adc_pressure_lsb =		0xf8,
-	bmx280_reg_adc_pressure_xlsb =		0xf9,
-	bmx280_reg_adc_temperature_msb =	0xfa,
-	bmx280_reg_adc_temperature_lsb =	0xfb,
-	bmx280_reg_adc_temperature_xlsb =	0xfc,
-	bmx280_reg_adc_humidity_msb =		0xfd,
-	bmx280_reg_adc_humidity_lsb =		0xfe,
-
-	bmx280_reg_id_bmp280 =				0x58,
-	bmx280_reg_id_bme280 =				0x60,
-
-	bmx280_reg_reset_value =			0xb6,
-
-	bmx280_reg_ctrl_hum_osrs_h_skip =	0b0000'0000,
-	bmx280_reg_ctrl_hum_osrs_h_1 =		0b0000'0001,
-	bmx280_reg_ctrl_hum_osrs_h_2 =		0b0000'0010,
-	bmx280_reg_ctrl_hum_osrs_h_4 =		0b0000'0011,
-	bmx280_reg_ctrl_hum_osrs_h_8 =		0b0000'0100,
-	bmx280_reg_ctrl_hum_osrs_h_16 =		0b0000'0101,
-
-	bmx280_reg_status_measuring =		0b00001'000,
-	bmx280_reg_status_im_update =		0b0000'0001,
-
-	bmx280_reg_ctrl_meas_osrs_t_skip =	0b0000'0000,
-	bmx280_reg_ctrl_meas_osrs_t_1 =		0b0010'0000,
-	bmx280_reg_ctrl_meas_osrs_t_2 =		0b0100'0000,
-	bmx280_reg_ctrl_meas_osrs_t_4 =		0b0110'0000,
-	bmx280_reg_ctrl_meas_osrs_t_8 =		0b1000'0000,
-	bmx280_reg_ctrl_meas_osrs_t_16 =	0b1010'0000,
-	bmx280_reg_ctrl_meas_osrs_p_skip =	0b0000'0000,
-	bmx280_reg_ctrl_meas_osrs_p_1 =		0b0000'0100,
-	bmx280_reg_ctrl_meas_osrs_p_2 =		0b0000'1000,
-	bmx280_reg_ctrl_meas_osrs_p_4 =		0b0000'1100,
-	bmx280_reg_ctrl_meas_osrs_p_8 =		0b0001'0000,
-	bmx280_reg_ctrl_meas_osrs_p_16 =	0b0001'0100,
-	bmx280_reg_ctrl_meas_mode_mask =	0b0000'0011,
-	bmx280_reg_ctrl_meas_mode_sleep =	0b0000'0000,
-	bmx280_reg_ctrl_meas_mode_forced =	0b0000'0010,
-	bmx280_reg_ctrl_meas_mode_normal =	0b0000'0011,
-
-	bmx280_reg_config_t_sb_05 =			0b0000'0000,
-	bmx280_reg_config_t_sb_62 =			0b0010'0000,
-	bmx280_reg_config_t_sb_125 =		0b0100'0000,
-	bmx280_reg_config_t_sb_250 =		0b0110'0000,
-	bmx280_reg_config_t_sb_500 =		0b1000'0000,
-	bmx280_reg_config_t_sb_1000 =		0b1010'0000,
-	bmx280_reg_config_t_sb_10000 =		0b1100'0000,
-	bmx280_reg_config_t_sb_20000 =		0b1110'0000,
-	bmx280_reg_config_filter_off =		0b0000'0000,
-	bmx280_reg_config_filter_2 =		0b0000'0100,
-	bmx280_reg_config_filter_4 =		0b0000'1000,
-	bmx280_reg_config_filter_8 =		0b0000'1100,
-	bmx280_reg_config_filter_16 =		0b0001'0000,
-	bmx280_reg_config_spi3w_en =		0b0000'0001,
-};
-
-enum : unsigned int
-{
-	bmx280_cal_base =						0x88,
-	bmx280_cal_0x88_0x89_dig_t1 =			0x88 - bmx280_cal_base,
-	bmx280_cal_0x8a_0x8b_dig_t2 =			0x8a - bmx280_cal_base,
-	bmx280_cal_0x8c_0x8d_dig_t3 =			0x8c - bmx280_cal_base,
-	bmx280_cal_0x8e_0x8f_dig_p1 =			0x8e - bmx280_cal_base,
-	bmx280_cal_0x90_0x91_dig_p2 =			0x90 - bmx280_cal_base,
-	bmx280_cal_0x92_0x93_dig_p3 =			0x92 - bmx280_cal_base,
-	bmx280_cal_0x94_0x95_dig_p4 =			0x94 - bmx280_cal_base,
-	bmx280_cal_0x96_0x97_dig_p5 =			0x96 - bmx280_cal_base,
-	bmx280_cal_0x98_0x99_dig_p6 =			0x98 - bmx280_cal_base,
-	bmx280_cal_0x9a_0x9b_dig_p7 =			0x9a - bmx280_cal_base,
-	bmx280_cal_0x9c_0x9d_dig_p8 =			0x9c - bmx280_cal_base,
-	bmx280_cal_0x9e_0x9f_dig_p9 =			0x9e - bmx280_cal_base,
-	bmx280_cal_0xa1_dig_h1 =				0xa1 - bmx280_cal_base,
-	bmx280_cal_0xe1_0xe2_dig_h2 =			0xe1 - bmx280_cal_base,
-	bmx280_cal_0xe3_dig_h3 =				0xe3 - bmx280_cal_base,
-	bmx280_cal_0xe4_0xe5_0xe6_dig_h4_h5 =	0xe4 - bmx280_cal_base,
-	bmx280_cal_0xe7_dig_h6 =				0xe7 - bmx280_cal_base,
-	bmx280_cal_size =						0xe8 - bmx280_cal_base,
-};
-
-typedef enum : unsigned int
-{
-	bmx280_state_init,
-	bmx280_state_reset,
-	bmx280_state_ready,
-	bmx280_state_measuring,
-	bmx280_state_finished,
-} bmx280_state_t;
-
-typedef struct
-{
-	unsigned int type;
-	bmx280_state_t state;
-	unsigned int adc_temperature;
-	unsigned int adc_airpressure;
-	unsigned int adc_humidity;
-	float t_fine;
-	float t_fine_2;
-	uint16_t t1;
-	int16_t t2;
-	int16_t t3;
-	uint16_t p1;
-	int16_t p2;
-	int16_t p3;
-	int16_t p4;
-	int16_t p5;
-	int16_t p6;
-	int16_t p7;
-	int16_t p8;
-	int16_t p9;
-	uint8_t h1;
-	int16_t h2;
-	uint8_t h3;
-	int16_t h4;
-	int16_t h5;
-	uint8_t h6;
-} bmx280_private_data_t;
-
-static bool bmx280_read_otp(data_t *data)
-{
-	bmx280_private_data_t *pdata = static_cast<bmx280_private_data_t *>(data->private_data);
-	I2C::data_t i2c_data;
-	unsigned int e4, e5, e6;
-
-	assert(pdata);
-
-	data->device->send_receive(bmx280_reg_id, 1, i2c_data);
-
-	pdata->type = i2c_data.at(0);
-
-	data->device->send_receive(bmx280_cal_base, bmx280_cal_size, i2c_data);
-
-	pdata->t1 = unsigned_16_le(i2c_data, bmx280_cal_0x88_0x89_dig_t1);
-	pdata->t2 = signed_16_le(i2c_data, bmx280_cal_0x8a_0x8b_dig_t2);
-	pdata->t3 = signed_16_le(i2c_data, bmx280_cal_0x8c_0x8d_dig_t3);
-	pdata->p1 = unsigned_16_le(i2c_data, bmx280_cal_0x8e_0x8f_dig_p1);
-	pdata->p2 = signed_16_le(i2c_data, bmx280_cal_0x90_0x91_dig_p2);
-	pdata->p3 = signed_16_le(i2c_data, bmx280_cal_0x92_0x93_dig_p3);
-	pdata->p4 = signed_16_le(i2c_data, bmx280_cal_0x94_0x95_dig_p4);
-	pdata->p5 = signed_16_le(i2c_data, bmx280_cal_0x96_0x97_dig_p5);
-	pdata->p6 = signed_16_le(i2c_data, bmx280_cal_0x98_0x99_dig_p6);
-	pdata->p7 = signed_16_le(i2c_data, bmx280_cal_0x9a_0x9b_dig_p7);
-	pdata->p8 = signed_16_le(i2c_data, bmx280_cal_0x9c_0x9d_dig_p8);
-	pdata->p9 = signed_16_le(i2c_data, bmx280_cal_0x9e_0x9f_dig_p9);
-
-	if(pdata->type == bmx280_reg_id_bme280)
-	{
-		pdata->h1 = i2c_data.at(bmx280_cal_0xa1_dig_h1);
-		pdata->h2 = signed_16_le(i2c_data, bmx280_cal_0xe1_0xe2_dig_h2);
-		pdata->h3 = i2c_data.at(bmx280_cal_0xe3_dig_h3);
-		e4 = i2c_data.at(bmx280_cal_0xe4_0xe5_0xe6_dig_h4_h5 + 0);
-		e5 = i2c_data.at(bmx280_cal_0xe4_0xe5_0xe6_dig_h4_h5 + 1);
-		e6 = i2c_data.at(bmx280_cal_0xe4_0xe5_0xe6_dig_h4_h5 + 2);
-		pdata->h4 = ((e4 & 0xff) << 4) | ((e5 & 0x0f) >> 0);
-		pdata->h5 = ((e6 & 0xff) << 4) | ((e5 & 0xf0) >> 4);
-		pdata->h6 = i2c_data.at(bmx280_cal_0xe7_dig_h6);
-	}
-
-	return(true);
-}
-
-static sensor_detect_t bmx280_detect(I2C::Device* device)
-{
-	I2C::data_t i2c_data;
-
-	device->send_receive(bmx280_reg_id, 1, i2c_data);
-		return(sensor_not_found);
-
-	if((i2c_data.at(0) != bmx280_reg_id_bmp280) && (i2c_data.at(0) != bmx280_reg_id_bme280))
-		return(sensor_not_found);
-
-	return(sensor_found);
-}
-
-static bool bmx280_init(data_t *data)
-{
-	bmx280_private_data_t *pdata = static_cast<bmx280_private_data_t *>(data->private_data);
-	I2C::data_t i2c_data;
-
-	assert(pdata);
-
-	pdata->type = 0;
-	pdata->adc_temperature = 0;
-	pdata->adc_airpressure = 0;
-	pdata->adc_humidity = 0;
-	pdata->t_fine = 0;
-	pdata->t_fine_2 = 0;
-	pdata->state = bmx280_state_init;
-
-	data->device->send(bmx280_reg_reset, bmx280_reg_reset_value);
-	data->device->send_receive(bmx280_reg_reset, 1, i2c_data);
-
-	if(i2c_data.at(0) != 0x00)
-	{
-		Log::get() << "bmx280: init error 3";
-		return(false);
-	}
-
-	pdata->state = bmx280_state_reset;
-
-	return(true);
-}
-
-static bool bmx280_poll(data_t *data)
-{
-	bmx280_private_data_t *pdata = static_cast<bmx280_private_data_t *>(data->private_data);
-	I2C::data_t i2c_data;
-	float var1, var2, airpressure, humidity;
-
-	assert(pdata);
-
-	switch(pdata->state)
-	{
-		case(bmx280_state_init):
-		{
-			Log::get() << "bmx280: poll: invalid state";
-			pdata->state = bmx280_state_reset;
-
-			return(false);
-		}
-
-		case(bmx280_state_reset):
-		{
-			if(!bmx280_read_otp(data))
-			{
-				Log::get() << "bmx280_init: cannot read OTP data";
-				return(false);
-			}
-
-			if((pdata->t1 > 0) && (pdata->t2 > 0))
-				pdata->state = bmx280_state_ready;
-
-			break;
-		}
-
-		case(bmx280_state_ready):
-		case(bmx280_state_finished):
-		{
-			data->device->send_receive(bmx280_reg_ctrl_meas, 1, i2c_data);
-
-			if((i2c_data.at(0) & bmx280_reg_ctrl_meas_mode_mask) != bmx280_reg_ctrl_meas_mode_sleep)
-			{
-				Log::get() << "bmx280: poll error 2";
-				return(false);
-			}
-
-			data->device->send(bmx280_reg_ctrl_hum, bmx280_reg_ctrl_hum_osrs_h_16);
-			data->device->send(bmx280_reg_config, bmx280_reg_config_filter_2);
-			data->device->send(bmx280_reg_ctrl_meas, bmx280_reg_ctrl_meas_osrs_t_16 | bmx280_reg_ctrl_meas_osrs_p_16 | bmx280_reg_ctrl_meas_mode_forced);
-
-			pdata->state = bmx280_state_measuring;
-
-			break;
-		}
-
-		case(bmx280_state_measuring):
-		{
-			data->device->send_receive(bmx280_reg_adc, 8, i2c_data);
-
-			pdata->adc_airpressure = unsigned_20_top_be(i2c_data, 0);
-			pdata->adc_temperature = unsigned_20_top_be(i2c_data, 3);
-			pdata->adc_humidity = unsigned_16_be(i2c_data, 6);
-
-			var1 = ((pdata->adc_temperature / 16384.0f) - (pdata->t1 / 1024.0f)) * pdata->t2;
-			var2 = ((pdata->adc_temperature / 131072.0f) - (pdata->t1 / 8192.0f)) * ((pdata->adc_temperature / 131072.0f) - (pdata->t1 / 8192.0f)) * pdata->t3;
-
-			data->values[sensor_type_temperature].value = (var1 + var2) / 5120.0f;
-			data->values[sensor_type_temperature].stamp = time(nullptr);
-
-			var1 = (pdata->adc_temperature / 16384.0f - pdata->t1 / 1024.0f) * pdata->t2;
-			var2 = (pdata->adc_temperature / 131072.0f - pdata->t1 / 8192.0f) * (pdata->adc_temperature / 131072.0f - pdata->t1 / 8192.0f) * pdata->t3;
-			pdata->t_fine = var1 + var2;
-
-			var1 = (pdata->t_fine / 2.0f) - 64000.0f;
-			var2 = var1 * var1 * pdata->p6 / 32768.0f;
-			var2 = var2 + var1 * pdata->p5 * 2.0f;
-			var2 = (var2 / 4.0f) + (pdata->p4 * 65536.0f);
-			var1 = (pdata->p3 * var1 * var1 / 524288.0f + pdata->p2 * var1) / 524288.0f;
-			var1 = (1.0f + var1 / 32768.0f) * pdata->p1;
-
-			if((int)var1 == 0)
-				airpressure = 0;
-			else
-			{
-				airpressure = 1048576.0f - pdata->adc_airpressure;
-				airpressure = (airpressure - (var2 / 4096.0f)) * 6250.0f / var1;
-				var1 = pdata->p9 * airpressure * airpressure / 2147483648.0f;
-				var2 = airpressure * pdata->p8 / 32768.0f;
-				airpressure = airpressure + (var1 + var2 + pdata->p7) / 16.0f;
-			}
-
-			data->values[sensor_type_airpressure].value = airpressure / 100.0f;
-			data->values[sensor_type_airpressure].stamp = time(nullptr);
-
-			if(pdata->type == bmx280_reg_id_bme280)
-			{
-				var1 = (pdata->adc_temperature / 16384.0f	- (pdata->t1 / 1024.0f)) * pdata->t2;
-				var2 = (pdata->adc_temperature / 131072.0f	- (pdata->t1 / 8192.0f)) * ((pdata->adc_temperature / 131072.0f) - (pdata->t1 / 8192.0f)) * pdata->t3;
-				pdata->t_fine_2 = var1 + var2 - 76800;
-
-				humidity = (pdata->adc_humidity - ((pdata->h4 * 64.0f) + (pdata->h5 / 16384.0f) * pdata->t_fine_2)) * (pdata->h2 / 65536.0f * (1.0f + pdata->h6 / 67108864.0f * pdata->t_fine_2 * (1.0f + pdata->h3 / 67108864.0f * pdata->t_fine_2)));
-				humidity = humidity * (1.0f - pdata->h1 * humidity / 524288.0f);
-
-				if(humidity > 100.0f)
-					humidity = 100.0f;
-
-				if(humidity < 0.0f)
-					humidity = 0.0f;
-
-				data->values[sensor_type_humidity].value = humidity;
-				data->values[sensor_type_humidity].stamp = time(nullptr);
-			}
-			else
-			{
-				data->values[sensor_type_humidity].value = 0;
-				data->values[sensor_type_humidity].stamp = 0;
-			}
-
-			pdata->state = bmx280_state_finished;
-
-			break;
-		}
-	}
-
-	return(true);
-}
-
-static void bmx280_dump(const data_t *data, std::string &output)
-{
-	bmx280_private_data_t *pdata = static_cast<bmx280_private_data_t *>(data->private_data);
-
-	assert(pdata);
-
-	output += (boost::format("type: %02x, ") % pdata->type).str();
-	output += (boost::format("state: %u, ") % pdata->state).str();
-	output += (boost::format("adc temp: %u, ") % pdata->adc_temperature).str();
-	output += (boost::format("adc pressure: %u, ") % pdata->adc_airpressure).str();
-	output += (boost::format("adc humidity: %u, ") % pdata->adc_humidity).str();
-	output += (boost::format("t_fine: %f, ") % (double)pdata->t_fine).str();
-	output += (boost::format("t_fine_2: %f, ") % (double)pdata->t_fine_2).str();
-	output += (boost::format("t1: %u, ") % pdata->t1).str();
-	output += (boost::format("t2: %d, ") % pdata->t2).str();
-	output += (boost::format("t3: %d, ") % pdata->t3).str();
-	output += (boost::format("p1: %u, ") % pdata->p1).str();
-	output += (boost::format("p2: %d, ") % pdata->p2).str();
-	output += (boost::format("p3: %d, ") % pdata->p3).str();
-	output += (boost::format("p4: %d, ") % pdata->p4).str();
-	output += (boost::format("p5: %d, ") % pdata->p5).str();
-	output += (boost::format("p6: %d, ") % pdata->p6).str();
-	output += (boost::format("p7: %d, ") % pdata->p7).str();
-	output += (boost::format("p8: %d, ") % pdata->p8).str();
-	output += (boost::format("p9: %d, ") % pdata->p9).str();
-	output += (boost::format("h1: %u, ") % pdata->h1).str();
-	output += (boost::format("h2: %d, ") % pdata->h2).str();
-	output += (boost::format("h3: %u, ") % pdata->h3).str();
-	output += (boost::format("h4: %d, ") % pdata->h4).str();
-	output += (boost::format("h5: %d, ") % pdata->h5).str();
-	output += (boost::format("h6: %u") % pdata->h6).str();
-};
-
-enum : unsigned int
-{
-	htu21_cmd_meas_temp_hold_master =		0xe3,
-	htu21_cmd_meas_hum_hold_master =		0xe5,
-	htu21_cmd_write_user =					0xe6,
-	htu21_cmd_read_user =					0xe7,
-	htu21_cmd_meas_temp_no_hold_master =	0xf3,
-	htu21_cmd_meas_hum_no_hold_master =		0xf5,
-	htu21_cmd_reset =						0xfe,
-
-	htu21_user_reg_rh12_temp14 =			0b0000'0000,
-	htu21_user_reg_rh8_temp12 =				0b0000'0001,
-	htu21_user_reg_rh10_temp13 =			0b1000'0000,
-	htu21_user_reg_rh11_temp11 =			0b1000'0001,
-	htu21_user_reg_bat_stat =				0b0100'0000,
-	htu21_user_reg_reserved =				0b0011'1000,
-	htu21_user_reg_heater_enable =			0b0000'0100,
-	htu21_user_reg_otp_reload_disable =		0b0000'0010,
-
-	htu21_status_mask =						0b0000'0011,
-	htu21_status_measure_temperature =		0b0000'0000,
-	htu21_status_measure_humidity =			0b0000'0010,
-
-	htu21_delay_reset =						2,
-};
-
-typedef enum : unsigned int
-{
-	htu21_state_init,
-	htu21_state_reset,
-	htu21_state_ready,
-	htu21_state_measuring_temperature,
-	htu21_state_finished_temperature,
-	htu21_state_measuring_humidity,
-	htu21_state_finished_humidity,
-	htu21_state_finished,
-} htu21_state_t;
-
-typedef struct
-{
-	htu21_state_t state;
-	unsigned int raw_temperature;
-	unsigned int raw_humidity;
-} htu21_private_data_t;
-
-static uint8_t htu21_crc8(int length, const I2C::data_t &data, int offset = 0)
-{
-	uint8_t outer, inner, testbit, crc;
-
-	crc = 0;
-
-	for(outer = 0; (int)outer < length; outer++)
-	{
-		crc ^= data.at(outer + offset);
-
-		for(inner = 0; inner < 8; inner++)
-		{
-			testbit = !!(crc & 0x80);
-			crc <<= 1;
-			if(testbit)
-				crc ^= 0x31;
-		}
-	}
-
-	return(crc);
-}
-
-static bool htu21_get_data(data_t *data, unsigned int *result)
-{
-	I2C::data_t i2c_data;
-	uint8_t crc1, crc2;
-
-	data->device->receive(4, i2c_data);
-
-	crc1 = i2c_data.at(2);
-	crc2 = htu21_crc8(2, i2c_data, 0);
+	crc1 = data.at(2);
+	crc2 = Crypt::crc8_31(data.substr(0, 2), 0x00);
 
 	if(crc1 != crc2)
 	{
-		Log::get() << "htu21_get_data: crc invalid\n";
-		return(false);
+		this->raw_values["crc errors"]++;
+		throw(transient_exception());
 	}
 
-	*result = unsigned_16_be(i2c_data) & ~htu21_status_mask;
-
-	return(true);
+	return(this->u16be(data) & ~(enum_integer(status_t::mask)));
 }
 
-static sensor_detect_t htu21_detect(I2C::Device* device)
+bool SensorHTU21::probe(I2c &i2c, int module, int bus, int address, bool restricted)
 {
-	I2C::data_t i2c_data;
+	if(restricted)
+		return(false);
 
-	device->send_receive(htu21_cmd_read_user, 1, i2c_data);
-
-	return(sensor_found);
+	return(i2c.probe(module, bus, address));
 }
 
-static bool htu21_init(data_t *data)
+SensorHTU21::SensorHTU21(Log &log_in, I2C::Device *device_in) : SensorI2C(log_in, this->basic_name(), device_in)
 {
-	htu21_private_data_t *pdata = static_cast<htu21_private_data_t *>(data->private_data);
+	I2C::data_t data;
 
-	assert(pdata);
-
-	pdata->state = htu21_state_init;
-
-	pdata->raw_temperature = 0;
-	pdata->raw_humidity = 0;
-
-	return(true);
-}
-
-static bool htu21_poll(data_t *data)
-{
-	htu21_private_data_t *pdata = static_cast<htu21_private_data_t *>(data->private_data);
-	unsigned int result;
-	float temperature, humidity;
-	I2C::data_t i2c_data;
-	unsigned char cmd;
-
-	assert(pdata);
-
-	switch(pdata->state)
+	try
 	{
-		case(htu21_state_init):
-		{
-			data->device->send(htu21_cmd_reset);
+		device->send_receive(enum_integer(cmd_t::read_user), 1, data);
+	}
+	catch(const transient_exception &)
+	{
+		throw(transient_exception());
+	}
+}
 
-			pdata->state = htu21_state_reset;
+void SensorHTU21::_poll()
+{
+	unsigned int result;
+	I2C::data_t data;
+
+	switch(this->state)
+	{
+		case(state_t::init):
+		{
+			device->send(enum_integer(cmd_t::reset));
+
+			this->state = state_t::reset;
 
 			break;
 		}
 
-		case(htu21_state_reset):
+		case(state_t::reset):
 		{
-			data->device->send_receive(htu21_cmd_read_user, 1, i2c_data);
+			unsigned char cmd;
 
-			cmd = i2c_data.at(0);
-			cmd &= (htu21_user_reg_reserved | htu21_user_reg_bat_stat);
-			cmd |= htu21_user_reg_rh11_temp11 | htu21_user_reg_otp_reload_disable;
+			device->send_receive(enum_integer(cmd_t::read_user), 1, data);
 
-			data->device->send(htu21_cmd_write_user, cmd);
-			data->device->send_receive(htu21_cmd_read_user, 1, i2c_data);
+			cmd = data.at(0);
+			cmd &= enum_integer(reg_t::reserved | reg_t::bat_stat);
+			cmd |= enum_integer(reg_t::rh11_temp11 | reg_t::otp_reload_disable);
 
-			cmd = i2c_data.at(0);
-			cmd &= ~(htu21_user_reg_reserved | htu21_user_reg_bat_stat);
+			device->send(enum_integer(cmd_t::write_user), cmd);
+			device->send_receive(enum_integer(cmd_t::read_user), 1, data);
 
-			if(cmd != (htu21_user_reg_rh11_temp11 | htu21_user_reg_otp_reload_disable))
+			cmd = data.at(0);
+			cmd &= ~(enum_integer(reg_t::reserved | reg_t::bat_stat));
+
+			if(cmd != enum_integer(reg_t::rh11_temp11 | reg_t::otp_reload_disable))
+				throw(transient_exception("htu21: invalid status"));
+
+			this->state = state_t::ready;
+
+			break;
+		}
+
+		case(state_t::ready):
+		case(state_t::finished):
+		{
+			device->send(enum_integer(cmd_t::meas_temp_no_hold_master));
+			this->state = state_t::measuring_temperature;
+
+			break;
+		}
+
+		case(state_t::measuring_temperature):
+		{
+			try
 			{
-				Log::get() << "htu21: poll: error 4";
-				data->state = sensor_disabled;
-				break;
+				result = this->get_data();
+			}
+			catch(const transient_exception &e)
+			{
+				throw(transient_exception(std::format("htu21: poll error temperature: {}", e.what())));
 			}
 
-			pdata->state = htu21_state_ready;
+			this->raw_values["raw temperature"] = result;
+			this->state = state_t::finished_temperature;
 
 			break;
 		}
 
-		case(htu21_state_ready):
-		case(htu21_state_finished):
+		case(state_t::finished_temperature):
 		{
-			data->device->send(htu21_cmd_meas_temp_no_hold_master);
-
-			pdata->state = htu21_state_measuring_temperature;
+			device->send(enum_integer(cmd_t::meas_hum_no_hold_master));
+			this->state = state_t::measuring_humidity;
 
 			break;
 		}
 
-		case(htu21_state_measuring_temperature):
+		case(state_t::measuring_humidity):
 		{
-			if(!htu21_get_data(data, &result))
-				break;
+			try
+			{
+				result = this->get_data();
+			}
+			catch(const transient_exception &e)
+			{
+				throw(transient_exception(std::format("htu21: poll error hummidity: {}", e.what())));
+			}
 
-			pdata->raw_temperature = result;
-			pdata->state = htu21_state_finished_temperature;
+			this->raw_values["raw humidity"] = result;
+			this->state = state_t::finished_humidity;
 
 			break;
 		}
 
-		case(htu21_state_finished_temperature):
+		case(state_t::finished_humidity):
 		{
-			data->device->send(htu21_cmd_meas_hum_no_hold_master);
+			float temperature, humidity;
 
-			pdata->state = htu21_state_measuring_humidity;
-
-			break;
-		}
-
-		case(htu21_state_measuring_humidity):
-		{
-			if(!htu21_get_data(data, &result))
-				break;
-
-			pdata->raw_humidity = result;
-			pdata->state = htu21_state_finished_humidity;
-
-			break;
-		}
-
-		case(htu21_state_finished_humidity):
-		{
-			temperature = ((pdata->raw_temperature * 175.72f) / 65536.0f) - 46.85f;
-			humidity = (((pdata->raw_humidity * 125.0f) / 65536.0f) - 6.0f) + ((25.0f - temperature) * -0.10f); // TempCoeff guessed
+			temperature = ((this->raw_values["raw temperature"] * 175.72f) / 65536.0f) - 46.85f;
+			humidity = (((this->raw_values["raw humidity"] * 125.0f) / 65536.0f) - 6.0f) + ((25.0f - temperature) * -0.10f); // TempCoeff guessed
 
 			if(humidity < 0)
 				humidity = 0;
@@ -2381,484 +834,962 @@ static bool htu21_poll(data_t *data)
 			if(humidity > 100)
 				humidity = 100;
 
-			data->values[sensor_type_temperature].value = temperature;
-			data->values[sensor_type_temperature].stamp = time(nullptr);
-			data->values[sensor_type_humidity].value = humidity;
-			data->values[sensor_type_humidity].stamp = data->values[sensor_type_temperature].stamp;
-
-			pdata->state = htu21_state_finished;
+			this->update("temperature", temperature, "degrees", 1);
+			this->update("humidity", humidity, "%", 0);
+			this->state = state_t::finished;
 
 			break;
+		}
+
+		default:
+		{
+			throw(hard_exception("htu21: invalid state"));
 		}
 	}
-
-	return(true);
 }
 
-static void htu21_dump(const data_t *data, std::string &output)
+bool SensorAsair::probe(I2c &i2c, int module, int bus, int address, bool restricted)
 {
-	htu21_private_data_t *pdata = static_cast<htu21_private_data_t *>(data->private_data);
-
-	assert(pdata);
-
-	output += (boost::format("state: %u, ") % pdata->state).str();
-	output += (boost::format("raw temperature: %u, ") % pdata->raw_temperature).str();
-	output += (boost::format("raw humidity: %u") % pdata->raw_humidity).str();
+	return(i2c.probe(module, bus, address));
 }
 
-enum : unsigned int
+SensorAsair::SensorAsair(Log &log_in, I2C::Device *device_in) : SensorI2C(log_in, this->basic_name(), device_in), model(model_t::asair)
 {
-	veml7700_reg_conf =		0x00,
-	veml7700_reg_als_wh =	0x01,
-	veml7700_reg_als_wl =	0x02,
-	veml7700_reg_powsave =	0x03,
-	veml7700_reg_als =		0x04,
-	veml7700_reg_white =	0x05,
-	veml7700_reg_als_int =	0x06,
-	veml7700_reg_id =		0x07,
-};
-
-enum : unsigned int
-{
-	veml7700_reg_id_id_1 =	0x81,
-	veml7700_reg_id_id_2 =	0xc4,
-};
-
-enum : unsigned int
-{
-	veml7700_conf_reserved1 =		0b000 << 13,
-	veml7700_conf_als_gain_1 =		0b00 << 11,
-	veml7700_conf_als_gain_2 =		0b01 << 11,
-	veml7700_conf_als_gain_1_8 =	0b10 << 11,
-	veml7700_conf_als_gain_1_4 =	0b11 << 11,
-	veml7700_conf_reserved2 =		0b1 << 10,
-	veml7700_conf_als_it_25 =		0b1100 << 6,
-	veml7700_conf_als_it_50 =		0b1000 << 6,
-	veml7700_conf_als_it_100 =		0b0000 << 6,
-	veml7700_conf_als_it_200 =		0b0001 << 6,
-	veml7700_conf_als_it_400 =		0b0010 << 6,
-	veml7700_conf_als_it_800 =		0b0011 << 6,
-	veml7700_conf_als_pers_1 =		0b00 << 4,
-	veml7700_conf_als_pers_2 =		0b01 << 4,
-	veml7700_conf_als_pers_4 =		0b10 << 4,
-	veml7700_conf_als_pers_8 =		0b11 << 4,
-	veml7700_conf_reserved3 =		0b00 << 2,
-	veml7700_conf_als_int_en =		0b1 << 1,
-	veml7700_conf_als_sd =			0b1 << 0,
-};
-
-static constexpr unsigned int  veml7700_autoranging_data_size = 6;
-
-static const device_autoranging_data_t veml7700_autoranging_data[veml7700_autoranging_data_size] =
-{
-	{{	veml7700_conf_als_it_800,	veml7700_conf_als_gain_2 },		{ 0,	32768	}, 0, 0.0036	},
-	{{	veml7700_conf_als_it_800,	veml7700_conf_als_gain_1_8 },	{ 100,	32768	}, 0, 0.0576	},
-	{{	veml7700_conf_als_it_200,	veml7700_conf_als_gain_2 },		{ 100,	32768	}, 0, 0.0144	},
-	{{	veml7700_conf_als_it_200,	veml7700_conf_als_gain_1_8 },	{ 100,	32768	}, 0, 0.2304	},
-	{{	veml7700_conf_als_it_25,	veml7700_conf_als_gain_2 },		{ 100,	32768	}, 0, 0.1152	},
-	{{	veml7700_conf_als_it_25,	veml7700_conf_als_gain_1_8 },	{ 100,	65536	}, 0, 1.8432	},
-};
-
-typedef enum : unsigned int
-{
-	veml7700_state_init,
-	veml7700_state_measuring,
-	veml7700_state_finished,
-} veml7700_state_t;
-
-typedef struct
-{
-	veml7700_state_t state;
-	unsigned int scaling;
-	unsigned int scaling_up;
-	unsigned int scaling_down;
-	unsigned int raw_als;
-	unsigned int raw_white;
-} veml7700_private_data_t;
-
-static sensor_detect_t veml7700_detect(I2C::Device* device)
-{
-	I2C::data_t i2c_data;
-
-	device->send_receive(veml7700_reg_id, 2, i2c_data);
-
-	if((i2c_data.at(0) != veml7700_reg_id_id_1) || (i2c_data.at(1) != veml7700_reg_id_id_2))
-		return(sensor_not_found);
-
-	return(sensor_found);
+	this->device->send(enum_integer(cmd_t::reset));
+	this->state = state_t::reset;
 }
 
-static bool veml7700_init(data_t *data)
+void SensorAsair::_poll()
 {
-	veml7700_private_data_t *pdata = static_cast<veml7700_private_data_t *>(data->private_data);
+	I2C::data_t data;
 
-	assert(pdata);
-
-	pdata->state = veml7700_state_init;
-	pdata->scaling = veml7700_autoranging_data_size - 1;
-	pdata->scaling_up = 0;
-	pdata->scaling_down = 0;
-	pdata->raw_als = 0;
-	pdata->raw_white = 0;
-
-	return(true);
-}
-
-static bool veml7700_poll(data_t *data)
-{
-	veml7700_private_data_t *pdata = static_cast<veml7700_private_data_t *>(data->private_data);
-	I2C::data_t i2c_data;
-	unsigned int scale_down_threshold, scale_up_threshold;
-	float raw_lux;
-	unsigned int opcode;
-
-	assert(pdata);
-
-	switch(pdata->state)
+	switch(this->state)
 	{
-		case(veml7700_state_init):
-		case(veml7700_state_finished):
+		case(state_t::reset):
 		{
-			opcode =	veml7700_autoranging_data[pdata->scaling].data[0];
-			opcode |=	veml7700_autoranging_data[pdata->scaling].data[1];
+			this->state = state_t::ready;
 
-			data->device->send(veml7700_reg_conf, (opcode & 0x00ff) >> 0, (opcode & 0xff00) >> 8);
-
-			pdata->state = veml7700_state_measuring;
-
-			break;
-		}
-
-		case(veml7700_state_measuring):
-		{
-			scale_down_threshold = veml7700_autoranging_data[pdata->scaling].threshold.down;
-			scale_up_threshold = veml7700_autoranging_data[pdata->scaling].threshold.up;
-
-			pdata->state = veml7700_state_finished;
-
-			data->device->send_receive(veml7700_reg_white, 3, i2c_data);
-
-			pdata->raw_white = unsigned_16_le(i2c_data);
-
-			data->device->send_receive(veml7700_reg_als, 3, i2c_data);
-
-			pdata->raw_als = unsigned_16_le(i2c_data);
-
-			if((pdata->raw_als < scale_down_threshold) && (pdata->scaling > 0))
+			if(this->model != model_t::asair)
 			{
-				pdata->scaling--;
-				pdata->scaling_down++;
+				this->state = state_t::ready;
 				break;
 			}
 
-			if((pdata->raw_als >= scale_up_threshold) && (pdata->scaling < (veml7700_autoranging_data_size - 1)))
+			try
 			{
-				pdata->scaling++;
-				pdata->scaling_up++;
+				this->device->send(enum_integer(aht10_cal_init_t::cal_1), enum_integer(aht10_cal_init_t::cal_2), enum_integer(aht10_cal_init_t::cal_3));
+				this->model = model_t::aht10;
+				break;
+			}
+			catch(const transient_exception &)
+			{
+			}
+
+			try
+			{
+				this->device->send(enum_integer(aht20_cal_init_t::cal_1), enum_integer(aht20_cal_init_t::cal_2), enum_integer(aht20_cal_init_t::cal_3));
+				this->model = model_t::aht20;
+				break;
+			}
+			catch(const transient_exception &)
+			{
+			}
+
+			throw(transient_exception("asair: unknown sensor type"));
+
+			this->name = enum_name(this->model);
+
+			break;
+		}
+
+		case(state_t::ready):
+		{
+			this->device->send_receive(enum_integer(cmd_t::get_all_data), enum_integer(data_off_t::state) + 1, data);
+
+			if(data.at(enum_integer(data_off_t::state)) & enum_integer(status_t::busy))
+			{
+				this->raw_values["busy1"]++;
 				break;
 			}
 
-			raw_lux = pdata->raw_als * veml7700_autoranging_data[pdata->scaling].factor;
-
-			data->values[sensor_type_visible_light].value =
-					(raw_lux * raw_lux * raw_lux * raw_lux * 6.0135e-13f)
-					- (raw_lux * raw_lux * raw_lux * 9.3924e-09f)
-					+ (raw_lux * raw_lux * 8.1488e-05f)
-					+ (raw_lux * 1.0023e+00f);
-			data->values[sensor_type_visible_light].stamp = time(nullptr);
-
-			break;
-		}
-	}
-
-	return(true);
-}
-
-static void veml7700_dump(const data_t *data, std::string &output)
-{
-	veml7700_private_data_t *pdata = static_cast<veml7700_private_data_t *>(data->private_data);
-
-	assert(pdata);
-
-	output += (boost::format("state: %u, ") % pdata->state).str();
-	output += (boost::format("scaling: %u, ") % pdata->scaling).str();
-	output += (boost::format("scaling up: %u, ") % pdata->scaling_up).str();
-	output += (boost::format("scaling down: %u, ") % pdata->scaling_down).str();
-	output += (boost::format("raw als: %u, ") % pdata->raw_als).str();
-	output += (boost::format("raw als: %u, ") % pdata->raw_white).str();
-}
-
-enum : unsigned int
-{
-	bme680_reg_meas_status_0 =	0x1d,
-
-	bme680_reg_press =			0x1f,
-	bme680_reg_temp =			0x22,
-	bme680_reg_hum =			0x25,
-
-	bme680_reg_ctrl_gas_0 =		0x70,
-	bme680_reg_ctrl_hum =		0x72,
-	bme680_reg_status =			0x73,
-	bme680_reg_ctrl_meas =		0x74,
-	bme680_reg_config =			0x75,
-	bme680_reg_calibration_1 =	0x89,
-	bme680_reg_id =				0xd0,
-	bme680_reg_reset =			0xe0,
-	bme680_reg_calibration_2 =	0xe1,
-
-	bme680_reg_meas_status_0_new_data =		0b1000'0000,
-	bme680_reg_meas_status_0_measuring =	0b0010'0000,
-
-	bme680_reg_ctrl_gas_0_heat_on =		0b0000'0000,
-	bme680_reg_ctrl_gas_0_heat_off =	0b0000'1000,
-
-	bme680_reg_ctrl_gas_1_run_gas =		0b0001'0000,
-
-	bme680_reg_ctrl_hum_osrh_h_skip =	0b0000'0000,
-	bme680_reg_ctrl_hum_osrh_h_1 =		0b0000'0001,
-	bme680_reg_ctrl_hum_osrh_h_2 =		0b0000'0010,
-	bme680_reg_ctrl_hum_osrh_h_4 =		0b0000'0011,
-	bme680_reg_ctrl_hum_osrh_h_8 =		0b0000'0100,
-	bme680_reg_ctrl_hum_osrh_h_16 =		0b0000'0101,
-
-	bme680_reg_ctrl_meas_osrs_t_skip =	0b0000'0000,
-	bme680_reg_ctrl_meas_osrs_t_1 =		0b0010'0000,
-	bme680_reg_ctrl_meas_osrs_t_2 =		0b0100'0000,
-	bme680_reg_ctrl_meas_osrs_t_4 =		0b0110'0000,
-	bme680_reg_ctrl_meas_osrs_t_8 =		0b1000'0000,
-	bme680_reg_ctrl_meas_osrs_t_16 =	0b1010'0000,
-
-	bme680_reg_ctrl_meas_osrs_mask =	0b0001'1100,
-	bme680_reg_ctrl_meas_osrs_p_skip =	0b0000'0000,
-	bme680_reg_ctrl_meas_osrs_p_1 =		0b0000'0100,
-	bme680_reg_ctrl_meas_osrs_p_2 =		0b0000'1000,
-	bme680_reg_ctrl_meas_osrs_p_4 =		0b0000'1100,
-	bme680_reg_ctrl_meas_osrs_p_8 =		0b0001'0000,
-
-	bme680_reg_ctrl_meas_sleep =		0b0000'0000,
-	bme680_reg_ctrl_meas_forced =		0b0000'0001,
-
-	bme680_reg_config_filter_mask =		0b0001'1100,
-	bme680_reg_config_filter_0 =		0b0000'0000,
-	bme680_reg_config_filter_1 =		0b0000'0100,
-	bme680_reg_config_filter_3 =		0b0000'1000,
-	bme680_reg_config_filter_7 =		0b0000'1100,
-	bme680_reg_config_filter_15 =		0b0001'0000,
-	bme680_reg_config_filter_31 =		0b0001'0100,
-	bme680_reg_config_filter_63 =		0b0001'1000,
-	bme680_reg_config_filter_127 =		0b0001'1100,
-
-	bme680_reg_id_bme680 =				0x61,
-
-	bme680_reg_reset_value =			0xb6,
-
-	bme680_calibration_1_size =			25,
-	bme680_calibration_2_size =			16,
-
-	bme680_calibration_offset_t2 =		1,
-	bme680_calibration_offset_t3 =		3,
-
-	bme680_calibration_offset_p1 =		5,
-	bme680_calibration_offset_p2 =		7,
-	bme680_calibration_offset_p3 =		9,
-	bme680_calibration_offset_p4 =		11,
-	bme680_calibration_offset_p5 =		13,
-	bme680_calibration_offset_p7 =		15,
-	bme680_calibration_offset_p6 =		16,
-	bme680_calibration_offset_p8 =		19,
-	bme680_calibration_offset_p9 =		21,
-	bme680_calibration_offset_p10 =		23,
-
-	bme680_calibration_offset_h1 =		26,
-	bme680_calibration_offset_h2 =		25,
-	bme680_calibration_offset_h3 =		28,
-	bme680_calibration_offset_h4 =		29,
-	bme680_calibration_offset_h5 =		30,
-	bme680_calibration_offset_h6 =		31,
-	bme680_calibration_offset_h7 =		32,
-
-	bme680_calibration_offset_t1 =		33,
-};
-
-typedef enum : unsigned int
-{
-	bme680_state_init,
-	bme680_state_otp_ready,
-	bme680_state_measuring,
-	bme680_state_finished,
-} bme680_state_t;
-
-typedef struct
-{
-	bme680_state_t	state;
-	float			t_fine;
-	unsigned int	adc_temperature;
-	unsigned int	adc_airpressure;
-	unsigned int	adc_humidity;
-	uint16_t		t1;
-	int16_t			t2;
-	int8_t			t3;
-	uint16_t		p1;
-	int16_t			p2;
-	int8_t			p3;
-	int16_t			p4;
-	int16_t			p5;
-	int8_t			p6;
-	int8_t			p7;
-	int16_t			p8;
-	int16_t			p9;
-	uint8_t			p10;
-	uint16_t		h1;
-	uint16_t		h2;
-	int8_t			h3;
-	int8_t			h4;
-	int8_t			h5;
-	uint8_t			h6;
-	int8_t			h7;
-} bme680_private_data_t;
-
-static bool bme680_read_otp(data_t *data)
-{
-	bme680_private_data_t *pdata = static_cast<bme680_private_data_t *>(data->private_data);
-	//uint8_t calibration[bme680_calibration_1_size + bme680_calibration_2_size];
-	I2C::data_t i2c_data1;
-	I2C::data_t i2c_data2;
-	I2C::data_t i2c_data;
-
-	assert(pdata);
-
-	data->device->send_receive(bme680_reg_calibration_1, bme680_calibration_1_size, i2c_data1);
-	data->device->send_receive(bme680_reg_calibration_2, bme680_calibration_2_size, i2c_data2);
-
-	i2c_data = i2c_data1 + i2c_data2;
-
-	pdata->t1 =		unsigned_16_le(i2c_data, bme680_calibration_offset_t1);
-	pdata->t2 =		signed_16_le(i2c_data, bme680_calibration_offset_t2);
-	pdata->t3 =		signed_8(i2c_data, bme680_calibration_offset_t3);
-
-	pdata->p1 =		unsigned_16_le(i2c_data, bme680_calibration_offset_p1);
-	pdata->p2 =		signed_16_le(i2c_data, bme680_calibration_offset_p2);
-	pdata->p3 =		signed_8(i2c_data, bme680_calibration_offset_p3);
-	pdata->p4 =		signed_16_le(i2c_data, bme680_calibration_offset_p4);
-	pdata->p5 =		signed_16_le(i2c_data, bme680_calibration_offset_p5);
-	pdata->p6 =		signed_8(i2c_data, bme680_calibration_offset_p6);
-	pdata->p7 =		signed_8(i2c_data, bme680_calibration_offset_p7);
-	pdata->p8 =		signed_16_le(i2c_data, bme680_calibration_offset_p8);
-	pdata->p9 =		signed_16_le(i2c_data, bme680_calibration_offset_p9);
-	pdata->p10 =	unsigned_8(i2c_data, bme680_calibration_offset_p10);
-
-	pdata->h1 =		unsigned_12_bottom_le(i2c_data, bme680_calibration_offset_h1);
-	pdata->h2 =		unsigned_12_top_be(i2c_data, bme680_calibration_offset_h2);
-	pdata->h3 =		signed_8(i2c_data, bme680_calibration_offset_h3);
-	pdata->h4 =		signed_8(i2c_data, bme680_calibration_offset_h4);
-	pdata->h5 =		signed_8(i2c_data, bme680_calibration_offset_h5);
-	pdata->h6 =		unsigned_8(i2c_data, bme680_calibration_offset_h6);
-	pdata->h7 =		signed_8(i2c_data, bme680_calibration_offset_h7);
-
-	return(true);
-}
-
-static sensor_detect_t bme680_detect(I2C::Device* device)
-{
-	I2C::data_t i2c_data;
-
-	device->send_receive(bme680_reg_id, 1, i2c_data);
-
-	if(i2c_data.at(0) != bme680_reg_id_bme680)
-		return(sensor_not_found);
-
-	return(sensor_found);
-}
-
-static bool bme680_init(data_t *data)
-{
-	bme680_private_data_t *pdata = static_cast<bme680_private_data_t *>(data->private_data);
-
-	assert(pdata);
-
-	data->device->send(bme680_reg_reset, bme680_reg_reset_value);
-
-	pdata->state = bme680_state_init;
-
-	return(true);
-}
-
-static bool bme680_poll(data_t *data)
-{
-	I2C::data_t i2c_data;
-	float temperature, humidity, airpressure, airpressure_256;
-	float var1, var2, var3, var4;
-	float t1_scaled;
-	bme680_private_data_t *pdata = static_cast<bme680_private_data_t *>(data->private_data);
-
-	assert(pdata);
-
-	switch(pdata->state)
-	{
-		case(bme680_state_init):
-		{
-			data->device->send(bme680_reg_config, bme680_reg_config_filter_127);
-			data->device->send(bme680_reg_ctrl_gas_0, bme680_reg_ctrl_gas_0_heat_off);
-
-			if(!bme680_read_otp(data))
-				return(false);
-
-			if((pdata->t1 == 0) && (pdata->t2 == 0))
-				return(false);
-
-			pdata->state = bme680_state_otp_ready;
+			this->state = state_t::measuring;
 
 			break;
 		}
 
-		case(bme680_state_measuring):
+		case(state_t::measuring):
 		{
-			data->device->send_receive(bme680_reg_meas_status_0, 1, i2c_data);
+			this->device->send(enum_integer(cmd_t::measure_0), enum_integer(cmd_t::measure_1), enum_integer(cmd_t::measure_2));
 
-			if(i2c_data.at(0) & bme680_reg_meas_status_0_measuring)
+			this->state = state_t::finished;
+
+			break;
+		}
+
+		case(state_t::finished):
+		{
+			unsigned temperature, humidity;
+			unsigned int crc_local, crc_remote;
+
+			this->device->send_receive(enum_integer(cmd_t::get_all_data), enum_integer(data_off_t::size), data);
+
+			if(data.at(enum_integer(data_off_t::state)) & enum_integer(status_t::busy))
 			{
-				Log::get() << "sensors: bme680: sensor not ready";
-				return(true);
+				this->raw_values["busy2"]++;
+				break;
 			}
 
-			data->device->send_receive(bme680_reg_temp, 3, i2c_data);
-			pdata->adc_temperature = unsigned_20_top_be(i2c_data);
+			this->raw_values["raw 0"] = data.at(0);
+			this->raw_values["raw 1"] = data.at(1);
+			this->raw_values["raw 2"] = data.at(2);
+			this->raw_values["raw 3"] = data.at(3);
+			this->raw_values["raw 4"] = data.at(4);
+			this->raw_values["raw 5"] = data.at(5);
+			this->raw_values["raw 6"] = data.at(6);
 
-			data->device->send_receive(bme680_reg_press, 3, i2c_data);
-			pdata->adc_airpressure = unsigned_20_top_be(i2c_data);
+			crc_local = Crypt::crc8_31(data.substr(0, enum_integer(data_off_t::crc)), 0xff);
+			crc_remote = data.at(enum_integer(data_off_t::crc));
 
-			data->device->send_receive(bme680_reg_hum, 3, i2c_data);
-			pdata->adc_humidity = unsigned_16_be(i2c_data);
+			if(crc_local != crc_remote)
+				this->raw_values["crc errors"]++;
 
-			t1_scaled =		(pdata->adc_temperature / 131072.0f) - (pdata->t1 / 8192.0f);
-			pdata->t_fine =	((pdata->adc_temperature / 16384.0f) - (pdata->t1 / 1024.0f)) * pdata->t2 + (t1_scaled * t1_scaled * pdata->t3 * 16.0f);
+			temperature = this->u20bottombe(data, enum_integer(data_off_t::temperature_0));
+			humidity = this->u20topbe(data, enum_integer(data_off_t::humidity_0));
 
-			temperature	= pdata->t_fine / 5120.0f;
+			this->raw_values["raw temperature"] = temperature;
+			this->raw_values["raw humidity"] = humidity;
 
-			var1 = (pdata->t_fine / 2.0f) - 64000.0f;
-			var2 = var1 * var1 * pdata->p6 / 131072.0f;
-			var2 = var2 + (var1 * pdata->p5 * 2.0f);
-			var2 = (var2 / 4) + (pdata->p4 * 65536.f);
-			var1 = (((pdata->p3 * var1 * var1) / 16384.0f) + (pdata->p2 * var1)) / 524288.0f;
-			var1 = (1 + (var1 / 32768.0f)) * pdata->p1;
-			airpressure = 1048576.0f - pdata->adc_airpressure;
+			this->update("temperature", ((static_cast<float>(temperature) / 1048576.0f) * 200) - 50.0f, "degrees", 1);
+			this->update("humidity", (static_cast<float>(humidity) / 1048576.0f) * 100, "%", 0);
+			this->state = state_t::ready;
 
-			if((int)var1 != 0)
+			break;
+		}
+
+		default:
+		{
+			throw(hard_exception("asair: invalid state"));
+		}
+	}
+}
+
+void SensorSHT3X::send_command(cmd_t cmd)
+{
+	this->device->send(u16high(enum_integer(cmd)), u16low(enum_integer(cmd)));
+}
+
+unsigned int SensorSHT3X::receive_command(cmd_t cmd)
+{
+	unsigned char crc_local, crc_remote;
+	I2C::data_t data;
+
+	this->device->send_receive(u16high(enum_integer(cmd)), u16low(enum_integer(cmd)), 3, data);
+
+	crc_local = Crypt::crc8_31(data.substr(0, 2), 0xff);
+	crc_remote = data.at(2);
+
+	if(crc_local != crc_remote)
+	{
+		this->raw_values["crc errors"]++;
+		throw(transient_exception());
+	}
+
+	return(this->u16be(data));
+}
+
+bool SensorSHT3X::probe(I2c &i2c, int module, int bus, int address, bool restricted)
+{
+	if(restricted)
+		return(false);
+
+	return(i2c.probe(module, bus, address));
+}
+
+SensorSHT3X::SensorSHT3X(Log &log_in, I2C::Device *device_in) : SensorI2C(log_in, this->basic_name(), device_in)
+{
+	try
+	{
+		this->send_command(cmd_t::cmd_break);
+	}
+	catch(const transient_exception &e)
+	{
+		throw(transient_exception());
+	}
+
+	this->raw_values["crc errors"] = 0;
+}
+
+void SensorSHT3X::_poll()
+{
+	unsigned int result;
+
+	switch(this->state)
+	{
+		case(state_t::init):
+		{
+			this->send_command(cmd_t::reset);
+			this->state = state_t::reset;
+
+			break;
+		}
+
+		case(state_t::reset):
+		{
+			result = this->receive_command(cmd_t::read_status);
+
+			if((result & enum_integer(status_t::write_checksum | status_t::command_status)) != 0x00)
+			{
+				this->raw_values["poll errors"]++;
+				throw(transient_exception());
+			}
+
+			this->send_command(cmd_t::clear_status);
+			this->state = state_t::ready;
+
+			break;
+		}
+
+		case(state_t::ready):
+		{
+			result = this->receive_command(cmd_t::read_status);
+
+			if((result & enum_integer(status_t::write_checksum | status_t::command_status | status_t::reset_detected)) != 0x00)
+			{
+				this->raw_values["poll errors"]++;
+				throw(transient_exception());
+			}
+
+			this->state = state_t::finished;
+
+			break;
+		}
+
+		case(state_t::finished):
+		{
+			this->send_command(cmd_t::single_meas_noclock_high);
+			this->state = state_t::measuring;
+
+			break;
+		}
+
+		case(state_t::measuring):
+		{
+			I2C::data_t data;
+			unsigned int raw_temperature, raw_humidity;
+			float temperature, humidity;
+			unsigned char crc_local, crc_remote;
+
+			this->device->send_receive(this->u16high(enum_integer(cmd_t::fetch_data)), this->u16low(enum_integer(cmd_t::fetch_data)), 6, data);
+
+			crc_remote = data.at(2);
+			crc_local = Crypt::crc8_31(data.substr(0, 2), 0xff);
+
+			if(crc_local != crc_remote)
+			{
+				this->raw_values["crc errors"]++;
+				throw(transient_exception());
+			}
+
+			crc_remote = data.at(5);
+			crc_local = Crypt::crc8_31(data.substr(3, 2), 0xff);
+
+			if(crc_local != crc_remote)
+			{
+				this->raw_values["crc errors"]++;
+				throw(transient_exception());
+			}
+
+			this->raw_values["raw temperature"] = raw_temperature = this->u16be(data, 0);
+			this->raw_values["raw humidity"] = raw_humidity = this->u16be(data, 3);
+
+			temperature = ((static_cast<float>(raw_temperature) * 175.f) / ((1 << 16) - 1.0f)) - 45.0f;
+			humidity = (static_cast<float>(raw_humidity) * 100.0f) / ((1 << 16) - 1.0f);
+
+			this->update("temperature", temperature, "degrees", 1);
+			this->update("humidity", humidity, "%", 0);
+			this->state = state_t::finished;
+
+			break;
+		}
+
+		default:
+		{
+			throw(hard_exception("sht3x: invalid state"));
+		}
+	}
+}
+
+bool SensorSHT4X::probe(I2c &i2c, int module, int bus, int address, bool restricted)
+{
+	if(restricted)
+		return(false);
+
+	return(i2c.probe(module, bus, address));
+}
+
+SensorSHT4X::SensorSHT4X(Log &log_in, I2C::Device *device_in) : SensorI2C(log_in, this->basic_name(), device_in)
+{
+	I2C::data_t data;
+	unsigned int serial, serial_high, serial_low, local_crc_high, local_crc_low, remote_crc_high, remote_crc_low;
+
+	try
+	{
+		this->device->send(enum_integer(cmd_t::read_serial));
+		this->device->receive(6, data);
+		serial_high = this->u16be(data, 0);
+		serial_low = this->u16be(data, 3);
+		serial = (serial_high << 16) | (serial_low << 0);
+		remote_crc_high = data.at(2);
+		remote_crc_low = data.at(5);
+		local_crc_high = Crypt::crc8_31(data.substr(0, 2), 0xff);
+		local_crc_low = Crypt::crc8_31(data.substr(3, 2), 0xff);
+
+		if(remote_crc_high != local_crc_high)
+			throw(transient_exception());
+
+		if(remote_crc_low != local_crc_low)
+			throw(transient_exception());
+	}
+	catch(const transient_exception &e)
+	{
+		throw(transient_exception());
+	}
+
+	this->raw_values["serial"] = serial;
+}
+
+void SensorSHT4X::_poll()
+{
+	switch(this->state)
+	{
+		case(state_t::init):
+		{
+			this->device->send(enum_integer(cmd_t::soft_reset));
+			this->state = state_t::ready;
+
+			break;
+		}
+
+		case(state_t::ready):
+		case(state_t::finished):
+		{
+			this->device->send(enum_integer(cmd_t::measure_high_precision));
+			this->state = state_t::measuring;
+
+			break;
+		}
+
+		case(state_t::measuring):
+		{
+			I2C::data_t data;
+			unsigned int raw_temperature, raw_humidity;
+			float temperature, humidity;
+			unsigned char crc_local, crc_remote;
+
+			try
+			{
+				this->device->receive(6, data);
+			}
+			catch(const transient_exception &e)
+			{
+				this->raw_values["not ready"]++;
+				throw;
+			}
+
+			crc_remote = data.at(2);
+			crc_local = Crypt::crc8_31(data.substr(0, 2), 0xff);
+
+			if(crc_local != crc_remote)
+			{
+				this->raw_values["crc errors"]++;
+				throw(transient_exception());
+			}
+
+			crc_remote = data.at(5);
+			crc_local = Crypt::crc8_31(data.substr(3, 2), 0xff);
+
+			if(crc_local != crc_remote)
+			{
+				this->raw_values["crc errors"]++;
+				throw(transient_exception());
+			}
+
+			this->raw_values["raw temperature"] = raw_temperature = this->u16be(data, 0);
+			this->raw_values["raw humidity"] = raw_humidity = this->u16be(data, 3);
+
+			temperature = ((static_cast<float>(raw_temperature) * 175.f) / 65535.0f) - 45.0f;
+			humidity = ((static_cast<float>(raw_humidity) * 125.0f) / 65535.0f) - 6.0f;
+
+			this->update("temperature", temperature, "degrees", 1);
+			this->update("humidity", humidity, "%", 0);
+			this->state = state_t::finished;
+
+			break;
+		}
+
+		default:
+		{
+			throw(hard_exception("sht4x: invalid state"));
+		}
+	}
+}
+
+void SensorHDC1080::write_word(reg_t reg, conf_t value)
+{
+	this->device->send(enum_integer(reg), this->u16high(enum_integer(value)), this->u16low(enum_integer(value)));
+}
+
+bool SensorHDC1080::probe(I2c &i2c, int module, int bus, int address, bool restricted)
+{
+	if(restricted)
+		return(false);
+
+	return(i2c.probe(module, bus, address));
+}
+
+SensorHDC1080::SensorHDC1080(Log &log_in, I2C::Device *device_in) : SensorI2C(log_in, this->basic_name(), device_in)
+{
+	I2C::data_t data;
+
+	this->device->send_receive(enum_integer(reg_t::man_id), 2, data);
+
+	if(this->u16be(data) != enum_integer(id_t::manufacturer))
+		throw(transient_exception("manufacturer id mismatch"));
+
+	this->device->send_receive(enum_integer(reg_t::dev_id), 2, data);
+
+	if(this->u16be(data) != enum_integer(id_t::device))
+		throw(transient_exception("device id mismatch"));
+
+	this->write_word(reg_t::conf, conf_t::rst);
+}
+
+void SensorHDC1080::_poll()
+{
+	static constexpr const conf_t default_config = conf_t::tres_14 | conf_t::hres_14 | conf_t::mode_two;
+	I2C::data_t data;
+
+	switch(this->state)
+	{
+		case(state_t::init):
+		{
+			this->state = state_t::reset;
+			break;
+		}
+
+		case(state_t::reset):
+		{
+			this->device->send_receive(enum_integer(reg_t::conf), 2, data);
+
+			if(this->u16le(data) & enum_integer(conf_t::rst))
+				throw(transient_exception("poll error 1"));
+
+			this->write_word(reg_t::conf, default_config);
+			this->state = state_t::ready;
+
+			break;
+		}
+
+		case(state_t::ready):
+		case(state_t::finished):
+		{
+			this->device->send(enum_integer(reg_t::data_temp));
+			this->state = state_t::measuring;
+
+			break;
+		}
+
+		case(state_t::measuring):
+		{
+			unsigned int temperature;
+			unsigned int humidity;
+
+			this->device->receive(4, data);
+
+			temperature = this->u16be(data, 0);
+			humidity = this->u16be(data, 2);
+
+			this->raw_values["raw temperature"] = temperature;
+			this->raw_values["raw humidity"] = humidity;
+
+			this->update("temperature", ((temperature * 165.0f) / 65536.0f) - 40.0f, "degrees", 1);
+			this->update("humidity", (humidity * 100.0f) / 65536.0f, "%", 0);
+			this->state = state_t::finished;
+
+			break;
+		}
+
+		default:
+		{
+			throw(hard_exception("hdc1080: invalid state"));
+		}
+	}
+}
+
+SensorBMX280::SensorBMX280(Log &log_in, I2C::Device *device_in) : SensorI2C(log_in, this->basic_name(), device_in)
+{
+}
+
+bool SensorBMP280::probe(I2c &i2c, int module, int bus, int address, bool restricted)
+{
+	return(i2c.probe(module, bus, address));
+}
+
+SensorBMP280::SensorBMP280(Log &log_in, I2C::Device *device_in) : SensorBMX280(log_in, device_in)
+{
+	I2C::data_t data;
+
+	this->device->send_receive(enum_integer(reg_t::id), 1, data);
+
+	if(data.at(0) != enum_integer(id_t::id_bmp280))
+		throw(transient_exception());
+
+	this->device->send(enum_integer(reg_t::reset), enum_integer(reset_t::reset_value));
+	this->device->send_receive(enum_integer(reg_t::reset), 1, data);
+
+	if(data.at(0) != 0x00)
+		throw(transient_exception("reset failed"));
+
+	this->name = this->basic_name();
+}
+
+void SensorBMP280::_poll()
+{
+	I2C::data_t data;
+
+	switch(this->state)
+	{
+		case(state_t::init):
+		{
+			this->device->send_receive(enum_integer(cal_off_t::base), enum_integer(cal_off_t::size), data);
+
+			this->calibration_data.t1 = this->u16le(data, enum_integer(cal_off_t::off_0x88_0x89_dig_t1));
+			this->calibration_data.t2 = this->s16le(data, enum_integer(cal_off_t::off_0x8a_0x8b_dig_t2));
+			this->calibration_data.t3 = this->s16le(data, enum_integer(cal_off_t::off_0x8c_0x8d_dig_t3));
+			this->calibration_data.p1 = this->u16le(data, enum_integer(cal_off_t::off_0x8e_0x8f_dig_p1));
+			this->calibration_data.p2 = this->s16le(data, enum_integer(cal_off_t::off_0x90_0x91_dig_p2));
+			this->calibration_data.p3 = this->s16le(data, enum_integer(cal_off_t::off_0x92_0x93_dig_p3));
+			this->calibration_data.p4 = this->s16le(data, enum_integer(cal_off_t::off_0x94_0x95_dig_p4));
+			this->calibration_data.p5 = this->s16le(data, enum_integer(cal_off_t::off_0x96_0x97_dig_p5));
+			this->calibration_data.p6 = this->s16le(data, enum_integer(cal_off_t::off_0x98_0x99_dig_p6));
+			this->calibration_data.p7 = this->s16le(data, enum_integer(cal_off_t::off_0x9a_0x9b_dig_p7));
+			this->calibration_data.p8 = this->s16le(data, enum_integer(cal_off_t::off_0x9c_0x9d_dig_p8));
+			this->calibration_data.p9 = this->s16le(data, enum_integer(cal_off_t::off_0x9e_0x9f_dig_p9));
+
+			this->raw_values["c.t1"] = this->calibration_data.t1;
+			this->raw_values["c.t2"] = this->calibration_data.t2;
+			this->raw_values["c.t3"] = this->calibration_data.t3;
+			this->raw_values["c.p1"] = this->calibration_data.p1;
+			this->raw_values["c.p2"] = this->calibration_data.p2;
+			this->raw_values["c.p3"] = this->calibration_data.p3;
+			this->raw_values["c.p4"] = this->calibration_data.p4;
+			this->raw_values["c.p5"] = this->calibration_data.p5;
+			this->raw_values["c.p6"] = this->calibration_data.p6;
+			this->raw_values["c.p7"] = this->calibration_data.p7;
+			this->raw_values["c.p8"] = this->calibration_data.p8;
+			this->raw_values["c.p9"] = this->calibration_data.p9;
+
+			if((this->calibration_data.t1 > 0) && (this->calibration_data.t2 > 0))
+				this->state = state_t::ready;
+
+			break;
+		}
+
+		case(state_t::ready):
+		case(state_t::finished):
+		{
+			this->device->send_receive(enum_integer(reg_t::ctrl_meas), 1, data);
+
+			if((data.at(0) & enum_integer(reg_ctrl_meas_t::mode_mask)) != enum_integer(reg_ctrl_meas_t::mode_sleep))
+				throw(transient_exception("poll error 1"));
+
+			this->device->send(enum_integer(reg_t::config), enum_integer(reg_config_t::filter_2));
+			this->device->send(enum_integer(reg_t::ctrl_meas), enum_integer(reg_ctrl_meas_t::osrs_t_16 | reg_ctrl_meas_t::osrs_p_16 | reg_ctrl_meas_t::mode_forced));
+
+			this->state = state_t::measuring;
+
+			break;
+		}
+
+		case(state_t::measuring):
+		{
+			unsigned int raw_airpressure, raw_temperature;
+			float t_fine_1, var1, var2, airpressure;
+
+			this->device->send_receive(enum_integer(reg_t::adc), 8, data);
+
+			this->raw_values["raw airpressure"] = raw_airpressure = this->u20topbe(data, 0);
+			this->raw_values["raw temperature"] = raw_temperature = this->u20topbe(data, 3);
+
+			var1 = ((raw_temperature / 16384.0f) - (this->calibration_data.t1 / 1024.0f)) * this->calibration_data.t2;
+			var2 = ((raw_temperature / 131072.0f) - (this->calibration_data.t1 / 8192.0f)) *
+					((raw_temperature / 131072.0f) - (this->calibration_data.t1 / 8192.0f)) *
+					this->calibration_data.t3;
+
+			this->update("temperature", (var1 + var2) / 5120.0f, "degrees", 1);
+
+			var1 = (raw_temperature / 16384.0f - this->calibration_data.t1 / 1024.0f) * this->calibration_data.t2;
+			var2 = (raw_temperature / 131072.0f - this->calibration_data.t1 / 8192.0f) *
+					(raw_temperature / 131072.0f - this->calibration_data.t1 / 8192.0f) * this->calibration_data.t3;
+			t_fine_1 = var1 + var2;
+			this->raw_values["t_fine_1 * 1000"] = t_fine_1 * 1000;
+
+			var1 = (t_fine_1 / 2.0f) - 64000.0f;
+			var2 = var1 * var1 * this->calibration_data.p6 / 32768.0f;
+			var2 = var2 + var1 * this->calibration_data.p5 * 2.0f;
+			var2 = (var2 / 4.0f) + (this->calibration_data.p4 * 65536.0f);
+			var1 = (this->calibration_data.p3 * var1 * var1 / 524288.0f + this->calibration_data.p2 * var1) / 524288.0f;
+			var1 = (1.0f + var1 / 32768.0f) * this->calibration_data.p1;
+
+			if(static_cast<int>(var1) == 0)
+				airpressure = 0;
+			else
+			{
+				airpressure = 1048576.0f - raw_airpressure;
+				airpressure = (airpressure - (var2 / 4096.0f)) * 6250.0f / var1;
+				var1 = this->calibration_data.p9 * airpressure * airpressure / 2147483648.0f;
+				var2 = airpressure * this->calibration_data.p8 / 32768.0f;
+				airpressure = airpressure + (var1 + var2 + this->calibration_data.p7) / 16.0f;
+			}
+
+			this->update("airpressure", airpressure / 100.0f, "hPa", 0);
+			this->state = state_t::finished;
+
+			break;
+		}
+
+		default:
+		{
+			throw(hard_exception("bmp280: invalid state"));
+		}
+	}
+}
+
+bool SensorBME280::probe(I2c &i2c, int module, int bus, int address, bool restricted)
+{
+	return(i2c.probe(module, bus, address));
+}
+
+SensorBME280::SensorBME280(Log &log_in, I2C::Device *device_in) : SensorBMX280::SensorBMX280(log_in, device_in)
+{
+	I2C::data_t data;
+
+	this->device->send_receive(enum_integer(reg_t::id), 1, data);
+
+	if(data.at(0) != enum_integer(id_t::id_bme280))
+		throw(transient_exception());
+
+	this->device->send(enum_integer(reg_t::reset), enum_integer(reset_t::reset_value));
+	this->device->send_receive(enum_integer(reg_t::reset), 1, data);
+
+	if(data.at(0) != 0x00)
+		throw(transient_exception("reset failed"));
+
+	this->name = this->basic_name();
+}
+
+void SensorBME280::_poll()
+{
+	I2C::data_t data;
+
+	switch(this->state)
+	{
+		case(state_t::init):
+		{
+			unsigned int e4, e5, e6;
+
+			this->device->send_receive(enum_integer(cal_off_t::base), enum_integer(cal_off_t::size), data);
+
+			this->calibration_data.t1 = this->u16le(data, enum_integer(cal_off_t::off_0x88_0x89_dig_t1));
+			this->calibration_data.t2 = this->s16le(data, enum_integer(cal_off_t::off_0x8a_0x8b_dig_t2));
+			this->calibration_data.t3 = this->s16le(data, enum_integer(cal_off_t::off_0x8c_0x8d_dig_t3));
+			this->calibration_data.p1 = this->u16le(data, enum_integer(cal_off_t::off_0x8e_0x8f_dig_p1));
+			this->calibration_data.p2 = this->s16le(data, enum_integer(cal_off_t::off_0x90_0x91_dig_p2));
+			this->calibration_data.p3 = this->s16le(data, enum_integer(cal_off_t::off_0x92_0x93_dig_p3));
+			this->calibration_data.p4 = this->s16le(data, enum_integer(cal_off_t::off_0x94_0x95_dig_p4));
+			this->calibration_data.p5 = this->s16le(data, enum_integer(cal_off_t::off_0x96_0x97_dig_p5));
+			this->calibration_data.p6 = this->s16le(data, enum_integer(cal_off_t::off_0x98_0x99_dig_p6));
+			this->calibration_data.p7 = this->s16le(data, enum_integer(cal_off_t::off_0x9a_0x9b_dig_p7));
+			this->calibration_data.p8 = this->s16le(data, enum_integer(cal_off_t::off_0x9c_0x9d_dig_p8));
+			this->calibration_data.p9 = this->s16le(data, enum_integer(cal_off_t::off_0x9e_0x9f_dig_p9));
+			this->calibration_data.h1 = data.at(enum_integer(cal_off_t::off_0xa1_dig_h1));
+			this->calibration_data.h2 = this->s16le(data, enum_integer(cal_off_t::off_0xe1_0xe2_dig_h2));
+			this->calibration_data.h3 = data.at(enum_integer(cal_off_t::off_0xe3_dig_h3));
+			e4 = data.at(enum_integer(cal_off_t::off_0xe4_0xe5_0xe6_dig_h4_h5) + 0);
+			e5 = data.at(enum_integer(cal_off_t::off_0xe4_0xe5_0xe6_dig_h4_h5) + 1);
+			e6 = data.at(enum_integer(cal_off_t::off_0xe4_0xe5_0xe6_dig_h4_h5) + 2);
+			this->calibration_data.h4 = ((e4 & 0xff) << 4) | ((e5 & 0x0f) >> 0);
+			this->calibration_data.h5 = ((e6 & 0xff) << 4) | ((e5 & 0xf0) >> 4);
+			this->calibration_data.h6 = data.at(enum_integer(cal_off_t::off_0xe7_dig_h6));
+
+			this->raw_values["c.t1"] = this->calibration_data.t1;
+			this->raw_values["c.t2"] = this->calibration_data.t2;
+			this->raw_values["c.t3"] = this->calibration_data.t3;
+			this->raw_values["c.p1"] = this->calibration_data.p1;
+			this->raw_values["c.p2"] = this->calibration_data.p2;
+			this->raw_values["c.p3"] = this->calibration_data.p3;
+			this->raw_values["c.p4"] = this->calibration_data.p4;
+			this->raw_values["c.p5"] = this->calibration_data.p5;
+			this->raw_values["c.p6"] = this->calibration_data.p6;
+			this->raw_values["c.p7"] = this->calibration_data.p7;
+			this->raw_values["c.p8"] = this->calibration_data.p8;
+			this->raw_values["c.p9"] = this->calibration_data.p9;
+			this->raw_values["c.h1"] = this->calibration_data.h1;
+			this->raw_values["c.h2"] = this->calibration_data.h2;
+			this->raw_values["c.h3"] = this->calibration_data.h3;
+			this->raw_values["c.h4"] = this->calibration_data.h4;
+			this->raw_values["c.h5"] = this->calibration_data.h5;
+			this->raw_values["c.h6"] = this->calibration_data.h6;
+
+			if((this->calibration_data.t1 > 0) && (this->calibration_data.t2 > 0))
+				this->state = state_t::ready;
+
+			break;
+		}
+
+		case(state_t::ready):
+		case(state_t::finished):
+		{
+			this->device->send_receive(enum_integer(reg_t::ctrl_meas), 1, data);
+
+			if((data.at(0) & enum_integer(reg_ctrl_meas_t::mode_mask)) != enum_integer(reg_ctrl_meas_t::mode_sleep))
+				throw(transient_exception("poll error 1"));
+
+			this->device->send(enum_integer(reg_t::ctrl_hum), enum_integer(reg_ctrl_hum_t::osrs_h_16));
+			this->device->send(enum_integer(reg_t::config), enum_integer(reg_config_t::filter_2));
+			this->device->send(enum_integer(reg_t::ctrl_meas), enum_integer(reg_ctrl_meas_t::osrs_t_16 | reg_ctrl_meas_t::osrs_p_16 | reg_ctrl_meas_t::mode_forced));
+
+			this->state = state_t::measuring;
+
+			break;
+		}
+
+		case(state_t::measuring):
+		{
+			unsigned int raw_airpressure, raw_temperature, raw_humidity;
+			float t_fine_1, t_fine_2, var1, var2, airpressure, humidity;
+
+			this->device->send_receive(enum_integer(reg_t::adc), 8, data);
+
+			this->raw_values["raw airpressure"] = raw_airpressure = this->u20topbe(data, 0);
+			this->raw_values["raw temperature"] = raw_temperature = this->u20topbe(data, 3);
+			this->raw_values["raw humidity"] = raw_humidity = this->u16be(data, 6);
+
+			var1 = ((raw_temperature / 16384.0f) - (this->calibration_data.t1 / 1024.0f)) * this->calibration_data.t2;
+			var2 = ((raw_temperature / 131072.0f) - (this->calibration_data.t1 / 8192.0f)) *
+					((raw_temperature / 131072.0f) - (this->calibration_data.t1 / 8192.0f)) *
+					this->calibration_data.t3;
+
+			this->update("temperature", (var1 + var2) / 5120.0f, "degrees", 1);
+
+			var1 = (raw_temperature / 16384.0f - this->calibration_data.t1 / 1024.0f) * this->calibration_data.t2;
+			var2 = (raw_temperature / 131072.0f - this->calibration_data.t1 / 8192.0f) *
+					(raw_temperature / 131072.0f - this->calibration_data.t1 / 8192.0f) * this->calibration_data.t3;
+			t_fine_1 = var1 + var2;
+			this->raw_values["t_fine_1 * 1000"] = t_fine_1 * 1000;
+
+			var1 = (t_fine_1 / 2.0f) - 64000.0f;
+			var2 = var1 * var1 * this->calibration_data.p6 / 32768.0f;
+			var2 = var2 + var1 * this->calibration_data.p5 * 2.0f;
+			var2 = (var2 / 4.0f) + (this->calibration_data.p4 * 65536.0f);
+			var1 = (this->calibration_data.p3 * var1 * var1 / 524288.0f + this->calibration_data.p2 * var1) / 524288.0f;
+			var1 = (1.0f + var1 / 32768.0f) * this->calibration_data.p1;
+
+			if(static_cast<int>(var1) == 0)
+				airpressure = 0;
+			else
+			{
+				airpressure = 1048576.0f - raw_airpressure;
+				airpressure = (airpressure - (var2 / 4096.0f)) * 6250.0f / var1;
+				var1 = this->calibration_data.p9 * airpressure * airpressure / 2147483648.0f;
+				var2 = airpressure * this->calibration_data.p8 / 32768.0f;
+				airpressure = airpressure + (var1 + var2 + this->calibration_data.p7) / 16.0f;
+			}
+
+			this->update("airpressure", airpressure / 100.0f, "hPa", 0);
+
+			var1 = (raw_temperature / 16384.0f	- (this->calibration_data.t1 / 1024.0f)) * this->calibration_data.t2;
+			var2 = (raw_temperature / 131072.0f	- (this->calibration_data.t1 / 8192.0f)) *
+					((raw_temperature / 131072.0f) - (this->calibration_data.t1 / 8192.0f)) * this->calibration_data.t3;
+			t_fine_2 = var1 + var2 - 76800;
+			this->raw_values["t_fine_2 * 1000"] = t_fine_2 * 1000;
+
+			humidity = (raw_humidity - ((this->calibration_data.h4 * 64.0f) + (this->calibration_data.h5 / 16384.0f) * t_fine_2)) *
+					(this->calibration_data.h2 / 65536.0f * (1.0f + this->calibration_data.h6 / 67108864.0f * t_fine_2 *
+					(1.0f + this->calibration_data.h3 / 67108864.0f * t_fine_2)));
+			humidity = humidity * (1.0f - this->calibration_data.h1 * humidity / 524288.0f);
+
+			if(humidity > 100.0f)
+				humidity = 100.0f;
+
+			if(humidity < 0.0f)
+				humidity = 0.0f;
+
+			this->update("humidity", humidity, "%", 0);
+			this->state = state_t::finished;
+
+			break;
+		}
+
+		default:
+		{
+			throw(hard_exception("bme280: invalid state"));
+		}
+	}
+}
+
+bool SensorBME680::probe(I2c &i2c, int module, int bus, int address, bool restricted)
+{
+	return(i2c.probe(module, bus, address));
+}
+
+SensorBME680::SensorBME680(Log &log_in, I2C::Device *device_in) : SensorI2C(log_in, this->basic_name(), device_in)
+{
+	I2C::data_t data;
+
+	this->device->send_receive(enum_integer(reg_t::id), 1, data);
+
+	if(data.at(0) != enum_integer(reg_id_t::bme680))
+		throw(transient_exception());
+
+	this->device->send(enum_integer(reg_t::reset), enum_integer(reg_reset_t::value));
+}
+
+void SensorBME680::_poll()
+{
+	I2C::data_t data, cal1, cal2;
+
+	switch(this->state)
+	{
+		case(state_t::init):
+		{
+			this->device->send(enum_integer(reg_t::config), enum_integer(reg_config_t::filter_127));
+			this->device->send(enum_integer(reg_t::ctrl_gas_0), enum_integer(reg_ctrl_t::gas_0_heat_off));
+			this->device->send_receive(enum_integer(reg_t::calibration_1), enum_integer(cal_off_t::size_1), cal1);
+			this->device->send_receive(enum_integer(reg_t::calibration_2), enum_integer(cal_off_t::size_2), cal2);
+
+			data = cal1 + cal2;
+
+			this->calibration_data.t1 = this->u16le(data, enum_integer(cal_off_t::t1));
+			this->calibration_data.t2 = this->s16le(data, enum_integer(cal_off_t::t2));
+			this->calibration_data.t3 = this->s8(data, enum_integer(cal_off_t::t3));
+
+			this->calibration_data.p1 = this->u16le(data, enum_integer(cal_off_t::p1));
+			this->calibration_data.p2 = this->s16le(data, enum_integer(cal_off_t::p2));
+			this->calibration_data.p3 = this->s8(data, enum_integer(cal_off_t::p3));
+			this->calibration_data.p4 = this->s16le(data, enum_integer(cal_off_t::p4));
+			this->calibration_data.p5 = this->s16le(data, enum_integer(cal_off_t::p5));
+			this->calibration_data.p6 = this->s8(data, enum_integer(cal_off_t::p6));
+			this->calibration_data.p7 = this->s8(data, enum_integer(cal_off_t::p7));
+			this->calibration_data.p8 = this->s16le(data, enum_integer(cal_off_t::p8));
+			this->calibration_data.p9 = this->s16le(data, enum_integer(cal_off_t::p9));
+			this->calibration_data.p10 = this->u8(data, enum_integer(cal_off_t::p10));
+
+			this->calibration_data.h1 = this->u12bottomle(data, enum_integer(cal_off_t::h1));
+			this->calibration_data.h2 = this->u12topbe(data, enum_integer(cal_off_t::h2));
+			this->calibration_data.h3 = this->s8(data, enum_integer(cal_off_t::h3));
+			this->calibration_data.h4 = this->s8(data, enum_integer(cal_off_t::h4));
+			this->calibration_data.h5 = this->s8(data, enum_integer(cal_off_t::h5));
+			this->calibration_data.h6 = this->u8(data, enum_integer(cal_off_t::h6));
+			this->calibration_data.h7 = this->s8(data, enum_integer(cal_off_t::h7));
+
+			this->raw_values["c.t1"] = this->calibration_data.t1;
+			this->raw_values["c.t2"] = this->calibration_data.t2;
+			this->raw_values["c.t3"] = this->calibration_data.t3;
+
+			this->raw_values["c.p1"] = this->calibration_data.p1;
+			this->raw_values["c.p2"] = this->calibration_data.p2;
+			this->raw_values["c.p3"] = this->calibration_data.p3;
+			this->raw_values["c.p4"] = this->calibration_data.p4;
+			this->raw_values["c.p5"] = this->calibration_data.p5;
+			this->raw_values["c.p6"] = this->calibration_data.p6;
+			this->raw_values["c.p7"] = this->calibration_data.p7;
+			this->raw_values["c.p8"] = this->calibration_data.p8;
+			this->raw_values["c.p9"] = this->calibration_data.p9;
+			this->raw_values["c.p10"] = this->calibration_data.p10;
+
+			this->raw_values["c.h1"] = this->calibration_data.h1;
+			this->raw_values["c.h2"] = this->calibration_data.h2;
+			this->raw_values["c.h3"] = this->calibration_data.h3;
+			this->raw_values["c.h4"] = this->calibration_data.h4;
+			this->raw_values["c.h5"] = this->calibration_data.h5;
+			this->raw_values["c.h6"] = this->calibration_data.h6;
+			this->raw_values["c.h7"] = this->calibration_data.h7;
+
+			if((calibration_data.t1 != 0) && (calibration_data.t2 != 0))
+				this->state = state_t::ready;
+
+			break;
+		}
+
+		case(state_t::finished):
+		case(state_t::ready):
+		{
+			this->device->send(enum_integer(reg_t::ctrl_hum), enum_integer(reg_hum_t::osrh_h_16));
+			this->device->send(enum_integer(reg_t::ctrl_meas), enum_integer(reg_meas_t::osrs_t_16 | reg_meas_t::osrs_p_8 | reg_meas_t::forced));
+
+			this->state = state_t::measuring;
+
+			break;
+		}
+
+		case(state_t::measuring):
+		{
+			int raw_temperature, raw_airpressure, raw_humidity;
+			float temperature, humidity, airpressure, airpressure_256;
+			float var1, var2, var3, var4, t1_scaled, t_fine;
+
+			this->device->send_receive(enum_integer(reg_t::meas_status_0), 1, data);
+
+			if(data.at(0) & enum_integer(reg_meas_status_0_t::measuring))
+				this->raw_values["not ready"]++;
+
+			this->device->send_receive(enum_integer(reg_t::temp), 3, data);
+			raw_temperature = this->u20topbe(data);
+
+			this->device->send_receive(enum_integer(reg_t::press), 3, data);
+			raw_airpressure = this->u20topbe(data);
+
+			this->device->send_receive(enum_integer(reg_t::hum), 3, data);
+			raw_humidity = this->u16be(data);
+
+			this->raw_values["raw temperature"] = raw_temperature;
+			this->raw_values["raw airpressure"] = raw_airpressure;
+			this->raw_values["raw humidity"] = raw_humidity;
+
+			t1_scaled =	(raw_temperature / 131072.0f) - (this->calibration_data.t1 / 8192.0f);
+			t_fine =	((raw_temperature / 16384.0f) - (this->calibration_data.t1 / 1024.0f)) *
+					this->calibration_data.t2 + (t1_scaled * t1_scaled * this->calibration_data.t3 * 16.0f);
+
+			temperature	= t_fine / 5120.0f;
+
+			var1 = (t_fine / 2.0f) - 64000.0f;
+			var2 = var1 * var1 * this->calibration_data.p6 / 131072.0f;
+			var2 = var2 + (var1 * this->calibration_data.p5 * 2.0f);
+			var2 = (var2 / 4) + (this->calibration_data.p4 * 65536.f);
+			var1 = (((this->calibration_data.p3 * var1 * var1) / 16384.0f) +(this->calibration_data.p2 * var1)) / 524288.0f;
+			var1 = (1 + (var1 / 32768.0f)) * this->calibration_data.p1;
+			airpressure = 1048576.0f - raw_airpressure;
+
+			if(static_cast<int>(var1) != 0)
 			{
 				airpressure = ((airpressure - (var2 / 4096.0f)) * 6250.0f) / var1;
 				airpressure_256 = airpressure / 256.0f;
-				var1 = (pdata->p9 * airpressure * airpressure) / 2147483648.0f;
-				var2 = airpressure * (pdata->p8 / 32768.0f);
-				var3 = airpressure_256 * airpressure_256 * airpressure_256 * (pdata->p10 / 131072.0f);
-				airpressure = (airpressure + (var1 + var2 + var3 + (pdata->p7 * 128.0f)) / 16.0f) / 100.0f;
+				var1 = (this->calibration_data.p9 * airpressure * airpressure) / 2147483648.0f;
+				var2 = airpressure * (this->calibration_data.p8 / 32768.0f);
+				var3 = airpressure_256 * airpressure_256 * airpressure_256 * (this->calibration_data.p10 / 131072.0f);
+				airpressure = (airpressure + (var1 + var2 + var3 + (this->calibration_data.p7 * 128.0f)) / 16.0f) / 100.0f;
 			}
 			else
 				airpressure = 0;
 
-			var1 = pdata->adc_humidity - ((pdata->h1 * 16.0f) + ((pdata->h3 / 2.0f) * temperature));
-			var2 = var1 * ((pdata->h2 / 262144.0f) * (1.0f + ((pdata->h4 / 16384.0f) * temperature) + ((pdata->h5 / 1048576.0f) * temperature * temperature)));
-			var3 = pdata->h6 / 16384.0f;
-			var4 = pdata->h7 / 2097152.0f;
+			var1 = raw_humidity - ((this->calibration_data.h1 * 16.0f) + ((this->calibration_data.h3 / 2.0f) * temperature));
+			var2 = var1 * ((this->calibration_data.h2 / 262144.0f) *
+					(1.0f + ((this->calibration_data.h4 / 16384.0f) *
+					temperature) + ((this->calibration_data.h5 / 1048576.0f) *
+					temperature * temperature)));
+			var3 = this->calibration_data.h6 / 16384.0f;
+			var4 = this->calibration_data.h7 / 2097152.0f;
 
 			humidity = var2 + ((var3 + (var4 * temperature)) * var2 * var2);
 
@@ -2868,906 +1799,339 @@ static bool bme680_poll(data_t *data)
 			if(humidity < 0.0f)
 				humidity = 0.0f;
 
-			data->values[sensor_type_temperature].value = temperature;
-			data->values[sensor_type_temperature].stamp = time(nullptr);
+			this->update("temperature", temperature, "degrees", 1);
+			this->update("airpressure", airpressure, "hPa", 0);
+			this->update("humidity", humidity, "%", 0);
+			this->state = state_t::finished;
 
-			if(airpressure > 0)
-			{
-				data->values[sensor_type_airpressure].value = airpressure;
-				data->values[sensor_type_airpressure].stamp = time(nullptr);
-			}
-
-			data->values[sensor_type_humidity].value = humidity;
-			data->values[sensor_type_humidity].stamp = time(nullptr);
-
-			pdata->state = bme680_state_finished;
-
-			break;
-		}
-
-		case(bme680_state_finished):
-		case(bme680_state_otp_ready):
-		{
-			data->device->send(bme680_reg_ctrl_hum, bme680_reg_ctrl_hum_osrh_h_16);
-			data->device->send(bme680_reg_ctrl_meas, bme680_reg_ctrl_meas_osrs_t_16 | bme680_reg_ctrl_meas_osrs_p_8 | bme680_reg_ctrl_meas_forced);
-
-			pdata->state = bme680_state_measuring;
-
-			break;
-		}
-	}
-
-	return(true);
-}
-
-static void bme680_dump(const data_t *data, std::string &output)
-{
-	bme680_private_data_t *pdata = static_cast<bme680_private_data_t *>(data->private_data);
-
-	assert(pdata);
-
-	output += (boost::format("state: %u, ") % pdata->state).str();
-	output += (boost::format("t_fine: %f, ") % (double)pdata->t_fine).str();
-	output += (boost::format("adc temp: %u, ") % pdata->adc_temperature).str();
-	output += (boost::format("adc pressure: %u, ") % pdata->adc_airpressure).str();
-	output += (boost::format("adc humidity: %u, ") % pdata->adc_humidity).str();
-	output += (boost::format("t1: %u, ") % pdata->t1).str();
-	output += (boost::format("t2: %d, ") % pdata->t2).str();
-	output += (boost::format("t3: %d, ") % pdata->t3).str();
-	output += (boost::format("p1: %u, ") % pdata->p1).str();
-	output += (boost::format("p2: %d, ") % pdata->p2).str();
-	output += (boost::format("p3: %d, ") % pdata->p3).str();
-	output += (boost::format("p4: %d, ") % pdata->p4).str();
-	output += (boost::format("p5: %d, ") % pdata->p5).str();
-	output += (boost::format("p6: %d, ") % pdata->p6).str();
-	output += (boost::format("p7: %d, ") % pdata->p7).str();
-	output += (boost::format("p8: %d, ") % pdata->p8).str();
-	output += (boost::format("p9: %d, ") % pdata->p9).str();
-	output += (boost::format("p10: %u, ") % pdata->p10).str();
-	output += (boost::format("h1: %u, ") % pdata->h1).str();
-	output += (boost::format("h2: %u, ") % pdata->h2).str();
-	output += (boost::format("h3: %d, ") % pdata->h3).str();
-	output += (boost::format("h4: %d, ") % pdata->h4).str();
-	output += (boost::format("h5: %d, ") % pdata->h5).str();
-	output += (boost::format("h6: %u, ") % pdata->h6).str();
-	output += (boost::format("h7: %d") % pdata->h7).str();
-};
-
-enum : unsigned int
-{
-	apds9930_command_select =				0b1 << 7,
-	apds9930_command_type_repeated_byte =	0b00 << 5,
-	apds9930_command_type_autoincrement =	0b01 << 5,
-	apds9930_command_type_reserved =		0b10 << 5,
-	apds9930_command_type_special =			0b11 << 5,
-	apds9930_command_address_mask =			0b11111 << 0,
-
-	apds9930_reg_enable =		0x00,
-	apds9930_reg_atime =		0x01,
-	apds9930_reg_config =		0x0d,
-	apds9930_reg_control =		0x0f,
-	apds9930_reg_id =			0x12,
-	apds9930_reg_status =		0x13,
-	apds9930_reg_c0data =		0x14,
-	apds9930_reg_c0datah =		0x15,
-	apds9930_reg_c1data =		0x16,
-	apds9930_reg_c1datah =		0x17,
-
-	apds9930_enable_sai =		1 << 6,
-	apds9930_enable_pien =		1 << 5,
-	apds9930_enable_aien =		1 << 4,
-	apds9930_enable_wen =		1 << 3,
-	apds9930_enable_pen =		1 << 2,
-	apds9930_enable_aen =		1 << 1,
-	apds9930_enable_pon =		1 << 0,
-	apds9930_enable_poff =		0 << 0,
-
-	apds9930_atime_2_73 =		0xff,
-	apds9930_atime_27_3 =		0xf6,
-	apds9930_atime_101 =		0xdb,
-	apds9930_atime_175 =		0xc0,
-	apds9930_atime_699 =		0x00,
-
-	apds9930_config_agl =		0b1 << 2,
-	apds9930_config_wlong =		0b1 << 1,
-	apds9930_config_pdl =		0b1 << 0,
-
-	apds9930_ctrl_pdrive_100 =	0b00 << 6,
-	apds9930_ctrl_pdrive_50 =	0b01 << 6,
-	apds9930_ctrl_pdrive_25 =	0b10 << 6,
-	apds9930_ctrl_pdrive_12_5 =	0b11 << 6,
-	apds9930_ctrl_pdiode_ch1 =	0b10 << 4,
-	apds9930_ctrl_pgain_1 =		0b00 << 2,
-	apds9930_ctrl_pgain_2 =		0b01 << 2,
-	apds9930_ctrl_pgain_4 =		0b10 << 2,
-	apds9930_ctrl_pgain_8 =		0b11 << 2,
-	apds9930_ctrl_again_1 =		0b00 << 0,
-	apds9930_ctrl_again_8 =		0b01 << 0,
-	apds9930_ctrl_again_16 =	0b10 << 0,
-	apds9930_ctrl_again_120 =	0b11 << 0,
-
-	apds9930_id_tmd27711 =		0x20,
-	apds9930_id_tmd27713 =		0x29,
-	apds9930_id_apds9930 =		0x30,
-
-	apds9930_status_avalid =	0b1 << 0,
-};
-
-enum : unsigned int
-{
-	apds9930_tmd2771_autoranging_data_size = 4,
-	apds9930_apds9930_autoranging_data_size = 5,
-	apds9930_autoranging_disable_agl = 0 << 30,
-	apds9930_autoranging_enable_agl = 1 << 30,
-};
-
-static const device_autoranging_data_t apds9930_tmd2771_autoranging_data[apds9930_tmd2771_autoranging_data_size] =
-{
-	{{	apds9930_atime_699,	apds9930_ctrl_again_120	},										{ 0,	65000	}, 0, 	699 *	120		},
-	{{	apds9930_atime_699,	apds9930_ctrl_again_16	},										{ 100,	65000	}, 0, 	699 *	16		},
-	{{	apds9930_atime_175,	apds9930_ctrl_again_16	},										{ 100,	65000	}, 0, 	175 *	16		},
-	{{	apds9930_atime_175,	apds9930_ctrl_again_1	},										{ 100,	65000	}, 0, 	175 *	1		},
-};
-
-static const device_autoranging_data_t apds9930_apds9930_autoranging_data[apds9930_apds9930_autoranging_data_size] =
-{
-	{{	apds9930_atime_699,	static_cast<unsigned int>(apds9930_ctrl_again_120)	| apds9930_autoranging_disable_agl	},	{ 0,	65000	}, 0, 	699 *	120		},
-	{{	apds9930_atime_699,	static_cast<unsigned int>(apds9930_ctrl_again_16)	| apds9930_autoranging_disable_agl	},	{ 100,	65000	}, 0, 	699 *	16		},
-	{{	apds9930_atime_175,	static_cast<unsigned int>(apds9930_ctrl_again_16)	| apds9930_autoranging_disable_agl	},	{ 100,	65000	}, 0, 	175 *	16		},
-	{{	apds9930_atime_175,	static_cast<unsigned int>(apds9930_ctrl_again_1)	| apds9930_autoranging_disable_agl	},	{ 100,	65000	}, 0, 	175 *	1		},
-	{{	apds9930_atime_175,	static_cast<unsigned int>(apds9930_ctrl_again_1)	| apds9930_autoranging_enable_agl	},	{ 100,	65536	}, 0,	175 *	0.1667	},
-};
-
-typedef enum
-{
-	apds9930_state_init,
-	apds9930_state_measuring,
-	apds9930_state_finished,
-} apds9930_state_t;
-
-typedef struct
-{
-	unsigned int type;
-	apds9930_state_t state;
-	unsigned int scaling;
-	unsigned int not_readys;
-	unsigned int overflows;
-	unsigned int scales_up;
-	unsigned int scales_down;
-	float raw_channel_correction[2];
-	unsigned int raw_channel[2];
-	float lpc;
-	float iac1;
-	float iac2;
-	float iac;
-	unsigned int autoranging_data_size;
-	const device_autoranging_data_t *autoranging_data;
-} apds9930_private_data_t;
-
-static bool apds9930_write_register(I2C::Device* device, unsigned int reg, unsigned int value)
-{
-	device->send(apds9930_command_select | apds9930_command_type_autoincrement | (reg & apds9930_command_address_mask), value);
-
-	return(true);
-}
-
-static bool apds9930_read_register(I2C::Device* device, unsigned int reg, unsigned int *value)
-{
-	I2C::data_t i2c_data;
-
-	device->send_receive(apds9930_command_select | apds9930_command_type_autoincrement | (reg & apds9930_command_address_mask), 1, i2c_data);
-
-	*value = i2c_data.at(0);
-
-	return(true);
-}
-
-static bool apds9930_read_register_2x2(I2C::Device* device, unsigned int reg, unsigned int value[])
-{
-	I2C::data_t i2c_data;
-
-	device->send_receive(apds9930_command_select | apds9930_command_type_autoincrement | (reg & apds9930_command_address_mask), 4, i2c_data);
-
-	value[0] = unsigned_16_le(i2c_data, 0);
-	value[1] = unsigned_16_le(i2c_data, 2);
-
-	return(true);
-}
-
-static sensor_detect_t apds9930_detect(I2C::Device* device)
-{
-	unsigned int id;
-
-	if(!apds9930_read_register(device, apds9930_reg_id, &id))
-		return(sensor_not_found);
-
-	if((id != apds9930_id_apds9930) && (id != apds9930_id_tmd27711) && (id != apds9930_id_tmd27713))
-		return(sensor_not_found);
-
-	return(sensor_found);
-}
-
-static bool apds9930_init(data_t *data)
-{
-	apds9930_private_data_t *pdata = static_cast<apds9930_private_data_t *>(data->private_data);
-
-	assert(pdata);
-
-	if(!apds9930_read_register(data->device, apds9930_reg_id, &pdata->type))
-		return(false);
-
-	switch(pdata->type)
-	{
-		case(apds9930_id_tmd27711):
-		case(apds9930_id_tmd27713):
-		{
-			pdata->autoranging_data_size = apds9930_tmd2771_autoranging_data_size;
-			pdata->autoranging_data = apds9930_tmd2771_autoranging_data;
-			pdata->raw_channel_correction[0] = 0.977f;
-			pdata->raw_channel_correction[1] = 1.02f;
-			break;
-		}
-
-		case(apds9930_id_apds9930):
-		{
-			pdata->autoranging_data_size = apds9930_apds9930_autoranging_data_size;
-			pdata->autoranging_data = apds9930_apds9930_autoranging_data;
-			pdata->raw_channel_correction[0] = 1.0f;
-			pdata->raw_channel_correction[1] = 1.0f;
 			break;
 		}
 
 		default:
 		{
-			Log::get() << "apds9930: invalid id";
-			return(false);
+			throw(hard_exception("bme680: invalid state"));
 		}
 	}
-
-	pdata->state = apds9930_state_init;
-	pdata->scaling = pdata->autoranging_data_size - 1;
-	pdata->raw_channel[0] = 0;
-	pdata->raw_channel[1] = 0;
-	pdata->scales_up = 0;
-	pdata->scales_down = 0;
-	pdata->overflows = 0;
-	pdata->not_readys = 0;
-	pdata->lpc = 0;
-	pdata->iac1 = 0;
-	pdata->iac2 = 0;
-	pdata->iac = 0;
-
-	return(true);
 }
 
-static bool apds9930_poll(data_t *data)
+const SensorBH1750::autorangings_t SensorBH1750::autoranging_data
 {
-	static constexpr float apds9930_factor_df = 52.0f;
-	static constexpr float apds9930_factor_ga = 0.49f;
-	static constexpr float apds9930_factor_a = 1.0f;
-	static constexpr float apds9930_factor_b = 1.862f;
-	static constexpr float apds9930_factor_c = 0.746f;
-	static constexpr float apds9930_factor_d = 1.291f;
+	{	.mode = opcode_t::oneshot_hmode2,	.timing = 254,	.lower = 0,		.upper = 50000,	.factor = 0.13f },
+	{	.mode = opcode_t::oneshot_hmode2,	.timing = 69,	.lower = 1000,	.upper = 50000,	.factor = 0.50f },
+	{	.mode = opcode_t::oneshot_hmode2,	.timing = 31,	.lower = 1000,	.upper = 50000,	.factor = 1.10f },
+	{	.mode = opcode_t::oneshot_lmode,	.timing = 31,	.lower = 1000,	.upper = 65536,	.factor = 2.40f },
+};
 
-	apds9930_private_data_t *pdata = static_cast<apds9930_private_data_t *>(data->private_data);
-	unsigned int value;
-	float ch0, ch1;
-	unsigned int atime, again, reg_config;
+bool SensorBH1750::probe(I2c &i2c, int module, int bus, int address, bool restricted)
+{
+	if(restricted)
+		return(false);
 
-	assert(pdata);
+	return(i2c.probe(module, bus, address));
+}
 
-	switch(pdata->state)
+SensorBH1750::SensorBH1750(Log& log_in, I2C::Device* device_in) : SensorI2C(log_in, this->basic_name(), device_in)
+{
+	I2C::data_t data;
+
+	device->send_receive(enum_integer(opcode_t::poweron), 8, data);
+
+	if((data.at(2) != 0xff) || (data.at(3) != 0xff) || (data.at(4) != 0xff) ||
+			(data.at(5) != 0xff) || (data.at(6) != 0xff) || (data.at(7) != 0xff))
+		throw(transient_exception("bh1750 not found"));
+
+	this->raw_values["scaling"] = 0;
+	this->raw_values["last poll"] = time(nullptr);
+}
+
+void SensorBH1750::_poll()
+{
+	I2C::data_t data;
+	int value;
+	int scaling = this->raw_values["scaling"];
+	const autoranging_t &autoranging = this->autoranging_data.at(scaling);
+	int autoranging_max = this->autoranging_data.size() - 1;
+	time_t now = time(nullptr);
+
+	if((now - this->raw_values["last poll"]) < 1)
 	{
-		case(apds9930_state_init):
-		case(apds9930_state_finished):
+		this->raw_values["skips"]++;
+		return;
+	}
+
+	this->raw_values["last poll"] = now;
+
+	switch(this->state)
+	{
+		case(state_t::init):
 		{
-			atime = pdata->autoranging_data[pdata->scaling].data[0];
-			again = pdata->autoranging_data[pdata->scaling].data[1];
+			device->send(enum_integer(opcode_t::reset));
 
-			reg_config = 0x00;
-
-			if(again & apds9930_autoranging_enable_agl)
-			{
-				reg_config |= apds9930_config_agl;
-				again &= ~apds9930_autoranging_enable_agl;
-			}
-
-			if(!apds9930_write_register(data->device, apds9930_reg_enable, apds9930_enable_poff))
-			{
-				Log::get() << "apds9930: poll: error 1";
-				return(false);
-			}
-
-			if(!apds9930_write_register(data->device, apds9930_reg_atime, atime))
-			{
-				Log::get() << "apds9930: poll: error 2";
-				return(false);
-			}
-
-			if(!apds9930_write_register(data->device, apds9930_reg_config, reg_config))
-			{
-				Log::get() << "apds9930: poll: error 3";
-				return(false);
-			}
-
-			if(!apds9930_write_register(data->device, apds9930_reg_control, apds9930_ctrl_pdrive_100 | apds9930_ctrl_pdiode_ch1 | again))
-			{
-				Log::get() << "apds9930: poll: error 4";
-				return(false);
-			}
-
-			if(!apds9930_write_register(data->device, apds9930_reg_enable, apds9930_enable_aen | apds9930_enable_pon))
-			{
-				Log::get() << "apds9930: poll: error 5";
-				return(false);
-			}
-
-			pdata->state = apds9930_state_measuring;
+			this->state = state_t::reset;
 
 			break;
 		}
 
-		case(apds9930_state_measuring):
+		case(state_t::reset):
+		case(state_t::finished):
 		{
-			pdata->state = apds9930_state_finished;
+			device->send(enum_integer(opcode_t::change_meas_hi) | ((autoranging.timing >> 5) & 0b0000'0111));
+			device->send(enum_integer(opcode_t::change_meas_lo) | ((autoranging.timing >> 0) & 0b0001'1111));
+			device->send(enum_integer(autoranging.mode));
 
-			if(!apds9930_read_register(data->device, apds9930_reg_status, &value))
-			{
-				Log::get() << "apds9930: poll: error 6";
-				return(false);
-			}
-
-			if(!(value & apds9930_status_avalid))
-			{
-				pdata->not_readys++;
-				break;
-			}
-
-			if(!apds9930_read_register_2x2(data->device, apds9930_reg_c0data, pdata->raw_channel))
-			{
-				Log::get() << "apds9930: poll: error 2";
-				return(false);
-			}
-
-			if(((pdata->raw_channel[0] < pdata->autoranging_data[pdata->scaling].threshold.down) || (pdata->raw_channel[1] < pdata->autoranging_data[pdata->scaling].threshold.down)) &&
-						(pdata->scaling > 0))
-			{
-				pdata->scaling--;
-				pdata->scales_down++;
-				break;
-			}
-
-			if(((pdata->raw_channel[0] >= pdata->autoranging_data[pdata->scaling].threshold.up) || (pdata->raw_channel[1] >= pdata->autoranging_data[pdata->scaling].threshold.up)) &&
-				(pdata->scaling < (pdata->autoranging_data_size - 1)))
-			{
-				pdata->scaling++;
-				pdata->scales_up++;
-				break;
-			}
-
-			if((pdata->raw_channel[0] == 0) || (pdata->raw_channel[0] >= 65535) || (pdata->raw_channel[1] == 0) || (pdata->raw_channel[1] >= 65535))
-			{
-				pdata->overflows++;
-				break;
-			}
-
-			ch0 = (float)pdata->raw_channel[0] * pdata->raw_channel_correction[0];
-			ch1 = (float)pdata->raw_channel[1] * pdata->raw_channel_correction[1];
-
-			pdata->lpc = (apds9930_factor_ga * apds9930_factor_df) / pdata->autoranging_data[pdata->scaling].factor;
-			pdata->iac1 = (apds9930_factor_a * ch0) - (apds9930_factor_b * ch1);
-			pdata->iac2 = (apds9930_factor_c * ch0) - (apds9930_factor_d * ch1);
-			pdata->iac = fmaxf(fmaxf(pdata->iac1, pdata->iac2), 0);
-
-			data->values[sensor_type_visible_light].value = pdata->lpc * pdata->iac;
-			data->values[sensor_type_visible_light].stamp = time(nullptr);
+			this->state = state_t::measuring;
 
 			break;
 		}
-	}
 
-	return(true);
-}
-
-static void apds9930_dump(const data_t *data, std::string &output)
-{
-	apds9930_private_data_t *pdata = static_cast<apds9930_private_data_t *>(data->private_data);
-
-	output += (boost::format("type: 0x%02x, ") % pdata->type).str();
-	output += (boost::format("state: %d, ") % pdata->state).str();
-	output += (boost::format("scaling: %u, ") % pdata->scaling).str();
-	output += (boost::format("not readys: %u, ") % pdata->not_readys).str();
-	output += (boost::format("overflows: %u, ") % pdata->overflows).str();
-	output += (boost::format("scales up: %u, ") % pdata->scales_up).str();
-	output += (boost::format("scales down: %u, ") % pdata->scales_down).str();
-	output += (boost::format("raw correction: %.3f/%.3f, ") % (double)pdata->raw_channel_correction[0] % (double)pdata->raw_channel_correction[1]).str();
-	output += (boost::format("raw values: %u/%u, ") % pdata->raw_channel[0] % pdata->raw_channel[1]).str();
-	output += (boost::format("lpc: %f, ") % (double)pdata->lpc).str();
-	output += (boost::format("iac: %f/%f/%f, ") % (double)pdata->iac1 % (double)pdata->iac2 % (double)pdata->iac).str();
-	output += (boost::format("autoranging data size: %u") % pdata->autoranging_data_size).str();
-}
-
-enum : unsigned int
-{
-	apds9960_reg_enable =		0x80,
-	apds9960_reg_atime =		0x81,
-	apds9960_reg_wtime =		0x83,
-	apds9960_reg_ailt =			0x84,
-	apds9960_reg_aiht =			0x86,
-	apds9960_reg_pilt =			0x89,
-	apds9960_reg_piht =			0x8b,
-	apds9960_reg_pers =			0x8c,
-	apds9960_reg_config1 =		0x8d,
-	apds9960_reg_ppulse =		0x8e,
-	apds9960_reg_control =		0x8f,
-	apds9960_reg_config2 =		0x90,
-	apds9960_reg_id =			0x92,
-	apds9960_reg_status =		0x93,
-	apds9960_reg_cdata =		0x94,
-	apds9960_reg_rdata =		0x96,
-	apds9960_reg_gdata =		0x98,
-	apds9960_reg_bdata =		0x9a,
-	apds9960_reg_pdata =		0x9c,
-	apds9960_reg_poffset_ur =	0x9d,
-	apds9960_reg_poffset_dl =	0x9e,
-	apds9960_reg_config3 =		0x9f,
-	apds9960_reg_gpenth =		0xa0,
-	apds9960_reg_gexth =		0xa1,
-	apds9960_reg_gconf1 =		0xa2,
-	apds9960_reg_gconf2 =		0xa3,
-	apds9960_reg_goffset_u =	0xa4,
-	apds9960_reg_goffset_d =	0xa5,
-	apds9960_reg_goffset_l =	0xa7,
-	apds9960_reg_goffset_r =	0xa9,
-	apds9960_reg_gpulse =		0xa6,
-	apds9960_reg_gconf3 =		0xaa,
-	apds9960_reg_gconf4 =		0xab,
-	apds9960_reg_gflvl =		0xae,
-	apds9960_reg_gstatus =		0xaf,
-	apds9960_reg_iforce =		0xe4,
-	apds9960_reg_piclear =		0xe5,
-	apds9960_reg_ciclear =		0xe6,
-	apds9960_reg_aiclear =		0xe7,
-	apds9960_reg_gfifo_u =		0xfc,
-	apds9960_reg_gfifo_d =		0xfd,
-	apds9960_reg_gfifo_l =		0xfe,
-	apds9960_reg_gfifo_r =		0xff,
-
-	apds9960_enable_gen =		1 << 6,
-	apds9960_enable_pien =		1 << 5,
-	apds9960_enable_aien =		1 << 4,
-	apds9960_enable_wen =		1 << 3,
-	apds9960_enable_pen =		1 << 2,
-	apds9960_enable_aen =		1 << 1,
-	apds9960_enable_pon =		1 << 0,
-	apds9960_enable_poff =		0 << 0,
-
-	apds9960_atime_2_78 =		0xff,
-	apds9960_atime_27_8 =		0xf6,
-	apds9960_atime_103 =		0xdb,
-	apds9960_atime_175 =		0xc0,
-	apds9960_atime_200 =		0xb6,
-	apds9960_atime_712 =		0x00,
-
-	apds9960_config1_no_wlong =	0b0110'0000,
-	apds9960_config1_wlong =	0b0110'0010,
-
-	apds9960_config2_psien =	(1 << 7) | (1 << 0),
-	apds9960_config2_cpsien =	(1 << 6) | (1 << 0),
-	apds9960_config2_none =		(1 << 0),
-
-	apds9960_ctrl_again_1 =		0b00 << 0,
-	apds9960_ctrl_again_4 =		0b01 << 0,
-	apds9960_ctrl_again_16 =	0b10 << 0,
-	apds9960_ctrl_again_64 =	0b11 << 0,
-
-	apds9960_id_apds9960_a8 =	0xa8,
-	apds9960_id_apds9960_ab =	0xab,
-	apds9960_id_apds9960_9c =	0x9c,
-
-	apds9960_status_cpsat =		1 << 7,
-	apds9960_status_pgsat =		1 << 6,
-	apds9960_status_pint =		1 << 5,
-	apds9960_status_aint =		1 << 4,
-	apds9960_status_gint =		1 << 2,
-	apds9960_status_pvalid =	1 << 1,
-	apds9960_status_avalid =	1 << 0,
-};
-
-typedef enum : unsigned int
-{
-	apds9960_state_init,
-	apds9960_state_measuring,
-	apds9960_state_finished,
-} apds9960_state_t;
-
-typedef struct
-{
-	unsigned int type;
-	apds9960_state_t state;
-	unsigned int scaling;
-	unsigned int not_readys;
-	unsigned int overflows;
-	unsigned int scales_up;
-	unsigned int scales_down;
-	struct
-	{
-		unsigned int clear;
-		unsigned int r;
-		unsigned int g;
-		unsigned int b;
-	} data;
-} apds9960_private_data_t;
-
-enum : unsigned int
-{
-	apds9960_autoranging_data_size = 5,
-};
-
-static const device_autoranging_data_t apds9960_autoranging_data[apds9960_autoranging_data_size] =
-{
-	{{	apds9960_atime_712,		apds9960_ctrl_again_64	},	{ 0,	32768	}, 0, 	712 * 6		},
-	{{	apds9960_atime_712,		apds9960_ctrl_again_16	},	{ 100,	32768	}, 0, 	712 * 16	},
-	{{	apds9960_atime_175,		apds9960_ctrl_again_4	},	{ 100,	32768	}, 0, 	175 * 4		},
-	{{	apds9960_atime_175,		apds9960_ctrl_again_1	},	{ 100,	32768	}, 0, 	175 * 1		},
-	{{	apds9960_atime_2_78,	apds9960_ctrl_again_1	},	{ 100,	65536	}, 0,	2.78 * 1	},
-};
-
-static bool apds9960_read_register(I2C::Device* device, unsigned int reg, unsigned int *value)
-{
-	I2C::data_t i2c_data;
-
-	device->send_receive(reg, 1, i2c_data);
-
-	*value = i2c_data.at(0);
-
-	return(true);
-}
-
-static bool apds9960_write_register(I2C::Device* device, unsigned int reg, unsigned int value)
-{
-	device->send(reg, value);
-
-	return(true);
-}
-
-static sensor_detect_t apds9960_detect(I2C::Device* device)
-{
-	unsigned int id;
-
-	if(!apds9960_read_register(device, apds9960_reg_id, &id))
-		return(sensor_not_found);
-
-	if((id != apds9960_id_apds9960_a8) && (id != apds9960_id_apds9960_ab) && (id != apds9960_id_apds9960_9c))
-		return(sensor_not_found);
-
-	return(sensor_found);
-}
-
-static bool apds9960_init(data_t *data)
-{
-	apds9960_private_data_t *pdata = static_cast<apds9960_private_data_t *>(data->private_data);
-	unsigned int id;
-
-	assert(pdata);
-
-	if(!apds9960_read_register(data->device, apds9960_reg_id, &id))
-	{
-		Log::get() << "apds9960: init: error 1";
-		return(false);
-	}
-
-	if(!apds9960_write_register(data->device, apds9960_reg_config1, apds9960_config1_no_wlong))
-	{
-		Log::get() << "apds9960: init: error 2";
-		return(false);
-	}
-
-	if(!apds9960_write_register(data->device, apds9960_reg_config2, apds9960_config2_none))
-	{
-		Log::get() << "apds9960: init: error 3";
-		return(false);
-	}
-
-	pdata->type = id;
-	pdata->state = apds9960_state_init;
-	pdata->scaling = apds9960_autoranging_data_size - 1;
-	pdata->not_readys = 0;
-	pdata->overflows = 0;
-	pdata->scales_up = 0;
-	pdata->scales_down = 0;
-	pdata->data.clear = 0;
-	pdata->data.r = 0;
-	pdata->data.g = 0;
-	pdata->data.b = 0;
-
-	return(true);
-}
-
-static bool apds9960_poll(data_t *data)
-{
-	I2C::data_t i2c_data;
-	unsigned int value, r, g, b, again, atime;
-	apds9960_private_data_t *pdata = static_cast<apds9960_private_data_t *>(data->private_data);
-	unsigned int scale_down_threshold, scale_up_threshold;
-
-	assert(pdata);
-
-	switch(pdata->state)
-	{
-		case(apds9960_state_init):
-		case(apds9960_state_finished):
+		case(state_t::measuring):
 		{
-			atime = apds9960_autoranging_data[pdata->scaling].data[0];
-			again = apds9960_autoranging_data[pdata->scaling].data[1];
+			device->receive(2, data);
 
-			if(!apds9960_write_register(data->device, apds9960_reg_enable, apds9960_enable_poff))
+			this->raw_values["byte 0"] = data.at(0);
+			this->raw_values["byte 1"] = data.at(1);
+
+			value = this->u16be(data);
+
+			this->raw_values["both"] = value;
+
+			this->state = state_t::finished;
+
+			if((value >= 65535) && (scaling >= autoranging_max))
 			{
-				Log::get() << "apds9960: poll: error 1";
-				return(false);
+				this->raw_values["overflows"]++;
+				break;
 			}
 
-			if(!apds9960_write_register(data->device, apds9960_reg_atime, atime))
+			if((value < autoranging.lower) && (scaling > 0))
 			{
-				Log::get() << "apds9960: poll: error 2";
-				return(false);
+				scaling--;
+				this->raw_values["scaling"] = scaling;
+				this->raw_values["scalings down"]++;
+				break;
 			}
 
-			if(!apds9960_write_register(data->device, apds9960_reg_control, again))
+			if((value >= autoranging.upper) && (scaling < autoranging_max))
 			{
-				Log::get() << "apds9960: poll: error 3";
-				return(false);
+				scaling++;
+				this->raw_values["scaling"] = scaling;
+				this->raw_values["scalings up"]++;
+				break;
 			}
 
-			if(!apds9960_write_register(data->device, apds9960_reg_enable, apds9960_enable_aen | apds9960_enable_pon))
-			{
-				Log::get() << "apds9960: poll: error 4";
-				return(false);
-			}
+			this->update("visible light", static_cast<float>(value) * autoranging.factor, "lx", 1);
 
-			pdata->state = apds9960_state_measuring;
 			break;
 		}
 
-		case(apds9960_state_measuring):
+		default:
 		{
-			scale_down_threshold = apds9960_autoranging_data[pdata->scaling].threshold.down;
-			scale_up_threshold =   apds9960_autoranging_data[pdata->scaling].threshold.up;
+			throw(hard_exception("bh1750::poll: invalid state"));
+		}
+	}
+}
 
-			pdata->state = apds9960_state_finished;
+void SensorOPT3001::start_measurement()
+{
+	I2C::data_t data;
 
-			if(!apds9960_read_register(data->device, apds9960_reg_status, &value))
-			{
-				Log::get() << "apds9960: poll: error 1";
-				return(false);
-			}
+	device->send(enum_integer(reg_t::config), this->u16high(enum_integer(conf_t::default_config)), this->u16low(enum_integer(conf_t::default_config)));
+}
 
-			if(!(value & apds9960_status_avalid))
-			{
-				Log::get() << "apds9960: poll: error 2";
-				pdata->not_readys++;
-				return(false);
-			}
+bool SensorOPT3001::probe(I2c& i2c, int module, int bus, int address, bool restricted)
+{
+	return(i2c.probe(module, bus, address));
+}
 
-			if(value & apds9960_status_cpsat)
-			{
-				pdata->overflows++;
+SensorOPT3001::SensorOPT3001(Log& log_in, I2C::Device* device_in) : SensorI2C(log_in, this->basic_name(), device_in)
+{
+	I2C::data_t data;
+	unsigned int read_config;
 
-				if(pdata->scaling < (apds9960_autoranging_data_size - 1))
-				{
-					pdata->scaling++;
-					pdata->scales_up++;
-				}
+	device->send_receive(enum_integer(reg_t::id_manuf), 2, data);
 
-				break;
-			}
+	if(this->u16be(data) != enum_integer(id_t::manufacturer_ti))
+		throw(transient_exception());
 
-			data->device->send_receive(apds9960_reg_cdata, 8, i2c_data);
+	device->send_receive(enum_integer(reg_t::id_dev), 2, data);
 
-			pdata->data.clear = unsigned_16_le(i2c_data);
-			r = unsigned_16_le(i2c_data, 2);
-			g = unsigned_16_le(i2c_data, 4);
-			b = unsigned_16_le(i2c_data, 6);
+	if(this->u16be(data) != enum_integer(id_t::device_opt3001))
+		throw(transient_exception());
 
-			if((pdata->data.clear < scale_down_threshold) && (pdata->scaling > 0))
-			{
-				pdata->scaling--;
-				pdata->scales_down++;
-				break;
-			}
+	this->start_measurement();
 
-			if((pdata->data.clear >= scale_up_threshold) && (pdata->scaling < (apds9960_autoranging_data_size - 1)))
-			{
-				pdata->scaling++;
-				pdata->scales_up++;
-				break;
-			}
+	device->send_receive(enum_integer(reg_t::config), 2, data);
 
-			pdata->data.r = (r * 100) / (r + g + b);
-			pdata->data.g = (g * 100) / (r + g + b);
-			pdata->data.b = (b * 100) / (r + g + b);
+	read_config = this->u16be(data) & enum_integer(conf_t::mask_exp | conf_t::conv_mode | conf_t::conv_time | conf_t::range);
 
-			data->values[sensor_type_visible_light].value = (pdata->data.clear * 100.0f) / apds9960_autoranging_data[pdata->scaling].factor;
-			data->values[sensor_type_visible_light].stamp = time(nullptr);
+	if(read_config != enum_integer(conf_t::default_config))
+		throw(transient_exception("invalid config"));
+}
+
+void SensorOPT3001::_poll()
+{
+	I2C::data_t data;
+	unsigned int config;
+
+	switch(this->state)
+	{
+		case(state_t::init):
+		case(state_t::finished):
+		{
+			this->start_measurement();
+			this->state = state_t::measuring;
 
 			break;
 		}
+
+		case(state_t::measuring):
+		{
+			unsigned int exponent;
+			unsigned int mantissa;
+
+			device->send_receive(enum_integer(reg_t::config), 2, data);
+
+			config = this->u16be(data);
+
+			if(!(config & enum_integer(conf_t::flag_ready)))
+				return;
+
+			this->state = state_t::finished;
+
+			if(config & enum_integer(conf_t::flag_ovf))
+			{
+				this->raw_values["overflows"]++;
+				return;
+			}
+
+			device->send_receive(enum_integer(reg_t::result), 2, data);
+
+			exponent = (data.at(0) & 0xf0) >> 4;
+			mantissa = ((data.at(0) & 0x0f) << 8) | data.at(1);
+
+			this->raw_values["exponent"] = exponent;
+			this->raw_values["mantissa"] = mantissa;
+
+			this->update("visible light", 0.01f * static_cast<float>(1 << exponent) * static_cast<float>(mantissa), "lx", 2);
+
+			break;
+		}
+
+		default:
+		{
+			throw(hard_exception("opt3001::poll: invalid state"));
+		}
 	}
-
-	return(true);
 }
 
-static void apds9960_dump(const data_t *data, std::string &output)
+bool SensorMAX44009::probe(I2c &i2c, int module, int bus, int address, bool restricted)
 {
-	apds9960_private_data_t *pdata = static_cast<apds9960_private_data_t *>(data->private_data);
-
-	output += (boost::format("type: 0x%02x, ") % pdata->type).str();
-	output += (boost::format("state: %u, ") % pdata->state).str();
-	output += (boost::format("scaling: %u, ") % pdata->scaling).str();
-	output += (boost::format("not readys: %u, ") % pdata->not_readys).str();
-	output += (boost::format("overflows: %u, ") % pdata->overflows).str();
-	output += (boost::format("scales up: %u, ") % pdata->scales_up).str();
-	output += (boost::format("scales down: %u, ") % pdata->scales_down).str();
-	output += (boost::format("data clear: %u, ") % pdata->data.clear).str();
-	output += (boost::format("data r: %u%%, ") % pdata->data.r).str();
-	output += (boost::format("data g: %u%%, ") % pdata->data.g).str();
-	output += (boost::format("data b: %u%%") % pdata->data.b).str();
+	return(i2c.probe(module, bus, address));
 }
 
-typedef enum : unsigned int
+SensorMAX44009::SensorMAX44009(Log& log_in, I2C::Device* device_in) : SensorI2C(log_in, this->basic_name(), device_in)
 {
-	tsl2591_reg_enable =		0x00,
-	tsl2591_reg_control =		0x01,
-	tsl2591_reg_ailtl =			0x04,
-	tsl2591_reg_ailth =			0x05,
-	tsl2591_reg_aihtl =			0x06,
-	tsl2591_reg_aihth =			0x07,
-	tsl2591_reg_npailtl =		0x08,
-	tsl2591_reg_npailth =		0x09,
-	tsl2591_reg_npaihtl =		0x0a,
-	tsl2591_reg_npaihth =		0x0b,
-	tsl2591_reg_persist =		0x0c,
-	tsl2591_reg_pid =			0x11,
-	tsl2591_reg_id =			0x12,
-	tsl2591_reg_status =		0x13,
-	tsl2591_reg_c0datal =		0x14,
-	tsl2591_reg_c0datah =		0x15,
-	tsl2591_reg_c1datal =		0x16,
-	tsl2591_reg_c1datah =		0x17,
-} tsl2591_reg_t;
+	I2C::data_t data;
 
-enum : unsigned int
-{
-	tsl2591_cmd_cmd =							0b1 << 7,
-	tsl2591_cmd_transaction_normal =			0b01 << 5,
-	tsl2591_cmd_transaction_special =			0b11 << 5,
-	tsl2591_cmd_sf_interrupt_set =				0b00100 << 0,
-	tsl2591_cmd_sf_interrupt_clear_als =		0b00110 << 0,
-	tsl2591_cmd_sf_interrupt_clear_als_nals =	0b00111 << 0,
-	tsl2591_cmd_sf_interrupt_clear_nals =		0b01010 << 0,
-};
+	device->send_receive(enum_integer(reg_t::ints), 2, data);
 
-enum : unsigned int
-{
-	tsl2591_enable_npien =	0b1 << 7,
-	tsl2591_enable_sai =	0b1 << 6,
-	tsl2591_enable_aien =	0b1 << 4,
-	tsl2591_enable_aen =	0b1 << 1,
-	tsl2591_enable_pon =	0b1 << 0,
-};
+	if((data.at(0) != enum_integer(probe_t::ints)) || (data.at(1) != enum_integer(probe_t::ints)))
+		throw(transient_exception());
 
-enum : unsigned int
-{
-	tsl2591_control_sreset =		0b1 << 7,
-	tsl2591_control_again_0 =		0b00 << 4,
-	tsl2591_control_again_25 =		0b01 << 4,
-	tsl2591_control_again_400 =		0b10 << 4,
-	tsl2591_control_again_9500 =	0b11 << 4,
-	tsl2591_control_atime_100 =		0b000 << 0,
-	tsl2591_control_atime_200 =		0b001 << 0,
-	tsl2591_control_atime_300 =		0b010 << 0,
-	tsl2591_control_atime_400 =		0b011 << 0,
-	tsl2591_control_atime_500 =		0b100 << 0,
-	tsl2591_control_atime_600 =		0b101 << 0,
-};
+	device->send_receive(enum_integer(reg_t::inte), 2, data);
 
-enum : unsigned int
-{
-	tsl2591_pid_mask =	0b11 << 4,
-	tsl2591_pid_value = 0b00 << 4,
-};
+	if((data.at(0) != enum_integer(probe_t::inte)) || (data.at(1) != enum_integer(probe_t::inte)))
+		throw(transient_exception());
 
-enum : unsigned int
-{
-	tsl2591_id_mask =	0xff,
-	tsl2591_id_value =	0x50,
-};
+	device->send_receive(enum_integer(reg_t::thresh_msb), 2, data);
 
-enum : unsigned int
-{
-	tsl2591_status_npintr = 0b1 << 5,
-	tsl2591_status_aint =	0b1 << 4,
-	tsl2591_status_avalid =	0b1 << 0,
-};
+	if((data.at(0) != enum_integer(probe_t::thresh_msb)) || (data.at(1) != enum_integer(probe_t::thresh_msb)))
+		throw(transient_exception());
 
-enum : unsigned int { tsl2591_autoranging_data_size = 5 };
+	device->send_receive(enum_integer(reg_t::thresh_lsb), 2, data);
 
-static const device_autoranging_data_t tsl2591_autoranging_data[tsl2591_autoranging_data_size] =
-{
-	{{	tsl2591_control_again_9500,	tsl2591_control_atime_600 }, {	0,		50000	}, 56095,	0.096,	},
-	{{	tsl2591_control_again_400,	tsl2591_control_atime_600 }, {	100,	50000	}, 56095,	5.8,	},
-	{{	tsl2591_control_again_25,	tsl2591_control_atime_400 }, {	100,	50000	}, 65536,	49,		},
-	{{	tsl2591_control_again_0,	tsl2591_control_atime_400 }, {	100,	50000	}, 65536,	490,	},
-	{{	tsl2591_control_again_0,	tsl2591_control_atime_100 }, {	100,	50000	}, 65536,	1960,	},
-};
+	if((data.at(0) != enum_integer(probe_t::thresh_lsb)) || (data.at(1) != enum_integer(probe_t::thresh_lsb)))
+		throw(transient_exception());
 
-enum : unsigned int { tsl2591_factor_size = 7 };
+	device->send_receive(enum_integer(reg_t::thresh_timer), 2, data);
 
-static const struct
-{
-	float	lower_bound;
-	float	upper_bound;
-	float	ch_factor[2];
-} tsl2591_factors[tsl2591_factor_size] =
-{
-	{	0,		0.125,	{	1,		-0.895	}},
-	{	0.125,	0.250,	{	1.070,	-1.145	}},
-	{	0.250,	0.375,	{	1.115,	-1.790	}},
-	{	0.375,	0.500,	{	1.126,	-2.050	}},
-	{	0.500,	0.610,	{	0.740,	-1.002	}},
-	{	0.610,	0.800,	{	0.420,	-0.500	}},
-	{	0.800,	1.300,	{	0.48,	-0.037	}},
-};
+	if((data.at(0) != enum_integer(probe_t::thresh_timer)) || (data.at(1) != enum_integer(probe_t::thresh_timer)))
+		throw(transient_exception());
 
-typedef enum : unsigned int
-{
-	tsl2591_state_init,
-	tsl2591_state_reset,
-	tsl2591_state_ready,
-	tsl2591_state_measuring,
-	tsl2591_state_finished,
-} tsl2591_state_t;
+	device->send(enum_integer(reg_t::conf), enum_integer(conf_t::cont));
+	device->send_receive(enum_integer(reg_t::conf), 2, data);
 
-typedef struct
-{
-	tsl2591_state_t	state;
-	unsigned int	scaling;
-	unsigned int	scales_up;
-	unsigned int	scales_down;
-	unsigned int	overflows;
-	unsigned int	channel[2];
-	float			ratio;
-	unsigned int	ratio_index;
-	float			factor[2];
-} tsl2591_private_data_t;
-
-static bool tsl2591_write(I2C::Device* device, tsl2591_reg_t reg, unsigned int value)
-{
-	device->send(tsl2591_cmd_cmd | static_cast<unsigned int>(reg), value);
-
-	return(true);
+	if((data.at(0) & enum_integer(conf_t::cont | conf_t::manual)) != enum_integer(conf_t::cont))
+		throw(transient_exception());
 }
 
-static bool tsl2591_read_byte(I2C::Device* device, tsl2591_reg_t reg, unsigned int *value)
+void SensorMAX44009::_poll()
 {
-	I2C::data_t i2c_data;
+	I2C::data_t data;
+	unsigned int exponent;
+	unsigned int mantissa;
 
-	device->send_receive(tsl2591_cmd_cmd | static_cast<unsigned int>(reg), 1, i2c_data);
+	device->send_receive(enum_integer(reg_t::data_msb), 2, data);
 
-	*value = i2c_data.at(0);
+	exponent =	(data.at(0) & 0xf0) >> 4;
+	mantissa =	(data.at(0) & 0x0f) << 4;
+	mantissa |=	(data.at(1) & 0x0f) << 0;
 
-	return(true);
+	this->raw_values["mantissa"] = mantissa;
+	this->raw_values["exponent"] = exponent;
+
+	if(exponent != 0b1111)
+		this->update("visible light", (1 << exponent) * static_cast<float>(mantissa) * 0.045f, "lx", 2);
+	else
+		this->raw_values["overflows"]++;
+
+	this->state = state_t::measuring;
 }
 
-static bool tsl2591_write_check(I2C::Device* device, tsl2591_reg_t reg, unsigned int value)
+const SensorTSL2561::autorangings_t SensorTSL2561::autoranging_data
 {
-	unsigned int rv;
+	{ .timing = conf_t::integ_402ms,	.gain = conf_t::high_gain,	.lower = 0,		.upper = 50000,	.overflow = 65535,	.factor = 0.35f		},
+	{ .timing = conf_t::integ_402ms,	.gain = conf_t::low_gain,	.lower = 256,	.upper = 50000,	.overflow = 65535,	.factor = 7.4f		},
+	{ .timing = conf_t::integ_101ms,	.gain = conf_t::low_gain,	.lower = 256,	.upper = 30000,	.overflow = 37177,	.factor = 28.0f		},
+	{ .timing = conf_t::integ_13ms,		.gain = conf_t::low_gain,	.lower = 256,	.upper = 65536,	.overflow = 5047,	.factor = 200.0f	},
+};
 
-	if(!tsl2591_write(device, reg, value))
+void SensorTSL2561::write_byte(SensorTSL2561::reg_t reg, unsigned char value)
+{
+	device->send(enum_integer(cmd_t::cmd) | enum_integer(cmd_t::clear) | (enum_integer(reg) & enum_integer(cmd_t::address)), value);
+}
+
+unsigned char SensorTSL2561::read_byte(SensorTSL2561::reg_t reg)
+{
+	I2C::data_t data;
+
+	device->send_receive(enum_integer(cmd_t::cmd) | (enum_integer(reg) & enum_integer(cmd_t::address)), 1, data);
+
+	return(data.at(0));
+}
+
+unsigned int SensorTSL2561::read_word(SensorTSL2561::reg_t reg)
+{
+	I2C::data_t data;
+
+	device->send_receive(enum_integer(cmd_t::cmd) | (enum_integer(reg) & enum_integer(cmd_t::address)), 2, data);
+
+	return(this->u16le(data));
+}
+
+bool SensorTSL2561::write_check(SensorTSL2561::reg_t reg, unsigned char value)
+{
+	unsigned rv;
+
+	try
+	{
+		this->write_byte(reg, value);
+		rv = this->read_byte(reg);
+	}
+	catch(const transient_exception &)
+	{
 		return(false);
-
-	if(!tsl2591_read_byte(device, reg, &rv))
-		return(false);
+	}
 
 	if(value != rv)
 		return(false);
@@ -3775,1079 +2139,731 @@ static bool tsl2591_write_check(I2C::Device* device, tsl2591_reg_t reg, unsigned
 	return(true);
 }
 
-static sensor_detect_t tsl2591_detect(I2C::Device* device)
+bool SensorTSL2561::probe(I2c &i2c, int module, int bus, int address, bool restricted)
+{
+	return(i2c.probe(module, bus, address));
+}
+
+SensorTSL2561::SensorTSL2561(Log& log_in, I2C::Device* device_in) : SensorI2C(log_in, this->basic_name(), device_in)
 {
 	unsigned int regval;
 
-	if(!tsl2591_read_byte(device, tsl2591_reg_pid, &regval))
-		return(sensor_not_found);
+	regval = this->read_byte(reg_t::id);
 
-	if((regval & tsl2591_pid_mask) != tsl2591_pid_value)
-		return(sensor_not_found);
+	if(regval != enum_integer(id_t::tsl2561))
+		throw(transient_exception());
 
-	if(!tsl2591_read_byte(device, tsl2591_reg_id, &regval))
-		return(sensor_not_found);
+	regval = this->read_word(reg_t::threshlow);
 
-	if((regval & tsl2591_id_mask) != tsl2591_id_value)
-		return(sensor_not_found);
+	if(regval != enum_integer(id_t::probe_threshold))
+		throw(transient_exception());
 
-	if(tsl2591_write_check(device, tsl2591_reg_id, 0x00)) // id register should not be writable
-		return(sensor_not_found);
+	regval = this->read_word(reg_t::threshhigh);
 
-	return(sensor_found);
+	if(regval != enum_integer(id_t::probe_threshold))
+		throw(transient_exception());
+
+	if(!this->write_check(reg_t::control, enum_integer(control_t::power_off)))
+		throw(transient_exception());
+
+	if(this->write_check(reg_t::id, 0x00)) // id register should not be writable
+		throw(transient_exception());
+
+	if(!this->write_check(reg_t::interrupt, 0x00))
+		throw(transient_exception());
+
+	this->write_byte(reg_t::control, enum_integer(control_t::power_on));
+
+	regval = this->read_byte(reg_t::control);
+
+	if((regval & 0x0f) != enum_integer(control_t::power_on))
+		throw(transient_exception("power on failed"));
+
+	this->raw_values["scaling"] = 0;
 }
 
-static bool tsl2591_init(data_t *data)
+void SensorTSL2561::_poll()
 {
-	tsl2591_private_data_t *pdata = static_cast<tsl2591_private_data_t *>(data->private_data);
+	unsigned int channel_0, channel_1;
+	float value, ratio;
+	int scaling = this->raw_values["scaling"];
+	const autoranging_t &autoranging = this->autoranging_data.at(scaling);
+	int autoranging_max = this->autoranging_data.size() - 1;
 
-	assert(pdata);
+	switch(this->state)
+	{
+		case(state_t::init):
+		case(state_t::finished):
+		{
+			if(!this->write_check(reg_t::timeint, enum_integer(autoranging.timing) | enum_integer(autoranging.gain)))
+				throw(transient_exception("tsl2561 poll 1"));
 
-	pdata->state = tsl2591_state_init;
-	pdata->scaling = tsl2591_autoranging_data_size - 1;
-	pdata->scales_up = 0;
-	pdata->scales_down = 0;
-	pdata->overflows = 0;
-	pdata->channel[0] = 0;
-	pdata->channel[1] = 0;
-	pdata->ratio = 0;
-	pdata->ratio_index = 0;
-	pdata->factor[0] = 0;
-	pdata->factor[1] = 0;
+			state = state_t::measuring;
+
+			break;
+		}
+
+		case(state_t::measuring):
+		{
+			this->state = state_t::finished;
+
+			channel_0 = this->read_word(reg_t::data0);
+			channel_1 = this->read_word(reg_t::data1);
+
+			this->raw_values["channel 0"] = channel_0;
+			this->raw_values["channel 1"] = channel_1;
+
+			if(((channel_0 >= autoranging.overflow) || (channel_1 >= autoranging.overflow)) && (scaling >= autoranging_max))
+			{
+				this->raw_values["overflows"]++;
+				return;
+			}
+
+			if(((channel_0 < autoranging.lower) || (channel_1 < autoranging.lower)) && (scaling > 0))
+			{
+				scaling--;
+				this->raw_values["scaling"] = scaling;
+				this->raw_values["scalings down"]++;
+				return;
+			}
+
+			if(((channel_0 >= autoranging.upper) || (channel_1 >= autoranging.upper)) && (scaling < autoranging_max))
+			{
+				scaling++;
+				this->raw_values["scaling"] = scaling;
+				this->raw_values["scalings up"]++;
+				break;
+			}
+
+			if(channel_0 == 0)
+				ratio = 0;
+			else
+				ratio = channel_1 / channel_0;
+
+			if(ratio > 1.30f)
+			{
+				this->raw_values["invalids"]++;
+				return;
+			}
+
+			if(ratio >= 0.80f)
+				value = (0.00146f * channel_0) - (0.00112f * channel_1);
+			else
+				if(ratio >= 0.61f)
+					value = (0.0128f * channel_0) - (0.0153f * channel_1);
+				else
+					if(ratio >= 0.50f)
+						value = (0.0224f * channel_0) - (0.031f * channel_1);
+					else
+						value = (0.0304f * channel_0) - (0.062f * channel_1 * (float)pow(ratio, 1.4f));
+
+			value = (value * autoranging.factor);
+
+			if(value < 0)
+				value = 0;
+
+			this->update("visible light", value, "lx", 5);
+
+			break;
+		}
+
+		default:
+		{
+			throw(hard_exception("tsl2561: invalid state"));
+		}
+	}
+}
+
+SensorTSL2591Base::SensorTSL2591Base(Log& log_in, I2C::Device* device_in) : SensorI2C(log_in, this->basic_name(), device_in)
+{
+}
+
+void SensorTSL2591Base::write_byte(reg_t reg, unsigned char value)
+{
+	this->device->send(enum_integer(cmd_t::cmd | cmd_t::transaction_normal) | enum_integer(reg), value);
+}
+
+unsigned char SensorTSL2591Base::read_byte(reg_t reg)
+{
+	I2C::data_t data;
+
+	this->device->send_receive(enum_integer(cmd_t::cmd | cmd_t::transaction_normal) | enum_integer(reg), 1, data);
+
+	return(data.at(0));
+}
+
+bool SensorTSL2591Base::write_check(reg_t reg, unsigned char value)
+{
+	unsigned char rv;
+
+	try
+	{
+		this->write_byte(reg, value);
+
+		rv = this->read_byte(reg);
+
+		if(value != rv)
+			return(false);
+	}
+	catch(const transient_exception &)
+	{
+		return(false);
+	}
 
 	return(true);
 }
 
-static bool tsl2591_poll(data_t *data)
+bool SensorTSL2591RO::probe(I2c &i2c, int module, int bus, int address, bool restricted)
 {
-	tsl2591_private_data_t *pdata = static_cast<tsl2591_private_data_t *>(data->private_data);
-	I2C::data_t i2c_data;
-	unsigned int overflow, scale_down_threshold, scale_up_threshold;
-	unsigned int control_opcode;
-	bool found;
+	return(!restricted);
+}
 
-	assert(pdata);
+SensorTSL2591RO::SensorTSL2591RO(Log& log_in, I2C::Device* device_in) : SensorTSL2591Base(log_in, device_in)
+{
+	I2C::data_t data;
 
-	switch(pdata->state)
+	try
 	{
-		case(tsl2591_state_init):
+		this->device->receive(enum_integer(reg_t::size), data);
+	}
+	catch(const transient_exception &)
+	{
+		throw(transient_exception());
+	}
+
+	if((data.at(enum_integer(reg_t::pid)) & enum_integer(pid_t::mask)) != enum_integer(pid_t::value))
+		throw(transient_exception());
+
+	if((data.at(enum_integer(reg_t::id)) & enum_integer(id_t::mask)) != enum_integer(id_t::alt_value))
+		throw(transient_exception());
+
+	this->name = this->basic_name();
+}
+
+void SensorTSL2591RO::_poll()
+{
+}
+
+const SensorTSL2591RW::autorangings_t SensorTSL2591RW::autoranging_data
+{
+	{	control_t::again_9500,	control_t::atime_600, 0,	50000, 56095,	0.096,	},
+	{	control_t::again_400,	control_t::atime_600, 100,	50000, 56095,	5.8,	},
+	{	control_t::again_25,	control_t::atime_400, 100,	50000, 65536,	49,		},
+	{	control_t::again_0,		control_t::atime_400, 100,	50000, 65536,	490,	},
+	{	control_t::again_0,		control_t::atime_100, 100,	50000, 65536,	1960,	},
+};
+
+const SensorTSL2591RW::corrections_t SensorTSL2591RW::correction_data
+{
+	{	0.0f,	0.125f,	{	1.0f,	-0.895f	}},
+	{	0.125f,	0.250f,	{	1.070f,	-1.145f	}},
+	{	0.250f,	0.375f,	{	1.115f,	-1.790f	}},
+	{	0.375f,	0.500f,	{	1.126f,	-2.050f	}},
+	{	0.500f,	0.610f,	{	0.740f,	-1.002f	}},
+	{	0.610f,	0.800f,	{	0.420f,	-0.500f	}},
+	{	0.800f,	1.300f,	{	0.48f,	-0.037f	}},
+};
+
+bool SensorTSL2591RW::probe(I2c &i2c, int module, int bus, int address, bool restricted)
+{
+	if(restricted)
+		return(false);
+
+	return(i2c.probe(module, bus, address));
+}
+
+SensorTSL2591RW::SensorTSL2591RW(Log& log_in, I2C::Device* device_in) : SensorTSL2591Base(log_in, device_in)
+{
+	unsigned char regval;
+
+	regval = this->read_byte(reg_t::pid);
+
+	if((regval & enum_integer(pid_t::mask)) != enum_integer(pid_t::value))
+		throw(transient_exception());
+
+	regval = this->read_byte(reg_t::id);
+
+	if((regval & enum_integer(id_t::mask)) != enum_integer(id_t::value))
+		throw(transient_exception());
+
+	if(this->write_check(reg_t::id, 0x00)) // id register should not be writable
+		throw(transient_exception());
+
+	this->raw_values["scaling"] = 0;
+
+	this->name = this->basic_name();
+}
+
+void SensorTSL2591RW::_poll()
+{
+	I2C::data_t data;
+	int scaling;
+
+	scaling = this->raw_values["scaling"];
+
+	switch(this->state)
+	{
+		case(state_t::init):
 		{
-			tsl2591_write(data->device, tsl2591_reg_control, tsl2591_control_sreset);
-			pdata->state = tsl2591_state_reset;
+			try
+			{
+				this->write_byte(reg_t::control, enum_integer(control_t::sreset));
+			}
+			catch(const transient_exception &)
+			{
+			}
+
+			this->state = state_t::reset;
 
 			break;
 		}
 
-		case(tsl2591_state_reset):
+		case(state_t::reset):
 		{
-			if(!tsl2591_write_check(data->device, tsl2591_reg_enable, tsl2591_enable_aen | tsl2591_enable_pon))
+			if(this->read_byte(reg_t::control) & enum_integer(control_t::sreset))
 			{
-				Log::get() << "tsl2591: poll: error 1";
-				break;
+				this->raw_values["resetting waits"]++;
+				return;
 			}
 
-			pdata->state = tsl2591_state_ready;
+			if(!this->write_check(reg_t::enable, enum_integer(enable_t::aen | enable_t::pon)))
+			{
+				this->state = state_t::init;
+				throw(transient_exception("poll error 1"));
+			}
+
+			this->state = state_t::ready;
 
 			break;
 		}
 
-		case(tsl2591_state_ready):
-		case(tsl2591_state_finished):
+		case(state_t::ready):
+		case(state_t::finished):
 		{
-			control_opcode = tsl2591_autoranging_data[pdata->scaling].data[0] | tsl2591_autoranging_data[pdata->scaling].data[1] ;
+			control_t opcode;
 
-			if(!tsl2591_write_check(data->device, tsl2591_reg_control, control_opcode))
-			{
-				Log::get() << "tsl2591: poll: error 2";
-				break;
-			}
+			opcode = this->autoranging_data[scaling].gain | this->autoranging_data[scaling].timing;
 
-			pdata->state = tsl2591_state_measuring;
+			if(!this->write_check(reg_t::control, enum_integer(opcode)))
+				throw(transient_exception("poll error 2"));
+
+			this->state = state_t::measuring;
+
 			break;
 		}
 
-		case(tsl2591_state_measuring):
+		case(state_t::measuring):
 		{
-			pdata->state = tsl2591_state_finished;
+			unsigned int channel0, channel1, overflow, scale_down_threshold, scale_up_threshold, max_scaling;
+			float ratio, factor[2], value;
 
-			scale_down_threshold =	tsl2591_autoranging_data[pdata->scaling].threshold.down;
-			scale_up_threshold =	tsl2591_autoranging_data[pdata->scaling].threshold.up;
-			overflow =				tsl2591_autoranging_data[pdata->scaling].overflow;
+			max_scaling = this->autoranging_data.size() - 1;
 
-			data->device->send_receive(tsl2591_cmd_cmd | static_cast<unsigned int>(tsl2591_reg_c0datal), 4, i2c_data);
+			scale_down_threshold =	this->autoranging_data[scaling].lower;
+			scale_up_threshold =	this->autoranging_data[scaling].upper;
+			overflow =				this->autoranging_data[scaling].overflow;
 
-			pdata->channel[0] = unsigned_16_le(i2c_data, 0);
-			pdata->channel[1] = unsigned_16_le(i2c_data, 2);
+			this->device->send_receive(enum_integer(cmd_t::cmd) | enum_integer(reg_t::c0datal), 4, data);
 
-			if(((pdata->channel[0] < scale_down_threshold) || (pdata->channel[1] < scale_down_threshold)) && (pdata->scaling > 0))
+			channel0 = this->u16le(data, 0);
+			channel1 = this->u16le(data, 2);
+
+			this->state = state_t::finished;
+
+			if(((channel0 < scale_down_threshold) || (channel1 < scale_down_threshold)) && (scaling > 0))
 			{
-				pdata->scaling--;
-				pdata->scales_down++;
+				scaling--;
+				this->raw_values["scaling"] = scaling;
+				this->raw_values["scalings down"]++;
 				break;
 			}
 
-			if(((pdata->channel[0] >= scale_up_threshold) || (pdata->channel[1] >= scale_up_threshold)) && (pdata->scaling < (tsl2591_autoranging_data_size - 1)))
+			if(((channel0 >= scale_up_threshold) || (channel1 >= scale_up_threshold)) && (scaling < max_scaling))
 			{
-				pdata->scaling++;
-				pdata->scales_up++;
+				scaling++;
+				this->raw_values["scaling"] = scaling;
+				this->raw_values["scalings up"]++;
 				break;
 			}
 
-			if((pdata->channel[0] <= 0) || (pdata->channel[1] <= 0) || (pdata->channel[0] >= overflow) || (pdata->channel[1] >= overflow))
+			if((channel0 <= 0) || (channel1 <= 0) || (channel0 >= overflow) || (channel1 >= overflow))
 			{
-				pdata->overflows++;
+				this->raw_values["overflows"]++;
 				break;
 			}
 
-			pdata->ratio = (float)pdata->channel[1] / (float)pdata->channel[0];
-			found = false;
+			ratio = static_cast<float>(channel1) / static_cast<float>(channel0);
 
-			for(pdata->ratio_index = 0; pdata->ratio_index < tsl2591_factor_size; pdata->ratio_index++)
+			this->raw_values["channel 0"] = channel0;
+			this->raw_values["channel 1"] = channel1;
+			this->raw_values["ratio * 1000"] = ratio * 1000;
+
+			factor[0] = factor[1] = 0;
+
+			for(const auto& entry : this->correction_data)
 			{
-				if((pdata->ratio >= tsl2591_factors[pdata->ratio_index].lower_bound) && (pdata->ratio < tsl2591_factors[pdata->ratio_index].upper_bound))
+				if((ratio >= entry.lower_bound) && (ratio < entry.upper_bound))
 				{
-					pdata->factor[0] = tsl2591_factors[pdata->ratio_index].ch_factor[0];
-					pdata->factor[1] = tsl2591_factors[pdata->ratio_index].ch_factor[1];
-					found = true;
+					factor[0] = entry.ch_factor[0];
+					factor[1] = entry.ch_factor[1];
 
 					break;
 				}
 			}
 
-			if(!found)
+			if((factor[0] <= 0) || (factor[1] >= 0))
 			{
-				pdata->overflows++;
+				this->raw_values["overflows"]++;
 				break;
 			}
 
-			data->values[sensor_type_visible_light].value = (((pdata->channel[0] * pdata->factor[0]) + (pdata->channel[1] * pdata->factor[1])) / 1000.0f) *
-					tsl2591_autoranging_data[pdata->scaling].factor;
-			data->values[sensor_type_visible_light].stamp = time(nullptr);
+			this->raw_values["factor 0 * 1000"] = factor[0] * 1000;
+			this->raw_values["factor 1 * 1000"] = factor[1] * 1000;
+
+			value = (((channel0 * factor[0]) + (channel1 * factor[1])) / 1000.0f) * this->autoranging_data[scaling].factor;
+
+			this->update("visible light", value, "lx", 5);
 
 			break;
 		}
-	}
 
-	return(true);
-}
-
-static void tsl2591_dump(const data_t *data, std::string &output)
-{
-	tsl2591_private_data_t *pdata = static_cast<tsl2591_private_data_t *>(data->private_data);
-
-	output += (boost::format("state: %u, ") % pdata->state).str();
-	output += (boost::format("scaling: %u, ") % pdata->scaling).str();
-	output += (boost::format("scales up: %u, ") % pdata->scales_up).str();
-	output += (boost::format("scales down: %u, ") % pdata->scales_down).str();
-	output += (boost::format("overflows: %u, ") % pdata->overflows).str();
-	output += (boost::format("data channel 0: %u, ") % pdata->channel[0]).str();
-	output += (boost::format("data channel 1: %u, ") % pdata->channel[1]).str();
-	output += (boost::format("ratio: %f, ") % (double)pdata->ratio).str();
-	output += (boost::format("ratio index: %u, ") % pdata->ratio_index).str();
-	output += (boost::format("factor 0: %f, ") % (double)pdata->factor[0]).str();
-	output += (boost::format("factor 1: %f") % (double)pdata->factor[1]).str();
-}
-
-static sensor_detect_t tsl2591_28_detect(I2C::Device* this_device)
-{
-	const data_t *data;
-	int this_module, module;
-	int this_bus, bus;
-	int this_address, address;
-	std::string this_name, name;
-
-	this_device->data(this_module, this_bus, this_address, this_name);
-
-	for(data = data_root; data; data = data->next)
-	{
-		if(data->state == sensor_found)
+		default:
 		{
-			data->device->data(module, bus, address, name);
-
-			if((module == this_module) && (bus == this_bus) && (data->info->id == sensor_tsl2591))
-				return(sensor_disabled);
+			throw(hard_exception("tsl2591: invalid state"));
 		}
 	}
-
-	return(sensor_not_found);
 }
 
-enum
+const SensorVEML7700::autorangings_t SensorVEML7700::autoranging_data
 {
-	am2320_command_read_register = 0x03,
+	{	.timing = conf_t::als_it_800,	.gain = conf_t::als_gain_2,		.lower = 0,		.upper = 32768,	.factor = 0.0036f	},
+	{	.timing = conf_t::als_it_800,	.gain = conf_t::als_gain_1_8,	.lower = 100,	.upper = 32768,	.factor = 0.0576f	},
+	{	.timing = conf_t::als_it_200,	.gain = conf_t::als_gain_2,		.lower = 100,	.upper = 32768,	.factor = 0.0144f	},
+	{	.timing = conf_t::als_it_200,	.gain = conf_t::als_gain_1_8,	.lower = 100,	.upper = 32768,	.factor = 0.2304f	},
+	{	.timing = conf_t::als_it_25,	.gain = conf_t::als_gain_2,		.lower = 100,	.upper = 32768,	.factor = 0.1152f	},
+	{	.timing = conf_t::als_it_25,	.gain = conf_t::als_gain_1_8,	.lower = 100,	.upper = 65536,	.factor = 1.8432f	},
 };
 
-enum
+bool SensorVEML7700::probe(I2c &i2c, int module, int bus, int address, bool restricted)
 {
-	am2320_register_values = 0x00,
-	am2320_register_values_length = 0x04,
-	am2320_register_id = 0x08,
-	am2320_register_id_length = 0x02,
-};
+	return(i2c.probe(module, bus, address));
+}
 
-typedef enum
+SensorVEML7700::SensorVEML7700(Log& log_in, I2C::Device* device_in) : SensorI2C(log_in, this->basic_name(), device_in)
 {
-	am2320_state_init,
-	am2320_state_waking,
-	am2320_state_measuring,
-} am2320_state_t;
+	I2C::data_t data;
 
-typedef struct
+	device->send_receive(enum_integer(reg_t::id), 2, data);
+
+	if((data.at(0) != enum_integer(id_t::id_1)) || (data.at(1) != enum_integer(id_t::id_2)))
+		throw(transient_exception());
+}
+
+void SensorVEML7700::_poll()
 {
-	am2320_state_t state;
-	uint32_t raw_humidity_data;
-	uint32_t raw_temperature_data;
-} am2320_private_data_t;
+	I2C::data_t data;
+	int scaling = this->raw_values["scaling"];
+	autoranging_t autoranging = this->autoranging_data.at(scaling);
+	int autoranging_max = this->autoranging_data.size() - 1;
 
-static unsigned int am2320_crc16(int length, const I2C::data_t &data, int offset = 0)
-{
-	uint8_t outer, inner, testbit;
-	uint16_t crc;
-
-	crc = 0xffff;
-
-	for(outer = 0; outer < length; outer++)
+	switch(this->state)
 	{
-		crc ^= data.at(outer + offset);
-
-		for(inner = 0; inner < 8; inner++)
+		case(state_t::init):
+		case(state_t::finished):
 		{
-			testbit = !!(crc & 0x01);
-			crc >>= 1;
-			if(testbit)
-				crc ^= 0xa001;
-		}
-	}
+			int opcode = enum_integer(autoranging.timing) | enum_integer(autoranging.gain);
 
-	return(crc);
-}
+			device->send(enum_integer(reg_t::conf), this->u16low(opcode), this->u16high(opcode));
 
-static sensor_detect_t am2320_detect(I2C::Device* device)
-{
-	unsigned int crc1, crc2;
-	int module;
-	int bus;
-	int address;
-	std::string name;
-	I2C::data_t i2c_data;
+			this->state = state_t::measuring;
 
-	device->data(module, bus, address, name);
-
-	I2C::get().probe(module, bus, address);
-	std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-	if(!I2C::get().probe(module, bus, address))
-		return(sensor_not_found);
-
-	// request ID (but do not check it, it's unreliable)
-	device->send(am2320_command_read_register, am2320_register_id, am2320_register_id_length);
-	device->receive(am2320_register_id_length + 4, i2c_data);
-
-	if((i2c_data.at(0) != am2320_command_read_register) || (i2c_data.at(1) != am2320_register_id_length))
-		return(sensor_not_found);
-
-	crc1 = unsigned_16_le(i2c_data, am2320_register_id_length + 2);
-	crc2 = am2320_crc16(am2320_register_id_length + 2, i2c_data);
-
-	if(crc1 != crc2)
-		return(sensor_not_found);
-
-	return(sensor_found);
-}
-
-static bool am2320_init(data_t *data)
-{
-	am2320_private_data_t *pdata = static_cast<am2320_private_data_t *>(data->private_data);
-
-	pdata->state = am2320_state_init;
-	pdata->raw_temperature_data = 0;
-	pdata->raw_humidity_data = 0;
-
-	return(true);
-}
-
-static bool am2320_poll(data_t *data)
-{
-	am2320_private_data_t *pdata = static_cast<am2320_private_data_t *>(data->private_data);
-	unsigned int crc1, crc2;
-	int humidity, temperature;
-	int module, bus, address;
-	std::string name;
-	I2C::data_t i2c_data;
-
-	data->device->data(module, bus, address, name);
-
-	assert(pdata);
-
-	switch(pdata->state)
-	{
-		case(am2320_state_init):
-		case(am2320_state_waking):
-		{
-			I2C::get().probe(module, bus, address);
-			pdata->state = am2320_state_measuring;
 			break;
 		}
 
-		case(am2320_state_measuring):
+		case(state_t::measuring):
 		{
-			pdata->state = am2320_state_waking;
+			int raw_als;
+			float lux, raw_lux;
 
-			data->device->send(am2320_command_read_register, am2320_register_values, am2320_register_values_length);
-				return(false);
+			this->state = state_t::finished;
 
-			data->device->receive(am2320_register_values_length + 4, i2c_data);
+			device->send_receive(enum_integer(reg_t::white), 3, data);
+			this->raw_values["white"] = this->u16le(data);
 
-			if((i2c_data.at(0) != am2320_command_read_register) || (i2c_data.at(1) != am2320_register_values_length))
+			device->send_receive(enum_integer(reg_t::als), 3, data);
+			raw_als = this->u16le(data);
+			this->raw_values["als"] = raw_als;
+
+			if((raw_als < autoranging.lower) && (scaling > 0))
 			{
-				Log::get() << "am2320: poll error 2";
-				return(false);
+				scaling--;
+				this->raw_values["scaling"] = scaling;
+				this->raw_values["scalings down"]++;
+				break;
 			}
 
-			crc1 = unsigned_16_le(i2c_data, am2320_register_values_length + 2);
-			crc2 = am2320_crc16(am2320_register_values_length + 2, i2c_data);
-
-			if(crc1 != crc2)
+			if((raw_als >= autoranging.upper) && (scaling < autoranging_max))
 			{
-				Log::get() << "am2320: poll error 3";
-				return(false);
+				scaling++;
+				this->raw_values["scaling"] = scaling;
+				this->raw_values["scalings up"]++;
+				break;
 			}
 
-			pdata->raw_temperature_data = unsigned_16_be(i2c_data, 4);
-			pdata->raw_humidity_data = unsigned_16_be(i2c_data, 2);
+			raw_lux = raw_als * autoranging.factor;
 
-			temperature = (unsigned int)pdata->raw_temperature_data;
+			this->raw_values["raw lux"] = raw_lux * 1000;
 
-			if(temperature & 0x8000)
-			{
-				temperature &= 0x7fff;
-				temperature = 0 - temperature;
-			}
+			lux = (raw_lux * raw_lux * raw_lux * raw_lux * 6.0135e-13f)
+					- (raw_lux * raw_lux * raw_lux * 9.3924e-09f)
+					+ (raw_lux * raw_lux * 8.1488e-05f)
+					+ (raw_lux * 1.0023e+00f);
 
-			humidity = pdata->raw_humidity_data;
+			this->update("visible light", lux, "lx", 3);
 
-			if(humidity > 1000)
-				humidity  = 1000;
-
-			data->values[sensor_type_temperature].value = temperature / 10.0;
-			data->values[sensor_type_temperature].stamp = time(nullptr);
-
-			data->values[sensor_type_humidity].value = humidity / 10.0;
-			data->values[sensor_type_humidity].stamp = time(nullptr);
+			break;
 		}
 
-		break;
-	}
-
-	return(true);
-}
-
-static void am2320_dump(const data_t *data, std::string &output)
-{
-	am2320_private_data_t *pdata = static_cast<am2320_private_data_t *>(data->private_data);
-
-	assert(pdata);
-
-	output += (boost::format("state: %d, ") % pdata->state).str();
-	output += (boost::format("raw temperature data: %lu, ") % pdata->raw_temperature_data).str();
-	output += (boost::format("raw humidity data: %lu") % pdata->raw_humidity_data).str();
-}
-
-static const info_t info[sensor_size] =
-{
-	[sensor_bh1750] =
-	{
-		.name = "bh1750",
-		.id = sensor_bh1750,
-		.address = 0x23,
-		.type = static_cast<sensor_type_t>(1 << sensor_type_visible_light),
-		.flags
+		default:
 		{
-			.force_detect = 0,
-			.no_constrained = 1,
-		},
+			throw(hard_exception("veml7700: invalid state"));
+		}
+	}
+}
+
+const SensorLTR390::autorangings_t SensorLTR390::autoranging_data
+{
+	{
+		.resolution = meas_rate_t::resolution_20,
+		.rate = meas_rate_t::rate_500,
+		.gain = gain_t::gain_18,
+		.raw_lower = 0, .raw_upper = 1200,
+		.gain_factor = 18.0f, .integration_time_factor = 4.0f,
+		.lux_lower = 0.0083f, .lux_upper = 10.0f,
+		.precision = 3,
+	},
+	{
+		.resolution = meas_rate_t::resolution_20,
+		.rate = meas_rate_t::rate_500,
+		.gain = gain_t::gain_1,
+		.raw_lower = 67, .raw_upper = 6667,
+		.gain_factor = 1.0f, .integration_time_factor = 4.0f,
+		.lux_lower = 10.0f, .lux_upper = 1000.0f,
+		.precision = 1,
+	},
+	{
+		.resolution = meas_rate_t::resolution_18,
+		.rate = meas_rate_t::rate_500,
+		.gain = gain_t::gain_1,
+		.raw_lower = 1667, .raw_upper = 1048575,
+		.gain_factor = 1.0f, .integration_time_factor = 1.0f,
+		.lux_lower = 100.0f, .lux_upper = 629145.0f,
 		.precision = 0,
-		.private_data_size = sizeof(bh1750_private_data_t),
-		.detect_fn = bh1750_detect,
-		.init_fn = bh1750_init,
-		.poll_fn = bh1750_poll,
-		.dump_fn = bh1750_dump,
-	},
-	[sensor_tmp75] =
-	{
-		.name = "tmp75",
-		.id = sensor_tmp75,
-		.address = 0x48,
-		.type = static_cast<sensor_type_t>(1 << sensor_type_temperature),
-		.flags = {},
-		.precision = 1,
-		.private_data_size = sizeof(tmp75_private_data_t),
-		.detect_fn = tmp75_detect,
-		.init_fn = tmp75_init,
-		.poll_fn = tmp75_poll,
-		.dump_fn = tmp75_dump,
-	},
-	[sensor_opt3001] =
-	{
-		.name = "opt3001",
-		.id = sensor_opt3001,
-		.address = 0x45,
-		.type = static_cast<sensor_type_t>(1 << sensor_type_visible_light),
-		.flags = {},
-		.precision = 2,
-		.private_data_size = sizeof(opt3001_private_data_t),
-		.detect_fn = opt3001_detect,
-		.init_fn = opt3001_init,
-		.poll_fn = opt3001_poll,
-		.dump_fn = opt3001_dump,
-	},
-	[sensor_max44009] =
-	{
-		.name = "max44009",
-		.id = sensor_max44009,
-		.address = 0x4a,
-		.type = static_cast<sensor_type_t>(1 << sensor_type_visible_light),
-		.flags = {},
-		.precision = 2,
-		.private_data_size = sizeof(max44009_private_data_t),
-		.detect_fn = max44009_detect,
-		.init_fn = max44009_init,
-		.poll_fn = max44009_poll,
-		.dump_fn = max44009_dump,
-	},
-	[sensor_asair] =
-	{
-		.name = "asair",
-		.id = sensor_asair,
-		.address = 0x38,
-		.type = static_cast<sensor_type_t>((1 << sensor_type_temperature) | (1 << sensor_type_humidity)),
-		.flags = {},
-		.precision = 1,
-		.private_data_size = sizeof(asair_private_data_t),
-		.detect_fn = asair_detect,
-		.init_fn = asair_init,
-		.poll_fn = asair_poll,
-		.dump_fn = asair_dump,
-	},
-	[sensor_apds9930] =
-	{
-		.name = "apds9930",
-		.id = sensor_apds9930,
-		.address = 0x39,
-		.type = static_cast<sensor_type_t>(1 << sensor_type_visible_light),
-		.flags = {},
-		.precision = 2,
-		.private_data_size = sizeof(apds9930_private_data_t),
-		.detect_fn = apds9930_detect,
-		.init_fn = apds9930_init,
-		.poll_fn = apds9930_poll,
-		.dump_fn = apds9930_dump,
-	},
-	[sensor_tsl2561] =
-	{
-		.name = "tsl2561",
-		.id = sensor_tsl2561,
-		.address = 0x39,
-		.type = static_cast<sensor_type_t>(1 << sensor_type_visible_light),
-		.flags = {},
-		.precision = 2,
-		.private_data_size = sizeof(tsl2561_private_data_t),
-		.detect_fn = tsl2561_detect,
-		.init_fn = tsl2561_init,
-		.poll_fn = tsl2561_poll,
-		.dump_fn = tsl2561_dump,
-	},
-	[sensor_hdc1080] =
-	{
-		.name = "hdc1080",
-		.id = sensor_hdc1080,
-		.address = 0x40,
-		.type = static_cast<sensor_type_t>((1 << sensor_type_temperature) | (1 << sensor_type_humidity)),
-		.flags
-		{
-			.force_detect = 0,
-			.no_constrained = 1,
-		},
-		.precision = 1,
-		.private_data_size = sizeof(hdc1080_private_data_t),
-		.detect_fn = hdc1080_detect,
-		.init_fn = hdc1080_init,
-		.poll_fn = hdc1080_poll,
-		.dump_fn = hdc1080_dump,
-	},
-	[sensor_sht3x] =
-	{
-		.name = "sht3x",
-		.id = sensor_sht3x,
-		.address = 0x44,
-		.type = static_cast<sensor_type_t>((1 << sensor_type_temperature) | (1 << sensor_type_humidity)),
-		.flags
-		{
-			.force_detect = 0,
-			.no_constrained = 1,
-		},
-		.precision = 1,
-		.private_data_size = sizeof(sht3x_private_data_t),
-		.detect_fn = sht3x_detect,
-		.init_fn = sht3x_init,
-		.poll_fn = sht3x_poll,
-		.dump_fn = sht3x_dump,
-	},
-	[sensor_bmx280] =
-	{
-		.name = "bmx280",
-		.id = sensor_bmx280,
-		.address = 0x76,
-		.type = static_cast<sensor_type_t>((1 << sensor_type_temperature) | (1 << sensor_type_humidity) | (1 << sensor_type_airpressure)),
-		.flags = {},
-		.precision = 1,
-		.private_data_size = sizeof(bmx280_private_data_t),
-		.detect_fn = bmx280_detect,
-		.init_fn = bmx280_init,
-		.poll_fn = bmx280_poll,
-		.dump_fn = bmx280_dump,
-	},
-	[sensor_htu21] =
-	{
-		.name = "htu21",
-		.id = sensor_htu21,
-		.address = 0x40,
-		.type = static_cast<sensor_type_t>((1 << sensor_type_temperature) | (1 << sensor_type_humidity)),
-		.flags
-		{
-			.force_detect = 0,
-			.no_constrained = 1,
-		},
-		.precision = 1,
-		.private_data_size = sizeof(htu21_private_data_t),
-		.detect_fn = htu21_detect,
-		.init_fn = htu21_init,
-		.poll_fn = htu21_poll,
-		.dump_fn = htu21_dump,
-	},
-	[sensor_veml7700] =
-	{
-		.name = "veml7700",
-		.id = sensor_veml7700,
-		.address = 0x10,
-		.type = static_cast<sensor_type_t>(1 << sensor_type_visible_light),
-		.flags = {},
-		.precision = 2,
-		.private_data_size = sizeof(veml7700_private_data_t),
-		.detect_fn = veml7700_detect,
-		.init_fn = veml7700_init,
-		.poll_fn = veml7700_poll,
-		.dump_fn = veml7700_dump,
-	},
-	[sensor_bme680] =
-	{
-		.name = "bme680",
-		.id = sensor_bme680,
-		.address = 0x76,
-		.type = static_cast<sensor_type_t>((1 << sensor_type_temperature) | (1 << sensor_type_humidity) | (1 << sensor_type_airpressure)),
-		.flags = {},
-		.precision = 1,
-		.private_data_size = sizeof(bme680_private_data_t),
-		.detect_fn = bme680_detect,
-		.init_fn = bme680_init,
-		.poll_fn = bme680_poll,
-		.dump_fn = bme680_dump,
-	},
-	[sensor_apds9960] =
-	{
-		.name = "apds9960",
-		.id = sensor_apds9960,
-		.address = 0x39,
-		.type = static_cast<sensor_type_t>(1 << sensor_type_visible_light),
-		.flags = {},
-		.precision = 2,
-		.private_data_size = sizeof(apds9960_private_data_t),
-		.detect_fn = apds9960_detect,
-		.init_fn = apds9960_init,
-		.poll_fn = apds9960_poll,
-		.dump_fn = apds9960_dump,
-	},
-	[sensor_tsl2591] =
-	{
-		.name = "tsl2591",
-		.id = sensor_tsl2591,
-		.address = 0x29,
-		.type = static_cast<sensor_type_t>(1 << sensor_type_visible_light),
-		.flags = {},
-		.precision = 2,
-		.private_data_size = sizeof(tsl2591_private_data_t),
-		.detect_fn = tsl2591_detect,
-		.init_fn = tsl2591_init,
-		.poll_fn = tsl2591_poll,
-		.dump_fn = tsl2591_dump,
-	},
-	[sensor_tsl2591_28] =
-	{
-		.name = "tsl2591-dummy",
-		.id = sensor_tsl2591_28,
-		.address = 0x28,
-		.type = static_cast<sensor_type_t>(1 << sensor_type_visible_light),
-		.flags = {},
-		.precision = 2,
-		.private_data_size = 0,
-		.detect_fn = tsl2591_28_detect,
-		.init_fn = nullptr,
-		.poll_fn = nullptr,
-		.dump_fn = nullptr,
-	},
-	[sensor_am2320] =
-	{
-		.name = "am2320",
-		.id = sensor_am2320,
-		.address = 0x5c,
-		.type = static_cast<sensor_type_t>((1 << sensor_type_temperature) | (1 << sensor_type_humidity)),
-		.flags
-		{
-			.force_detect = 1,
-			.no_constrained = 1,
-		},
-		.precision = 1,
-		.private_data_size = sizeof(am2320_private_data_t),
-		.detect_fn = am2320_detect,
-		.init_fn = am2320_init,
-		.poll_fn = am2320_poll,
-		.dump_fn = am2320_dump,
 	},
 };
 
-static void run_sensors(void *parameters)
+bool SensorLTR390::probe(I2c &i2c, int module, int bus, int address, bool restricted)
 {
-	try
-	{
-		const info_t *infoptr;
-		sensor_t sensor;
-		data_t *dataptr, *new_data;
-		I2C::Device* device;
-		sensor_type_t type;
-		sensor_detect_t detected;
-		auto run = static_cast<const run_parameters_t *>(parameters);
-		auto module = I2C::get().modules().find(run->module);
+	return(i2c.probe(module, bus, address));
+}
 
-		for(auto &bus : module->second->buses())
+SensorLTR390::SensorLTR390(Log& log_in, I2C::Device* device_in) : SensorI2C(log_in, this->basic_name(), device_in)
+{
+	I2C::data_t data;
+
+	this->device->send_receive(enum_integer(reg_t::part_id), 1, data);
+
+	if(data.at(0) != enum_integer(part_id_t::part_number | part_id_t::revision))
+		throw(transient_exception());
+
+	this->device->send(enum_integer(reg_t::main_ctrl), enum_integer(main_ctrl_t::sw_reset));
+
+	this->raw_values["scaling"] = 0;
+}
+
+void SensorLTR390::_poll()
+{
+	I2C::data_t data;
+
+	switch(this->state)
+	{
+		case(state_t::init):
 		{
-			for(sensor = sensor_first; sensor < sensor_size; sensor = static_cast<sensor_t>(sensor + 1))
+			this->state = state_t::reset;
+			break;
+		}
+
+		case(state_t::reset):
+		{
+			this->device->send_receive(enum_integer(reg_t::main_ctrl), 1, data);
+
+			if(data.at(0) & enum_integer(main_ctrl_t::sw_reset))
+				break;
+
+			this->state = state_t::ready;
+
+			break;
+		}
+
+		case(state_t::ready):
+		case(state_t::finished_uv_light):
+		{
+			unsigned int scaling;
+			unsigned char meas_rate, gain;
+
+			scaling = this->raw_values["scaling"];
+
+			meas_rate  =	enum_integer(this->autoranging_data[scaling].resolution);
+			meas_rate |=	enum_integer(this->autoranging_data[scaling].rate);
+			gain =			enum_integer(this->autoranging_data[scaling].gain);
+
+			this->device->send(enum_integer(reg_t::meas_rate), meas_rate);
+			this->device->send(enum_integer(reg_t::gain), gain);
+			this->device->send(enum_integer(reg_t::main_ctrl), enum_integer(main_ctrl_t::als_uvs_enable));
+			this->state = state_t::measuring_visible_light;
+
+			break;
+		}
+
+		case(state_t::measuring_visible_light):
+		{
+			unsigned int raw, scaling, max;
+			float gain_factor, integration_time_factor, lux;
+
+			this->device->send_receive(enum_integer(reg_t::main_status), 1, data);
+
+			if(!(data.at(0) & enum_integer(main_status_t::data_status)))
 			{
-				infoptr = &info[sensor];
-
-				if(module->second->restricted() && infoptr->flags.no_constrained)
-				{
-					stat_sensors_not_considered[module->first]++;
-					continue;
-				}
-
-				if(I2C::get().find(module->first, bus.first, infoptr->address))
-				{
-					stat_sensors_skipped[module->first]++;
-					continue;
-				}
-
-				stat_sensors_not_skipped[module->first]++;
-
-				if(!infoptr->flags.force_detect && !I2C::get().probe(module->first, bus.first, infoptr->address))
-					continue;
-
-				stat_sensors_probed[module->first]++;
-
-				if(!(device = I2C::get().new_device(module->first, bus.first, infoptr->address, infoptr->name)))
-				{
-					Log::get() << std::format("sensor: warning: cannot register sensor {}", infoptr->name);
-					continue;
-				}
-
-				assert(infoptr->detect_fn);
-
-				try
-				{
-					detected = infoptr->detect_fn(device);
-				}
-				catch(const transient_exception &e)
-				{
-					detected = sensor_not_found;
-				}
-
-				if(detected == sensor_not_found)
-				{
-					delete device;
-					continue;
-				}
-
-				stat_sensors_found[module->first]++;
-
-				new_data = new data_t;
-
-				for(type = sensor_type_first; type < sensor_type_size; type = static_cast<sensor_type_t>(type + 1))
-				{
-					new_data->values[type].value = 0;
-					new_data->values[type].stamp = (time_t)0;
-				}
-
-				new_data->state = detected;
-				new_data->device = device;
-				new_data->info = infoptr;
-
-				new_data->private_data = nullptr;
-				new_data->next = nullptr;
-
-				if(infoptr->private_data_size > 0)
-					new_data->private_data = malloc(infoptr->private_data_size);
-
-				if(detected == sensor_disabled)
-					stat_sensors_disabled[module->first]++;
-				else
-				{
-					assert(infoptr->init_fn);
-
-					try
-					{
-						infoptr->init_fn(new_data);
-					}
-					catch(const transient_exception &e)
-					{
-						Log::get() << std::format("sensor: warning: failed to init sensor {} on bus {:d}: {}", infoptr->name, static_cast<unsigned int>(bus.first), e.what());
-						delete device;
-						if(new_data->private_data)
-							free(new_data->private_data);
-						delete new_data;
-						continue;
-					}
-
-					stat_sensors_confirmed[module->first]++;
-				}
-
-				data_mutex_take();
-
-				if(!(dataptr = data_root))
-					data_root = new_data;
-				else
-				{
-					for(; dataptr && dataptr->next; dataptr = dataptr->next)
-						(void)0;
-
-					assert(dataptr);
-
-					dataptr->next = new_data;
-				}
-
-				data_mutex_give();
+				this->raw_values["visible light timeouts"]++;
+				break;
 			}
+
+			this->device->send_receive(enum_integer(reg_t::als_data_0), 3, data);
+
+			this->raw_values["raw visible light"] = raw = this->u20tople(data);
+
+			scaling = this->raw_values["scaling"];
+			max = this->autoranging_data.size() - 1;
+
+			if((scaling < max) && (raw > this->autoranging_data[scaling].raw_upper))
+			{
+				scaling++;
+				this->raw_values["scalings up"]++;
+				this->raw_values["scaling"] = scaling;
+				this->state = state_t::ready;
+				break;
+			}
+
+			if((scaling > 0) && (raw < this->autoranging_data[scaling].raw_lower))
+			{
+				scaling--;
+				this->raw_values["scalings down"]++;
+				this->raw_values["scaling"] = scaling;
+				this->state = state_t::ready;
+				break;
+			}
+
+			gain_factor = this->autoranging_data[scaling].gain_factor;
+			integration_time_factor = this->autoranging_data[scaling].integration_time_factor;
+
+			lux = (static_cast<float>(raw) * this->normalisation_factor) / (gain_factor * integration_time_factor);
+			this->update("visible light", lux, "lx", this->autoranging_data[scaling].precision);
+			this->state = state_t::finished_visible_light;
+
+			break;
 		}
 
-		if(stat_sensors_confirmed[module->first] == 0)
-			vTaskDelete(nullptr);
-
-		for(;;)
+		case(state_t::finished_visible_light):
 		{
-			bool ok;
+			this->device->send(enum_integer(reg_t::main_ctrl), enum_integer(main_ctrl_t::als_uvs_enable | main_ctrl_t::uvs_mode));
 
-			stat_poll_run[module->first]++;
+			this->state = state_t::measuring_uv_light;
 
-			for(dataptr = data_root; dataptr; dataptr = dataptr->next)
-				if(dataptr->state == sensor_disabled)
-					stat_poll_skipped[module->first]++;
-				else
-					if(dataptr->info->poll_fn)
-					{
-						ok = false;
-
-						try
-						{
-							dataptr->info->poll_fn(dataptr);
-							ok = true;
-						}
-						catch(const transient_exception &e)
-						{
-							Log::get() << std::format("sensor poll: %s", e.what());
-						}
-
-						if(ok)
-							stat_poll_ok[module->first]++;
-						else
-							stat_poll_error[module->first]++;
-					}
-					else
-						Log::get() << std::format("sensor: error: no poll function for sensor {}", dataptr->info->name);
-
-			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+			break;
 		}
 
-		throw(hard_exception("loop broken"));
-	}
-	catch(const transient_exception &e)
-	{
-		Log::get().abort(std::format("sensor thread: uncaught transient exception: %s", e.what()));
-	}
-	catch(const hard_exception &e)
-	{
-		Log::get().abort(std::format("sensor thread: uncaught hard exception: %s", e.what()));
-	}
-	catch(const std::exception &e)
-	{
-		Log::get().abort(std::format("sensor thread: uncaught standard exception: %s", e.what()));
-	}
-	catch(...)
-	{
-		Log::get().abort("sensor thread: uncaught unknown exception");
+		case(state_t::measuring_uv_light):
+		{
+			unsigned int raw;
+			float uvi;
+
+			this->device->send_receive(enum_integer(reg_t::main_status), 1, data);
+
+			if(!(data.at(0) & enum_integer(main_status_t::data_status)))
+			{
+				this->raw_values["uv light timeouts"]++;
+				break;
+			}
+
+			this->device->send_receive(enum_integer(reg_t::uvs_data_0), 3, data);
+
+			this->raw_values["raw uv light"] = raw = this->u20tople(data);
+
+			uvi = static_cast<float>(raw) / this->uv_sensitivity;
+
+			this->update("uv light index", uvi, "UVI", 1);
+			this->state = state_t::finished_uv_light;
+
+			break;
+		}
+
+		default:
+		{
+			throw(hard_exception("invalid state"));
+		}
 	}
 }
 
-void sensor_init(void)
+SensorInternal::SensorInternal(Log& log_in, std::string_view name_in, int dummy_module_in) : Sensor(log_in, name_in), dummy_module(dummy_module_in)
 {
-	static run_parameters_t run[3] =
+}
+
+SensorInternal::~SensorInternal()
+{
+}
+
+void SensorInternal::_address(int &module, int &bus, int &address)
+{
+	module = this->dummy_module;
+	bus = 0;
+	address = 0;
+}
+
+SensorInternalTemperature::SensorInternalTemperature(Log& log_in, int dummy_module_in) : SensorInternal(log_in, this->basic_name(), dummy_module_in)
+{
+	esp_err_t rv;
+	static const temperature_sensor_config_t config
 	{
-		{ .module = 0 },
-		{ .module = 1 },
-		{ .module = 2 },
+		.range_min = -10,
+		.range_max = 60,
+		.clk_src = TEMPERATURE_SENSOR_CLK_SRC_DEFAULT,
+		.flags =
+		{
+			.allow_pd = false
+		},
 	};
 
+	if((rv = temperature_sensor_install(&config, &this->handle)) != ESP_OK)
+	{
+		this->log.log_esperr(rv, "temperature_sensor_install");
+		throw(transient_exception());
+	}
+
+	if((rv = temperature_sensor_enable(this->handle)) != ESP_OK)
+	{
+		this->log.log_esperr(rv, "temperature_sensor_enable");
+		throw(transient_exception());
+	}
+}
+
+void SensorInternalTemperature::_poll()
+{
 	esp_err_t rv;
-	esp_pthread_cfg_t thread_config = esp_pthread_get_default_config();
+	float temperature;
 
-	assert(!inited);
+	if((rv = temperature_sensor_get_celsius(this->handle, &temperature)) != ESP_OK)
+		throw(transient_exception());
 
-	data_mutex = xSemaphoreCreateMutex();
-	assert(data_mutex);
-
-	inited = true;
-
-	for(auto& module : I2C::get().modules())
-	{
-		std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-		thread_config.thread_name = std::format("sensors {:d}", module.first).c_str();
-		thread_config.pin_to_core = 1;
-		thread_config.stack_size = 3 * 1024;
-		thread_config.prio = 1;
-		thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
-
-		if((rv = esp_pthread_set_cfg(&thread_config)) != ESP_OK)
-			throw(hard_exception(Log::get().esp_string_error(rv, "esp_pthread_set_cfg")));
-
-		std::thread new_thread([module]() { run_sensors(&run[module.first]); });
-
-		new_thread.detach();
-	}
-}
-
-void command_sensor_info(cli_command_call_t *call)
-{
-	data_t *dataptr;
-	I2C::Device* device;
-	std::string name;
-	int module, bus, address;
-	sensor_type_t type;
-	bool include_disabled;
-
-	include_disabled = false;
-
-	if((call->parameter_count > 0) && (call->parameters[0].unsigned_int > 0))
-		include_disabled = true;
-
-	call->result = "SENSOR info";
-
-	if(!inited)
-	{
-		call->result += "\n--";
-		return;
-	}
-
-	data_mutex_take();
-
-	for(dataptr = data_root; dataptr; dataptr = dataptr->next)
-	{
-		device = dataptr->device;
-
-		if((dataptr->state == sensor_disabled) && !include_disabled)
-			continue;
-
-		if(!device)
-		{
-			call->result += "\ndevice = NULL";
-			continue;
-		}
-
-		device->data(module, bus, address, name);
-
-		call->result += (boost::format("\n- %s@%d/%d/%x:") % name % module % bus % address).str();
-
-		if(dataptr->state == sensor_disabled)
-			call->result += " [disabled]";
-		else
-			for(type = sensor_type_first; type < sensor_type_size; type = static_cast<sensor_type_t>(type + 1))
-				if(dataptr->info->type & (1 << type))
-				{
-					std::string format_string = (boost::format(" %%s: %%.%uf %%s") % dataptr->info->precision).str();
-
-					call->result += (boost::format(format_string) %
-							sensor_type_info[type].type %
-							dataptr->values[type].value %
-							sensor_type_info[type].unity).str();
-				}
-	}
-
-	data_mutex_give();
-}
-
-void command_sensor_json(cli_command_call_t *call)
-{
-	data_t *dataptr;
-	I2C::Device* device;
-	int module, bus, address;
-	sensor_type_t type;
-	bool first_sensor;
-	bool first_value;
-	std::string name;
-
-	assert(call->parameter_count == 0);
-
-	if(!inited)
-		return;
-
-	call->result = "{";
-
-	data_mutex_take();
-
-	for(dataptr = data_root, first_sensor = true; dataptr; dataptr = dataptr->next)
-	{
-		if(dataptr->state == sensor_disabled)
-			continue;
-
-		device = dataptr->device;
-
-		if(device)
-		{
-			device->data(module, bus, address, name);
-
-			call->result += first_sensor ? "" : ",";
-			call->result += (boost::format("\n\"%u-%u-%x\":") % module % bus % address).str();
-			call->result +=	"\n[";
-			call->result +=	"\n{";
-			call->result += (boost::format("\n\"module\": %u,") % module).str();
-			call->result += (boost::format("\n\"bus\": %u,") % bus).str();
-			call->result += (boost::format("\n\"name\": \"%s\",") % name).str();
-			call->result +=	"\n\"values\":";
-			call->result +=	"\n[";
-
-			for(type = sensor_type_first, first_value = true; type < sensor_type_size; type = static_cast<sensor_type_t>(type + 1))
-			{
-				if(dataptr->info->type & (1 << type))
-				{
-					call->result += first_value ? "" : ",";
-					call->result +=	"\n{";
-					call->result += (boost::format("\n\"type\": \"%s\",") % sensor_type_info[type].type).str();
-					call->result += (boost::format("\n\"id\": %d,") % dataptr->info->id).str();
-					call->result += (boost::format("\n\"address\": %u,") % address).str();
-					call->result += (boost::format("\n\"unity\": \"%s\",") % sensor_type_info[type].unity).str();
-					call->result += (boost::format("\n\"value\": %f,") % (double)dataptr->values[type].value).str();
-					call->result += (boost::format("\n\"time\": %lld") % dataptr->values[type].stamp).str();
-					call->result +=	"\n}";
-
-					first_value = false;
-				}
-			}
-
-			call->result += "\n]";
-			call->result += "\n}";
-			call->result += "\n]";
-
-			first_sensor = false;
-		}
-	}
-
-	call->result += "\n}";
-
-	data_mutex_give();
-}
-
-void command_sensor_dump(cli_command_call_t *call)
-{
-	data_t *dataptr;
-	I2C::Device* device;
-	int module, bus, address;
-	sensor_type_t type;
-	unsigned int index;
-	std::string name;
-
-	assert(call->parameter_count < 2);
-
-	call->result = "SENSOR dump";
-
-	if(!inited)
-	{
-		call->result += "\n--";
-		return;
-	}
-
-	data_mutex_take();
-
-	for(dataptr = data_root, index = 0; dataptr; dataptr = dataptr->next, index++)
-	{
-		if((call->parameter_count > 0) && (call->parameters[0].unsigned_int != index))
-			continue;
-
-		device = dataptr->device;
-
-		if(!device)
-		{
-			call->result += "\ndevice = NULL";
-			continue;
-		}
-
-		device->data(module, bus, address, name);
-
-		call->result += (boost::format("\n- sensor %s at module %u, bus %u, address 0x%x") % name % module % bus % address).str();
-
-		if(dataptr->state == sensor_disabled)
-			call->result += ": [disabled]";
-		else
-		{
-			call->result += "\n  values:";
-
-			for(type = sensor_type_first; type < sensor_type_size; type = static_cast<sensor_type_t>(type + 1))
-			{
-				if(dataptr->info->type & (1 << type))
-				{
-					std::string format_string = (boost::format(" %%s=%%.%uf [%%s]") % dataptr->info->precision).str();
-					call->result += (boost::format(format_string) %
-							sensor_type_info[type].type % dataptr->values[type].value %
-							Util::get().time_to_string(dataptr->values[type].stamp)).str();
-				}
-			}
-
-			if(dataptr->info->dump_fn)
-			{
-				call->result += "\n  private data: ";
-				dataptr->info->dump_fn(dataptr, call->result);
-			}
-		}
-	}
-
-	data_mutex_give();
-}
-
-void command_sensor_stats(cli_command_call_t *call)
-{
-	assert(call->parameter_count == 0);
-
-	call->result = "SENSOR statistics";
-
-	for(auto& module : I2C::get().modules())
-	{
-		call->result += std::format("\n- module {:d}", module.first);
-		call->result += std::format("\n-  sensors not considered: {:d}", stat_sensors_not_considered[module.first]);
-		call->result += std::format("\n-  sensors skipped: {:d}", stat_sensors_skipped[module.first]);
-		call->result += std::format("\n-  sensors not skipped: {:d}", stat_sensors_not_skipped[module.first]);
-		call->result += std::format("\n-  sensors probed: {:d}", stat_sensors_probed[module.first]);
-		call->result += std::format("\n-  sensors found: {:d}", stat_sensors_found[module.first]);
-		call->result += std::format("\n-  sensors confirmed: {:d}", stat_sensors_confirmed[module.first]);
-		call->result += std::format("\n-  sensors disabled: {:d}", stat_sensors_disabled[module.first]);
-		call->result += std::format("\n-  complete poll runs: {:d}", stat_poll_run[module.first]);
-		call->result += std::format("\n-  sensor poll succeeded: {:d}", stat_poll_ok[module.first]);
-		call->result += std::format("\n-  sensor poll skipped: {:d}", stat_poll_skipped[module.first]);
-		call->result += std::format("\n-  sensor poll failed: {:d}", stat_poll_error[module.first]);
-	}
+	this->update("temperature", temperature, "degrees", 0);
+	this->state = state_t::measuring;
 }

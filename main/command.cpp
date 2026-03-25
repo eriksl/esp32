@@ -9,6 +9,7 @@
 #include "udp.h"
 #include "tcp.h"
 #include "i2c.h"
+#include "sensor.h"
 #include "bt.h"
 #include "exception.h"
 #include "packet.h"
@@ -49,10 +50,6 @@ void command_display_info(cli_command_call_t *call);
 void command_display_page_add_text(cli_command_call_t *call);
 void command_display_page_add_image(cli_command_call_t *call);
 void command_display_page_remove(cli_command_call_t *call);
-void command_sensor_dump(cli_command_call_t *call);
-void command_sensor_info(cli_command_call_t *call);
-void command_sensor_json(cli_command_call_t *call);
-void command_sensor_stats(cli_command_call_t *call);
 void command_io_dump(cli_command_call_t *call);
 void command_io_read(cli_command_call_t *call);
 void command_io_stats(cli_command_call_t *call);
@@ -458,7 +455,7 @@ const Command::cli_command_t Command::cli_commands[] =
 	{ "sensor-info", "si", "info about registered sensors", Command::sensor_info,
 		{	1,
 			{
-				{ cli_parameter_unsigned_int, 0, 0, 1, 1, "include disabled devices", { .unsigned_int = { 0, 1 }}},
+				{ cli_parameter_unsigned_int, 0, 0, 1, 0, "sensor index to show", { .unsigned_int = { 0, 0 }}},
 			}
 		},
 	},
@@ -515,14 +512,15 @@ WLAN *Command::wlan_ = nullptr;
 UDP *Command::udp_ = nullptr;
 TCP *Command::tcp_ = nullptr;
 I2c *Command::i2c_ = nullptr;
+Sensors *Command::sensors_ = nullptr;
 
 Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, LedPWM &ledpwm_in,
 		Notify &notify_in, Log &log_in, System &system_in, Util &util_in, PDM &pdm_in, MCPWM &mcpwm_in,
-		FS &fs_in, BT &bt_in, WLAN &wlan_in, UDP &udp_in, TCP &tcp_in, I2c &i2c_in)
+		FS &fs_in, BT &bt_in, WLAN &wlan_in, UDP &udp_in, TCP &tcp_in, I2c &i2c_in, Sensors &sensors_in)
 	:
 		config(config_in), console(console_in), ledpixel(ledpixel_in), ledpwm(ledpwm_in),
 		notify(notify_in), log(log_in), system(system_in), util(util_in), pdm(pdm_in), mcpwm(mcpwm_in),
-		fs(fs_in), bt(bt_in), wlan(wlan_in), udp(udp_in), tcp(tcp_in), i2c(i2c_in)
+		fs(fs_in), bt(bt_in), wlan(wlan_in), udp(udp_in), tcp(tcp_in), i2c(i2c_in), sensors(sensors_in)
 {
 	if(this->singleton)
 		throw(hard_exception("Command: already activated"));
@@ -552,6 +550,7 @@ Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, 
 	this->udp_ = &udp;
 	this->tcp_ = &tcp;
 	this->i2c_ = &i2c;
+	this->sensors_ = &sensors;
 }
 
 Command &Command::get()
@@ -1331,38 +1330,6 @@ void Command::display_page_remove(cli_command_call_t *call)
 	command_display_page_remove(call); // FIXME
 }
 
-void Command::sensor_dump(cli_command_call_t *call)
-{
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
-	command_sensor_dump(call); // FIXME
-}
-
-void Command::sensor_info(cli_command_call_t *call)
-{
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
-	command_sensor_info(call); // FIXME
-}
-
-void Command::sensor_json(cli_command_call_t *call)
-{
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
-	command_sensor_json(call); // FIXME
-}
-
-void Command::sensor_stats(cli_command_call_t *call)
-{
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
-	command_sensor_stats(call); // FIXME
-}
-
 void Command::io_dump(cli_command_call_t *call)
 {
 	if(!Command::singleton)
@@ -1685,8 +1652,48 @@ void Command::i2c_info(cli_command_call_t *call)
 		throw(hard_exception("Command: not activated"));
 
 	call->result = "I2C INFO";
-
 	i2c_->info(call->result);
+}
+
+void Command::sensor_dump(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	call->result = "SENSORS DUMP\n";
+
+	if(call->parameter_count == 0)
+		call->result += sensors_->dump();
+	else
+		call->result += sensors_->dump(call->parameters[0].unsigned_int);
+}
+
+void Command::sensor_info(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	if(call->parameter_count == 0)
+		call->result += sensors_->info();
+	else
+		call->result += sensors_->info(call->parameters[0].unsigned_int);
+}
+
+void Command::sensor_json(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	call->result += sensors_->json();
+}
+
+void Command::sensor_stats(cli_command_call_t *call)
+{
+	if(!Command::singleton)
+		throw(hard_exception("Command: not activated"));
+
+	call->result = "SENSORS STATS\n";
+	call->result += sensors_->stats();
 }
 
 command_response_t *Command::receive_queue_pop()

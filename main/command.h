@@ -15,6 +15,7 @@
 #include "udp.h"
 #include "tcp.h"
 #include "i2c.h"
+#include "sensor.h"
 #include "exception.h"
 #include "cli-command.h"
 
@@ -103,7 +104,7 @@ class Command final
 		static void i2c_speed(cli_command_call_t *);
 		static void i2c_probe(cli_command_call_t *);
 
-		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &, Util &, PDM &, MCPWM &, FS &, BT &, WLAN &, UDP &, TCP &, I2c &);
+		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &, Util &, PDM &, MCPWM &, FS &, BT &, WLAN &, UDP &, TCP &, I2c &, Sensors &);
 		Command() = delete;
 		Command(const Command &) = delete;
 
@@ -228,6 +229,7 @@ class Command final
 		static UDP *udp_;
 		static TCP *tcp_;
 		static I2c *i2c_;
+		static Sensors *sensors_;
 
 		typedef std::map<std::string, std::string> string_string_map;
 		string_string_map aliases;
@@ -248,6 +250,7 @@ class Command final
 		UDP &udp;
 		TCP &tcp;
 		I2c &i2c;
+		Sensors &sensors;
 
 		QueueHandle_t receive_queue_handle;
 		QueueHandle_t send_queue_handle;
