@@ -223,16 +223,23 @@ void Module::select_bus(int bus)
 	if(this->_buses.find(bus) == this->_buses.end())
 		throw(hard_exception(std::format("I2c::Module::select_bus: invalid bus {:d}", bus)));
 
-	if(this->has_mux)
+	try
 	{
-		int bus_bits;
+		if(this->has_mux)
+		{
+			int bus_bits;
 
-		if(bus == 0)
-			bus_bits = 0;
-		else
-			bus_bits = 1 << (bus - 1);
+			if(bus == 0)
+				bus_bits = 0;
+			else
+				bus_bits = 1 << (bus - 1);
 
-		this->_set_mux(bus_bits);
+			this->_set_mux(bus_bits);
+		}
+	}
+	catch(const transient_exception &e)
+	{
+		throw(transient_exception("I2C: select_bus failed"));
 	}
 }
 
