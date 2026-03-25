@@ -122,30 +122,25 @@ void Log::log_errno(int e, std::string_view in)
 
 int Log::idf_logging_function(const char *fmt, va_list ap)
 {
-	char buffer[log_buffer_data_size];
-	char *start;
-	char *end;
+	std::string data;
 	int length;
+	size_t where;
 
-	length = vsnprintf(buffer, sizeof(buffer), fmt, ap);
+	data.resize(log_buffer_data_size);
 
-	for(start = buffer; *start; start++)
-		if(*start == ':')
-			break;
+	length = vsnprintf(data.data(), data.size(), fmt, ap);
 
-	if((start[0] == ':') && (start[1]))
-		start = start + 1;
-	else
-		start = buffer;
+	if((where = data.find(':')) != std::string::npos)
+		data.erase(0, where + 1);
 
-	for(end = start; *end; end++)
-		if(*end < ' ')
-			break;
+	while((data.front() <= ' ') || (data.front() > '~'))
+		data.erase(0, 1);
 
-	*end = '\0';
+	while((data.back() <= ' ') || (data.back() > '~'))
+		data.pop_back();
 
-	if(start != end)
-		Log::get().log(start);
+	if(!data.empty())
+		Log::get().log(std::format("idf: {}", data));
 
 	return(length);
 }
