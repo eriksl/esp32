@@ -266,7 +266,15 @@ void Log::abort_on_esp_err(std::string_view what, int rv)
 	{
 	}
 
-	this->warn_on_esp_err(what, rv);
+	try
+	{
+		this->warn_on_esp_err(what, rv);
+	}
+	catch(...)
+	{
+	}
+
+	Console::emergency_wall(what);
 
 	::abort();
 }
@@ -288,6 +296,8 @@ void Log::abort(std::string_view what)
 	catch(...)
 	{
 	}
+
+	Console::emergency_wall(what);
 
 	::abort();
 }
