@@ -1,6 +1,5 @@
 ## IDF Component Manager Manifest File
 dependencies:
-  espressif/libpng: '*'
   joltwallet/littlefs: '*'
   espressif/led_strip: '*'
   ## Required IDF version
@@ -18,3 +17,4 @@ dependencies:
   #   # All dependencies of `main` are public by default.
   #   public: true
   espressif/esp-boost: '*'
+  espressif/zlib: '*'

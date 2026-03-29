@@ -9,13 +9,12 @@
 #include "crypt.h"
 #include "exception.h"
 #include "cli-command.h"
+#include "png.h"
 
 #include <assert.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <freertos/FreeRTOS.h>
-#include <png.h>
-#include <zlib.h>
 #include <esp_timer.h>
 #include <errno.h>
 
@@ -78,17 +77,6 @@ typedef struct
 		std::string filename;
 	} image;
 } display_page_t;
-
-typedef enum
-{
-	user_png_io_ptr_magic_word = 0x1234abcdU,
-} user_png_iot_ptr_magic_word_t;
-
-typedef struct
-{
-	user_png_iot_ptr_magic_word_t magic_word;
-	int fd;
-} user_png_io_ptr_t;
 
 static const char * const display_variable[dv_size][3] =
 {
@@ -507,36 +495,16 @@ static bool clear(display_colour_t bg)
 	return(true);
 }
 
-static bool box(display_colour_t colour, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y)
-{
-	assert(inited);
-
-	if((display_type == dt_no_display) || !info[display_type].box_fn)
-		return(false);
-
-	info[display_type].box_fn(colour, from_x, from_y, to_x, to_y);
-
-	return(true);
-}
-
-static bool plot_line(unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int length_pixels, const png_bytep pixels)
-{
-	assert(inited);
-
-	if((display_type == dt_no_display) || !info[display_type].plot_line_fn)
-		return(false);
-
-	info[display_type].plot_line_fn(from_x, from_y, to_x, length_pixels, (const display_rgb_t *)pixels);
-
-	return(true);
-}
-
 static void run_display_log(void *)
 {
 	unsigned int entry;
 	std::string entry_text;
 	time_t stamp;
 	std::deque<uint32_t> unicode_buffer;
+	void (*write_fn)(const font_t *font, display_colour_t fg, display_colour_t bg,
+				unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
+				const std::deque<uint32_t> &line_unicode);
+	void (*box_fn)(display_colour_t, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y);
 
 	try
 	{
@@ -549,19 +517,22 @@ static void run_display_log(void *)
 
 			assert(xQueueReceive(log_display_queue, &entry, portMAX_DELAY));
 
-			if(font_valid && log_mode && (display_type != dt_no_display) && info[display_type].write_fn)
+			if(font_valid && log_mode &&
+					(display_type != dt_no_display) &&
+					(write_fn = info[display_type].write_fn) &&
+					(box_fn = info[display_type].box_fn))
 			{
 				Log::get().get_entry(entry, stamp, entry_text);
 				utf8_to_unicode(Util::get().time_to_string(stamp, "{:%H:%M:%S}") + " " + entry_text, unicode_buffer);
 
-				info[display_type].write_fn(font, dc_white, dc_black, 0, display_log_y, x_size - 1, display_log_y + font->net.height - 1, unicode_buffer);
+				write_fn(font, dc_white, dc_black, 0, display_log_y, x_size - 1, display_log_y + font->net.height - 1, unicode_buffer);
 
 				display_log_y += font->net.height;
 
 				if((display_log_y + font->net.height) > y_size)
 					display_log_y = 0;
 
-				box(dc_black, 0, display_log_y, x_size - 1, display_log_y + font->net.height - 1);
+				box_fn(dc_black, 0, display_log_y, x_size - 1, display_log_y + font->net.height - 1);
 			}
 		}
 	}
@@ -573,86 +544,28 @@ static void run_display_log(void *)
 	Log::get().abort("run_display_log returns");
 }
 
-static png_voidp user_png_malloc(png_structp struct_ptr, png_alloc_size_t size)
-{
-	png_voidp ptr;
-
-	ptr = malloc(size);
-
-	return(ptr);
-}
-
-static void user_png_free(png_structp png_ptr, png_voidp ptr)
-{
-	if(ptr)
-		free(ptr);
-}
-
-static void user_read_data(png_structp png_ptr, png_bytep data, size_t length)
-{
-	const user_png_io_ptr_t *io_ptr;
-	ssize_t read_length;
-
-	io_ptr = (const user_png_io_ptr_t *)png_get_io_ptr(png_ptr);
-
-	assert(io_ptr->magic_word == user_png_io_ptr_magic_word);
-
-	errno = 0;
-	read_length = read(io_ptr->fd, data, length);
-
-	if(length != read_length)
-	{
-		Log::get().log_errno(errno, std::format("display: user_read_data: read error: requested: {:d}, received: {:d}, fd: {:d}", length, read_length, io_ptr->fd));
-		png_error(png_ptr, "read error");
-	}
-}
-
-static void user_error(png_structp png_ptr, png_const_charp msg)
-{
-	Log::get() << std::format("fatal error in libpng: {}", msg);
-	png_longjmp(png_ptr, 1);
-}
-
-static void user_warning(png_structp png_ptr, png_const_charp msg)
-{
-	if(strcmp(msg, "IDAT: Too much image data"))
-		Log::get() << std::format("warning in libpng: {}", msg);
-}
-
 static void run_display_info(void *)
 {
-	// all static due to prevent clobbering by longjmp
-
-	static int current_page;
-	static unsigned int current_layer;
-	static unsigned int row, y1, y2;
-	static unsigned int image_x_size, image_y_size, row_bytes, colour_type, bit_depth;
-	static int pad, chop;
-	static std::string stamp_string;
-	static std::string name_tmp;
-	static std::string title_line;
-	static std::string libpng_buffer;
-	static void (*write_fn)(const font_t *font, display_colour_t fg, display_colour_t bg,
+	int current_page;
+	int current_layer;
+	int row, y1, y2;
+	int pad, chop;
+	std::string stamp_string;
+	std::string name_tmp;
+	std::string title_line;
+	void (*write_fn)(const font_t *font, display_colour_t fg, display_colour_t bg,
 				unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
 				const std::deque<uint32_t> &line_unicode);
-	static png_structp png_ptr = nullptr;
-	static png_infop info_ptr = nullptr;
-	static png_bytep row_pointer = nullptr;
-	static int fd = -1;
-	static user_png_io_ptr_t user_io_ptr;
-	static uint64_t time_start, time_spent;
-	static bool fastskip;
-	static struct stat statb;
-	static std::deque<uint32_t> unicode_buffer;
-
-	static const png_color_16 default_background =
-	{
-		.index = 255,
-		.red = 0,
-		.green = 0,
-		.blue = 0,
-		.gray = 0,
-	};
+	void (*plot_line_fn)(unsigned int from_x, unsigned int from_y, unsigned int to_x,
+				unsigned int rgb_pixels_length, const display_rgb_t *pixels);
+	void (*box_fn)(display_colour_t, unsigned int from_x, unsigned int from_y,
+				unsigned int to_x, unsigned int to_y);
+	uint64_t time_start, time_spent;
+	bool fastskip;
+	struct stat statb;
+	std::deque<uint32_t> unicode_buffer;
+	uint8_t *row_buffer = nullptr;
+	png_handle_t *handle;
 
 	current_layer = 0;
 
@@ -666,7 +579,11 @@ static void run_display_info(void *)
 
 			fastskip = false;
 
-			if(!font_valid || (display_type == dt_no_display) || (!(write_fn = info[display_type].write_fn)))
+			if(!font_valid ||
+						(display_type == dt_no_display) ||
+						(!(write_fn = info[display_type].write_fn)) ||
+						(!(plot_line_fn = info[display_type].plot_line_fn)) ||
+						(!(box_fn = info[display_type].box_fn)))
 				goto next;
 
 			if(display_pages.empty())
@@ -699,10 +616,10 @@ static void run_display_info(void *)
 			if(info[display_type].set_layer_fn)
 				info[display_type].set_layer_fn((current_layer + 1) % 2);
 
-			box(display_pages[current_page].colour,	0,										0,										x_size - 1,				page_border_size - 1);
-			box(display_pages[current_page].colour,	(x_size - 1) - (page_border_size - 1),	0,										x_size - 1,				y_size - 1);
-			box(display_pages[current_page].colour,	0,										(y_size - 1) - (page_border_size - 1),	x_size - 1,				y_size - 1);
-			box(display_pages[current_page].colour,	0,										0,										page_border_size - 1,	y_size - 1);
+			box_fn(display_pages[current_page].colour,	0,										0,										x_size - 1,				page_border_size - 1);
+			box_fn(display_pages[current_page].colour,	(x_size - 1) - (page_border_size - 1),	0,										x_size - 1,				y_size - 1);
+			box_fn(display_pages[current_page].colour,	0,										(y_size - 1) - (page_border_size - 1),	x_size - 1,				y_size - 1);
+			box_fn(display_pages[current_page].colour,	0,										0,										page_border_size - 1,	y_size - 1);
 
 			stamp_string = Util::get().time_to_string(time(nullptr), "{:%d/%m %H:%M}");
 
@@ -781,124 +698,52 @@ static void run_display_info(void *)
 					}
 
 					if(y1 < ((y_size - 1) - page_border_size))
-						box(dc_white, page_border_size, y1, (x_size - 1) - page_border_size, (y_size - 1) - page_border_size);
+						box_fn(dc_white, page_border_size, y1, (x_size - 1) - page_border_size, (y_size - 1) - page_border_size);
 
 					break;
 				}
 
 				case(dpt_image):
 				{
-					row_pointer = nullptr;
-
 					if(stat(display_pages[current_page].image.filename.c_str(), &statb))
 					{
 						Log::get() << std::format("display: cannot stat image file: {}", display_pages[current_page].image.filename);
 						fastskip = true;
-						goto skip;
+						break;
 					}
 
 					if(statb.st_size != display_pages[current_page].image.length)
 					{
 						stat_skipped_incomplete_images++;
 						fastskip = true;
-						goto skip;
+						break;
 					}
 
-					if((fd = open(display_pages[current_page].image.filename.c_str(), O_RDONLY, 0)) < 0)
+					if(!(handle = png_open(display_pages[current_page].image.filename.c_str())))
 					{
-						Log::get() << std::format("display: cannot open image file: {}", display_pages[current_page].image.filename);
-						fastskip = true;
-						goto skip;
+						Log::get() << std::format("png_open: error");
+						break;
 					}
 
-					libpng_buffer.resize(8);
+					row_buffer = new uint8_t[handle->row_size];
 
-					if(read(fd, libpng_buffer.data(), libpng_buffer.size()) != libpng_buffer.size())
-					{
-						Log::get() << std::format("display: cannot read signature: {}", display_pages[current_page].image.filename);
-						fastskip = true;
-						goto skip;
-					}
-
-					if(png_sig_cmp(reinterpret_cast<png_const_bytep>(libpng_buffer.data()), 0, 8))
-					{
-						Log::get() << std::format("display: invalid PNG signature: {}", display_pages[current_page].image.filename);
-						fastskip = true;
-						goto skip;
-					}
-
-					png_ptr = png_create_read_struct_2(PNG_LIBPNG_VER_STRING, (png_voidp)0, user_error, user_warning, (png_voidp)0, user_png_malloc, user_png_free);
-					assert(png_ptr);
-
-					info_ptr = png_create_info_struct(png_ptr);
-					assert(info_ptr);
-
-					if(setjmp(png_jmpbuf(png_ptr)))
-					{
-						fastskip = true;
-						goto abort;
-					}
-
-					user_io_ptr.magic_word = user_png_io_ptr_magic_word;
-					user_io_ptr.fd = fd;
-
-					png_set_read_fn(png_ptr, (png_bytep)&user_io_ptr, user_read_data);
-					png_set_sig_bytes(png_ptr, 8);
-					png_read_info(png_ptr, info_ptr);
-					png_get_IHDR(png_ptr, info_ptr, (png_uint_32 *)0, (png_uint_32 *)0, (int *)0, (int *)0, (int *)0, (int *)0, (int *)0);
-					png_set_background(png_ptr, &default_background, PNG_BACKGROUND_GAMMA_SCREEN, 0, 1);
-					colour_type = png_get_color_type(png_ptr, info_ptr);
-					bit_depth = png_get_bit_depth(png_ptr, info_ptr);
-					if (colour_type == PNG_COLOR_TYPE_GRAY || colour_type == PNG_COLOR_TYPE_GRAY_ALPHA)
-						png_set_gray_to_rgb(png_ptr);
-					if((colour_type == PNG_COLOR_TYPE_GRAY) && (bit_depth < 8))
-						png_set_expand_gray_1_2_4_to_8(png_ptr);
-					if(colour_type == PNG_COLOR_TYPE_PALETTE)
-						png_set_palette_to_rgb(png_ptr);
-					if(png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS))
-						png_set_tRNS_to_alpha(png_ptr);
-					png_set_packing(png_ptr);
-					png_read_update_info(png_ptr, info_ptr);
-					image_x_size = png_get_image_width(png_ptr, info_ptr);
-					image_y_size = png_get_image_height(png_ptr, info_ptr);
-					row_bytes = png_get_rowbytes(png_ptr, info_ptr);
-					assert(row_bytes == (image_x_size * 3));
-					row_pointer = static_cast<png_bytep>(new uint8_t[row_bytes]);
-
-					for(row = 0; row < image_y_size; row++)
+					for(row = 0; row < handle->height; row++)
 					{
 						y1 = page_border_size + page_text_offset + (font->net.height - 1) + row;
 
 						if((y1 + page_border_size) > y_size)
 							break;
 
-						png_read_row(png_ptr, row_pointer, nullptr);
-						plot_line(page_border_size, page_border_size + page_text_offset + (font->net.height - 1) + row, (x_size - 1) - page_border_size, image_x_size, row_pointer);
+						if(!png_decode_row(handle, handle->row_size, row_buffer))
+							break;
+
+						plot_line_fn(page_border_size,
+								page_border_size + page_text_offset + (font->net.height - 1) + row, (x_size - 1) - page_border_size, handle->width,
+								reinterpret_cast<const display_rgb_t *>(row_buffer));
 					}
 
-					png_read_end(png_ptr, (png_infop)0);
-
-abort:
-					assert(png_ptr);
-					assert(info_ptr);
-
-					png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
-
-					assert(!png_ptr);
-					assert(!info_ptr);
-
-					if(row_pointer)
-					{
-						delete [] row_pointer;
-						row_pointer = nullptr;
-					}
-
-skip:
-					if(fd >= 0)
-					{
-						close(fd);
-						fd = -1;
-					}
+					delete [] row_buffer;
+					png_close(&handle);
 
 					break;
 				}
@@ -1279,6 +1124,6 @@ void display_init(void)
 	if(xTaskCreatePinnedToCore(run_display_log, "display-log", 4 * 1024, nullptr, 1, (TaskHandle_t *)0, 1) != pdPASS)
 		Log::get().abort("display: xTaskCreatePinnedToNode display log");
 
-	if(xTaskCreatePinnedToCore(run_display_info, "display-info", 5 * 1024, nullptr, 1, (TaskHandle_t *)0, 1) != pdPASS)
+	if(xTaskCreatePinnedToCore(run_display_info, "display-info", 4 * 1024, nullptr, 1, (TaskHandle_t *)0, 1) != pdPASS)
 		Log::get().abort("display: xTaskCreatePinnedToNode display run");
 }

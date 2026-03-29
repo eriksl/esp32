@@ -18,6 +18,7 @@ idf_component_register(
 		"notify.cpp"
 		"ota.cpp"
 		"pdm.cpp"
+		"png.c"
 		"ramdisk.cpp"
 		"sensor.cpp"
 		"system.cpp"
