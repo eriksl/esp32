@@ -213,23 +213,6 @@ class Command final
 		static int cli_stats_replies_sent_raw;
 
 		static Command *singleton;
-		static Config *config_;
-		static Console *console_;
-		static Ledpixel *ledpixel_;
-		static LedPWM *ledpwm_;
-		static Notify *notify_;
-		static Log *log_;
-		static System *system_;
-		static Util *util_;
-		static PDM *pdm_;
-		static MCPWM *mcpwm_;
-		static FS *fs_;
-		static BT *bt_;
-		static WLAN *wlan_;
-		static UDP *udp_;
-		static TCP *tcp_;
-		static I2c *i2c_;
-		static Sensors *sensors_;
 
 		typedef std::map<std::string, std::string> string_string_map;
 		string_string_map aliases;

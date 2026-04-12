@@ -494,25 +494,7 @@ const Command::cli_command_t Command::cli_commands[] =
 	{ nullptr, nullptr, nullptr, nullptr, {} },
 };
 
-//FIXME
 Command *Command::singleton = nullptr;
-Config *Command::config_ = nullptr;
-Console *Command::console_ = nullptr;
-Ledpixel *Command::ledpixel_ = nullptr;
-LedPWM *Command::ledpwm_ = nullptr;
-Notify *Command::notify_ = nullptr;
-Log *Command::log_ = nullptr;
-System *Command::system_ = nullptr;
-Util *Command::util_ = nullptr;
-PDM *Command::pdm_ = nullptr;
-MCPWM *Command::mcpwm_ = nullptr;
-FS *Command::fs_ = nullptr;
-BT *Command::bt_ = nullptr;
-WLAN *Command::wlan_ = nullptr;
-UDP *Command::udp_ = nullptr;
-TCP *Command::tcp_ = nullptr;
-I2c *Command::i2c_ = nullptr;
-Sensors *Command::sensors_ = nullptr;
 
 Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, LedPWM &ledpwm_in,
 		Notify &notify_in, Log &log_in, System &system_in, Util &util_in, PDM &pdm_in, MCPWM &mcpwm_in,
@@ -532,25 +514,7 @@ Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, 
 		throw(hard_exception("Command: xQueueCreateStatic send queue init failed"));
 
 	this->running = false;
-
 	this->singleton = this;
-	this->config_ = &config;
-	this->console_ = &console;
-	this->ledpixel_ = &ledpixel;
-	this->ledpwm_ = &ledpwm;
-	this->notify_ = &notify;
-	this->log_ = &log;
-	this->system_ = &system;
-	this->util_ = &util;
-	this->pdm_ = &pdm;
-	this->mcpwm_ = &mcpwm;
-	this->fs_ = &fs;
-	this->bt_ = &bt;
-	this->wlan_ = &wlan;
-	this->udp_ = &udp;
-	this->tcp_ = &tcp;
-	this->i2c_ = &i2c;
-	this->sensors_ = &sensors;
 }
 
 Command &Command::get()
@@ -649,21 +613,19 @@ std::string Command::make_exception_text(std::string_view fn, std::string_view m
 
 void Command::config_set_int(cli_command_call_t *call)
 {
+	auto& instance = Command::get();
 	int64_t value;
 	std::string type;
 
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	try
 	{
-		config_->set_int(call->parameters[0].str, call->parameters[1].signed_int);
-		value = config_->get_int(call->parameters[0].str, &type);
+		instance.config.set_int(call->parameters[0].str, call->parameters[1].signed_int);
+		value = instance.config.get_int(call->parameters[0].str, &type);
 		call->result = std::format("{}[{}]={:d}", call->parameters[0].str, type, value);
 	}
 	catch(const e32if_exception &e)
 	{
-		call->result = singleton->make_exception_text("config-set-int", "ERROR: ", e.what());
+		call->result = instance.make_exception_text("config-set-int", "ERROR: ", e.what());
 		return;
 	}
 
@@ -672,21 +634,19 @@ void Command::config_set_int(cli_command_call_t *call)
 
 void Command::config_set_string(cli_command_call_t *call)
 {
+	auto& instance = Command::get();
 	std::string value;
 	std::string type;
 
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	try
 	{
-		config_->set_string(call->parameters[0].str, call->parameters[1].str);
-		value = config_->get_string(call->parameters[0].str, &type);
+		instance.config.set_string(call->parameters[0].str, call->parameters[1].str);
+		value = instance.config.get_string(call->parameters[0].str, &type);
 		call->result = std::format("{}[{}]={}", call->parameters[0].str, type, value);
 	}
 	catch(const e32if_exception &e)
 	{
-		call->result = singleton->make_exception_text("config-set-str", "ERROR: ", e.what());
+		call->result = instance.make_exception_text("config-set-str", "ERROR: ", e.what());
 		return;
 	}
 
@@ -695,19 +655,18 @@ void Command::config_set_string(cli_command_call_t *call)
 
 void Command::config_erase(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	try
 	{
 		if(call->parameter_count == 2)
-			config_->erase(call->parameters[0].str, call->parameters[1].str);
+			instance.config.erase(call->parameters[0].str, call->parameters[1].str);
 		else
-			config_->erase(call->parameters[0].str);
+			instance.config.erase(call->parameters[0].str);
 	}
 	catch(const e32if_exception &e)
 	{
-		call->result = singleton->make_exception_text("config-erase", "ERROR: ", e.what());
+		call->result = instance.make_exception_text("config-erase", "ERROR: ", e.what());
 		return;
 	}
 
@@ -716,200 +675,184 @@ void Command::config_erase(cli_command_call_t *call)
 
 void Command::config_dump(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "ALL CONFIG entries\n";
 
-	Command::config_->dump(call->result, "*");
+	instance.config.dump(call->result, "*");
 }
 
 void Command::config_show(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "CONFIG ENTRIES\n";
 
-	Command::config_->dump(call->result);
+	instance.config.dump(call->result);
 }
 
 void Command::config_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "CONFIG INFO\n";
 
-	Command::config_->info(call->result);
+	instance.config.info(call->result);
 }
 
 void Command::console_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "CONSOLE STATISTICS\n";
 
-	Command::console_->info(call->result);
+	instance.console.info(call->result);
 }
 
 void Command::ledpixel_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "LEDPIXEL INFO\n";
 
-	Command::ledpixel_->info(call->result);
+	instance.ledpixel.info(call->result);
 }
 
 void Command::ledpwm_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "LEDPWM INFO\n";
 
-	Command::ledpwm_->info(call->result);
+	instance.ledpwm.info(call->result);
 }
 
 void Command::notify_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "NOTIFY INFO\n";
 
-	Command::notify_->info(call->result);
+	instance.notify.info(call->result);
 }
 
 void Command::log_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "LOG INFO\n";
 
-	Command::log_->info(call->result);
+	instance.log.info(call->result);
 }
 
 void Command::log_log(cli_command_call_t *call)
 {
+	auto& instance = Command::get();
 	int entry;
-
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
 
 	if(call->parameter_count == 1)
 		entry = call->parameters[0].unsigned_int;
 	else
 		entry = -1;
 
-	Command::log_->command_log(call->result, entry);
+	instance.log.command_log(call->result, entry);
 }
 
 void Command::log_clear(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
-	Command::log_->clear();
+	instance.log.clear();
 
 	call->result = "log cleared";
 }
 
 void Command::log_monitor(cli_command_call_t *call)
 {
+	auto& instance = Command::get();
 	bool monitor;
 
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	if(call->parameter_count == 1)
-		Command::log_->setmonitor(call->parameters[0].unsigned_int > 0);
+		instance.log.setmonitor(call->parameters[0].unsigned_int > 0);
 
-	monitor = Command::log_->getmonitor();
+	monitor = instance.log.getmonitor();
 
-	call->result = std::format("log monitor: {}", util_->yesno(monitor));
+	call->result = std::format("log monitor: {}", instance.util.yesno(monitor));
 }
 
 void Command::system_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
-	Command::system_->info(call->result);
+	instance.system.info(call->result);
 }
 
 void Command::system_memory(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
-	Command::system_->memory(call->result);
+	instance.system.memory(call->result);
 }
 
 void Command::system_identify(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
-	Command::system_->identify(call->result, call->mtu);
+	call->result  = std::format("firmware date: {} {}", __DATE__, __TIME__);
+	call->result += std::format(", transport mtu: {:d}", call->mtu);
+
+	if(instance.displays.displays().size() > 0)
+	    call->result += std::format(", display area: {:d}x{:d}", instance.displays.displays()[0]->image_x_size(), instance.displays.displays()[0]->image_y_size());
+	else
+	    call->result += ", no display active";
 }
 
 void Command::system_partitions(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	if(call->parameter_count == 0)
-		Command::system_->partitions(call->result);
+		instance.system.partitions(call->result);
 	else
-		Command::system_->partitions(call->result, call->parameters[0].unsigned_int);
+		instance.system.partitions(call->result, call->parameters[0].unsigned_int);
 }
 
 void Command::system_process_list(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	if(call->parameter_count == 0)
-		Command::system_->process_list(call->result);
+		instance.system.process_list(call->result);
 	else
-		Command::system_->process_list(call->result, call->parameters[0].unsigned_int);
+		instance.system.process_list(call->result, call->parameters[0].unsigned_int);
 }
 
 void Command::system_process_stop(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
-	Command::system_->process_list(call->result, call->parameters[0].unsigned_int);
+	instance.system.process_list(call->result, call->parameters[0].unsigned_int);
 }
 
 void Command::util_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "UTIL INFO\n";
 
-	Command::util_->info(call->result);
+	instance.util.info(call->result);
 }
 
 void Command::util_timezone(cli_command_call_t *call)
 {
+	auto& instance = Command::get();
 	std::string tz;
-
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
 
 	if(call->parameter_count > 0)
 	{
 		try
 		{
-			util_->set_timezone(call->parameters[0].str);
+			instance.util.set_timezone(call->parameters[0].str);
 		}
 		catch(const transient_exception &e)
 		{
@@ -920,7 +863,7 @@ void Command::util_timezone(cli_command_call_t *call)
 
 	try
 	{
-		tz = util_->get_timezone();
+		tz = instance.util.get_timezone();
 	}
 	catch(const transient_exception &e)
 	{
@@ -933,30 +876,26 @@ void Command::util_timezone(cli_command_call_t *call)
 
 void Command::pdm_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "PDM INFO\n";
 
-	Command::pdm_->info(call->result);
+	instance.pdm.info(call->result);
 }
 
 void Command::mcpwm_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "MCPWM INFO\n";
 
-	Command::mcpwm_->info(call->result);
+	instance.mcpwm.info(call->result);
 }
 
 void Command::fs_list(cli_command_call_t *call)
 {
+	auto& instance = Command::get();
 	bool option_long;
-
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
 
 	if(call->parameter_count == 2)
 	{
@@ -975,7 +914,7 @@ void Command::fs_list(cli_command_call_t *call)
 
 	try
 	{
-		Command::fs_->list(call->result, call->parameters[0].str, option_long);
+		instance.fs.list(call->result, call->parameters[0].str, option_long);
 	}
 	catch(const transient_exception &e)
 	{
@@ -985,12 +924,11 @@ void Command::fs_list(cli_command_call_t *call)
 
 void Command::fs_format(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	try
 	{
-		Command::fs_->format(call->parameters[0].str);
+		instance.fs.format(call->parameters[0].str);
 	}
 	catch(const transient_exception &e)
 	{
@@ -1003,14 +941,12 @@ void Command::fs_format(cli_command_call_t *call)
 
 void Command::fs_read(cli_command_call_t *call)
 {
+	auto& instance = Command::get();
 	int length;
-
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
 
 	try
 	{
-		length = Command::fs_->read(call->result_oob, call->parameters[2].str, call->parameters[1].unsigned_int, call->parameters[0].unsigned_int);
+		length = instance.fs.read(call->result_oob, call->parameters[2].str, call->parameters[1].unsigned_int, call->parameters[0].unsigned_int);
 	}
 	catch(const transient_exception &e)
 	{
@@ -1023,14 +959,12 @@ void Command::fs_read(cli_command_call_t *call)
 
 void Command::fs_write(cli_command_call_t *call)
 {
+	auto& instance = Command::get();
 	int length;
-
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
 
 	try
 	{
-		length = Command::fs_->write(call->oob, call->parameters[2].str, !!call->parameters[0].unsigned_int, call->parameters[1].unsigned_int);
+		length = instance.fs.write(call->oob, call->parameters[2].str, !!call->parameters[0].unsigned_int, call->parameters[1].unsigned_int);
 	}
 	catch(const transient_exception &e)
 	{
@@ -1043,12 +977,11 @@ void Command::fs_write(cli_command_call_t *call)
 
 void Command::fs_erase(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	try
 	{
-		Command::fs_->erase(call->parameters[0].str);
+		instance.fs.erase(call->parameters[0].str);
 	}
 	catch(const transient_exception &e)
 	{
@@ -1061,12 +994,11 @@ void Command::fs_erase(cli_command_call_t *call)
 
 void Command::fs_rename(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	try
 	{
-		Command::fs_->rename(call->parameters[0].str, call->parameters[1].str);
+		instance.fs.rename(call->parameters[0].str, call->parameters[1].str);
 	}
 	catch(const transient_exception &e)
 	{
@@ -1079,12 +1011,11 @@ void Command::fs_rename(cli_command_call_t *call)
 
 void Command::fs_truncate(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	try
 	{
-		Command::fs_->truncate(call->parameters[0].str, call->parameters[1].unsigned_int);
+		instance.fs.truncate(call->parameters[0].str, call->parameters[1].unsigned_int);
 	}
 	catch(const transient_exception &e)
 	{
@@ -1097,14 +1028,12 @@ void Command::fs_truncate(cli_command_call_t *call)
 
 void Command::fs_checksum(cli_command_call_t *call)
 {
+	auto& instance = Command::get();
 	std::string checksum;
-
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
 
 	try
 	{
-		checksum = Command::fs_->checksum(call->parameters[0].str);
+		checksum = instance.fs.checksum(call->parameters[0].str);
 	}
 	catch(const transient_exception &e)
 	{
@@ -1117,48 +1046,44 @@ void Command::fs_checksum(cli_command_call_t *call)
 
 void Command::fs_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "FS INFO\n";
 
-	Command::fs_->info(call->result);
+	instance.fs.info(call->result);
 }
 
 void Command::command_help(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "HELP";
 
 	if(call->parameter_count > 0)
-		singleton->help(call->result, call->parameters[0].str);
+		instance.help(call->result, call->parameters[0].str);
 	else
-		singleton->help(call->result);
+		instance.help(call->result);
 }
 
 void Command::hostname(cli_command_call_t *call)
 {
+	auto& instance = Command::get();
 	std::string hostname;
 	std::string description;
-
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
 
 	if(call->parameter_count > 1)
 	{
 		description = call->parameters[1].str;
 		std::replace(description.begin(), description.end(), '_', ' ');
-		config_->set_string("hostname_desc", description);
+		instance.config.set_string("hostname_desc", description);
 	}
 
 	if(call->parameter_count > 0)
-		config_->set_string("hostname", call->parameters[0].str);
+		instance.config.set_string("hostname", call->parameters[0].str);
 
 	try
 	{
-		hostname = config_->get_string("hostname");
+		hostname = instance.config.get_string("hostname");
 	}
 	catch(const transient_exception &)
 	{
@@ -1167,7 +1092,7 @@ void Command::hostname(cli_command_call_t *call)
 
 	try
 	{
-		description = config_->get_string("hostname_desc");
+		description = instance.config.get_string("hostname_desc");
 	}
 	catch(const transient_exception &)
 	{
@@ -1179,26 +1104,17 @@ void Command::hostname(cli_command_call_t *call)
 
 void Command::reset(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	esp_restart();
 }
 
 void Command::write(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	if(call->parameter_count > 0)
 		call->result = call->parameters[0].str;
 }
 
 void Command::info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	call->result = "commands received:";
 	call->result += std::format("\n- total: {:d}", cli_stats_commands_received);
 	call->result += std::format("\n- packetised: {:d}", cli_stats_commands_received_packet);
@@ -1211,171 +1127,117 @@ void Command::info(cli_command_call_t *call)
 
 void Command::bluetooth_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "BLUETOOTH INFO";
 
-	bt_->info(call->result);
+	instance.bt.info(call->result);
 }
 
 void Command::bluetooth_key(cli_command_call_t *call)
 {
 	std::string key;
 
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	if(call->parameter_count == 1)
-		bt_->key(call->parameters[0].str);
+		instance.bt.key(call->parameters[0].str);
 
-	key = bt_->key();
+	key = instance.bt.key();
 
 	call->result = std::format("bluetooth key: {}", key);
 }
 
 void Command::ota_start(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	command_ota_start(call); // FIXME
 }
 
 void Command::ota_write(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	command_ota_write(call); // FIXME
 }
 
 void Command::ota_finish(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	command_ota_finish(call); // FIXME
 }
 
 void Command::ota_commit(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	command_ota_commit(call); // FIXME
 }
 
 void Command::ota_confirm(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	command_ota_confirm(call); // FIXME
 }
 
 void Command::display_brightness(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
-	command_display_brightness(call); // FIXME
+	Command::displays_->displays()[0]->brightness(call->parameters[0].unsigned_int);
 }
 
 void Command::display_configure(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	command_display_configure(call); // FIXME
 }
 
 void Command::display_erase(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	command_display_erase(call); // FIXME
 }
 
 void Command::display_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	command_display_info(call); // FIXME
 }
 
 void Command::display_page_add_text(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	command_display_page_add_text(call); // FIXME
 }
 
 void Command::display_page_add_image(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	command_display_page_add_image(call); // FIXME
 }
 
 void Command::display_page_remove(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	command_display_page_remove(call); // FIXME
 }
 
 void Command::io_dump(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	command_io_dump(call); // FIXME
 }
 
 void Command::io_read(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	command_io_read(call); // FIXME
 }
 
 void Command::io_stats(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	command_io_stats(call); // FIXME
 }
 
 void Command::io_write(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	command_io_write(call); // FIXME
 }
 
 void Command::alias(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
-	Command::singleton->alias_command(call);
+	instance.alias_command(call);
 }
 
 void Command::alias_command(cli_command_call_t *call)
 {
 	string_string_map::const_iterator it;
-
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
 
 	switch(call->parameter_count)
 	{
@@ -1414,11 +1276,10 @@ void Command::alias_command(cli_command_call_t *call)
 
 void Command::wlan_client_config(cli_command_call_t *call)
 {
+	auto& instance = Command::get();
+
 	std::string ssid;
 	std::string passwd;
-
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
 
 	if(call->parameter_count == 1)
 		throw(hard_exception("wlan_client_config: need to set both ssid and passwd"));
@@ -1427,56 +1288,51 @@ void Command::wlan_client_config(cli_command_call_t *call)
 		throw(hard_exception("wlan_client_config: invalid arguments"));
 
 	if(call->parameter_count == 2)
-		wlan_->set(call->parameters[0].str, call->parameters[1].str);
+		instance.wlan.set(call->parameters[0].str, call->parameters[1].str);
 
-	wlan_->get(ssid, passwd);
+	instance.wlan.get(ssid, passwd);
 
 	call->result = std::format("wlan client, ssid: {}, password: {}", ssid, passwd);
 }
 
 void Command::wlan_ipv6_static(cli_command_call_t *call)
 {
+	auto& instance = Command::get();
 	std::string address;
 
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
-
 	if(call->parameter_count == 1)
-		wlan_->set_ipv6_static(call->parameters[0].str);
+		instance.wlan.set_ipv6_static(call->parameters[0].str);
 
-	wlan_->get_ipv6_static(address);
+	instance.wlan.get_ipv6_static(address);
 
 	call->result = std::format("ipv6 static address: {}", address);
 }
 
 void Command::wlan_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "WLAN INFO";
 
-	wlan_->info(call->result);
+	instance.wlan.info(call->result);
 }
 
 void Command::udp_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "UDP INFO";
 
-	udp_->info(call->result);
+	instance.udp.info(call->result);
 }
 
 void Command::tcp_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "TCP INFO";
 
-	tcp_->info(call->result);
+	instance.tcp.info(call->result);
 }
 
 void Command::cat(cli_command_call_t *call)
@@ -1484,9 +1340,6 @@ void Command::cat(cli_command_call_t *call)
 	int lines, chars;
 	std::string line;
 	std::ifstream file;
-
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
 
 	file.open(call->parameters[0].str);
 
@@ -1533,13 +1386,11 @@ void Command::cat(cli_command_call_t *call)
 
 void Command::command_run(cli_command_call_t *call)
 {
+	auto& instance = Command::get();
 	unsigned int ix;
 	esp_err_t rv;
 	esp_pthread_cfg_t thread_config = esp_pthread_get_default_config();
 	auto *thread_state = new script_state_t();
-
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
 
 	thread_state->repeat.active = false;
 	thread_state->repeat.target = 0;
@@ -1566,7 +1417,7 @@ void Command::command_run(cli_command_call_t *call)
 	//thread_config.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT; // NOTE: uses littlefs -> accesses flash, cannot have stack in SPI RAM
 
 	if((rv = esp_pthread_set_cfg(&thread_config)) != ESP_OK)
-		throw(hard_exception(log_->esp_string_error(rv, "Command::run: esp_pthread_set_cfg")));
+		throw(hard_exception(instance.log.esp_string_error(rv, "Command::run: esp_pthread_set_cfg")));
 
 	std::thread new_thread([thread_state]() { Command::singleton->script_thread_runner(thread_state); });
 
@@ -1575,25 +1426,24 @@ void Command::command_run(cli_command_call_t *call)
 
 void Command::script_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
-	Command::singleton->script_thread_mutex.lock();
+	instance.script_thread_mutex.lock();
 
 	call->result = "SCRIPT THREADS:";
 
-	for(auto const &script : Command::singleton->script_thread_map)
-		call->result += std::format("\n{:2d}: {}, stop sent: {}, stopping: {}", script.first, script.second.command_line, util_->yesno(script.second.stop), util_->yesno(script.second.stopping));
+	for(auto const &script : instance.script_thread_map)
+		call->result += std::format("\n{:2d}: {}, stop sent: {}, stopping: {}", script.first, script.second.command_line,
+				instance.util.yesno(script.second.stop),
+				instance.util.yesno(script.second.stopping));
 
-	Command::singleton->script_thread_mutex.unlock();
+	instance.script_thread_mutex.unlock();
 }
 
 void Command::script_stop(cli_command_call_t *call)
 {
+	auto& instance = Command::get();
 	int filter;
-
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
 
 	if(call->parameter_count == 0)
 		filter = -1;
@@ -1602,9 +1452,9 @@ void Command::script_stop(cli_command_call_t *call)
 
 	call->result += "Stopping script threads:";
 
-	Command::singleton->script_thread_mutex.lock();
+	instance.script_thread_mutex.lock();
 
-	for(auto &script : Command::singleton->script_thread_map)
+	for(auto &script : instance.script_thread_map)
 	{
 		if((script.first == filter) || (filter < 0))
 		{
@@ -1613,87 +1463,79 @@ void Command::script_stop(cli_command_call_t *call)
 		}
 	}
 
-	Command::singleton->script_thread_mutex.unlock();
+	instance.script_thread_mutex.unlock();
 }
 
 void Command::i2c_speed(cli_command_call_t *call)
 {
+	auto& instance = Command::get();
 	int module;
 	int speed;
-
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
 
 	module = call->parameters[0].unsigned_int;
 
 	if(call->parameter_count > 1)
-		i2c_->speed(module, call->parameters[1].unsigned_int);
+		instance.i2c.speed(module, call->parameters[1].unsigned_int);
 
-	speed = i2c_->speed(module);
+	speed = instance.i2c.speed(module);
 
 	call->result = std::format("i2c speed of module {:d} is {:d} kHz", module, speed);
 }
 
 void Command::i2c_probe(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = std::format("probe {:d}/{:d}/{:#04x}: {}",
 			call->parameters[0].unsigned_int,
 			call->parameters[1].unsigned_int,
 			call->parameters[2].unsigned_int,
-			i2c_->probe(call->parameters[0].unsigned_int, call->parameters[1].unsigned_int, call->parameters[2].unsigned_int) ? "ok" : "not found");
+			instance.i2c.probe(call->parameters[0].unsigned_int, call->parameters[1].unsigned_int, call->parameters[2].unsigned_int) ? "ok" : "not found");
 }
 
 void Command::i2c_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "I2C INFO";
-	i2c_->info(call->result);
+	instance.i2c.info(call->result);
 }
 
 void Command::sensor_dump(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "SENSORS DUMP\n";
 
 	if(call->parameter_count == 0)
-		call->result += sensors_->dump();
+		call->result += instance.sensors.dump();
 	else
-		call->result += sensors_->dump(call->parameters[0].unsigned_int);
+		call->result += instance.sensors.dump(call->parameters[0].unsigned_int);
 }
 
 void Command::sensor_info(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	if(call->parameter_count == 0)
-		call->result += sensors_->info();
+		call->result += instance.sensors.info();
 	else
-		call->result += sensors_->info(call->parameters[0].unsigned_int);
+		call->result += instance.sensors.info(call->parameters[0].unsigned_int);
 }
 
 void Command::sensor_json(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
-	call->result += sensors_->json();
+	call->result += instance.sensors.json();
 }
 
 void Command::sensor_stats(cli_command_call_t *call)
 {
-	if(!Command::singleton)
-		throw(hard_exception("Command: not activated"));
+	auto& instance = Command::get();
 
 	call->result = "SENSORS STATS\n";
-	call->result += sensors_->stats();
+	call->result += instance.sensors.stats();
 }
 
 command_response_t *Command::receive_queue_pop()
