@@ -21,6 +21,7 @@ idf_component_register(
 		"png.c"
 		"ramdisk.cpp"
 		"sensor.cpp"
+		"spi.cpp"
 		"system.cpp"
 		"tcp.cpp"
 		"udp.cpp"

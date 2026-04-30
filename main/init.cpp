@@ -22,6 +22,7 @@ extern "C"
 #include "udp.h"
 #include "tcp.h"
 #include "i2c.h"
+#include "spi.h"
 #include "sensor.h"
 
 #include "display.h"
@@ -56,6 +57,7 @@ void app_main()
 		TCP tcp(log);
 		I2c i2c(log, config);
 		Sensors sensors(log, i2c);
+		SPI spi(log, config);
 		Command command(config, console, ledpixel, ledpwm, notify, log, system, util, pdm, mcpwm, fs, bt, wlan, udp, tcp, i2c, sensors);
 		console.set(&command);
 		bt.set(&command);
