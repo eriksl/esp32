@@ -290,6 +290,8 @@ void Log::abort(std::string_view what)
 
 	Console::emergency_wall(what);
 
+	vTaskDelay(500 / portTICK_PERIOD_MS);
+
 	::abort();
 }
 

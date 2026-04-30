@@ -51,6 +51,7 @@ class Console final
 		Command *command;
 		unsigned int current_line;
 		bool running;
+		static bool usb_inited;
 		std::string hostname;
 		std::array<std::string, lines_amount> lines;
 

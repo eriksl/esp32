@@ -13,6 +13,8 @@
 
 Console *Console::singleton = nullptr;
 
+bool Console::usb_inited = false;
+
 Console::Console(Config &config_in) :
 		config(config_in),
 		current_line(0),
@@ -30,12 +32,16 @@ Console::Console(Config &config_in) :
 	if((rv = usb_serial_jtag_driver_install(&usb_serial_jtag_config)) != ESP_OK)
 		throw(hard_exception("Console: error in usb_serial_jtag_driver_install"));
 
+	this->usb_inited = true;
+
 	try
 	{
 		this->hostname = this->config.get_string("hostname");
 	}
 	catch(transient_exception &)
 	{
+
+	this->usb_inited = true;
 		this->hostname = "esp32";
 	}
 
@@ -397,19 +403,18 @@ void Console::send(const command_response_t &command_response)
 	this->stats["sent lines"]++;
 }
 
-void Console::emergency_wall(std::string_view text_in)
+void Console::emergency_wall(std::string_view text)
 {
-	std::string text;
+	if(!Console::usb_inited)
+	{
+		usb_serial_jtag_driver_config_t usb_serial_jtag_config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
+		usb_serial_jtag_config.rx_buffer_size = 128;
+		usb_serial_jtag_config.tx_buffer_size = 128;
+		usb_serial_jtag_driver_install(&usb_serial_jtag_config);
+	}
 
-	text = text_in;
-	text += "\n";
-
-	usb_serial_jtag_driver_config_t usb_serial_jtag_config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
-	usb_serial_jtag_config.rx_buffer_size = 128;
-	usb_serial_jtag_config.tx_buffer_size = 128;
-	usb_serial_jtag_driver_install(&usb_serial_jtag_config);
-
-	usb_serial_jtag_write_bytes(text.c_str(), text.length(), -1);
+	usb_serial_jtag_write_bytes(text.data(), text.length(), 200);
+	usb_serial_jtag_write_bytes("\n", 1, 200);
 }
 
 void Console::info(std::string &dst)
