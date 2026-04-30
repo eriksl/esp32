@@ -1062,8 +1062,6 @@ int Ramdisk::unlink(const std::string &path)
 	const File *fp;
 	int rv;
 
-	Log::get() << std::format("unlink(\"{}\")", path.c_str()); // FIXME
-
 	if(!(fp = this->root.get_file_by_name_const(path)))
 	{
 		errno = ENOENT;
