@@ -18,7 +18,8 @@ class Util final
 
 		static Util &get();
 
-		std::string_view yesno(bool);
+		static std::string_view yesno(bool);
+		static std::string dump(int length, std::string_view in);
 
 		std::string time_to_string(const time_t &stamp, std::string_view format = "{:%Y/%m/%d %H:%M:%S}");
 		void set_timezone(std::string_view in);

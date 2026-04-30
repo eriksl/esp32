@@ -92,3 +92,33 @@ std::string Util::get_timezone()
 {
 	return(this->timezone);
 }
+
+std::string Util::dump(int length, std::string_view in)
+{
+	std::string out;
+	bool first = true;
+	int current;
+	char c;
+
+	for(current = 0; current < length; current++)
+	{
+		if((current % 16) == 0)
+		{
+			if(!first)
+				out += "\n";
+			else
+				first = false;
+
+			out += std::format("{:2d} ", current);
+		}
+
+		c = in[current];
+
+		if((c < ' ') || (c >= '~'))
+			c = '*';
+
+		out += std::format("{:c}[{:02x}] ", c, in[current]);
+	}
+
+	return(out);
+}
