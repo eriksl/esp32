@@ -52,14 +52,6 @@ void command_ota_finish(cli_command_call_t *call);
 void command_ota_commit(cli_command_call_t *call);
 void command_ota_confirm(cli_command_call_t *call);
 
-void command_i2c_info(cli_command_call_t *call);
-void command_i2c_speed(cli_command_call_t *call);
-
-void command_sensor_dump(cli_command_call_t *call);
-void command_sensor_info(cli_command_call_t *call);
-void command_sensor_json(cli_command_call_t *call);
-void command_sensor_stats(cli_command_call_t *call);
-
 void command_io_dump(cli_command_call_t *call);
 void command_io_read(cli_command_call_t *call);
 void command_io_stats(cli_command_call_t *call);
