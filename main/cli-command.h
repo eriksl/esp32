@@ -52,14 +52,6 @@ void command_ota_finish(cli_command_call_t *call);
 void command_ota_commit(cli_command_call_t *call);
 void command_ota_confirm(cli_command_call_t *call);
 
-void command_display_brightness(cli_command_call_t *call);
-void command_display_configure(cli_command_call_t *call);
-void command_display_erase(cli_command_call_t *call);
-void command_display_info(cli_command_call_t *call);
-void command_display_page_add_text(cli_command_call_t *call);
-void command_display_page_add_image(cli_command_call_t *call);
-void command_display_page_remove(cli_command_call_t *call);
-
 void command_i2c_info(cli_command_call_t *call);
 void command_i2c_speed(cli_command_call_t *call);
 

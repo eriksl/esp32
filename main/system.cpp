@@ -1,7 +1,6 @@
 #include "system.h"
 
 #include "log.h"
-#include "display.h"
 #include "exception.h"
 #include "crypt.h"
 
@@ -64,13 +63,6 @@ System& System::get()
 		throw(hard_exception("System: not active"));
 
 	return(*System::singleton);
-}
-
-void System::identify(std::string &out, int mtu)
-{
-	out += std::format("firmware date: {} {}, ", __DATE__, __TIME__);
-	out += std::format("transport mtu: {:d}, ", mtu);
-    out += std::format("display area: {:d}x{:d}", display_image_x_size(), display_image_y_size());
 }
 
 void System::info(std::string &out)

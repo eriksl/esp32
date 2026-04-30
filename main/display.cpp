@@ -1,245 +1,257 @@
-#include <stdint.h>
-#include <stdbool.h>
-#include <string.h>
-
-#include "log.h"
-#include "util.h"
-#include "config.h"
 #include "display.h"
-#include "crypt.h"
-#include "exception.h"
-#include "cli-command.h"
+#include "display-module.h"
+#include "display-spi.h"
+#include "display-spi-generic.h"
+#include "display-ra8875.h"
 #include "png.h"
 
-#include <assert.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <freertos/FreeRTOS.h>
-#include <esp_timer.h>
-#include <errno.h>
+#include "crypt.h"
+#include "exception.h"
+#include "magic_enum/magic_enum.hpp"
 
-#include <csetjmp>
-#include <string>
-#include <deque>
 #include <vector>
-#include <format>
 #include <thread>
 #include <chrono>
 
-static_assert(sizeof(font_glyph_t) == 68);
-static_assert(offsetof(font_t, basic_glyph) == 56);
-static_assert(offsetof(font_t, extra_glyph) == 17464);
+#include <unistd.h>
+#include <fcntl.h>
 
-enum
+#include <esp_pthread.h>
+
+Display* Display::singleton = nullptr;
+
+const Display::Colourmap Display::colourmap
 {
-	page_border_size = 3,
-	page_text_offset = 1,
+	{ colour_t::black,	{ 0x00, 0x00, 0x00 }},
+	{ colour_t::blue,	{ 0x00, 0x00, 0xff }},
+	{ colour_t::green,	{ 0x00, 0x88, 0x00 }},
+	{ colour_t::cyan,	{ 0x00, 0xaa, 0xaa }},
+	{ colour_t::red,	{ 0xff, 0x00, 0x00 }},
+	{ colour_t::purple,	{ 0xff, 0x00, 0xff }},
+	{ colour_t::yellow,	{ 0xff, 0xbb, 0x00 }},
+	{ colour_t::white,	{ 0xff, 0xff, 0xff }},
 };
 
-typedef enum
+Display::Page::Page(Log &log_in, type_t type_in, Display::colour_t colour_in)
+		: log(log_in), type(type_in), colour(colour_in)
 {
-	dv_start = 0,
-	dv_type = dv_start,
-	dv_if,
-	dv_x_size,
-	dv_y_size,
-	dv_flip,
-	dv_invert,
-	dv_rotate,
-	dv_error,
-	dv_size = dv_error,
-} dv_t;
-
-typedef enum
-{
-	dpt_text,
-	dpt_image,
-	dpt_none,
-	dpt_size,
-	dpt_error = dpt_size,
-	dpt_first = dpt_text,
-	dpt_last = dpt_image,
-} display_page_type_t;
-
-typedef struct
-{
-	std::string name;
-	time_t expiry;
-	display_page_type_t type;
-	display_colour_t colour;
-	struct
-	{
-		std::deque<std::string> lines;
-	} text;
-	struct
-	{
-		unsigned int length;
-		std::string filename;
-	} image;
-} display_page_t;
-
-static const char * const display_variable[dv_size][3] =
-{
-	[dv_type] =		{	"type",				"display.type",		"display type, 0 = generic SPI LCD",	},
-	[dv_if] =		{	"interface",		"display.if",		"interface, 0 = SPI2, 1 = SPI3",		},
-	[dv_x_size] =	{	"x size",			"display.x.size",	"x size (width)",						},
-	[dv_y_size] =	{	"y size",			"display.y.size",	"y size (height)",						},
-	[dv_flip] =		{	"flip",				"display.flip",		"flip display (optional)",				},
-	[dv_invert] =	{	"invert",			"display.invert",	"invert display (optional)",			},
-	[dv_rotate] =	{	"rotate",			"display.rotate",	"rotate display (optional)",			},
-};
-
-static const display_info_t info[dt_size] =
-{
-	[dt_no_display] =
-	{
-		.name = "No display",
-		.init_fn = nullptr,
-		.bright_fn = nullptr,
-		.write_fn = nullptr,
-		.clear_fn = nullptr,
-		.box_fn = nullptr,
-		.plot_line_fn = nullptr,
-		.set_layer_fn = nullptr,
-		.show_layer_fn = nullptr,
-	},
-	[dt_spi_generic] =
-	{
-		.name = "Generic SPI LCD display",
-		.init_fn = display_spi_generic_init,
-		.bright_fn = display_spi_generic_bright,
-		.write_fn = display_spi_generic_write,
-		.clear_fn = display_spi_generic_clear,
-		.box_fn = display_spi_generic_box,
-		.plot_line_fn = display_spi_generic_plot_line,
-		.set_layer_fn = nullptr,
-		.show_layer_fn = nullptr,
-	},
-	[dt_ra8875] =
-	{
-		.name = "SPI LCD display based on RA8875",
-		.init_fn = display_ra8875_init,
-		.bright_fn = display_ra8875_bright,
-		.write_fn = display_ra8875_write,
-		.clear_fn = display_ra8875_clear,
-		.box_fn = display_ra8875_box,
-		.plot_line_fn = display_ra8875_plot_line,
-		.set_layer_fn = display_ra8875_set_layer,
-		.show_layer_fn = display_ra8875_show_layer,
-	},
-};
-
-const display_rgb_t display_colour_map[dc_size] =
-{
-	[dc_black] =	{	0x00,	0x00,	0x00	},
-	[dc_blue] =		{	0x00,	0x00,	0xff	},
-	[dc_green] =	{	0x00,	0x88,	0x00	},
-	[dc_cyan] =		{	0x00,	0xaa,	0xaa	},
-	[dc_red] =		{	0xff,	0x00,	0x00	},
-	[dc_purple] =	{	0xff,	0x00,	0xff	},
-	[dc_yellow] =	{	0xff,	0xbb,	0x00	},
-	[dc_white] =	{	0xff,	0xff,	0xff	},
-};
-
-static bool inited = false;
-static display_colour_t next_colour = dc_black;
-static std::vector<display_page_t> display_pages;
-static display_type_t display_type = dt_no_display;
-static font_t *font = nullptr;
-static bool font_valid = false;
-static unsigned int display_columns, display_rows;
-static unsigned int x_size, y_size;
-static QueueHandle_t log_display_queue = nullptr;
-static bool log_mode = true;
-static SemaphoreHandle_t page_data_mutex;
-static unsigned int display_log_y;
-static unsigned int stat_display_show = 0;
-static unsigned int stat_skipped_incomplete_images = 0;
-
-static inline void page_data_mutex_take(void)
-{
-	assert(page_data_mutex);
-	xSemaphoreTake(page_data_mutex, portMAX_DELAY);
+	this->clear();
 }
 
-static inline void page_data_mutex_give(void)
+Display::Page::~Page()
 {
-	assert(page_data_mutex);
-	xSemaphoreGive(page_data_mutex);
+	if((this->type == Page::type_t::image) && !this->image.filename.empty() && unlink(this->image.filename.c_str()))
+		this->log << std::format("display: ~Page: unlink image {} failed", this->image.filename);
 }
 
-static unsigned int string_length_utf8(std::string_view in)
+void Display::Page::clear()
 {
-	std::string_view::const_iterator it;
-	unsigned int count;
+	this->text.lines.clear();
+	this->image.length = 0;
+	this->image.filename.clear();
+}
 
-	for(it = in.begin(), count = 0; it != in.end(); it++)
-		if(static_cast<unsigned int>(*it) < 128)
+Display::Display(Config &config_in, Log &log_in, Util& util_in, SPI& spi_in) : config(config_in), log(log_in), util(util_in), spi(spi_in)
+{
+	int type, interface, x_size, y_size;
+	bool flip, invert, rotate;
+	esp_err_t rv;
+
+	this->singleton = this;
+	this->mode = mode_t::init_log;
+	this->log_line = 0;
+	this->next_colour = this->colour_first();
+	this->pages.version = 0;
+
+	this->fontinfo.valid = false;
+	this->fontinfo.magic_word = 0;
+	this->fontinfo.raw.width = 0;
+	this->fontinfo.raw.height = 0;
+	this->fontinfo.net.width = 0;
+	this->fontinfo.net.height = 0;
+	this->fontinfo.extra_glyphs = 0;
+	this->fontinfo.columns = 0;
+	this->fontinfo.rows = 0;
+
+	if(!this->config_get("display.type", type))
+		return;
+
+	if(!this->config_get("display.if", interface))
+		return;
+
+	if(!this->config_get("display.size.x", x_size))
+		return;
+
+	if(!this->config_get("display.size.y", y_size))
+		return;
+
+	if(!this->config_get("display.flip", flip))
+		flip = false;
+
+	if(!this->config_get("display.invert", invert))
+		invert = false;
+
+	if(!this->config_get("display.rotate", rotate))
+		rotate = false;
+
+	if((!this->module) && (type == magic_enum::enum_integer(DisplayModuleGenericSPI::type)))
+	{
+		try
+		{
+			this->module = std::make_unique<DisplayModuleGenericSPI>(this->config, this->log, this->util, this->spi, interface, x_size, y_size, flip, invert, rotate);
+		}
+		catch(transient_exception &e)
+		{
+			this->log << std::format("Display: init DisplayModuleGenericSPI: {}", e.what());
+		}
+	}
+
+	if(!(this->module) && (type == magic_enum::enum_integer(DisplayModuleRA8875::type)))
+	{
+		try
+		{
+			this->module = std::make_unique<DisplayModuleRA8875>(this->config, this->log, this->util, this->spi, interface, x_size, y_size, flip, invert, rotate);
+		}
+		catch(transient_exception &e)
+		{
+			this->log << std::format("Display: init DisplayModuleRA8875: {}", e.what());
+		}
+	}
+
+	if(!this->module)
+	{
+		this->log << std::format("Display: invalid display type: {:d} or display cannot be initialised", type);
+		return;
+	}
+
+	this->brightness(75);
+
+	esp_pthread_cfg_t thread_config = esp_pthread_get_default_config();
+
+	thread_config.thread_name = "display info";
+	thread_config.pin_to_core = 1;
+	thread_config.stack_size = 5 * 1024;
+	thread_config.prio = 1;
+
+	if((rv = esp_pthread_set_cfg(&thread_config)) != ESP_OK)
+		throw(hard_exception(this->log.esp_string_error(rv, "esp_pthread_set_cfg")));
+
+	std::thread run_thread([this]() { this->run_thread(); });
+	run_thread.detach();
+}
+
+Display::~Display()
+{
+}
+
+Display::colour_t Display::colour_first()
+{
+	return(Display::colour_t::blue);
+}
+
+Display::colour_t Display::colour_next(Display::colour_t colour_in)
+{
+	auto colour = magic_enum::enum_cast<Display::colour_t>(magic_enum::enum_integer(colour_in) + 1);
+
+	if(!colour.has_value() || (colour.value() == Display::colour_t::white))
+		return(Display::colour_first());
+
+	return(colour.value());
+}
+
+Display::colour_t Display::colour_from_int(int colour_int)
+{
+	auto colour = magic_enum::enum_cast<Display::colour_t>(colour_int);
+
+	if(!colour.has_value())
+		throw(hard_exception("Display::colour: out of range"));
+
+	return(colour.value());
+}
+
+int Display::string_length_utf8(std::string_view in)
+{
+    int count = 0;
+
+	for(auto i : in)
+		if((static_cast<unsigned int>(i) & 0x80) == 0)
 			count++;
 
-	return(count);
+    return(count);
 }
 
-static void utf8_to_unicode(std::string_view src, std::deque<uint32_t> &dst)
+void Display::utf8_to_unicode(std::string_view src_str, std::deque<unsigned int> &dst)
 {
-	typedef enum
+	static constexpr const std::byte byte_0x07{0x07};
+	static constexpr const std::byte byte_0x0f{0x0f};
+	static constexpr const std::byte byte_0x1f{0x1f};
+	static constexpr const std::byte byte_0x3f{0x3f};
+	static constexpr const std::byte byte_0x7f{0x7f};
+	static constexpr const std::byte byte_0x80{0x80};
+	static constexpr const std::byte byte_0xc0{0xc0};
+	static constexpr const std::byte byte_0xe0{0xe0};
+	static constexpr const std::byte byte_0xf0{0xf0};
+	static constexpr const std::byte byte_0xf8{0xf8};
+
+	enum state_t
 	{
 		u8p_state_base = 0,
 		u8p_state_utf8_byte_3 = 1,
 		u8p_state_utf8_byte_2 = 2,
 		u8p_state_utf8_byte_1 = 3,
 		u8p_state_done = 4
-	} state_t;
+	};
 
 	state_t state = u8p_state_base ;
-	uint32_t unicode;
-	std::string_view::const_iterator src_it;
+	unsigned int unicode;
 	unicode = 0;
 	dst.clear();
 
-	for(src_it = src.begin(); src_it != src.end(); src_it++)
+	for(auto src_char : src_str)
 	{
+		std::byte src{src_char};
+
 		switch(state)
 		{
 			case u8p_state_base:
 			{
-				if((static_cast<unsigned int>(*src_it) & 0xe0) == 0xc0) // first of two bytes (11 bits)
+				if((src & byte_0xe0) == byte_0xc0) // first of two bytes (11 bits)
 				{
-					unicode = static_cast<unsigned int>(*src_it) & 0x1f;
+					unicode = std::to_integer<unsigned int>(src & byte_0x1f);
 					state = u8p_state_utf8_byte_1;
 					continue;
 				}
 				else
-					if((static_cast<unsigned int>(*src_it) & 0xf0) == 0xe0) // first of three bytes (16 bits)
+					if((src & byte_0xf0) == byte_0xe0) // first of three bytes (16 bits)
 					{
-						unicode = static_cast<unsigned int>(*src_it) & 0x0f;
+						unicode = std::to_integer<unsigned int>(src & byte_0x0f);
 						state = u8p_state_utf8_byte_2;
 						continue;
 					}
 					else
-						if((static_cast<unsigned int>(*src_it) & 0xf8) == 0xf0) // first of four bytes (21 bits)
+						if((src & byte_0xf8) == byte_0xf0) // first of four bytes (21 bits)
 						{
-							unicode = static_cast<unsigned int>(*src_it) & 0x07;
+							unicode = std::to_integer<unsigned int>(src & byte_0x07);
 							state = u8p_state_utf8_byte_3;
 							continue;
 						}
 						else
-							if((static_cast<unsigned int>(*src_it) & 0x80) == 0x80)
+							if((src & byte_0x80) == byte_0x80)
 							{
-								Log::get() << std::format("utf8 parser: invalid utf8, bit 7 set: {:#x} '{:c}'\n", *src_it, *src_it);
+								this->log << std::format("utf8 parser: invalid utf8, bit 7 set: {:#x} '{:c}'\n", src_char, src_char);
 								unicode = '*';
 							}
 							else
-								unicode = static_cast<unsigned int>(*src_it) & 0x7f;
+								unicode = std::to_integer<unsigned int>(src & byte_0x7f);
 
 				break;
 			}
 
 			case u8p_state_utf8_byte_3 ... u8p_state_utf8_byte_1:
 			{
-				if((static_cast<unsigned int>(*src_it) & 0xc0) == 0x80) // following bytes
+				if((src & byte_0xc0) == byte_0x80) // following bytes
 				{
-					unicode = (unicode << 6) | (static_cast<unsigned int>(*src_it) & 0x3f);
+					unicode = (unicode << 6) | std::to_integer<unsigned int>(src & byte_0x3f);
 
 					state = static_cast<state_t>(state + 1);
 
@@ -248,8 +260,8 @@ static void utf8_to_unicode(std::string_view src, std::deque<uint32_t> &dst)
 				}
 				else
 				{
-					Log::get() << std::format("utf8 parser: invalid utf8, no prefix on following byte, state: {:d}: {:#x} {:c}\n",
-							static_cast<unsigned int>(state), *src_it, *src_it);
+					this->log << std::format("utf8 parser: invalid utf8, no prefix on following byte, state: {:d}: {:#x} {:c}\n",
+							static_cast<unsigned int>(state), src_char, src_char);
 					unicode = '*';
 				}
 
@@ -258,7 +270,7 @@ static void utf8_to_unicode(std::string_view src, std::deque<uint32_t> &dst)
 
 			default:
 			{
-				Log::get() << std::format("utf8 parser: invalid state {:d}\n", static_cast<unsigned int>(state));
+				this->log << std::format("utf8 parser: invalid state {:d}\n", static_cast<unsigned int>(state));
 				unicode = '*';
 			}
 		}
@@ -269,73 +281,873 @@ static void utf8_to_unicode(std::string_view src, std::deque<uint32_t> &dst)
 	}
 }
 
-static void page_init(display_page_t &page)
+bool Display::config_get(const std::string& id, int& value)
 {
-	assert(inited);
+	int rv;
 
-	page.name.clear();
-	page.type = dpt_none;
-	page.expiry = 0;
-	page.text.lines.clear();
-	page.image.filename.clear();
-	page.image.length = 0;
-}
-
-static void page_erase(int page)
-{
-	assert(inited);
-	assert((page >= 0) && (page < display_pages.size()));
-
-	if((display_pages[page].type == dpt_image) && unlink(display_pages[page].image.filename.c_str()))
-		Log::get() << std::format("display: page erase: unlink image {} failed", display_pages[page].image.filename);
-
-	display_pages.erase(display_pages.begin() + page);
-}
-
-static int page_find(std::string_view name)
-{
-	int page;
-
-	assert(inited);
-
-	for(page = 0; page < display_pages.size(); page++)
-		if(display_pages[page].name == name)
-			return(page);
-
-	return(-1);
-}
-
-static bool page_add_text(std::string_view name, unsigned int lifetime, std::string_view contents)
-{
-	int page;
-	display_page_t *page_ptr;
-	std::string line;
-	std::string_view::const_iterator contents_it;
-
-	assert(inited);
-
-	if((page = page_find(name)) < 0)
+	try
 	{
-		display_page_t new_page;
-
-		new_page.colour = next_colour;
-		next_colour = static_cast<display_colour_t>(next_colour + 1);
-		if(next_colour >= dc_white)
-			next_colour = dc_first;
-
-		display_pages.push_back(new_page);
-		page = display_pages.size() - 1;
+		rv = this->config.get_int(id);
+		value = rv;
 	}
-	else
-		if((display_pages[page].type == dpt_image) && !display_pages[page].image.filename.empty() && unlink(display_pages[page].image.filename.c_str()))
-			Log::get() << std::format("display: page add text: unlink image {} failed", display_pages[page].image.filename);
+	catch(const transient_exception &)
+	{
+		return(false);
+	}
 
-	page_ptr = &display_pages[page];
+	return(true);
+}
 
-	page_init(*page_ptr);
-	page_ptr->name = name;
-	page_ptr->type = dpt_text;
-	page_ptr->expiry = (lifetime > 0) ? time(nullptr) + lifetime : 0;
+bool Display::config_get(const std::string& id, bool& value)
+{
+	int rv;
+
+	try
+	{
+		rv = this->config.get_int(id);
+		value = (rv != 0);
+	}
+	catch(const transient_exception &)
+	{
+		return(false);
+	}
+
+	return(true);
+}
+
+void Display::load_font(std::string_view fontname)
+{
+	int fd;
+	std::string pathfont = std::format("/littlefs/{}", fontname);
+	std::string our_hash;
+	std::string their_hash;
+
+	if((fd = open(pathfont.c_str(), O_RDONLY, 0)) < 0)
+		throw(transient_exception(std::format("Display: failed to open font {}", pathfont)));
+
+	this->fontinfo.valid = false;
+	this->fontinfo.magic_word = 0;
+	this->fontinfo.raw.width = 0;
+	this->fontinfo.raw.height = 0;
+	this->fontinfo.net.width = 0;
+	this->fontinfo.net.height = 0;
+	this->fontinfo.extra_glyphs = 0;
+	this->fontinfo.columns = 0;
+	this->fontinfo.rows = 0;
+
+	if((!this->fontstructptr) && !(this->fontstructptr = std::make_unique<font_t>()))
+	{
+		close(fd);
+		throw(hard_exception("Display: out of memory"));
+	}
+
+	if(read(fd, this->fontstructptr.get(), sizeof(font_t)) != sizeof(font_t))
+	{
+		close(fd);
+		throw(transient_exception(std::format("Display: failed to read font {}", pathfont)));
+	}
+
+	close(fd);
+
+	if(this->fontstructptr->magic_word != this->fontstruct_magic_word)
+	{
+		this->fontstructptr.reset();
+		throw(transient_exception(std::format("Display: font file magic word invalid: {:#x}", static_cast<unsigned int>(this->fontstructptr->magic_word))));
+	}
+
+	their_hash.resize(32);
+
+	memcpy(their_hash.data(), this->fontstructptr->checksum, their_hash.size());
+	memset(this->fontstructptr->checksum, 0, sizeof(font_t::checksum));
+
+	our_hash = Crypt::sha256(std::string_view(reinterpret_cast<const char *>(this->fontstructptr.get()), sizeof(font_t)));
+
+	if(our_hash != their_hash)
+	{
+		this->fontstructptr.reset();
+		throw(transient_exception("Display: font file invalid checksum"));
+	}
+
+	this->fontinfo.valid = true;
+	this->fontinfo.magic_word = this->fontstructptr->magic_word;
+	this->fontinfo.raw.width = this->fontstructptr->raw.width;
+	this->fontinfo.raw.height = this->fontstructptr->raw.height;
+	this->fontinfo.net.width = this->fontstructptr->net.width;
+	this->fontinfo.net.height = this->fontstructptr->net.height;
+	this->fontinfo.extra_glyphs =this->fontstructptr->extra_glyphs;
+	this->fontinfo.columns = (this->display_x_size() - (2 * this->page_border_size)) / this->fontinfo.net.width;
+	this->fontinfo.rows = (this->display_y_size() - this->page_text_offset - (2 * this->page_border_size)) / this->fontinfo.net.height;
+}
+
+std::string Display::make_title(std::string_view title)
+{
+	int pad, chop;
+	std::string stamp_string = Util::get().time_to_string(time(nullptr), "{:%d/%m %H:%M}");
+	std::string tag;
+
+	chop = string_length_utf8(title);
+
+	if(stamp_string.length() > this->fontinfo.columns)
+		stamp_string.clear();
+
+	if((chop + stamp_string.length()) > this->fontinfo.columns)
+		chop = this->fontinfo.columns - stamp_string.length();
+
+	pad = this->fontinfo.columns - stamp_string.length() - chop;
+
+	if(chop < 0)
+		throw(hard_exception("Display::make_title: chop < 0"));
+
+	if(pad < 0)
+		throw(hard_exception("Display::make_title: pad < 0"));
+
+	tag = title;
+	std::replace(tag.begin(), tag.end(), '_', ' ');
+
+	if(chop < tag.length())
+		tag = tag.substr(0, chop);
+
+	tag.append(pad, ' ');
+	tag.append(stamp_string);
+
+	return(tag);
+}
+
+Display::Page& Display::add_page(std::scoped_lock<std::mutex>&, const std::string& name, Display::Page::type_t type, int lifetime)
+{
+	PagesData::iterator it;
+
+	if((it = this->pages.data.find(name)) != this->pages.data.end())
+	{
+		if(it->second.type == type)
+			it->second.clear();
+		else
+		{
+			this->pages.data.erase(name);
+			this->pages.version++;
+			it = this->pages.data.end();
+		}
+	}
+
+	if(it == this->pages.data.end())
+	{
+		this->pages.data.try_emplace(name, this->log, type, this->next_colour);
+		this->pages.version++;
+
+		if((it = this->pages.data.find(name)) == this->pages.data.end())
+			throw(hard_exception("Display::add_page: key not found"));
+
+		this->next_colour = this->colour_next(this->next_colour);
+	}
+
+	it->second.expiry = (lifetime > 0) ? time(nullptr) + lifetime : 0;
+
+	return(it->second);
+}
+
+void Display::clear(colour_t colour)
+{
+	if(!this->module)
+		throw(hard_exception("Display: no display active"));
+
+	const auto colourmap_it = this->colourmap.find(colour);
+
+	if(colourmap_it == this->colourmap.end())
+		throw(hard_exception("Display::clear: unknown colour"));
+
+	this->module->clear(colourmap_it->second.r, colourmap_it->second.g, colourmap_it->second.b);
+}
+
+void Display::box(const Display::box_rgb_args_t& args)
+{
+	if(!this->module)
+		throw(hard_exception("Display: no display active"));
+
+	this->module->box(args);
+}
+
+void Display::box(const Display::box_colour_args_t& args)
+{
+	const auto colourmap_it = this->colourmap.find(args.colour);
+
+	if(colourmap_it == this->colourmap.end())
+		throw(hard_exception("Display::box: unknown colour"));
+
+	this->box({ .r = colourmap_it->second.r, .g = colourmap_it->second.g, .b = colourmap_it->second.b, .geometry = args.geometry });
+}
+
+void Display::plot(const Display::plot_args_t& args)
+{
+	if(!this->module)
+		throw(hard_exception("Display: no display active"));
+
+	if(this->module->set_window(args.window))
+		this->module->plot(args.length, args.pixels);
+}
+
+void Display::set_active_layer(int layer)
+{
+	if(!this->module)
+		throw(hard_exception("Display: no display active"));
+
+	this->module->set_active_layer(layer);
+}
+
+void Display::show_layer(int layer)
+{
+	if(!this->module)
+		throw(hard_exception("Display: no display active"));
+
+	this->module->show_layer(layer);
+}
+
+void Display::write(const write_args_t& args)
+{
+	const font_glyph_t *glyph;
+	colour_t new_colour;
+	int current_x_offset;
+	int column, row, stride;
+	int current_glyph;
+	unsigned int glyph_row;
+	rgb_t fg_rgb;
+	rgb_t bg_rgb;
+	std::deque<unsigned int> unicode_line;
+	std::vector<rgb_t> pixels;
+	geometry_t window;
+
+	if(!this->module)
+		throw(hard_exception("Display::write: no display module"));
+
+	if(!this->fontinfo.valid)
+		throw(hard_exception("Display::write: no font loaded"));
+
+	if(!this->colourmap.contains(args.fg) || !this->colourmap.contains(args.bg))
+		throw(hard_exception("Display::write: invalid colour argument"));
+
+	fg_rgb = this->colourmap.at(args.fg);
+	bg_rgb = this->colourmap.at(args.bg);
+
+	if((args.at_line < 0) || (args.y_offset < 0) || (args.x_pad < 0) || (args.y_pad < 0))
+		throw(hard_exception("Display::write: invalid position argument"));
+
+	window.from_x = args.x_pad;
+	window.to_x = this->display_x_size() - 1 - args.x_pad;
+
+	if((window.from_x >= this->display_x_size()) || (window.to_x < 0))
+		return;
+
+	window.from_y = args.y_pad + args.y_offset + (args.at_line * this->fontinfo.net.height);
+	window.to_y = window.from_y + this->fontinfo.net.height - 1;
+
+	if((window.from_y >= (this->display_y_size() - args.y_pad)) || (window.to_y >= (this->display_y_size() - args.y_pad)))
+		return;
+
+	stride = window.to_x - window.from_x + 1;
+	pixels.resize(stride * (window.to_y - window.from_y + 1));
+
+	this->utf8_to_unicode(args.text, unicode_line);
+	current_x_offset = 0;
+
+	for(const auto& unicode : unicode_line)
+	{
+		if(current_x_offset >= (window.to_x - window.from_x))
+			break;
+
+		if((unicode >= 0xf800) && (unicode < 0xf808)) // abuse private use unicode codepoints for foreground colours
+		{
+			new_colour = this->colour_from_int(unicode - 0xf800);
+
+			if(!this->colourmap.contains(new_colour))
+				this->log << std::format("Display::write: foreground colour out of range: {:d}", static_cast<unsigned int>(new_colour));
+			else
+				fg_rgb = this->colourmap.at(new_colour);
+
+			continue;
+		}
+
+		if((unicode >= 0xf808) && (unicode < 0xf810)) // abuse private use unicode codepoints for background colours
+		{
+			new_colour = this->colour_from_int(unicode - 0xf808);
+
+			if(!this->colourmap.contains((new_colour)))
+				this->log << std::format("Display::write: background colour out of range: {:d}", static_cast<unsigned int>(new_colour));
+			else
+				bg_rgb = this->colourmap.at(new_colour);
+
+			continue;
+		}
+
+		glyph = nullptr;
+
+		if(unicode < this->fontstruct_basic_glyphs)
+			glyph = &this->fontstructptr->basic_glyph[unicode];
+		else
+		{
+			for(current_glyph = 0; current_glyph < this->fontinfo.extra_glyphs; current_glyph++)
+			{
+				glyph = &this->fontstructptr->extra_glyph[current_glyph];
+
+				if(glyph->codepoint == unicode)
+					break;
+			}
+
+			if(current_glyph >= this->fontinfo.extra_glyphs)
+				glyph = nullptr;
+		}
+
+		if(!glyph)
+			continue;
+
+		for(row = 0; row < this->fontinfo.net.height; row++)
+		{
+			glyph_row = glyph->row[row];
+
+			for(column = 0; (column < this->fontinfo.net.width) && ((current_x_offset + column) < (window.to_x - window.from_x)); column++)
+				pixels.at((row * stride) + current_x_offset + column) = (glyph_row & (1 << column)) ? fg_rgb : bg_rgb;
+		}
+
+		current_x_offset += this->fontinfo.net.width;
+	}
+
+	this->plot({
+		.window = window,
+		.length = static_cast<int>(pixels.size()),
+		.pixels = pixels.data(),
+	});
+
+	if((window.from_x += current_x_offset) <= window.to_x)
+		this->box({ .r = bg_rgb.r, .g = bg_rgb.g, .b = bg_rgb.b, .geometry = window });
+}
+
+void Display::run_thread()
+{
+	std::string entry_text;
+	time_t stamp;
+	int data_version;
+	int row, from_x, from_y, to_x, to_y, max_x;
+	int x_size, y_size;
+	uint64_t time_start, time_spent;
+	struct stat statb;
+	png_handle_t *handle;
+	PagesData::const_iterator page;
+	int active_layer = 0;
+	std::vector<rgb_t> row_buffer; // = rgb_composite_t = byte[3]
+
+	data_version = 0;
+
+	try
+	{
+		for(;;)
+		{
+			try
+			{
+				switch(this->mode)
+				{
+					case(mode_t::init_log):
+					{
+						try
+						{
+							this->load_font("font_small");
+							this->clear(Display::colour_t::black);
+							this->log_line = 0;
+							this->mode = mode_t::log;
+						}
+						catch(const transient_exception &e)
+						{
+						}
+
+						break;
+					}
+
+					case(mode_t::init_info):
+					{
+						try
+						{
+							std::scoped_lock<std::mutex> pages_lock(this->pages_mutex);
+							this->load_font("font_big");
+							this->pages.version = 0;
+							page = this->pages.data.begin();
+							active_layer = 0;
+							this->set_active_layer(1);
+							this->show_layer(0);
+							this->clear(colour_t::black);
+							this->mode = mode_t::info;
+						}
+						catch(const transient_exception &)
+						{
+						}
+
+						break;
+					}
+
+					case(mode_t::log):
+					{
+						if(!this->log.get_entry(stamp, entry_text))
+						{ // pages_lock
+							std::scoped_lock<std::mutex> pages_lock(this->pages_mutex);
+
+							if(this->pages.data.size() > 0)
+								this->mode = mode_t::init_info;
+
+							throw(transient_exception());
+						}
+
+						this->write({
+							.fg = Display::colour_t::white,
+							.bg = Display::colour_t::black,
+							.at_line = this->log_line,
+							.text = this->util.time_to_string(stamp, "{:%H:%M:%S}") + " " + entry_text,
+						});
+
+						if(++this->log_line >= this->fontinfo.rows)
+							this->log_line = 0;
+
+						this->box({
+								.colour = colour_t::black,
+								.geometry =
+								{
+									.from_x = 0,
+									.from_y = this->log_line * this->fontinfo.net.height,
+									.to_x = this->display_x_size() - 1,
+									.to_y = ((this->log_line + 1) * this->fontinfo.net.height) - 1,
+								},
+						});
+
+						break;
+					}
+
+					case(mode_t::info):
+					{
+						{ // pages lock
+							std::scoped_lock<std::mutex> pages_lock(this->pages_mutex);
+
+							if(this->pages.version != data_version)
+							{
+								data_version = this->pages.version;
+								page = this->pages.data.begin();
+							}
+							else
+							{
+								if(page == this->pages.data.end())
+									page = this->pages.data.begin();
+								else
+								{
+									page++;
+
+									if(page == this->pages.data.end())
+										page = this->pages.data.begin();
+								}
+							}
+
+							if((page != this->pages.data.end()) && (page->second.expiry > 0) && (time(nullptr) > page->second.expiry))
+								page = this->pages.data.erase(page);
+
+							if(page == this->pages.data.end())
+							{
+								this->mode = mode_t::init_log;
+								throw(transient_exception());
+							}
+
+							time_start = esp_timer_get_time();
+
+							x_size = this->module->display_x_size();
+							y_size = this->module->display_y_size();
+
+							this->box({
+								.colour = page->second.colour,
+								.geometry =
+								{
+									.from_x = 0,
+									.from_y = 0,
+									.to_x =	page_border_size - 1,
+									.to_y = y_size - 1,
+								},
+							});
+
+							this->box({
+								.colour = page->second.colour,
+								.geometry =
+								{
+									.from_x = 0,
+									.from_y = 0,
+									.to_x = x_size - 1,
+									.to_y = this->page_border_size - 1,
+								},
+							});
+
+							this->box({
+								.colour = page->second.colour,
+								.geometry =
+								{
+									.from_x = x_size - 1 - this->page_border_size + 1,
+									.from_y = 0,
+									.to_x = x_size - 1,
+									.to_y =	y_size - 1,
+								},
+							});
+
+							this->box({
+								.colour = page->second.colour,
+								.geometry =
+								{
+									.from_x = 0,
+									.from_y = y_size - 1 - page_border_size + 1,
+									.to_x = x_size - 1,
+									.to_y = y_size - 1,
+								},
+							});
+
+							this->box({
+								.colour = page->second.colour,
+								.geometry =
+								{
+									.from_x = 0,
+									.from_y = this->page_border_size + this->fontinfo.net.height,
+									.to_x = x_size - 1,
+									.to_y = this->page_border_size + this->fontinfo.net.height + this->page_text_offset - 1,
+								},
+							});
+
+							this->write({
+								.fg = colour_t::white,
+								.bg = page->second.colour,
+								.at_line = 0,
+								.y_offset = 0,
+								.x_pad = this->page_border_size,
+								.y_pad = this->page_border_size,
+								.text = this->make_title(page->first),
+							});
+
+							switch(page->second.type)
+							{
+								case(Page::type_t::text):
+								{
+
+									for(row = 0; row < page->second.text.lines.size(); row++)
+									{
+										this->write({
+											.fg = colour_t::black,
+											.bg = colour_t::white,
+											.at_line = row + 1,
+											.y_offset = this->page_text_offset,
+											.x_pad = this->page_border_size,
+											.y_pad = this->page_border_size,
+											.text = page->second.text.lines[row],
+										});
+									}
+
+									from_y = ((row + 1) * this->fontinfo.net.height) + this->page_border_size + this->page_text_offset;
+
+									if(from_y <= (y_size - 1 - this->page_border_size))
+										this->box({
+											.colour = colour_t::white,
+											.geometry =
+											{
+												.from_x = this->page_border_size,
+												.from_y = from_y,
+												.to_x = x_size - 1 - this->page_border_size,
+												.to_y = y_size - 1 - this->page_border_size,
+											},
+										});
+
+									break;
+								}
+
+								case(Page::type_t::image):
+								{
+									if(stat(page->second.image.filename.c_str(), &statb))
+										throw(transient_exception(std::format("cannot stat image file: {}", page->second.image.filename)));
+
+									if(statb.st_size != page->second.image.length)
+									{
+										this->stats["skipped incomplete images"]++;
+										throw(transient_exception());
+									}
+
+									if(!(handle = png_open(page->second.image.filename.c_str())))
+										throw(transient_exception(std::format("error in png_open(\"{}\")", page->second.image.filename)));
+
+									row_buffer.resize(handle->width);
+
+									max_x = x_size - 1 - this->page_border_size;
+									from_y = this->page_border_size + this->fontinfo.net.height + this->page_text_offset;
+									from_x = this->page_border_size;
+									to_y = y_size - 1 - this->page_border_size;
+									to_x = this->page_border_size + handle->width;
+
+									if(to_x > max_x)
+										to_x = max_x;
+
+									for(row = 0; row < handle->height; row++, from_y++)
+									{
+										if(from_y > to_y)
+											break;
+
+										if(!png_decode_row(handle, handle->row_size, reinterpret_cast<uint8_t *>(row_buffer.data())))
+											break;
+
+										this->plot({
+												.window =
+												{
+													.from_x = from_x,
+													.from_y = from_y,
+													.to_x = to_x,
+													.to_y = from_y,
+												},
+												.length = static_cast<int>(handle->width),
+												.pixels = row_buffer.data(),
+										});
+
+										to_x++;
+
+										if(to_x <= max_x)
+											this->box({
+												.colour = page->second.colour,
+												.geometry =
+												{
+													.from_x = to_x,
+													.from_y = from_y,
+													.to_x = max_x,
+													.to_y = from_y,
+												},
+											});
+									}
+
+									if(from_y < to_y)
+										this->box({
+											.colour = page->second.colour,
+											.geometry =
+											{
+												.from_x = this->page_border_size,
+												.from_y = from_y,
+												.to_x = x_size - 1 - this->page_border_size,
+												.to_y = to_y,
+											},
+										});
+
+									png_close(&handle);
+
+									break;
+								}
+
+								default:
+								{
+									throw(hard_exception(std::format("display: unknown page type: {:d}", static_cast<unsigned int>(page->second.type))));
+									break;
+								}
+							}
+						}
+
+						this->show_layer(active_layer);
+						active_layer = (active_layer + 1) % 2;
+						this->set_active_layer(active_layer);
+
+						time_spent = esp_timer_get_time() - time_start;
+						this->stats["display show time"] = time_spent / 1000ULL;
+
+						std::this_thread::sleep_for(std::chrono::milliseconds(8000));
+
+						break;
+					}
+
+					default:
+					{
+						throw(hard_exception("invalid mode"));
+						break;
+					}
+				}
+			}
+			catch(const transient_exception &e)
+			{
+				std::string what(e.what());
+
+				if(what.length() > 0)
+					this->log << std::format("Display info: {}", what);
+
+				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			}
+		}
+	}
+	catch(const transient_exception &e)
+	{
+		this->log.abort(std::format("Display::run_thread: unhandled transient exception: {}", e.what()));
+	}
+	catch(const hard_exception &e)
+	{
+		this->log.abort(std::format("Display::run_thread: unhandled hard exception: {}", e.what()));
+	}
+	catch(const std::exception &e)
+	{
+		this->log.abort(std::format("Display::run_thread: unhandled std::exception: {}", e.what()));
+	}
+	catch(...)
+	{
+		this->log.abort(std::format("Display::run_thread: unhandled unknown exception"));
+	}
+
+	this->log.abort("Display::run_thread: main loop returns");
+}
+
+Display& Display::get()
+{
+	if(!Display::singleton)
+		throw(hard_exception("Display not active"));
+
+	return(*Display::singleton);
+}
+
+std::string Display::info()
+{
+	std::string out, datetime;
+	int page_index, line_index;
+	std::scoped_lock<std::mutex> pages_lock(this->pages_mutex);
+
+	if(!this->module)
+	{
+		out += "\nno display active";
+		return(out);
+	}
+
+	out = std::format("DISPLAY configuration for display: {} using interface {}", this->module->_name(), this->module->_interface());
+
+	if(!this->fontinfo.valid)
+	{
+		out += "\nno display font loaded";
+		return(out);
+	}
+
+	out += "\nfont info: ";
+	out += std::format("\n- magic word: {:#x}", this->fontinfo.magic_word);
+	out += std::format("\n- raw width: {:d}", this->fontinfo.raw.width);
+	out += std::format("\n- raw height: {:d}", this->fontinfo.raw.height);
+	out += std::format("\n- net width: {:d}", this->fontinfo.net.width);
+	out += std::format("\n- net height: {:d}", this->fontinfo.net.height);
+	out += std::format("\n- basic glyphs: {:d}", this->fontstruct_basic_glyphs);
+	out += std::format("\n- extra glyphs: {:d}/{:d}", this->fontinfo.extra_glyphs, this->fontstruct_max_extra_glyphs);
+	out += std::format("\n- columns: {:d}", this->fontinfo.columns);
+	out += std::format("\n- rows: {:d}", this->fontinfo.rows);
+
+	out += "\npages:";
+
+	page_index = 0;
+
+	for(const auto& page : this->pages.data)
+	{
+		if(page.second.expiry > 0)
+			datetime = this->util.time_to_string(page.second.expiry, "{:%d/%m %h:%m}");
+		else
+			datetime = "<infinite>";
+
+		out += std::format("\n- PAGE {:d}: \"{}\", expiry: {}, colour: {:s}, type: ",
+				page_index, page.first, datetime, magic_enum::enum_name(page.second.colour));
+
+		switch(page.second.type)
+		{
+			case(Page::type_t::text):
+			{
+				out += "text, contents:";
+
+				line_index = 0;
+
+				for(const auto& line : page.second.text.lines)
+				{
+					out += std::format("\n-   {:d}: {}", line_index, line);
+					line_index++;
+				}
+
+				break;
+			}
+
+			case(Page::type_t::image):
+			{
+				out += std::format("image, file: {} ({:d}k)", page.second.image.filename, page.second.image.length / 1024);
+				break;
+			}
+
+			default:
+			{
+				out += std::format("invalid type: {:d}", magic_enum::enum_integer(page.second.type));
+				break;
+			}
+		}
+
+		page_index++;
+	}
+
+	out += "\nSTATS:";
+
+	for(const auto& stat : this->stats)
+		out += std::format("\n- {:12}: {:d}", std::format("{}:", stat.first), stat.second);
+
+	return(out);
+}
+
+int Display::display_x_size()
+{
+	if(!this->module)
+		throw(hard_exception("Display: no display active"));
+
+	return(this->module->display_x_size());
+}
+
+int Display::display_y_size()
+{
+	if(!this->module)
+		throw(hard_exception("Display: no display active"));
+
+	return(this->module->display_y_size());
+}
+
+int Display::image_x_size()
+{
+	if(!this->fontinfo.valid)
+		return(0);
+
+	return(this->display_x_size() - (2 * this->page_border_size));
+}
+
+int Display::image_y_size()
+{
+	if(!this->fontinfo.valid)
+		return(0);
+
+	return(this->display_y_size() - ((2 * this->page_border_size) + this->page_text_offset + this->fontinfo.net.height - 1));
+}
+
+void Display::configure(int type, int interface_index, int __x_size, int __y_size, bool flip_, bool invert_, bool rotate_)
+{
+	if(!magic_enum::enum_contains<Display::module_id_t>(type))
+		throw(transient_exception("display::configure: invalid type"));
+
+	this->config.erase_wildcard("display.");
+	this->config.set_int("display.type", type);
+	this->config.set_int("display.if", interface_index);
+	this->config.set_int("display.size.x", __x_size);
+	this->config.set_int("display.size.y", __y_size);
+	this->config.set_int("display.flip", flip_ ? 1 : 0);
+	this->config.set_int("display.invert", invert_ ? 1 : 0);
+	this->config.set_int("display.rotate", rotate_ ? 1 : 0);
+}
+
+void Display::erase()
+{
+	this->config.erase_wildcard("display.");
+}
+
+void Display::brightness(int value)
+{
+	if(!this->module)
+		throw(hard_exception("Display: no display active"));
+
+	this->module->brightness(value);
+}
+
+void Display::add_text_page(const std::string& name, int lifetime, std::string_view contents)
+{
+	auto contents_it = contents.begin();
+	std::string line;
+	std::scoped_lock<std::mutex> pages_lock(this->pages_mutex);
+	auto& page = this->add_page(pages_lock, name, Page::type_t::text, lifetime);
 
 	for(contents_it = contents.begin(); contents_it != contents.end(); contents_it++)
 	{
@@ -350,7 +1162,7 @@ static bool page_add_text(std::string_view name, unsigned int lifetime, std::str
 				}
 
 				contents_it++;
-				page_ptr->text.lines.push_back(line);
+				page.text.lines.push_back(line);
 
 				line.clear();
 
@@ -359,7 +1171,7 @@ static bool page_add_text(std::string_view name, unsigned int lifetime, std::str
 
 			case('\n'):
 			{
-				page_ptr->text.lines.push_back(line);
+				page.text.lines.push_back(line);
 
 				line.clear();
 
@@ -374,756 +1186,27 @@ static bool page_add_text(std::string_view name, unsigned int lifetime, std::str
 			}
 		}
 	}
-
-	return(true);
 }
 
-static bool page_add_image(std::string_view name, unsigned int lifetime, std::string_view filename, unsigned int length)
+void Display::add_image_page(const std::string& name, int lifetime, std::string_view filename, int length)
 {
-	int page;
-	display_page_t *page_ptr;
+	std::scoped_lock<std::mutex> pages_lock(this->pages_mutex);
+	auto& page = this->add_page(pages_lock, name, Page::type_t::image, lifetime);
 
-	assert(inited);
-
-	if((page = page_find(name)) < 0)
-	{
-		display_page_t new_page;
-
-		new_page.colour = next_colour;
-		next_colour = static_cast<display_colour_t>(next_colour + 1);
-		if(next_colour >= dc_white)
-			next_colour = dc_first;
-
-		display_pages.push_back(new_page);
-		page = display_pages.size() - 1;
-	}
-	else
-		if((display_pages[page].type == dpt_image) &&
-					!display_pages[page].image.filename.empty() &&
-					(display_pages[page].image.filename != filename) &&
-					unlink(display_pages[page].image.filename.c_str()))
-			Log::get() << std::format("display: page add image: unlink image {} failed", display_pages[page].image.filename);
-
-	page_ptr = &display_pages[page];
-	page_init(*page_ptr);
-	page_ptr->name = name;
-	page_ptr->type = dpt_image;
-	page_ptr->expiry = (lifetime > 0) ? time(nullptr) + lifetime : 0;
-	page_ptr->image.filename = filename;
-	page_ptr->image.length = length;
-
-	return(true);
+	page.image.filename = filename;
+	page.image.length = length;
 }
 
-static bool load_font(std::string_view fontname)
+bool Display::remove_page(const std::string& name)
 {
-	int fd;
-	std::string pathfont;
-	std::string our_hash;
-	std::string their_hash;
+	std::scoped_lock<std::mutex> pages_lock(this->pages_mutex);
+	PagesData::const_iterator it;
 
-	pathfont = std::string("/littlefs/");
-	pathfont.append(fontname);
-
-	if((fd = open(pathfont.c_str(), O_RDONLY, 0)) < 0)
-	{
-		Log::get() << std::format("display: failed to open font {}", pathfont);
-		goto error;
-	}
-
-	if(!font)
-		font = new font_t;
-
-	if(read(fd, font, sizeof(*font)) != sizeof(*font))
-	{
-		Log::get() << std::format("display: failed to read font {}", pathfont);
-		goto error;
-	}
-
-	close(fd);
-	fd = -1;
-
-	if(font->magic_word != font_magic_word)
-	{
-		Log::get() << std::format("display: font file magic word invalid: {:#x}", static_cast<unsigned int>(font->magic_word));
-		goto error;
-	}
-
-	their_hash.resize(32);
-
-	memcpy(their_hash.data(), font->checksum, their_hash.size());
-	memset(font->checksum, 0, sizeof(font->checksum));
-
-	our_hash = Crypt::sha256(std::string_view(reinterpret_cast<const char *>(font), sizeof(*font)));
-
-	if(our_hash != their_hash)
-	{
-		Log::get() << "display: font file invalid checksum";
-		goto error;
-	}
-
-	display_columns = (x_size - (2 * page_border_size)) / font->net.width;
-	display_rows = (y_size - page_text_offset - (2 * page_border_size)) / font->net.height;
-
-	return(true);
-
-error:
-	if(fd >= 0)
-		close(fd);
-
-	if(font)
-	{
-		delete font;
-		font = nullptr;
-	}
-
-	display_columns = 0;
-	display_rows = 0;
-
-	return(false);
-}
-
-static bool clear(display_colour_t bg)
-{
-	assert(inited);
-
-	if((display_type == dt_no_display) || !info[display_type].clear_fn)
+	if((this->pages.data.find(name)) == this->pages.data.end())
 		return(false);
 
-	info[display_type].clear_fn(bg);
+	this->pages.data.erase(it);
+	this->pages.version++;
 
 	return(true);
-}
-
-static void run_display_log(void *)
-{
-	unsigned int entry;
-	std::string entry_text;
-	time_t stamp;
-	std::deque<uint32_t> unicode_buffer;
-	void (*write_fn)(const font_t *font, display_colour_t fg, display_colour_t bg,
-				unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
-				const std::deque<uint32_t> &line_unicode);
-	void (*box_fn)(display_colour_t, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y);
-
-	try
-	{
-		display_log_y = 0;
-
-		for(;;)
-		{
-			if(!log_display_queue && !(log_display_queue = Log::get().get_display_queue()))
-				continue;
-
-			assert(xQueueReceive(log_display_queue, &entry, portMAX_DELAY));
-
-			if(font_valid && log_mode &&
-					(display_type != dt_no_display) &&
-					(write_fn = info[display_type].write_fn) &&
-					(box_fn = info[display_type].box_fn))
-			{
-				Log::get().get_entry(entry, stamp, entry_text);
-				utf8_to_unicode(Util::get().time_to_string(stamp, "{:%H:%M:%S}") + " " + entry_text, unicode_buffer);
-
-				write_fn(font, dc_white, dc_black, 0, display_log_y, x_size - 1, display_log_y + font->net.height - 1, unicode_buffer);
-
-				display_log_y += font->net.height;
-
-				if((display_log_y + font->net.height) > y_size)
-					display_log_y = 0;
-
-				box_fn(dc_black, 0, display_log_y, x_size - 1, display_log_y + font->net.height - 1);
-			}
-		}
-	}
-	catch(const e32if_exception &e)
-	{
-		Log::get().abort(std::format("run_display_log: uncaught exception: {}", e.what()));
-	}
-
-	Log::get().abort("run_display_log returns");
-}
-
-static void run_display_info(void *)
-{
-	int current_page;
-	int current_layer;
-	int row, y1, y2;
-	int pad, chop;
-	std::string stamp_string;
-	std::string name_tmp;
-	std::string title_line;
-	void (*write_fn)(const font_t *font, display_colour_t fg, display_colour_t bg,
-				unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
-				const std::deque<uint32_t> &line_unicode);
-	void (*plot_line_fn)(unsigned int from_x, unsigned int from_y, unsigned int to_x,
-				unsigned int rgb_pixels_length, const display_rgb_t *pixels);
-	void (*box_fn)(display_colour_t, unsigned int from_x, unsigned int from_y,
-				unsigned int to_x, unsigned int to_y);
-	uint64_t time_start, time_spent;
-	bool fastskip;
-	struct stat statb;
-	std::deque<uint32_t> unicode_buffer;
-	uint8_t *row_buffer = nullptr;
-	png_handle_t *handle;
-
-	current_layer = 0;
-
-	for(;;)
-	{
-		current_page = 0;
-
-		for(;;)
-		{
-			page_data_mutex_take();
-
-			fastskip = false;
-
-			if(!font_valid ||
-						(display_type == dt_no_display) ||
-						(!(write_fn = info[display_type].write_fn)) ||
-						(!(plot_line_fn = info[display_type].plot_line_fn)) ||
-						(!(box_fn = info[display_type].box_fn)))
-				goto next;
-
-			if(display_pages.empty())
-			{
-				if(!log_mode)
-				{
-					font_valid = load_font("font_small");
-					log_mode = true;
-					clear(dc_black);
-					display_log_y = 0;
-				}
-
-				goto next;
-			}
-
-			if(current_page >= display_pages.size())
-				current_page = 0;
-
-			if(log_mode)
-			{
-				if(!((font_valid = load_font("font_big"))))
-					goto next;
-
-				log_mode = false;
-				current_page = 0;
-			}
-
-			time_start = esp_timer_get_time();
-
-			if(info[display_type].set_layer_fn)
-				info[display_type].set_layer_fn((current_layer + 1) % 2);
-
-			box_fn(display_pages[current_page].colour,	0,										0,										x_size - 1,				page_border_size - 1);
-			box_fn(display_pages[current_page].colour,	(x_size - 1) - (page_border_size - 1),	0,										x_size - 1,				y_size - 1);
-			box_fn(display_pages[current_page].colour,	0,										(y_size - 1) - (page_border_size - 1),	x_size - 1,				y_size - 1);
-			box_fn(display_pages[current_page].colour,	0,										0,										page_border_size - 1,	y_size - 1);
-
-			stamp_string = Util::get().time_to_string(time(nullptr), "{:%d/%m %H:%M}");
-
-			if(stamp_string.length() > display_columns)
-			{
-				chop = string_length_utf8(display_pages[current_page].name);
-
-				if(chop > display_columns)
-				{
-					chop = display_columns;
-					pad = 0;
-				}
-				else
-					pad = display_columns - string_length_utf8(display_pages[current_page].name);
-
-				assert(pad >= 0);
-
-				name_tmp = display_pages[current_page].name;
-				std::replace(name_tmp.begin(), name_tmp.end(), '_', ' ');
-
-				if(chop >= name_tmp.length())
-					title_line = name_tmp;
-				else
-					title_line = name_tmp.substr(0, chop);
-
-				title_line.append(pad, ' ');
-			}
-			else
-			{
-				chop = string_length_utf8(display_pages[current_page].name);
-;
-				if((chop + stamp_string.length()) > display_columns)
-					chop = display_columns - stamp_string.length();
-
-				pad = display_columns - stamp_string.length() - chop;
-
-				assert(chop >= 0);
-				assert(pad >= 0);
-
-				name_tmp = display_pages[current_page].name;
-				std::replace(name_tmp.begin(), name_tmp.end(), '_', ' ');
-
-				if(chop >= name_tmp.length())
-					title_line = name_tmp;
-				else
-					title_line = name_tmp.substr(0, chop);
-
-				title_line.append(pad, ' ');
-				title_line.append(stamp_string);
-			}
-
-			utf8_to_unicode(title_line, unicode_buffer);
-			write_fn(font, dc_white, display_pages[current_page].colour,
-					page_border_size, page_border_size, (x_size - 1) - page_border_size, page_text_offset + page_border_size + (font->net.height - 1), unicode_buffer);
-
-			switch(display_pages[current_page].type)
-			{
-				case(dpt_text):
-				{
-					y1 = font->net.height + page_border_size + page_text_offset;
-
-					for(row = 0; row < display_pages[current_page].text.lines.size(); row++)
-					{
-						y2 = y1 + (font->net.height - 1);
-
-						if(y2 > y_size - page_border_size)
-							y2 = y_size - page_border_size;
-
-						utf8_to_unicode(display_pages[current_page].text.lines[row], unicode_buffer);
-
-						write_fn(font, dc_black, dc_white,
-								page_border_size, y1, (x_size - 1) - page_border_size, y2,
-								unicode_buffer);
-
-						y1 += font->net.height;
-					}
-
-					if(y1 < ((y_size - 1) - page_border_size))
-						box_fn(dc_white, page_border_size, y1, (x_size - 1) - page_border_size, (y_size - 1) - page_border_size);
-
-					break;
-				}
-
-				case(dpt_image):
-				{
-					if(stat(display_pages[current_page].image.filename.c_str(), &statb))
-					{
-						Log::get() << std::format("display: cannot stat image file: {}", display_pages[current_page].image.filename);
-						fastskip = true;
-						break;
-					}
-
-					if(statb.st_size != display_pages[current_page].image.length)
-					{
-						stat_skipped_incomplete_images++;
-						fastskip = true;
-						break;
-					}
-
-					if(!(handle = png_open(display_pages[current_page].image.filename.c_str())))
-					{
-						Log::get() << std::format("png_open: error");
-						break;
-					}
-
-					row_buffer = new uint8_t[handle->row_size];
-
-					for(row = 0; row < handle->height; row++)
-					{
-						y1 = page_border_size + page_text_offset + (font->net.height - 1) + row;
-
-						if((y1 + page_border_size) > y_size)
-							break;
-
-						if(!png_decode_row(handle, handle->row_size, row_buffer))
-							break;
-
-						plot_line_fn(page_border_size,
-								page_border_size + page_text_offset + (font->net.height - 1) + row, (x_size - 1) - page_border_size, handle->width,
-								reinterpret_cast<const display_rgb_t *>(row_buffer));
-					}
-
-					delete [] row_buffer;
-					png_close(&handle);
-
-					break;
-				}
-
-				default:
-				{
-					Log::get() << std::format("display: unknown page type: {:d}", static_cast<unsigned int>(display_pages[current_page].type));
-					break;
-				}
-			}
-
-			if((display_pages[current_page].expiry > 0) && (time(nullptr) > display_pages[current_page].expiry))
-			{
-				page_erase(current_page);
-				goto next;
-			}
-
-			current_layer = (current_layer + 1) % 2;
-
-			if(info[display_type].show_layer_fn)
-				info[display_type].show_layer_fn(current_layer);
-
-			time_spent = esp_timer_get_time() - time_start;
-			stat_display_show = time_spent / 1000ULL;
-
-next:
-			page_data_mutex_give();
-			std::this_thread::sleep_for(std::chrono::milliseconds(fastskip ? 100 : 8000));
-
-			current_page++;
-		}
-	}
-
-	Log::get().abort("run_display_info returns");
-}
-
-static void display_info(std::string &output)
-{
-	uint32_t value;
-	unsigned int found;
-	dv_t dv;
-	unsigned int line, page;
-	std::string datetime;
-
-	if(!inited)
-	{
-		output = "No displays configured";
-		return;
-	}
-
-	output = "DISPLAY configuration:";
-
-	for(dv = dv_start, found = 0; dv < dv_size; dv = static_cast<dv_t>(dv + 1))
-	{
-		try
-		{
-			value = Config::get().get_int(display_variable[dv][1]);
-			found++;
-			output += std::format("\n- {}: {:d}", display_variable[dv][0], value);
-		}
-		catch(const transient_exception &)
-		{
-		}
-	}
-
-	if(found == 0)
-	{
-		output += "\n- no display configuration found";
-		return;
-	}
-
-	output += std::format("\nDISPLAY current type {}, ", info[display_type].name);
-
-	if(!font_valid)
-		output += "no display font loaded";
-	else
-	{
-		output += "font info: ";
-		output += std::format("\n- magic word: {:#x}", static_cast<unsigned int>(font->magic_word));
-		output += std::format("\n- raw width: {:d}", static_cast<unsigned int>(font->raw.width));
-		output += std::format("\n- raw height: {:d}", static_cast<unsigned int>(font->raw.height));
-		output += std::format("\n- net width: {:d}", static_cast<unsigned int>(font->net.width));
-		output += std::format("\n- net height: {:d}", static_cast<unsigned int>(font->net.height));
-		output += std::format("\n- basic glyphs: {:d}", static_cast<unsigned int>(font_basic_glyphs_size));
-		output += std::format("\n- extra glyphs: {:d}", static_cast<unsigned int>(font->extra_glyphs));
-		output += std::format("\n- columns: {:d}", display_columns);
-		output += std::format("\n- rows: {:d}", display_rows);
-
-		output += "\nPAGES:";
-
-		for(page = 0; page < display_pages.size(); page++)
-		{
-			if(display_pages[page].expiry > 0)
-				datetime = Util::get().time_to_string(display_pages[page].expiry, "{:%d/%m %H:%M}");
-			else
-				datetime = "<infinite>";
-
-			output += std::format("\n- PAGE {:d}: \"{}\", expiry: {}, colour: {:d}, type: ",
-					page, display_pages[page].name, datetime, static_cast<unsigned int>(display_pages[page].colour));
-
-			switch(display_pages[page].type)
-			{
-				case(dpt_text):
-				{
-					output += "text, contents:";
-
-					for(line = 0; line < display_pages[page].text.lines.size(); line++)
-						output += std::format("\n-   {:d}: {}", line, display_pages[page].text.lines[line]);
-
-					break;
-				}
-
-				case(dpt_image):
-				{
-					output += std::format("image, file: {} ({:d}k)",
-							display_pages[page].image.filename, display_pages[page].image.length / 1024);
-					break;
-				}
-
-				default:
-				{
-					Log::get().abort("display_pages[page].type invalid");
-				}
-			}
-		}
-
-		output += "\nSTATS:";
-		output += std::format("\n- display draw time: {:d} ms", stat_display_show);
-		output += std::format("\n- incomplete images skipped: {:d}", stat_skipped_incomplete_images);
-	}
-}
-
-static bool brightness(unsigned int percentage)
-{
-	assert(inited);
-
-	if((display_type == dt_no_display) || !info[display_type].bright_fn)
-		return(false);
-
-	info[display_type].bright_fn(percentage);
-
-	return(true);
-}
-
-unsigned int display_image_x_size(void)
-{
-	if((display_type == dt_no_display) || !font_valid || !font)
-		return(0);
-
-	return(x_size - (2 * page_border_size));
-}
-
-unsigned int display_image_y_size(void)
-{
-	if((display_type == dt_no_display) || !font_valid || !font)
-		return(0);
-
-	return(y_size - ((2 * page_border_size) + page_text_offset + font->net.height - 1));
-}
-
-void command_display_brightness(cli_command_call_t *call)
-{
-	assert(call->parameter_count == 1);
-
-	if(brightness(call->parameters[0].unsigned_int))
-		call->result = "set brightness: ok";
-	else
-		call->result = "set brightness: no display";
-}
-
-void command_display_configure(cli_command_call_t *call)
-{
-	dv_t ix;
-
-	assert((call->parameter_count <= 9));
-
-	if(call->parameter_count == 0)
-	{
-		display_info(call->result);
-		return;
-	}
-
-	if(call->parameters[0].unsigned_int >= dt_size)
-	{
-		call->result = "display-configure: invalid display type, choose type as:";
-		call->result += "\n- 0: generic SPI LCD";
-
-		return;
-	}
-
-	if(call->parameter_count < 4)
-	{
-		call->result = "display-configure: at least 4 parameters required:";
-
-		for(ix = dv_start; ix < dv_size; ix = static_cast<dv_t>(ix + 1))
-			call->result += std::format("\n- {:d}: {}", ix + 1, display_variable[ix][2]);
-
-		return;
-	}
-
-	Config::get().erase_wildcard("display.");
-
-	for(ix = dv_start; (ix < dv_size) && (ix < call->parameter_count); ix = static_cast<dv_t>(ix + 1))
-		Config::get().set_int(display_variable[ix][1], call->parameters[ix].unsigned_int);
-
-	display_info(call->result);
-}
-
-void command_display_erase(cli_command_call_t *call)
-{
-	assert(call->parameter_count == 0);
-
-	Config::get().erase_wildcard("display.");
-
-	page_data_mutex_take();
-	display_info(call->result);
-	page_data_mutex_give();
-}
-
-void command_display_info(cli_command_call_t *call)
-{
-	assert(call->parameter_count == 0);
-
-	page_data_mutex_take();
-	display_info(call->result);
-	page_data_mutex_give();
-}
-
-void command_display_page_add_text(cli_command_call_t *call)
-{
-	bool rv;
-
-	assert(call->parameter_count == 3);
-
-	page_data_mutex_take();
-	rv = page_add_text(call->parameters[0].str, call->parameters[1].unsigned_int, call->parameters[2].str);
-	page_data_mutex_give();
-
-	call->result = std::format("display-page-add-text{}added \"{}\"", rv ? " " : " not ", call->parameters[0].str);
-}
-
-void command_display_page_add_image(cli_command_call_t *call)
-{
-	bool rv;
-
-	assert(call->parameter_count == 4);
-
-	page_data_mutex_take();
-	rv = page_add_image(call->parameters[0].str, call->parameters[1].unsigned_int, call->parameters[2].str, call->parameters[3].unsigned_int);
-	page_data_mutex_give();
-
-	call->result = std::format("display-page-add-image{}added \"{}\"", rv ? " " : " not ", call->parameters[0].str);
-}
-
-void command_display_page_remove(cli_command_call_t *call)
-{
-	int page;
-
-	assert(call->parameter_count == 1);
-
-	page_data_mutex_take();
-	page = page_find(call->parameters[0].str);
-
-	if(page < 0)
-	{
-		page_data_mutex_give();
-		call->result = std::format("display-page-remove not found \"{}\"", call->parameters[0].str);
-		return;
-	}
-
-	page_erase(page);
-	page_data_mutex_give();
-
-	call->result = std::format("display-page-remove removed \"{}\"", call->parameters[0].str);
-}
-
-void display_init(void)
-{
-	uint32_t type;
-
-	static display_init_parameters_t display_init_parameters =
-	{
-		.interface_index = -1,
-		.x_size = -1,
-		.y_size = -1,
-		.flip = -1,
-		.invert = -1,
-		.rotate = -1,
-	};
-
-	try
-	{
-		type = Config::get().get_int(display_variable[dv_type][1]);
-	}
-	catch(const transient_exception &e)
-	{
-		return;
-	}
-
-	if((dt_type_first + type) >= dt_size)
-	{
-		Log::get() << std::format("display init: unknown display type: {:d}", static_cast<unsigned int>(type));
-		return;
-	}
-
-	display_type = static_cast<display_type_t>(dt_type_first + type);
-
-	try
-	{
-		display_init_parameters.interface_index = Config::get().get_int(display_variable[dv_if][1]);
-	}
-	catch(const transient_exception &)
-	{
-	}
-
-	try
-	{
-		display_init_parameters.x_size = x_size = Config::get().get_int(display_variable[dv_x_size][1]);
-	}
-	catch(const transient_exception &)
-	{
-	}
-
-	try
-	{
-		display_init_parameters.y_size = y_size = Config::get().get_int(display_variable[dv_y_size][1]);
-	}
-	catch(const transient_exception &)
-	{
-	}
-
-	try
-	{
-		display_init_parameters.flip = Config::get().get_int(display_variable[dv_flip][1]);
-	}
-	catch(const transient_exception &)
-	{
-	}
-
-	try
-	{
-		display_init_parameters.invert = Config::get().get_int(display_variable[dv_invert][1]);
-	}
-	catch(const transient_exception &)
-	{
-	}
-
-	try
-	{
-		display_init_parameters.rotate = Config::get().get_int(display_variable[dv_rotate][1]);
-	}
-	catch(const transient_exception &)
-	{
-	}
-
-	assert(info[display_type].init_fn);
-
-	if(!info[display_type].init_fn(&display_init_parameters))
-	{
-		display_type = dt_no_display;
-		return;
-	}
-
-	page_data_mutex = xSemaphoreCreateMutex();
-	assert(page_data_mutex);
-
-	inited = true;
-
-	if(!(font_valid = load_font("font_small")))
-	{
-		Log::get() << "display: load font failed";
-		return;
-	}
-
-	clear(dc_black);
-	brightness(75);
-
-	if(xTaskCreatePinnedToCore(run_display_log, "display-log", 4 * 1024, nullptr, 1, (TaskHandle_t *)0, 1) != pdPASS)
-		Log::get().abort("display: xTaskCreatePinnedToNode display log");
-
-	if(xTaskCreatePinnedToCore(run_display_info, "display-info", 4 * 1024, nullptr, 1, (TaskHandle_t *)0, 1) != pdPASS)
-		Log::get().abort("display: xTaskCreatePinnedToNode display run");
 }

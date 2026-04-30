@@ -18,6 +18,7 @@
 #include "sensor.h"
 #include "exception.h"
 #include "cli-command.h"
+#include "display.h"
 
 #include <string>
 #include <deque>
@@ -104,7 +105,7 @@ class Command final
 		static void i2c_speed(cli_command_call_t *);
 		static void i2c_probe(cli_command_call_t *);
 
-		Command(Config &, Console &, Ledpixel &, LedPWM &, Notify &, Log &, System &, Util &, PDM &, MCPWM &, FS &, BT &, WLAN &, UDP &, TCP &, I2c &, Sensors &);
+		Command(Config&, Console&, Ledpixel&, LedPWM&, Notify&, Log&, System&, Util&, PDM&, MCPWM&, FS&, BT&, WLAN&, UDP&, TCP&, I2c&, Sensors&, Display&);
 		Command() = delete;
 		Command(const Command &) = delete;
 
@@ -234,6 +235,7 @@ class Command final
 		TCP &tcp;
 		I2c &i2c;
 		Sensors &sensors;
+		Display& display;
 
 		QueueHandle_t receive_queue_handle;
 		QueueHandle_t send_queue_handle;

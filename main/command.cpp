@@ -13,6 +13,7 @@
 #include "bt.h"
 #include "exception.h"
 #include "packet.h"
+#include "display.h"
 
 #include "log.h"
 #include "command.h"
@@ -43,13 +44,6 @@ void command_ota_write(cli_command_call_t *call);
 void command_ota_finish(cli_command_call_t *call);
 void command_ota_commit(cli_command_call_t *call);
 void command_ota_confirm(cli_command_call_t *call);
-void command_display_brightness(cli_command_call_t *call);
-void command_display_configure(cli_command_call_t *call);
-void command_display_erase(cli_command_call_t *call);
-void command_display_info(cli_command_call_t *call);
-void command_display_page_add_text(cli_command_call_t *call);
-void command_display_page_add_image(cli_command_call_t *call);
-void command_display_page_remove(cli_command_call_t *call);
 void command_io_dump(cli_command_call_t *call);
 void command_io_read(cli_command_call_t *call);
 void command_io_stats(cli_command_call_t *call);
@@ -498,11 +492,11 @@ Command *Command::singleton = nullptr;
 
 Command::Command(Config &config_in, Console &console_in, Ledpixel &ledpixel_in, LedPWM &ledpwm_in,
 		Notify &notify_in, Log &log_in, System &system_in, Util &util_in, PDM &pdm_in, MCPWM &mcpwm_in,
-		FS &fs_in, BT &bt_in, WLAN &wlan_in, UDP &udp_in, TCP &tcp_in, I2c &i2c_in, Sensors &sensors_in)
+		FS &fs_in, BT &bt_in, WLAN &wlan_in, UDP &udp_in, TCP &tcp_in, I2c &i2c_in, Sensors &sensors_in, Display& display_in)
 	:
 		config(config_in), console(console_in), ledpixel(ledpixel_in), ledpwm(ledpwm_in),
 		notify(notify_in), log(log_in), system(system_in), util(util_in), pdm(pdm_in), mcpwm(mcpwm_in),
-		fs(fs_in), bt(bt_in), wlan(wlan_in), udp(udp_in), tcp(tcp_in), i2c(i2c_in), sensors(sensors_in)
+		fs(fs_in), bt(bt_in), wlan(wlan_in), udp(udp_in), tcp(tcp_in), i2c(i2c_in), sensors(sensors_in), display(display_in)
 {
 	if(this->singleton)
 		throw(hard_exception("Command: already activated"));
@@ -801,10 +795,14 @@ void Command::system_identify(cli_command_call_t *call)
 	call->result  = std::format("firmware date: {} {}", __DATE__, __TIME__);
 	call->result += std::format(", transport mtu: {:d}", call->mtu);
 
-	if(instance.displays.displays().size() > 0)
-	    call->result += std::format(", display area: {:d}x{:d}", instance.displays.displays()[0]->image_x_size(), instance.displays.displays()[0]->image_y_size());
-	else
+	try
+	{
+	    call->result += std::format(", display area: {:d}x{:d}", instance.display.image_x_size(), instance.display.image_y_size());
+	}
+	catch(transient_exception &e)
+	{
 	    call->result += ", no display active";
+	}
 }
 
 void Command::system_partitions(cli_command_call_t *call)
@@ -1175,37 +1173,144 @@ void Command::ota_confirm(cli_command_call_t *call)
 
 void Command::display_brightness(cli_command_call_t *call)
 {
-	Command::displays_->displays()[0]->brightness(call->parameters[0].unsigned_int);
+	auto& instance = Command::get();
+
+	try
+	{
+		instance.display.brightness(call->parameters[0].unsigned_int);
+	}
+	catch(const transient_exception &e)
+	{
+		call->result = "no display active";
+		return;
+	}
+
+	call->result = "brightness OK";
 }
 
 void Command::display_configure(cli_command_call_t *call)
 {
-	command_display_configure(call); // FIXME
+	auto& instance = Command::get();
+	int type, interface_index, x_size, y_size;
+	bool flip, invert, rotate;
+
+	try
+	{
+		if(call->parameter_count == 0)
+		{
+			call->result = instance.display.info();
+			return;
+		}
+
+		if(call->parameter_count < 4)
+		{
+			call->result = "display configure: supply at least four parameters:\n- type\n- interface index\n- x size\n- y size\noptional:\n- flip\n- invert\n- rotate";
+			return;
+		}
+
+		type = call->parameters[0].unsigned_int;
+		interface_index = call->parameters[1].unsigned_int;
+		x_size = call->parameters[2].unsigned_int;
+		y_size = call->parameters[3].unsigned_int;
+
+		if(call->parameter_count > 4)
+			flip = call->parameters[4].unsigned_int != 0;
+		else
+			flip = false;
+
+		if(call->parameter_count > 5)
+			invert = call->parameters[5].unsigned_int != 0;
+		else
+			invert = false;
+
+		if(call->parameter_count > 6)
+			rotate = call->parameters[6].unsigned_int != 0;
+		else
+			rotate = false;
+
+		try
+		{
+			instance.display.configure(type, interface_index, x_size, y_size, flip, invert, rotate);
+		}
+		catch(const transient_exception &e)
+		{
+			call->result = std::format("display configure: {}", e.what());
+			return;
+		}
+
+		call->result = "display configured";
+	}
+	catch(const transient_exception& e)
+	{
+		call->result = "NO DISPLAY ACTIVE";
+	}
 }
 
 void Command::display_erase(cli_command_call_t *call)
 {
-	command_display_erase(call); // FIXME
+	auto& instance = Command::get();
+	instance.display.erase();
 }
 
 void Command::display_info(cli_command_call_t *call)
 {
-	command_display_info(call); // FIXME
+	auto& instance = Command::get();
+
+	try
+	{
+		call->result = instance.display.info();
+	}
+	catch(const transient_exception &e)
+	{
+		call->result = "NO DISPLAY ACTIVE";
+	}
 }
 
 void Command::display_page_add_text(cli_command_call_t *call)
 {
-	command_display_page_add_text(call); // FIXME
+	auto& instance = Command::get();
+
+	try
+	{
+		instance.display.add_text_page(call->parameters[0].str, call->parameters[1].unsigned_int, call->parameters[2].str);
+		call->result = std::format("display-page-add-text added \"{}\"", call->parameters[0].str);
+	}
+	catch(const transient_exception &)
+	{
+		call->result = "NO DISPLAY ACTIVE";
+	}
 }
 
 void Command::display_page_add_image(cli_command_call_t *call)
 {
-	command_display_page_add_image(call); // FIXME
+	auto& instance = Command::get();
+
+	try
+	{
+		instance.display.add_image_page(call->parameters[0].str, call->parameters[1].unsigned_int, call->parameters[2].str, call->parameters[3].unsigned_int);
+		call->result = std::format("display-page-add-image added \"{}\"", call->parameters[0].str);
+	}
+	catch(const transient_exception &)
+	{
+		call->result = "NO DISPLAY ACTIVE";
+	}
 }
 
 void Command::display_page_remove(cli_command_call_t *call)
 {
-	command_display_page_remove(call); // FIXME
+	auto& instance = Command::get();
+
+	try
+	{
+		if(instance.display.remove_page(call->parameters[0].str))
+			call->result = std::format("display-page-remove removed \"{}\"", call->parameters[0].str);
+		else
+			call->result = std::format("display-page-remove not removed \"{}\"", call->parameters[0].str);
+	}
+	catch(const transient_exception &)
+	{
+		call->result = "NO DISPLAY ACTIVE";
+	}
 }
 
 void Command::io_dump(cli_command_call_t *call)

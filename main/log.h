@@ -40,7 +40,7 @@ class Log final
 		void setmonitor(bool);
 		bool getmonitor();
 		QueueHandle_t get_display_queue();
-		void get_entry(int entry, time_t &, std::string &);
+		bool get_entry(time_t &, std::string &);
 		void info(std::string &);
 		void command_log(std::string &, int);
 
@@ -59,6 +59,8 @@ class Log final
 			char data[log_buffer_data_size];
 		};
 
+		static_assert(sizeof(log_entry_t) == 128);
+
 		typedef struct
 		{
 			std::uint32_t magic_word;
@@ -67,8 +69,12 @@ class Log final
 			int entries;
 			int in;
 			int out;
+			int out_display;
 			log_entry_t entry[log_buffer_entries];
 		} log_t;
+
+		static_assert(sizeof(log_t) == 7968);
+		static_assert(sizeof(log_t) < log_buffer_size);
 
 		static Log *singleton;
 
@@ -82,10 +88,6 @@ class Log final
 		QueueHandle_t display_queue;
 		SemaphoreHandle_t data_mutex;
 
-		static_assert(sizeof(log_entry_t) == 128);
-		static_assert(sizeof(log_t) == 7960);
-		static_assert(sizeof(log_t) < log_buffer_size);
-
 		void data_mutex_take(void)
 		{
 			xSemaphoreTake(data_mutex, portMAX_DELAY);
@@ -97,6 +99,4 @@ class Log final
 		}
 
 		static int idf_logging_function(const char *fmt, va_list ap);
-
-		void signal_display(int item);
 };

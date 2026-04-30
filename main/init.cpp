@@ -58,12 +58,12 @@ void app_main()
 		I2c i2c(log, config);
 		Sensors sensors(log, i2c);
 		SPI spi(log, config);
-		Command command(config, console, ledpixel, ledpwm, notify, log, system, util, pdm, mcpwm, fs, bt, wlan, udp, tcp, i2c, sensors);
+		Display display(config, log, util, spi);
+		Command command(config, console, ledpixel, ledpwm, notify, log, system, util, pdm, mcpwm, fs, bt, wlan, udp, tcp, i2c, sensors, display);
 		console.set(&command);
 		bt.set(&command);
 		udp.set(&command);
 		tcp.set(&command);
-		display_init();
 		io_init();
 		wlan.run();
 		bt.run();

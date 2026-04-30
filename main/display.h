@@ -1,130 +1,267 @@
 #pragma once
 
-#include <stdint.h>
+#include "config.h"
+#include "log.h"
+#include "util.h"
+#include "spi.h"
 
+#include <cstdint>
+#include <mutex>
 #include <deque>
+#include <map>
+#include <vector>
+#include <memory>
 
-typedef enum
+class DisplayModule;
+
+class Display
 {
-	dt_no_display = 0,
-	dt_spi_generic,
-	dt_type_first = dt_spi_generic,
-	dt_ra8875,
-	dt_error,
-	dt_size = dt_error,
-} display_type_t;
+	public:
 
-typedef enum
-{
-	dc_black = 0,
-	dc_blue,
-	dc_green,
-	dc_cyan,
-	dc_red,
-	dc_purple,
-	dc_yellow,
-	dc_white,
-	dc_error,
-	dc_size = dc_error,
-	dc_first = dc_black,
-	dc_last = dc_white,
-} display_colour_t;
+		explicit Display() = delete;
+		explicit Display(Display &) = delete;
+		explicit Display(Display &&) = delete;
+		explicit Display(Config&, Log&, Util&, SPI&);
+		Display& operator =(const Display &) = delete;
+		~Display();
 
-typedef struct
-{
-	uint8_t r;
-	uint8_t g;
-	uint8_t b;
-} display_rgb_t;
+		enum class module_id_t
+		{
+			none = 0,
+			generic_spi = 1,
+			ra8875 = 2,
+		};
 
-static_assert(sizeof(display_rgb_t) == 3);
+		enum class colour_t
+		{
+			black = 0,
+			blue,
+			green,
+			cyan,
+			red,
+			purple,
+			yellow,
+			white,
+		};
 
-extern const display_rgb_t display_colour_map[dc_size];
+		enum class mode_t
+		{
+			init_log,
+			init_info,
+			log,
+			info,
+		};
 
-typedef struct
-{
-	int interface_index;
-	int x_size;
-	int y_size;
-	int flip;
-	int invert;
-	int rotate;
-} display_init_parameters_t;
+		struct __attribute__((packed)) rgb_t
+		{
+			unsigned char r;
+			unsigned char g;
+			unsigned char b;
+		};
 
-enum
-{
-	font_basic_glyphs_size = 256,
-	font_extra_glyphs_size = 128,
-	font_cols_size = 16,
-	font_rows_size = 32,
+		struct __attribute__((packed)) rgb_composite_t
+		{
+			union
+			{
+				rgb_t as_struct;
+				unsigned char as_array[3];
+			};
+		};
+		static_assert(sizeof(rgb_t) == 3);
+		static_assert(sizeof(rgb_composite_t) == 3);
+		static_assert(offsetof(rgb_t, r) == 0);
+		static_assert(offsetof(rgb_t, g) == 1);
+		static_assert(offsetof(rgb_t, b) == 2);
+		static_assert(offsetof(rgb_composite_t, as_struct) == 0);
+		static_assert(offsetof(rgb_composite_t, as_array) == 0);
+
+		struct geometry_t
+		{
+			int from_x = 0;
+			int from_y = 0;
+			int to_x = 0;
+			int to_y = 0;
+		};
+
+		struct box_colour_args_t
+		{
+			colour_t colour = colour_t::black;
+			geometry_t geometry;
+		};
+
+		struct box_rgb_args_t
+		{
+			int r = 0;
+			int g = 0;
+			int b = 0;
+			geometry_t geometry;
+		};
+
+		struct plot_args_t
+		{
+			geometry_t window;
+			int length;
+			const rgb_t* pixels;
+		};
+
+		struct write_args_t
+		{
+			colour_t fg = colour_t::white;
+			colour_t bg = colour_t::black;
+			int at_line = 0;
+			int y_offset = 0;
+			int x_pad = 0;
+			int y_pad = 0;
+			std::string_view text = "";
+		};
+
+	private:
+
+		static constexpr const int page_border_size = 3;
+		static constexpr const int page_text_offset = 1;
+
+		static constexpr const int fontstruct_magic_word = 0xf0bdf11e;
+		static constexpr const int fontstruct_cols_size = 16;
+		static constexpr const int fontstruct_rows_size = 32;
+		static constexpr const int fontstruct_basic_glyphs = 256;
+		static constexpr const int fontstruct_max_extra_glyphs = 128;
+
+		struct __attribute__((packed)) font_glyph_t
+		{
+			std::uint32_t codepoint;
+			std::uint16_t row[fontstruct_rows_size];
+		};
+
+		struct __attribute__((packed)) font_t
+		{
+			std::uint32_t magic_word;
+			std::uint8_t checksum[32];
+			struct
+			{
+				std::uint32_t width;
+				std::uint32_t height;
+			} raw;
+			struct
+			{
+				std::uint32_t width;
+				std::uint32_t height;
+			} net;
+			std::uint32_t extra_glyphs;
+			font_glyph_t basic_glyph[fontstruct_basic_glyphs];
+			font_glyph_t extra_glyph[fontstruct_max_extra_glyphs];
+		};
+
+		struct fontinfo_wxh_t
+		{
+			int width;
+			int height;
+		};
+
+		struct fontinfo_t
+		{
+			bool valid;
+			unsigned int magic_word;
+			fontinfo_wxh_t raw;
+			fontinfo_wxh_t net;
+			int extra_glyphs;
+			int columns;
+			int rows;
+		};
+
+		class Page
+		{
+			public:
+
+				enum class type_t : unsigned char
+				{
+					none,
+					text,
+					image,
+				};
+
+				Page() = delete;
+				Page(const Page &) = delete;
+				Page(const Page &&) = delete;
+				Page& operator =(const Page &) = delete;
+				Page(Log&, type_t type, Display::colour_t colour);
+				~Page();
+
+				Log &log;
+				time_t expiry;
+				type_t type;
+				colour_t colour;
+				struct
+				{
+					std::deque<std::string> lines;
+				} text;
+				struct
+				{
+					unsigned int length;
+					std::string filename;
+				} image;
+
+				void clear();
+		};
+
+		using Colourmap = std::map<colour_t, rgb_t>;
+		static const Colourmap colourmap;
+
+		using PagesData = std::map<std::string, Page>;
+		using Pages = struct
+		{
+			int version;
+			PagesData data;
+		};
+		Pages pages;
+
+		using Stats = std::map<std::string, int>;
+		Stats stats;
+
+		static Display* singleton;
+		Config& config;
+		Log& log;
+		Util& util;
+		SPI& spi;
+		std::unique_ptr<DisplayModule> module;
+		mode_t mode;
+		int log_line;
+		std::unique_ptr<font_t> fontstructptr;
+		fontinfo_t fontinfo;
+		colour_t next_colour;
+		std::mutex pages_mutex;
+
+		static colour_t colour_first();
+		static colour_t colour_next(Display::colour_t colour_in);
+		static colour_t colour_from_int(int colour_int);
+		static int string_length_utf8(std::string_view);
+
+		bool config_get(const std::string& id, int&);
+		bool config_get(const std::string& id, bool&);
+		void utf8_to_unicode(std::string_view src, std::deque<unsigned int> &dst);
+		void load_font(std::string_view fontname);
+		std::string make_title(std::string_view title);
+		Page& add_page(std::scoped_lock<std::mutex>&, const std::string &name, Display::Page::type_t type, int lifetime);
+		void clear(colour_t colour);
+		void box(const box_colour_args_t&);
+		void box(const box_rgb_args_t&);
+		void plot(const plot_args_t&);
+		void set_active_layer(int);
+		void show_layer(int);
+		void write(const write_args_t&);
+		void run_thread();
+
+	public:
+
+		Display& get();
+		std::string info();
+		int display_x_size();
+		int display_y_size();
+		int image_x_size();
+		int image_y_size();
+		void configure(int type, int interface_index, int x_size, int y_size, bool flip, bool invert, bool rotate);
+		void erase();
+		void brightness(int);
+		void add_text_page(const std::string& name, int lifetime, std::string_view contents);
+		void add_image_page(const std::string& name, int lifetime, std::string_view filename, int length);
+		bool remove_page(const std::string& name);
 };
-
-typedef enum
-{
-	font_magic_word = 0xf0bdf11e,
-} font_magic_word_t;
-
-typedef struct __attribute__((packed))
-{
-	uint32_t codepoint;
-	uint16_t row[font_rows_size];
-} font_glyph_t;
-
-typedef struct __attribute__((packed))
-{
-	font_magic_word_t magic_word:32;
-	uint8_t checksum[32];
-	struct
-	{
-		uint32_t width;
-		uint32_t height;
-	} raw;
-	struct
-	{
-		uint32_t width;
-		uint32_t height;
-	} net;
-	uint32_t extra_glyphs;
-	font_glyph_t basic_glyph[font_basic_glyphs_size];
-	font_glyph_t extra_glyph[font_extra_glyphs_size];
-} font_t;
-
-typedef struct
-{
-	const char *name;
-	bool (*init_fn)(const display_init_parameters_t *parameters);
-	void (*bright_fn)(unsigned int percentage);
-	void (*write_fn)(const font_t *font, display_colour_t fg, display_colour_t bg,
-				unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
-				const std::deque<uint32_t> &line_unicode);
-	void (*clear_fn)(display_colour_t);
-	void (*box_fn)(display_colour_t, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y);
-	void (*plot_line_fn)(unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int rgb_pixels_length, const display_rgb_t *pixels);
-	void (*set_layer_fn)(unsigned int layer);
-	void (*show_layer_fn)(unsigned int layer);
-} display_info_t;
-
-unsigned int display_image_x_size(void);
-unsigned int display_image_y_size(void);
-
-bool display_spi_generic_init(const display_init_parameters_t *parameters);
-void display_spi_generic_bright(unsigned int percentage);
-void display_spi_generic_write(const font_t *font, display_colour_t fg, display_colour_t bg,
-		unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
-		const std::deque<uint32_t> &line_unicode);
-void display_spi_generic_clear(display_colour_t);
-void display_spi_generic_box(display_colour_t, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y);
-void display_spi_generic_plot_line(unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int rgb_pixels_length, const display_rgb_t *pixels);
-
-bool display_ra8875_init(const display_init_parameters_t *parameters);
-void display_ra8875_bright(unsigned int percentage);
-void display_ra8875_write(const font_t *font, display_colour_t fg, display_colour_t bg,
-		unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y,
-		const std::deque<uint32_t> &line_unicode);
-void display_ra8875_clear(display_colour_t);
-void display_ra8875_box(display_colour_t, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y);
-void display_ra8875_plot_line(unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int rgb_pixels_length, const display_rgb_t *pixels);
-void display_ra8875_set_layer(unsigned int layer);
-void display_ra8875_show_layer(unsigned int layer);
-
-void display_init(void);

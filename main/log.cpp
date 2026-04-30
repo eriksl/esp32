@@ -32,9 +32,6 @@ Log::Log(Console &console_in, Util &util_in) :
 	if(!(this->data_mutex = xSemaphoreCreateMutex()))
 		throw(hard_exception("Log: cannot create semaphore"));
 
-	if(!(display_queue = xQueueCreate(log_buffer_entries, sizeof(int))))
-		throw(hard_exception("Log: cannot create queue"));
-
 	if((this->log_buffer->magic_word != this->log_buffer_magic_word) ||
 		(this->log_buffer->magic_word_salted != (this->log_buffer_magic_word ^ this->log_buffer->random_salt)))
 	{
@@ -71,6 +68,7 @@ void Log::clear(void)
 	log_buffer->entries = log_buffer_entries;
 	log_buffer->in = 0;
 	log_buffer->out = 0;
+	log_buffer->out_display = 0;
 
 	data_mutex_give();
 }
@@ -106,8 +104,6 @@ void Log::log(std::string_view in)
 
 	if(monitor)
 		this->console.write(in);
-
-	this->signal_display(current);
 }
 
 void Log::log_esperr(esp_err_t e, std::string_view in)
@@ -145,28 +141,31 @@ int Log::idf_logging_function(const char *fmt, va_list ap)
 	return(length);
 }
 
-QueueHandle_t Log::get_display_queue(void)
-{
-	return(display_queue);
-}
-
-void Log::get_entry(int entry_index, time_t &stamp, std::string &out)
+bool Log::get_entry(time_t &stamp, std::string &out)
 {
 	const log_entry_t *entry;
 
 	stamp = static_cast<time_t>(0);
 
-	data_mutex_take();
+	data_mutex_take(); // FIXME
 
-	if((entry_index >= 0) && (entry_index < this->log_buffer->entries))
+	if(this->log_buffer->out_display == this->log_buffer->in)
 	{
-		entry = &log_buffer->entry[entry_index];
-
-		stamp = entry->timestamp;
-		out = entry->data;
+		data_mutex_give();
+		return(false);
 	}
 
+	entry = &log_buffer->entry[this->log_buffer->out_display];
+
+	stamp = entry->timestamp;
+	out = entry->data;
+
+	if(++log_buffer->out_display >= this->log_buffer->entries)
+		log_buffer->out_display = 0;
+
 	data_mutex_give();
+
+	return(true);
 }
 
 void Log::setmonitor(bool val)
@@ -177,14 +176,6 @@ void Log::setmonitor(bool val)
 bool Log::getmonitor()
 {
 	return(this->monitor);
-}
-
-void Log::signal_display(int item)
-{
-	assert((item >= 0) && (item < log_buffer_entries));
-
-	if(display_queue)
-		xQueueSend(this->display_queue, &item, static_cast<TickType_t>(0));
 }
 
 void Log::info(std::string &out)

@@ -1,36 +1,23 @@
-#include <stdbool.h>
-#include <string.h>
-
-#include <driver/spi_master.h>
-#include <driver/gpio.h>
+#include "display.h"
+#include "display-module.h"
+#include "display-spi.h"
+#include "display-ra8875.h"
+#include "exception.h"
 
 #include "log.h"
-#include "util.h"
-#include "display-ra8875.h"
-#include "ledpwm.h"
-#include "sdkconfig.h"
 
-#include <cstdint>
 #include <format>
 #include <thread>
 #include <chrono>
 
-union rgb16_t
-{
-	struct __attribute__((packed))
-	{
-		unsigned int b:5;
-		unsigned int g:6;
-		unsigned int r:5;
-	};
-	struct __attribute__((packed))
-	{
-		unsigned int second:8;
-		unsigned int first:8;
-	};
-};
+static constexpr const unsigned char rs_data =	0b00000000;
+static constexpr const unsigned char rs_cmd =	0b10000000;
+static constexpr const unsigned char rs_write =	0b00000000;
+static constexpr const unsigned char rs_read =	0b01000000;
 
-static_assert(sizeof(rgb16_t) == 2);
+static constexpr const unsigned int spi_speed_initial =  1'000'000;
+static constexpr const unsigned int spi_speed_read =    10'000'000;
+static constexpr const unsigned int spi_speed_normal =  40'000'000;
 
 enum
 {
@@ -65,20 +52,6 @@ enum
 	reg_curh1 =		0x47,
 	reg_curv0 =		0x48,
 	reg_curv1 =		0x49,
-	reg_becr0 =		0x50,
-	reg_becr1 =		0x51,
-	reg_hsbe0 =		0x54,
-	reg_hsbe1 =		0x55,
-	reg_vsbe0 =		0x56,
-	reg_vsbe1 =		0x57,
-	reg_hdbe0 =		0x58,
-	reg_hdbe1 =		0x59,
-	reg_vdbe0 =		0x5a,
-	reg_vdbe1 =		0x5b,
-	reg_bewr0 =		0x5c,
-	reg_bewr1 =		0x5d,
-	reg_behr0 =		0x5e,
-	reg_behr1 =		0x5f,
 	reg_ltpr0 =		0x52,
 	reg_ltpr1 =		0x53,
 	reg_bgcr0 =		0x60,
@@ -94,10 +67,9 @@ enum
 	reg_mclr =		0x8e,
 
 	reg_pllc1_plldivm_div_1 =				0b000000,
-	reg_pllc1_plldivm_div_2 =				0b100000,
 	reg_pllc1_plldivn_bitpos =				0x00,
 	reg_pllc1_plldivn_mask =				0x1f,
-	reg_pllc1_plldivn =						0x13,
+	reg_pllc1_plldivn =						19,
 	reg_pllc1_value =						reg_pllc1_plldivm_div_1 | ((reg_pllc1_plldivn & reg_pllc1_plldivn_mask) << reg_pllc1_plldivn_bitpos),
 
 	reg_pllc2_plldivk_div_bitpos =			0x00,
@@ -105,12 +77,9 @@ enum
 	reg_pllc2_plldivk =						0x02,
 	reg_pllc2_value =						(reg_pllc2_plldivk & reg_pllc2_plldivk_div_mask) << reg_pllc2_plldivk_div_bitpos,
 
-	reg_sysr_color_depth_8 =				0b00000000,
 	reg_sysr_color_depth_16 =				0b00001000,
 	reg_sysr_if_8bit =						0b00000000,
-	reg_sysr_if_16bit =						0b00000010,
 
-	reg_pcsr_sample_rising_edge =			0b00000000,
 	reg_pcsr_sample_falling_edge =			0b10000000,
 	reg_pcsr_clock_period_system =			0b00000000,
 	reg_pcsr_clock_period_system_by_2 =		0b00000001,
@@ -118,20 +87,12 @@ enum
 	reg_pcsr_clock_period_system_by_8 =		0b00000011,
 
 	reg_hndftr_de_polarity_active_high =	0b00000000,
-	reg_hndftr_de_polarity_active_low =		0b10000000,
-
 	reg_hpwr_hsync_polarity_active_low =	0b00000000,
-	reg_hpwr_hsync_polarity_active_high =	0b10000000,
-
 	reg_vpwr_vsync_polarity_active_low =	0b00000000,
-	reg_vpwr_vsync_polarity_active_high =	0b10000000,
 
 	reg_p1cr_pwm1_enable =					0b10000000,
 	reg_p1cr_pwm1_disable =					0b00000000,
-	reg_p1cr_disable_level_low =			0b00000000,
-	reg_p1cr_disable_level_high =			0b01000000,
 	reg_p1cr_function_pwm1 =				0b00000000,
-	reg_p1cr_function_fixed =				0b00010000,
 	reg_p1cr_clock_ratio_1 =				0b00000000,
 	reg_p1cr_clock_ratio_2 =				0b00000001,
 	reg_p1cr_clock_ratio_4 =				0b00000010,
@@ -227,57 +188,12 @@ enum
 	reg_ltpr1_transparency_layer_1_1_8 =	0b00000111,
 	reg_ltpr1_transparency_layer_1_0_8 =	0b00001000,
 
-	reg_vsbe1_source_layer_0 =				0b00000000,
-	reg_vsbe1_source_layer_1 =				0b10000000,
-
-	reg_vdbe1_destination_layer_0 =			0b00000000,
-	reg_vdbe1_destination_layer_1 =			0b10000000,
-
 	reg_dpcr_one_layer =					0b00000000,
 	reg_dpcr_two_layer =					0b10000000,
 	reg_dpcr_hor_scan_ltor =				0b00000000,
 	reg_dpcr_hor_scan_rtol =				0b00001000,
 	reg_dpcr_vert_scan_ltor =				0b00000000,
 	reg_dpcr_vert_scan_rtol =				0b00000100,
-
-	reg_becr0_idle =						0b00000000,
-	reg_becr0_busy =						0b10000000,
-	reg_becr0_src_block =					0b00000000,
-	reg_becr0_src_lineair =					0b01000000,
-	reg_becr0_dst_block =					0b00000000,
-	reg_becr0_dst_lineair =					0b00100000,
-
-	reg_becr1_rop_code_write =				0b00000000,
-	reg_becr1_rop_code_read =				0b00000001,
-	reg_becr1_rop_code_move_pos =			0b00000010,
-	reg_becr1_rop_code_move_neg =			0b00000011,
-	reg_becr1_rop_code_write_transp =		0b00000100,
-	reg_becr1_rop_code_move_transp =		0b00000101,
-	reg_becr1_rop_code_fill_pattern =		0b00000110,
-	reg_becr1_rop_code_fill_pattern_transp=	0b00000111,
-	reg_becr1_rop_code_expand_colour =		0b00001000,
-	reg_becr1_rop_code_expand_colour_transp=0b00001001,
-	reg_becr1_rop_code_move_expand_colour=	0b00001010,
-	reg_becr1_rop_code_move_expand_transp=	0b00001011,
-	reg_becr1_rop_code_fill =				0b00001100,
-
-	reg_becr1_rop_expand_col_bit_start_0 =	0b01110000,
-
-	reg_becr1_rop_func_black =				0b00000000,
-	reg_becr1_rop_func_ns_and_nd =			0b00010000,
-	reg_becr1_rop_func_ns_and_d =			0b00100000,
-	reg_becr1_rop_func_ns =					0b00110000,
-	reg_becr1_rop_func_s_and_nd =			0b01000000,
-	reg_becr1_rop_func_nd =					0b01010000,
-	reg_becr1_rop_func_s_xor_d =			0b01100000,
-	reg_becr1_rop_func_ns_or_nd =			0b01110000,
-	reg_becr1_rop_func_s_and_d =			0b10000000,
-	reg_becr1_rop_func_n_s_xor_d =			0b10010000,
-	reg_becr1_rop_func_d =					0b10100000,
-	reg_becr1_rop_func_ns_or_d =			0b10110000,
-	reg_becr1_rop_func_s =					0b11000000,
-	reg_becr1_rop_func_s_or_nd =			0b11010000,
-	reg_becr1_rop_func_s_or_d =				0b11100000,
 
 	horizontal_blanking = 38,
 	horizontal_blanking_fine = 4,
@@ -286,584 +202,174 @@ enum
 	vertical_blanking = 14,
 	vertical_sync_start = 6,
 	vertical_sync_length = 2,
-
-	spi_speed_initial = 1000000,
-	spi_speed_normal = 40000000,
 };
 
-enum : unsigned int
+DisplayModuleRA8875::DisplayModuleRA8875(Config& config_in, Log& log_in, Util& util_in, SPI& spi_in,
+			int module_index_in, int x_size_in, int y_size_in, bool flip_in, bool invert_in, bool rotate_in)
+		:
+			DisplayModuleSPI(config_in, log_in, util_in, spi_in, module_index_in, x_size_in, y_size_in, flip_in, invert_in, rotate_in), active_layer(0)
 {
-	rs_data =	0b00000000,
-	rs_cmd =	0b10000000,
-	rs_write =	0b00000000,
-	rs_read =	0b01000000,
-};
+	int rv;
 
-typedef struct
-{
-	spi_host_device_t esp_host;
-	unsigned int cs;
-	unsigned int sck;
-	unsigned int mosi;
-	unsigned int miso;
-	LedPWM::Channel bl;
-} spi_signal_t;
+	this->speed(spi_speed_initial);
 
-typedef struct
-{
-	spi_signal_t spi2;
-	spi_signal_t spi3;
-} spi_host_signal_t;
+	this->write_register(reg_pll_c1, reg_pllc1_value);
+	std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	this->write_register(reg_pll_c2, reg_pllc2_value);
+	std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
-static const spi_host_signal_t spi_host_signal =
-{
-	.spi2 =
-	{
-		.esp_host =	SPI2_HOST,
-		.cs =		10,									/* IOMUX, fixed */
-		.sck =		12,									/* IOMUX, fixed */
-		.mosi =		11,									/* IOMUX, fixed */
-		.miso =		13,									/* IOMUX, fixed */
-		.bl =		LedPWM::Channel::channel_14bit_5khz_lcd_spi_2,
-	},
-	.spi3 =
-	{
-		.esp_host =	SPI3_HOST,
-		.cs =		CONFIG_BSP_SPI3_DISPLAY_CS,
-		.sck =		CONFIG_BSP_SPI3_SCK,
-		.mosi =		CONFIG_BSP_SPI3_MOSI,
-		.miso =		CONFIG_BSP_SPI3_MISO,
-		.bl =		LedPWM::Channel::channel_14bit_5khz_lcd_spi_3,
-	},
-};
+	this->write_register(reg_pcsr, reg_pcsr_sample_falling_edge | reg_pcsr_clock_period_system_by_8);
 
-static bool inited = false;
-static spi_device_handle_t spi_device_handle;
-static const spi_signal_t *spi_signal;
-static SemaphoreHandle_t spi_mutex;
-static unsigned int x_size, y_size;
+	// status register
 
-static std::uint8_t *pixel_buffer = nullptr;
-static unsigned int pixel_buffer_size = 0;
-static unsigned int pixel_buffer_length = 0;
+	if((rv = this->read_status()) != 0)
+		this->log << std::format("ra8875: unexpected status: {:d}/{:x}/{:b}", rv, rv, rv);
 
-static inline void spi_mutex_take(void)
-{
-	assert(xSemaphoreTake(spi_mutex, portMAX_DELAY));
-}
-
-static inline void spi_mutex_give(void)
-{
-	assert(xSemaphoreGive(spi_mutex));
-}
-
-static void rgb24_to_rgb16(const display_rgb_t &rgb24, unsigned int &r16, unsigned int &g16, unsigned int &b16)
-{
-	r16 = (rgb24.r & 0b11111000) >> 3;
-	g16 = (rgb24.g & 0b11111100) >> 2;
-	b16 = (rgb24.b & 0b11111000) >> 3;
-}
-
-static void rgb24_to_rgb16(const display_rgb_t &rgb24, rgb16_t &rgb16)
-{
-	unsigned int r16, g16, b16;
-
-	rgb24_to_rgb16(rgb24, r16, g16, b16);
-
-	rgb16.r = r16;
-	rgb16.g = g16;
-	rgb16.b = b16;
-}
-
-static void write_register(unsigned int reg, unsigned int length, const std::uint8_t *data)
-{
-	spi_transaction_t transaction;
-	std::uint8_t reg_data;
-
-	assert(inited);
-	assert(spi_device_handle);
-	assert(data || (length == 0));
-
-	spi_mutex_take();
-
-	memset(&transaction, 0, sizeof(transaction));
-
-	reg_data = static_cast<uint8_t>(reg);
-
-	transaction.cmd = rs_write | rs_cmd;
-	transaction.addr = 0;
-	transaction.length = 8;
-	transaction.tx_buffer = &reg_data;
-	transaction.rxlength = 0;
-	transaction.rx_buffer = nullptr;
-
-	Log::get().abort_on_esp_err("spi_device_transmit 1a", spi_device_transmit(spi_device_handle, &transaction));
-
-	transaction.cmd = rs_write | rs_data;
-	transaction.addr = 0;
-	transaction.length = length * 8;
-	transaction.tx_buffer = data;
-	transaction.rxlength = 0;
-	transaction.rx_buffer = nullptr;
-
-	Log::get().abort_on_esp_err("spi_device_transmit 1b", spi_device_transmit(spi_device_handle, &transaction));
-
-	spi_mutex_give();
-}
-
-static void write_register_1(unsigned int reg, unsigned int data)
-{
-	std::uint8_t data_byte = static_cast<std::uint8_t>(data);
-
-	write_register(reg, 1, &data_byte);
-}
-
-static void fgcolour_set(unsigned int r, unsigned int g, unsigned int b)
-{
-	display_rgb_t rgb24;
-
-	rgb24.r = r;
-	rgb24.g = g;
-	rgb24.b = b;
-
-	rgb24_to_rgb16(rgb24, r, g, b);
-
-	write_register_1(reg_fgcr0, r);
-	write_register_1(reg_fgcr1, g);
-	write_register_1(reg_fgcr2, b);
-}
-
-static void bgcolour_set(unsigned int r, unsigned int g, unsigned int b)
-{
-	display_rgb_t rgb24;
-
-	rgb24.r = r;
-	rgb24.g = g;
-	rgb24.b = b;
-
-	rgb24_to_rgb16(rgb24, r, g, b);
-
-	write_register_1(reg_bgcr0, r);
-	write_register_1(reg_bgcr1, g);
-	write_register_1(reg_bgcr2, b);
-}
-
-static void set_window(unsigned int x0, unsigned int y0, unsigned int x1, unsigned int y1)
-{
-	assert(x0 < x_size);
-	assert(x1 < x_size);
-	assert(y0 < y_size);
-	assert(y1 < y_size);
-
-	write_register_1(reg_hsaw0, (x0 >> 0) & 0xff);
-	write_register_1(reg_hsaw1, (x0 >> 8) & 0x03);
-	write_register_1(reg_vsaw0, (y0 >> 0) & 0xff);
-	write_register_1(reg_vsaw1, (y0 >> 8) & 0x01);
-	write_register_1(reg_heaw0, (x1 >> 0) & 0xff);
-	write_register_1(reg_heaw1, (x1 >> 8) & 0x03);
-	write_register_1(reg_veaw0, (y1 >> 0) & 0xff);
-	write_register_1(reg_veaw1, (y1 >> 8) & 0x01);
-}
-
-static void set_cursor(unsigned int x, unsigned int y)
-{
-	assert(x < x_size);
-	assert(y < y_size);
-
-	write_register_1(reg_curh1, (x & 0xff00) >> 8);
-	write_register_1(reg_curh0, (x & 0x00ff) >> 0);
-	write_register_1(reg_curv1, (y & 0xff00) >> 8);
-	write_register_1(reg_curv0, (y & 0x00ff) >> 0);
-}
-
-static void box(unsigned int r, unsigned int g, unsigned int b, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y)
-{
-	set_window(from_x, from_y, to_x, to_y);
-	bgcolour_set(r, g, b);
-	write_register_1(reg_mclr, reg_mclr_memory_clear_start | reg_mclr_memory_area_active_window);
-	std::this_thread::sleep_for(std::chrono::milliseconds(50));
-	set_window(0, 0, x_size - 1, y_size - 1);
-}
-
-static void show_layer(unsigned int layer)
-{
-	unsigned int value = reg_ltpr0_scroll_layer_1 | reg_ltpr0_floatwin_transparency_dis;
-
-	assert((layer == 0) || (layer == 1));
-
-	value |= (layer == 0) ? reg_ltpr0_visible_layer_1 : reg_ltpr0_visible_layer_2;
-
-	write_register_1(reg_ltpr1, reg_ltpr1_transparency_layer_2_8_8 | reg_ltpr1_transparency_layer_1_8_8);
-	write_register_1(reg_ltpr0, value);
-}
-
-static void set_layer(unsigned int layer)
-{
-	assert((layer == 0) || (layer == 1));
-
-	write_register_1(reg_mwcr1, reg_mwcr1_graphic_cursor_disable | reg_mwcr1_write_destination_layer | (layer ? 0x01 : 0x00));
-}
-
-static void pixel_buffer_flush()
-{
-	unsigned int length;
-
-	assert(inited);
-	assert(pixel_buffer);
-	assert(pixel_buffer_size > 0);
-	assert(spi_device_handle);
-
-	length = pixel_buffer_length;
-	pixel_buffer_length = 0;
-
-	assert(length <= pixel_buffer_size);
-
-	if(length > 0)
-		write_register(reg_mrwc, length, pixel_buffer);
-}
-
-static void pixel_buffer_write(const display_rgb_t &pixel)
-{
-	rgb16_t rgb16;
-
-	assert(inited);
-	assert(pixel_buffer);
-	assert(pixel_buffer_size > 0);
-	assert(spi_device_handle);
-
-	if((pixel_buffer_length + 2) >= pixel_buffer_size)
-		pixel_buffer_flush();
-
-	rgb24_to_rgb16(pixel, rgb16);
-
-	pixel_buffer[pixel_buffer_length++] = rgb16.first;
-	pixel_buffer[pixel_buffer_length++] = rgb16.second;
-}
-
-void display_ra8875_box(display_colour_t colour, unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int to_y)
-{
-	const display_rgb_t *rgb;
-
-	assert(inited);
-
-	if(colour >= dc_size)
-		return;
-
-	rgb = &display_colour_map[colour];
-
-	box(rgb->r, rgb->g, rgb->b, from_x, from_y, to_x, to_y);
-}
-
-void display_ra8875_clear(display_colour_t bg)
-{
-	display_ra8875_box(bg, 0, 0, x_size - 1, y_size - 1);
-}
-
-void display_ra8875_write(const font_t *font, display_colour_t fg_colour, display_colour_t bg_colour,
-		unsigned int from_x, unsigned int from_y,
-		unsigned int to_x, unsigned int to_y,
-		const std::deque<std::uint32_t> &unicode_line)
-{
-	std::deque<std::uint32_t>::const_iterator unicode_it;
-	const font_glyph_t *glyph;
-	int col, row, bit;
-	unsigned current_glyph;
-	unsigned int ix;
-	const display_rgb_t *fg_rgb;
-	const display_rgb_t *bg_rgb;
-
-	assert(inited);
-	assert(pixel_buffer);
-	assert(pixel_buffer_size > 0);
-
-	assert(from_x <= to_x);
-	assert(from_y <= to_y);
-
-	if((from_x >= x_size) || (from_y >= y_size))
-		return;
-
-	if(to_x >= x_size)
-		to_x = x_size - 1;
-
-	if(to_y >= y_size)
-		to_y = y_size - 1;
-
-	assert(fg_colour < dc_size);
-	assert(bg_colour < dc_size);
-
-	fg_rgb = &display_colour_map[fg_colour];
-	bg_rgb = &display_colour_map[bg_colour];
-
-	set_window(from_x, from_y, to_x, to_y);
-	set_cursor(from_x, from_y);
-
-	col = from_x;
-
-	for(unicode_it = unicode_line.begin(); unicode_it != unicode_line.end(); unicode_it++)
-	{
-		if((*unicode_it >= 0xf800) && (*unicode_it < 0xf808)) // abuse private use unicode codepoints for foreground colours
-		{
-			ix = (*unicode_it - 0xf800);
-
-			if(ix >= dc_size)
-				Log::get() << std::format("display-spi-generic: foreground colour out of range: {:d}", ix);
-			else
-				fg_rgb = &display_colour_map[ix];
-		}
-		else
-		{
-			if((*unicode_it >= 0xf808) && (*unicode_it < 0xf810)) // abuse private use unicode codepoints for background colours
-			{
-				ix = (*unicode_it - 0xf808);
-
-				if(ix >= dc_size)
-					Log::get() << std::format("display-spi-generic: background colour out of range: {:d}", ix);
-				else
-					bg_rgb = &display_colour_map[ix];
-			}
-			else
-			{
-				if(*unicode_it < font_basic_glyphs_size)
-					glyph = &font->basic_glyph[*unicode_it];
-				else
-				{
-					for(current_glyph = 0; current_glyph < font->extra_glyphs; current_glyph++)
-					{
-						glyph = &font->extra_glyph[current_glyph];
-
-						if(glyph->codepoint == *unicode_it)
-							break;
-					}
-
-					if(current_glyph >= font->extra_glyphs)
-						glyph = (font_glyph_t *)0;
-				}
-
-				if(glyph)
-				{
-					for(bit = 0; bit < font->net.width; bit++)
-					{
-						for(row = 0; row < (to_y - from_y + 1); row++)
-						{
-							if(row < font->net.height)
-							{
-								if(glyph->row[row] & (1 << bit))
-									pixel_buffer_write(*fg_rgb);
-								else
-									pixel_buffer_write(*bg_rgb);
-							}
-							else
-								pixel_buffer_write(*bg_rgb);
-						}
-
-						if(++col > to_x)
-							goto finished;
-					}
-				}
-			}
-		}
-	}
-
-	for(; col < (to_x + 1); col++)
-		for(row = 0; row < (to_y - from_y + 1); row++)
-			pixel_buffer_write(*bg_rgb);
-
-finished:
-	pixel_buffer_flush();
-}
-
-void display_ra8875_plot_line(unsigned int from_x, unsigned int from_y, unsigned int to_x, unsigned int rgb_pixels_length, const display_rgb_t *pixels)
-{
-	unsigned int current;
-	display_rgb_t bg;
-
-	assert(inited);
-	assert(pixel_buffer);
-	assert(pixel_buffer_size > 0);
-
-	bg = display_colour_map[dc_blue];
-
-	if((from_x >= x_size) || (from_y >= y_size))
-		return;
-
-	if(to_x >= x_size)
-		to_x = x_size - 1;
-
-	set_window(from_x, from_y, to_x, from_y);
-	set_cursor(from_x, from_y);
-
-	if((to_x - from_x) < rgb_pixels_length)
-		rgb_pixels_length = to_x - from_x + 1;
-
-	for(current = 0; current < rgb_pixels_length; current++)
-		pixel_buffer_write(pixels[current]);
-
-	for(; current < (to_x - from_x); current++)
-		pixel_buffer_write(bg);
-
-	pixel_buffer_flush();
-}
-
-bool display_ra8875_init(const display_init_parameters_t *parameters)
-{
-	size_t max_transaction_length;
-
-	switch(parameters->interface_index)
-	{
-		case(0):
-		{
-			spi_signal = &spi_host_signal.spi2;
-			break;
-		}
-
-		case(1):
-		{
-			spi_signal = &spi_host_signal.spi3;
-			break;
-		}
-
-		default:
-		{
-			Log::get() << std::format("init display ra8875: unknown spi interface {:d}, use 0 for SPI2 or 1 for SPI3", parameters->interface_index);
-			return(false);
-		}
-	}
-
-	if((parameters->x_size < 0) || (parameters->y_size < 0))
-	{
-		Log::get() << "init display ra8875: display dimensions required";
-		return(false);
-	}
-
-	x_size = parameters->x_size;
-	y_size = parameters->y_size;
-
-	spi_bus_config_t bus_config =
-	{
-		.mosi_io_num = static_cast<int>(spi_signal->mosi),
-		.miso_io_num = static_cast<int>(spi_signal->miso),
-		.sclk_io_num = static_cast<int>(spi_signal->sck),
-		.quadwp_io_num = -1,
-		.quadhd_io_num = -1,
-		.data4_io_num = -1,
-		.data5_io_num = -1,
-		.data6_io_num = -1,
-		.data7_io_num = -1,
-		.data_io_default_level = false,
-		.max_transfer_sz = 0,
-		.flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_SCLK | SPICOMMON_BUSFLAG_MISO | SPICOMMON_BUSFLAG_MOSI,
-		.isr_cpu_id = ESP_INTR_CPU_AFFINITY_1,
-		.intr_flags = 0,
-	};
-
-	spi_device_interface_config_t device =
-	{
-		.command_bits = 8,
-		.address_bits = 0,
-		.dummy_bits = 0,
-		.mode = 0,
-		.clock_source = SPI_CLK_SRC_DEFAULT,
-		.duty_cycle_pos = 0,
-		.cs_ena_pretrans = 0,
-		.cs_ena_posttrans = 0,
-		.clock_speed_hz = spi_speed_initial,
-		.input_delay_ns = 0,
-		.sample_point = SPI_SAMPLING_POINT_PHASE_0,
-		.spics_io_num = static_cast<int>(spi_signal->cs),
-		.flags = 0,
-		.queue_size = 1,
-		.pre_cb = nullptr,
-		.post_cb = nullptr,
-	};
-
-	spi_mutex = xSemaphoreCreateMutex();
-	assert(spi_mutex);
-
-	Log::get().abort_on_esp_err("spi_bus_initialize", spi_bus_initialize(spi_signal->esp_host, &bus_config, SPI_DMA_CH_AUTO));
-	Log::get().abort_on_esp_err("spi_bus_add_device 1", spi_bus_add_device(spi_signal->esp_host, &device, &spi_device_handle));
-
-	Log::get().abort_on_esp_err("spi_bus_get_max_transaction_len", spi_bus_get_max_transaction_len(spi_signal->esp_host, &max_transaction_length));
-
-	pixel_buffer_size = max_transaction_length;
-	pixel_buffer_length = 0;
-	pixel_buffer = static_cast<std::uint8_t *>(heap_caps_malloc(pixel_buffer_size, MALLOC_CAP_DMA));
-
-	inited = true;
-
-	// PLL
-
-	write_register_1(reg_pll_c1, reg_pllc1_value);
-	std::this_thread::sleep_for(std::chrono::milliseconds(50));
-	write_register_1(reg_pll_c2, reg_pllc2_value);
-	std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-	Log::get().abort_on_esp_err("spi_bus_remove_device", spi_bus_remove_device(spi_device_handle));
-	device.clock_speed_hz = spi_speed_normal;
-	Log::get().abort_on_esp_err("spi_bus_add_device 2", spi_bus_add_device(spi_signal->esp_host, &device, &spi_device_handle));
+	this->speed(spi_speed_normal);
 
 	// interface
 
-	write_register_1(reg_sysr, reg_sysr_color_depth_16 | reg_sysr_if_8bit);
-	write_register_1(reg_pcsr, reg_pcsr_sample_falling_edge | reg_pcsr_clock_period_system_by_8);
+	this->write_register(reg_sysr, reg_sysr_color_depth_16 | reg_sysr_if_8bit);
 
 	// horizontal
 
-	write_register_1(reg_hdwr, (x_size / 8) - 1);
-	write_register_1(reg_hndftr, reg_hndftr_de_polarity_active_high | (horizontal_blanking_fine / 2));
-	write_register_1(reg_hndr, (horizontal_blanking / 8) - 1);
-	write_register_1(reg_hstr, (horizontal_sync_start / 8) - 1);
-	write_register_1(reg_hpwr, reg_hpwr_hsync_polarity_active_low | ((horizontal_sync_length / 8) - 1));
+	this->write_register(reg_hdwr, (this->x_size / 8) - 1);
+	this->write_register(reg_hndftr, reg_hndftr_de_polarity_active_high | (horizontal_blanking_fine / 2));
+	this->write_register(reg_hndr, (horizontal_blanking / 8) - 1);
+	this->write_register(reg_hstr, (horizontal_sync_start / 8) - 1);
+	this->write_register(reg_hpwr, reg_hpwr_hsync_polarity_active_low | ((horizontal_sync_length / 8) - 1));
 
 	// vertical
 
-	write_register_1(reg_vdhr0, ((y_size >> 0) & 0xff) + 1);
-	write_register_1(reg_vdhr1, ((y_size >> 8) & 0x01) + 0);
-	write_register_1(reg_vndr0, ((vertical_blanking >> 0) & 0xff) + 1);
-	write_register_1(reg_vndr1, ((vertical_blanking >> 8) & 0x01) + 0);
-	write_register_1(reg_vstr0, ((vertical_sync_start >> 0) & 0xff) + 1);
-	write_register_1(reg_vstr1, ((vertical_sync_start >> 8) & 0x01) + 0);
-	write_register_1(reg_vpwr, reg_vpwr_vsync_polarity_active_low | (vertical_sync_length - 1));
+	this->write_register(reg_vdhr0, ((this->y_size >> 0) & 0xff) + 1);
+	this->write_register(reg_vdhr1, ((this->y_size >> 8) & 0x01) + 0);
+	this->write_register(reg_vndr0, ((vertical_blanking >> 0) & 0xff) + 1);
+	this->write_register(reg_vndr1, ((vertical_blanking >> 8) & 0x01) + 0);
+	this->write_register(reg_vstr0, ((vertical_sync_start >> 0) & 0xff) + 1);
+	this->write_register(reg_vstr1, ((vertical_sync_start >> 8) & 0x01) + 0);
+	this->write_register(reg_vpwr, reg_vpwr_vsync_polarity_active_low | (vertical_sync_length - 1));
 
 	// PWM
 
-	write_register_1(reg_p1cr, reg_p1cr_pwm1_enable | reg_p1cr_function_pwm1 | reg_p1cr_clock_ratio_2048); // 114 Hz refresh
-	write_register_1(reg_pwrr, reg_pwrr_display_enable | reg_pwrr_display_sleep_mode_disable | reg_pwrr_display_reset_complete);
+	this->write_register(reg_p1cr, reg_p1cr_pwm1_enable | reg_p1cr_function_pwm1 | reg_p1cr_clock_ratio_2048); // 114 Hz refresh
+	this->write_register(reg_pwrr, reg_pwrr_display_enable | reg_pwrr_display_sleep_mode_disable | reg_pwrr_display_reset_complete);
 
 	// MISC
 
-	write_register_1(reg_dpcr, reg_dpcr_two_layer | reg_dpcr_hor_scan_ltor | reg_dpcr_vert_scan_ltor);
+	this->write_register(reg_dpcr, reg_dpcr_two_layer | reg_dpcr_hor_scan_ltor | reg_dpcr_vert_scan_ltor);
+	this->write_register(reg_mwcr0, reg_mwcr0_mode_graphic | reg_mwcr0_cursor_invisible | reg_mwcr0_cursor_steady |
+			reg_mwcr0_memory_write_direction_lrtd | reg_mwcr0_memory_write_autoincr_en | reg_mwcr0_memory_read_autoincr_en);
 
-	write_register_1(reg_mwcr0, reg_mwcr0_mode_graphic | reg_mwcr0_cursor_invisible | reg_mwcr0_cursor_steady |
-			reg_mwcr0_memory_write_direction_tdlr | reg_mwcr0_memory_write_autoincr_en | reg_mwcr0_memory_read_autoincr_en);
+	this->_brightness(100);
 
-	display_ra8875_bright(100);
+	this->show_layer(1);
+	this->set_active_layer(1);
+	this->_clear(0x00, 0x00, 0x00);
 
-	show_layer(1);
-	set_layer(1);
-	box(0x00, 0x00, 0x00, 0, 0, x_size - 1, y_size - 1);
+	this->show_layer(0);
+	this->set_active_layer(0);
+	this->_clear(0x00, 0x00, 0x00);
 
-	show_layer(0);
-	set_layer(0);
-	box(0x00, 0x00, 0x00, 0, 0, x_size - 1, y_size - 1);
-
-	bgcolour_set(0x00, 0x00, 0x00);
-	fgcolour_set(0xff, 0xff, 0xff);
-
-	return(true);
+	this->set_fgcolour(0xff, 0xff, 0xff);
+	this->set_bgcolour(0x00, 0x00, 0x00);
 }
 
-void display_ra8875_bright(unsigned int brightness)
+void DisplayModuleRA8875::write_register(unsigned char reg, unsigned char reg_data)
 {
-	static constexpr unsigned int p1cr = reg_p1cr_function_pwm1 | reg_p1cr_clock_ratio_2048;
-	static constexpr unsigned int pwrr = reg_pwrr_display_sleep_mode_disable | reg_pwrr_display_reset_complete;
+	uint64_t data = ((rs_write | rs_cmd) << 24) | ((reg & 0xff) << 16) | ((rs_write | rs_data) << 8) | (reg_data & 0xff);
 
-	assert(brightness <= 100);
+	this->transfer({
+			.send =
+			{
+				.command = {},
+				.address =
+				{
+					.bits = 32,
+					.data = data,
+				},
+			},
+			.receive = {},
+	});
+}
+
+int DisplayModuleRA8875::read_status()
+{
+	uint16_t data = rs_read | rs_cmd;
+	SPI::data_t in;
+
+	this->transfer({
+			.send =
+			{
+				.command =
+				{
+					.bits = 8,
+					.data = data,
+				},
+				.address = {},
+			},
+			.receive =
+			{
+				.length = 1,
+				.data = &in,
+			},
+	});
+
+	return(in[0]);
+}
+
+void DisplayModuleRA8875::_set_active_layer(int layer)
+{
+	if((layer != 0) && (layer != 1))
+		throw(hard_exception("DisplayModuleRA8875::activate_layer: invalid argument"));
+
+	this->write_register(reg_mwcr1, reg_mwcr1_graphic_cursor_disable | reg_mwcr1_write_destination_layer | (layer ? 0x01 : 0x00));
+}
+
+void DisplayModuleRA8875::_show_layer(int layer)
+{
+	unsigned int value = reg_ltpr0_scroll_layer_1 | reg_ltpr0_floatwin_transparency_dis;
+
+	if((layer != 0) && (layer != 1))
+		throw(hard_exception("DisplayModuleRA8875::show_layer: invalid argument"));
+
+	value |= (layer == 0) ? reg_ltpr0_visible_layer_1 : reg_ltpr0_visible_layer_2;
+
+	this->write_register(reg_ltpr1, reg_ltpr1_transparency_layer_2_8_8 | reg_ltpr1_transparency_layer_1_8_8);
+	this->write_register(reg_ltpr0, value);
+}
+
+void DisplayModuleRA8875::set_fgcolour(unsigned int r, unsigned int g, unsigned int b)
+{
+	write_register(reg_fgcr0, (r & 0b11111000) >> 3);
+	write_register(reg_fgcr1, (g & 0b11111100) >> 2);
+	write_register(reg_fgcr2, (b & 0b11111000) >> 3);
+}
+
+void DisplayModuleRA8875::set_bgcolour(unsigned int r, unsigned int g, unsigned int b)
+{
+	write_register(reg_bgcr0, (r & 0b11111000) >> 3);
+	write_register(reg_bgcr1, (g & 0b11111100) >> 2);
+	write_register(reg_bgcr2, (b & 0b11111000) >> 3);
+}
+
+std::string DisplayModuleRA8875::_name()
+{
+	return("RAiO RA8875");
+}
+
+void DisplayModuleRA8875::_brightness(int brightness)
+{
+	static const constexpr unsigned int p1cr = reg_p1cr_function_pwm1 | reg_p1cr_clock_ratio_2048;
+	static const constexpr unsigned int pwrr = reg_pwrr_display_sleep_mode_disable | reg_pwrr_display_reset_complete;
+
+	if((brightness < 0) || (brightness > 100))
+		throw(transient_exception("DisplayModuleRA8875: brightness out of range"));
 
 	if(brightness == 0)
 	{
-		write_register_1(reg_p1dcr, 0);
-		write_register_1(reg_p1cr, p1cr | reg_p1cr_pwm1_disable);
-		write_register_1(reg_pwrr, pwrr | reg_pwrr_display_disable);
+		this->write_register(reg_p1dcr, 0);
+		this->write_register(reg_p1cr, p1cr | reg_p1cr_pwm1_disable);
+		this->write_register(reg_pwrr, pwrr | reg_pwrr_display_disable);
 	}
 	else
 	{
@@ -872,18 +378,77 @@ void display_ra8875_bright(unsigned int brightness)
 		else
 			brightness = brightness * 2550 / 1000;
 
-		write_register_1(reg_p1dcr, brightness);
-		write_register_1(reg_p1cr, p1cr | reg_p1cr_pwm1_enable);
-		write_register_1(reg_pwrr, pwrr | reg_pwrr_display_enable);
+		this->write_register(reg_p1dcr, brightness);
+		this->write_register(reg_p1cr, p1cr | reg_p1cr_pwm1_enable);
+		this->write_register(reg_pwrr, pwrr | reg_pwrr_display_enable);
 	}
 }
 
-void display_ra8875_set_layer(unsigned int layer)
+void DisplayModuleRA8875::_clear(int r, int g, int b)
 {
-	set_layer(layer);
+	this->_box({ .r = r, .g = g, .b = b, .geometry = { .from_x = 0, .from_y = 0, .to_x = this->x_size - 1, .to_y = this->y_size - 1}});
 }
 
-void display_ra8875_show_layer(unsigned int layer)
+void DisplayModuleRA8875::_box(const Display::box_rgb_args_t& args)
 {
-	show_layer(layer);
+	int status, saved_speed, cycles;
+
+	this->set_window(args.geometry);
+	this->set_bgcolour(args.r, args.g, args.b);
+	this->write_register(reg_mclr, reg_mclr_memory_clear_start | reg_mclr_memory_area_active_window);
+	saved_speed = this->speed();
+	this->speed(spi_speed_read);
+
+	for(cycles = 0; cycles < 128; cycles++)
+	{
+		status = this->read_status();
+
+		if((status & (1 << 7)) == 0)
+			break;
+	}
+
+	this->speed(saved_speed);
+}
+
+void DisplayModuleRA8875::_set_window(const Display::geometry_t& geo)
+{
+	this->write_register(reg_hsaw0, (geo.from_x >> 0) & 0xff);
+	this->write_register(reg_hsaw1, (geo.from_x >> 8) & 0x03);
+	this->write_register(reg_vsaw0, (geo.from_y >> 0) & 0xff);
+	this->write_register(reg_vsaw1, (geo.from_y >> 8) & 0x01);
+	this->write_register(reg_heaw0, (geo.to_x >> 0) & 0xff);
+	this->write_register(reg_heaw1, (geo.to_x >> 8) & 0x03);
+	this->write_register(reg_veaw0, (geo.to_y >> 0) & 0xff);
+	this->write_register(reg_veaw1, (geo.to_y >> 8) & 0x01);
+
+	this->write_register(reg_curh1, (geo.from_x & 0xff00) >> 8);
+	this->write_register(reg_curh0, (geo.from_x & 0x00ff) >> 0);
+	this->write_register(reg_curv1, (geo.from_y & 0xff00) >> 8);
+	this->write_register(reg_curv0, (geo.from_y & 0x00ff) >> 0);
+}
+
+void DisplayModuleRA8875::_plot(int length, const Display::rgb_t* pixels)
+{
+	int current;
+	unsigned int rgb16, r5, g6, b5;
+	unsigned char b1, b2;
+
+	this->set_leader(SPI::data_t{rs_write | rs_cmd, reg_mrwc, rs_write | rs_data});
+
+	for(current = 0; current < length; current++)
+	{
+		r5 = (pixels[current].r & 0b11111000) >> 3;
+		g6 = (pixels[current].g & 0b11111100) >> 2;
+		b5 = (pixels[current].b & 0b11111000) >> 3;
+
+		rgb16 = ((r5 << 11) | (g6 << 5) | (b5 << 0));
+
+		b1 = ((rgb16 & 0xff00) >> 8) & 0xff;
+		b2 = ((rgb16 & 0x00ff) >> 0) & 0xff;
+
+		this->push(SPI::data_t{b1, b2});
+	}
+
+	this->flush();
+	this->clear_leader();
 }

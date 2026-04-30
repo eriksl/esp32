@@ -31,7 +31,6 @@ class System final
 
 		static System& get();
 
-		void identify(std::string &out, int mtu);
 		void info(std::string &out);
 		void memory(std::string &out);
 		void partitions(std::string &dst, int partition = -1);
