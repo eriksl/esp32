@@ -357,6 +357,7 @@ namespace SENSORS
 				measure_humidity =			0b0000'0010,
 			};
 
+			bool init();
 			unsigned int get_data();
 	};
 

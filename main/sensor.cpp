@@ -689,12 +689,32 @@ void SensorMCP9808::_poll()
 	}
 }
 
+bool SensorHTU21::init()
+{
+	unsigned char cmd;
+	I2C::data_t data;
+
+	this->device->send_receive(enum_integer(cmd_t::read_user), 1, data);
+
+	cmd = data.at(0);
+	cmd &= enum_integer(reg_t::reserved | reg_t::bat_stat);
+	cmd |= enum_integer(reg_t::rh11_temp11 | reg_t::otp_reload_disable);
+
+	device->send(enum_integer(cmd_t::write_user), cmd);
+	device->send_receive(enum_integer(cmd_t::read_user), 1, data);
+
+	cmd = data.at(0);
+	cmd &= ~(enum_integer(reg_t::reserved | reg_t::bat_stat));
+
+	return(cmd == (enum_integer(reg_t::rh11_temp11) | enum_integer(reg_t::otp_reload_disable)));
+}
+
 unsigned int SensorHTU21::get_data()
 {
 	I2C::data_t data;
 	unsigned char crc1, crc2;
 
-	device->receive(4, data);
+	this->device->receive(4, data);
 
 	crc1 = data.at(2);
 	crc2 = Crypt::crc8_31(data.substr(0, 2), 0x00);
@@ -722,12 +742,15 @@ SensorHTU21::SensorHTU21(Log &log_in, I2C::Device *device_in) : SensorI2C(log_in
 
 	try
 	{
-		device->send_receive(enum_integer(cmd_t::read_user), 1, data);
+		this->device->send_receive(enum_integer(cmd_t::read_user), 1, data);
 	}
 	catch(const transient_exception &)
 	{
 		throw(transient_exception());
 	}
+
+	if(!this->init())
+		throw(transient_exception());
 }
 
 void SensorHTU21::_poll()
@@ -748,22 +771,8 @@ void SensorHTU21::_poll()
 
 		case(state_t::reset):
 		{
-			unsigned char cmd;
-
-			device->send_receive(enum_integer(cmd_t::read_user), 1, data);
-
-			cmd = data.at(0);
-			cmd &= enum_integer(reg_t::reserved | reg_t::bat_stat);
-			cmd |= enum_integer(reg_t::rh11_temp11 | reg_t::otp_reload_disable);
-
-			device->send(enum_integer(cmd_t::write_user), cmd);
-			device->send_receive(enum_integer(cmd_t::read_user), 1, data);
-
-			cmd = data.at(0);
-			cmd &= ~(enum_integer(reg_t::reserved | reg_t::bat_stat));
-
-			if(cmd != enum_integer(reg_t::rh11_temp11 | reg_t::otp_reload_disable))
-				throw(transient_exception("htu21: invalid status"));
+			if(!this->init())
+				throw(transient_exception("htu21: init failed"));
 
 			this->state = state_t::ready;
 
