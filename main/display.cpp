@@ -752,8 +752,8 @@ void Display::run_thread()
 
 							time_start = esp_timer_get_time();
 
-							x_size = this->module->display_x_size();
-							y_size = this->module->display_y_size();
+							x_size = this->display_x_size();
+							y_size = this->display_y_size();
 
 							this->box({
 								.colour = page->second.colour,
@@ -1010,7 +1010,8 @@ std::string Display::info()
 		return(out);
 	}
 
-	out = std::format("DISPLAY configuration for display: {} using interface {}", this->module->_name(), this->module->_interface());
+	out  = std::format("DISPLAY information for display: {}, dimensions {:d} x {:d} using interface {}", this->module->_name(), this->display_x_size(), this->display_y_size(), this->module->_interface());
+	out += std::format("\n- configuration: flip: {}, invert {}, rotate {}", Util::yesno(this->module->flip), Util::yesno(this->module->invert), Util::yesno(this->module->rotate));
 
 	if(!this->fontinfo.valid)
 	{

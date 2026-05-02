@@ -7,6 +7,8 @@ DisplayModule::DisplayModule(Config& config_in, Log& log_in, Util& util_in, LedP
 		:
 	config(config_in), log(log_in), util(util_in), ledpwm(ledpwm_in), x_size(x_size_in), y_size(y_size_in), flip(flip_in), invert(invert_in), rotate(rotate_in)
 {
+	if((x_size < 0) || (y_size < 0))
+		throw(transient_exception("DisplayModule: invalid x size or y size"));
 }
 
 int DisplayModule::display_x_size()

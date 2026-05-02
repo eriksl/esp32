@@ -203,8 +203,6 @@ void LedPWM::info(std::string &dst)
 					handle->open ? handle->owner : "<none>");
 		}
 		else
-			dst = std::format("\n- channel {:d}: {}: unavailable",
-					magic_enum::enum_integer(entry.first),
-					channel_name);
+			dst += std::format("\n- channel {:d}: {}: unavailable", magic_enum::enum_integer(entry.first), entry.second);
 	}
 }

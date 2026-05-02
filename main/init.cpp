@@ -40,12 +40,12 @@ void app_main()
 		Config config("config");
 		Util util(config);
 		Console console(config);
+		Log log(console, util);
 		Ledpixel ledpixel;
 		LedPWM ledpwm;
 		Notify notify;
 		notify.run();
 		notify.notify(Notify::Notification::sys_booting);
-		Log log(console, util);
 		System system(log);
 		PDM pdm(log);
 		MCPWM mcpwm(log);

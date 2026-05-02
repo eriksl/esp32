@@ -129,10 +129,10 @@ int Log::idf_logging_function(const char *fmt, va_list ap)
 	if((where = data.find(':')) != std::string::npos)
 		data.erase(0, where + 1);
 
-	while((data.front() <= ' ') || (data.front() > '~'))
+	while(!data.empty() && ((data.front() <= ' ') || (data.front() > '~')))
 		data.erase(0, 1);
 
-	while((data.back() <= ' ') || (data.back() > '~'))
+	while(!data.empty() && ((data.back() <= ' ') || (data.back() > '~')))
 		data.pop_back();
 
 	if(!data.empty())

@@ -143,7 +143,7 @@ int SPI::Module::get_config(const std::string& id, int default_value)
 
 std::string SPI::Module::info()
 {
-	return(std::format("module {:d} ({},{:d}), cs: {:d}, sck: {:d}, mosi: {:d}, miso: {:d}, current speed MHz: {:.3f} ",
+	return(std::format("module {:d} ({},{:d}), cs: {:d}, sck: {:d}, mosi: {:d}, miso: {:d}, current speed MHz: {:.3f}",
 			this->module, magic_enum::enum_name(this->private_data->spi_host), magic_enum::enum_integer(this->private_data->spi_host),
 			this->cs, this->sck, this->mosi, this->miso, this->_speed / 1'000'000.0));
 }

@@ -1581,7 +1581,7 @@ namespace SENSORS
 			explicit SensorInternalTemperature(Log &, int dummy_module);
 			SensorInternalTemperature& operator =(const SensorInternalTemperature &) = delete;
 
-			static std::string basic_name() { return("sensor"); };
+			static std::string basic_name() { return("internal sensor"); };
 
 			void _poll() override;
 
