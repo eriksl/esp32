@@ -4,6 +4,7 @@
 #include "log.h"
 #include "util.h"
 #include "spi.h"
+#include "ledpwm.h"
 
 #include <cstdint>
 #include <mutex>
@@ -21,7 +22,7 @@ class Display
 		explicit Display() = delete;
 		explicit Display(Display &) = delete;
 		explicit Display(Display &&) = delete;
-		explicit Display(Config&, Log&, Util&, SPI&);
+		explicit Display(Config&, Log&, Util&, SPI&, LedPWM&);
 		Display& operator =(const Display &) = delete;
 		~Display();
 
@@ -222,6 +223,7 @@ class Display
 		Log& log;
 		Util& util;
 		SPI& spi;
+		LedPWM& ledpwm;
 		std::unique_ptr<DisplayModule> module;
 		mode_t mode;
 		int log_line;

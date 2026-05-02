@@ -9,7 +9,7 @@ class DisplayModuleSPI : public DisplayModule
 		explicit DisplayModuleSPI() = delete;
 		explicit DisplayModuleSPI(DisplayModuleSPI&) = delete;
 		explicit DisplayModuleSPI(DisplayModuleSPI&&) = delete;
-		explicit DisplayModuleSPI(Config&, Log&, Util&, SPI&, int module_index, int x_size, int y_size, bool flip, bool invert, bool rotate);
+		explicit DisplayModuleSPI(Config&, Log&, Util&, SPI&, LedPWM&, int module_index, int x_size, int y_size, bool flip, bool invert, bool rotate);
 		DisplayModuleSPI& operator =(const DisplayModuleSPI&) = delete;
 
 		virtual std::string _name() override = 0;

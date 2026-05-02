@@ -8,7 +8,7 @@ class DisplayModuleRA8875 final : public DisplayModuleSPI
 		explicit DisplayModuleRA8875(DisplayModuleRA8875 &) = delete;
 		explicit DisplayModuleRA8875(DisplayModuleRA8875 &&) = delete;
 		DisplayModuleRA8875& operator =(const DisplayModuleRA8875 &) = delete;
-		explicit DisplayModuleRA8875(Config&, Log&, Util&, SPI&, int module_index, int x_size, int y_size, bool flip, bool invert, bool rotate);
+		explicit DisplayModuleRA8875(Config&, Log&, Util&, SPI&, LedPWM&, int module_index, int x_size, int y_size, bool flip, bool invert, bool rotate);
 
 		static constexpr const Display::module_id_t type = Display::module_id_t::ra8875;
 

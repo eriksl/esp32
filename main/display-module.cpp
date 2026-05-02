@@ -3,8 +3,9 @@
 
 #include "exception.h"
 
-DisplayModule::DisplayModule(Config& config_in, Log& log_in, Util& util_in, int x_size_in, int y_size_in, bool flip_in, bool invert_in, bool rotate_in) :
-		config(config_in), log(log_in), util(util_in), x_size(x_size_in), y_size(y_size_in), flip(flip_in), invert(invert_in), rotate(rotate_in)
+DisplayModule::DisplayModule(Config& config_in, Log& log_in, Util& util_in, LedPWM& ledpwm_in, int x_size_in, int y_size_in, bool flip_in, bool invert_in, bool rotate_in)
+		:
+	config(config_in), log(log_in), util(util_in), ledpwm(ledpwm_in), x_size(x_size_in), y_size(y_size_in), flip(flip_in), invert(invert_in), rotate(rotate_in)
 {
 }
 

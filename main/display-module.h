@@ -9,12 +9,13 @@ class DisplayModule
 		explicit DisplayModule() = delete;
 		explicit DisplayModule(DisplayModule&) = delete;
 		explicit DisplayModule(DisplayModule&&) = delete;
-		explicit DisplayModule(Config&, Log&, Util&, int x_size, int y_size, bool flip, bool invert, bool rotate);
+		explicit DisplayModule(Config&, Log&, Util&, LedPWM&, int x_size, int y_size, bool flip, bool invert, bool rotate);
 		DisplayModule& operator =(const DisplayModule&) = delete;
 
 		Config& config;
 		Log& log;
 		Util& util;
+		LedPWM& ledpwm;
 		int x_size, y_size;
 		bool flip, invert, rotate;
 

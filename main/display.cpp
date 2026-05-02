@@ -51,7 +51,9 @@ void Display::Page::clear()
 	this->image.filename.clear();
 }
 
-Display::Display(Config &config_in, Log &log_in, Util& util_in, SPI& spi_in) : config(config_in), log(log_in), util(util_in), spi(spi_in)
+Display::Display(Config &config_in, Log &log_in, Util& util_in, SPI& spi_in, LedPWM& ledpwm_in)
+		:
+	config(config_in), log(log_in), util(util_in), spi(spi_in), ledpwm(ledpwm_in)
 {
 	int type, interface, x_size, y_size;
 	bool flip, invert, rotate;
@@ -98,7 +100,7 @@ Display::Display(Config &config_in, Log &log_in, Util& util_in, SPI& spi_in) : c
 	{
 		try
 		{
-			this->module = std::make_unique<DisplayModuleGenericSPI>(this->config, this->log, this->util, this->spi, interface, x_size, y_size, flip, invert, rotate);
+			this->module = std::make_unique<DisplayModuleGenericSPI>(this->config, this->log, this->util, this->spi, this->ledpwm, interface, x_size, y_size, flip, invert, rotate);
 		}
 		catch(transient_exception &e)
 		{
@@ -110,7 +112,7 @@ Display::Display(Config &config_in, Log &log_in, Util& util_in, SPI& spi_in) : c
 	{
 		try
 		{
-			this->module = std::make_unique<DisplayModuleRA8875>(this->config, this->log, this->util, this->spi, interface, x_size, y_size, flip, invert, rotate);
+			this->module = std::make_unique<DisplayModuleRA8875>(this->config, this->log, this->util, this->spi, this->ledpwm, interface, x_size, y_size, flip, invert, rotate);
 		}
 		catch(transient_exception &e)
 		{
