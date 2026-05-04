@@ -321,7 +321,7 @@ void System::process_list(std::string &out, int requested_core)
 				total_delta_idle += pip->ulRunTimeCounter - task_info_cache_ptr->previous_runtime;
 		}
 
-		out += std::format("processes: {:d}, active: {:d}%%, idle: {:d}%\n",
+		out += std::format("processes: {:d}, active: {:d}%, idle: {:d}%\n",
 				processes,
 				total_delta_active * 100 / (total_delta_active + total_delta_idle),
 				total_delta_idle   * 100 / (total_delta_active + total_delta_idle));
@@ -335,7 +335,7 @@ void System::process_list(std::string &out, int requested_core)
 				"stack",
 				"runtime",
 				"delta",
-				"active_%");
+				"active%");
 
 		done = 0;
 
