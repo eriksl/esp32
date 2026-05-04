@@ -42,9 +42,9 @@ enum
 };
 
 DisplayModuleGenericSPI::DisplayModuleGenericSPI(Config& config_in, Log& log_in, Util& util_in, SPI& spi_in, LedPWM& ledpwm_in,
-			int module_index_in, int x_size_in, int y_size_in, bool flip_in, bool invert_in, bool rotate_in)
+			int module_index_in, int x_size_in, int y_size_in, bool flip_in, bool invert_in, bool rotate_in, bool blinvert_in)
 		:
-			DisplayModuleSPI(config_in, log_in, util_in, spi_in, ledpwm_in, module_index_in, x_size_in, y_size_in, flip_in, invert_in, rotate_in)
+			DisplayModuleSPI(config_in, log_in, util_in, spi_in, ledpwm_in, module_index_in, x_size_in, y_size_in, flip_in, invert_in, rotate_in, blinvert_in)
 {
 	esp_err_t rv;
 	int madctl;
@@ -208,6 +208,9 @@ std::string DisplayModuleGenericSPI::_name()
 
 void DisplayModuleGenericSPI::_brightness(int brightness)
 {
+	if(this->blinvert)
+		brightness = 100 - brightness;
+
 	if(brightness == 100)
 		this->ledpwm.set(this->ledpwm_channel, 1UL << 14);
 	else

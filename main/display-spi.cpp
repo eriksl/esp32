@@ -70,9 +70,10 @@ void DisplayModuleSPI::SPIDataBuffer::flush()
 	this->length = 0;
 }
 
-DisplayModuleSPI::DisplayModuleSPI(Config& config_in, Log &log_in, Util& util_in, SPI& spi, LedPWM& ledpwm_in, int module_index, int x_size_in, int y_size_in, bool flip_in, bool invert_in, bool rotate_in)
+DisplayModuleSPI::DisplayModuleSPI(Config& config_in, Log &log_in, Util& util_in, SPI& spi, LedPWM& ledpwm_in, int module_index, int x_size_in, int y_size_in,
+	bool flip_in, bool invert_in, bool rotate_in, bool blinvert_in)
 		:
-	DisplayModule(config_in, log_in, util_in, ledpwm_in, x_size_in, y_size_in, flip_in, invert_in, rotate_in),
+	DisplayModule(config_in, log_in, util_in, ledpwm_in, x_size_in, y_size_in, flip_in, invert_in, rotate_in, blinvert_in),
 	spi_module(spi[module_index]),
 	spi_data_buffer(*this, this->spi_module.max_transaction_length())
 {

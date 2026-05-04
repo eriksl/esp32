@@ -56,7 +56,7 @@ Display::Display(Config &config_in, Log &log_in, Util& util_in, SPI& spi_in, Led
 	config(config_in), log(log_in), util(util_in), spi(spi_in), ledpwm(ledpwm_in)
 {
 	int type, interface, x_size, y_size;
-	bool flip, invert, rotate;
+	bool flip, invert, rotate, blinvert;
 	esp_err_t rv;
 
 	this->singleton = this;
@@ -96,11 +96,14 @@ Display::Display(Config &config_in, Log &log_in, Util& util_in, SPI& spi_in, Led
 	if(!this->config_get("display.rotate", rotate))
 		rotate = false;
 
+	if(!this->config_get("display.blinv", blinvert))
+		blinvert = false;
+
 	if((!this->module) && (type == magic_enum::enum_integer(DisplayModuleGenericSPI::type)))
 	{
 		try
 		{
-			this->module = std::make_unique<DisplayModuleGenericSPI>(this->config, this->log, this->util, this->spi, this->ledpwm, interface, x_size, y_size, flip, invert, rotate);
+			this->module = std::make_unique<DisplayModuleGenericSPI>(this->config, this->log, this->util, this->spi, this->ledpwm, interface, x_size, y_size, flip, invert, rotate, blinvert);
 		}
 		catch(transient_exception &e)
 		{
@@ -112,7 +115,7 @@ Display::Display(Config &config_in, Log &log_in, Util& util_in, SPI& spi_in, Led
 	{
 		try
 		{
-			this->module = std::make_unique<DisplayModuleRA8875>(this->config, this->log, this->util, this->spi, this->ledpwm, interface, x_size, y_size, flip, invert, rotate);
+			this->module = std::make_unique<DisplayModuleRA8875>(this->config, this->log, this->util, this->spi, this->ledpwm, interface, x_size, y_size, flip, invert, rotate, blinvert);
 		}
 		catch(transient_exception &e)
 		{
@@ -656,6 +659,9 @@ void Display::run_thread()
 						}
 						catch(const transient_exception &e)
 						{
+							this->log << std::format("Display::run_thread: load_font: {}", e.what());
+							std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+							throw(transient_exception());
 						}
 
 						break;
@@ -675,8 +681,11 @@ void Display::run_thread()
 							this->clear(colour_t::black);
 							this->mode = mode_t::info;
 						}
-						catch(const transient_exception &)
+						catch(const transient_exception &e)
 						{
+							this->log << std::format("Display::run_thread: load_font: {}", e.what());
+							std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+							throw(transient_exception());
 						}
 
 						break;
@@ -1010,8 +1019,10 @@ std::string Display::info()
 		return(out);
 	}
 
-	out  = std::format("DISPLAY information for display: {}, dimensions {:d} x {:d} using interface {}", this->module->_name(), this->display_x_size(), this->display_y_size(), this->module->_interface());
-	out += std::format("\n- configuration: flip: {}, invert {}, rotate {}", Util::yesno(this->module->flip), Util::yesno(this->module->invert), Util::yesno(this->module->rotate));
+	out  = std::format("DISPLAY information for display: {}, dimensions {:d} x {:d} using interface {}",
+			this->module->_name(), this->display_x_size(), this->display_y_size(), this->module->_interface());
+	out += std::format("\n- configuration: flip: {}, invert {}, rotate {}, bl invert {}",
+			Util::yesno(this->module->flip), Util::yesno(this->module->invert), Util::yesno(this->module->rotate), Util::yesno(this->module->blinvert));
 
 	if(!this->fontinfo.valid)
 	{
@@ -1117,7 +1128,7 @@ int Display::image_y_size()
 	return(this->display_y_size() - ((2 * this->page_border_size) + this->page_text_offset + this->fontinfo.net.height - 1));
 }
 
-void Display::configure(int type, int interface_index, int __x_size, int __y_size, bool flip_, bool invert_, bool rotate_)
+void Display::configure(int type, int interface_index, int __x_size, int __y_size, bool flip_, bool invert_, bool rotate_, bool blinvert_)
 {
 	if(!magic_enum::enum_contains<Display::module_id_t>(type))
 		throw(transient_exception("display::configure: invalid type"));
@@ -1130,6 +1141,7 @@ void Display::configure(int type, int interface_index, int __x_size, int __y_siz
 	this->config.set_int("display.flip", flip_ ? 1 : 0);
 	this->config.set_int("display.invert", invert_ ? 1 : 0);
 	this->config.set_int("display.rotate", rotate_ ? 1 : 0);
+	this->config.set_int("display.blinv", blinvert_ ? 1 : 0);
 }
 
 void Display::erase()

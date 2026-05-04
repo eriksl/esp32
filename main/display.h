@@ -260,7 +260,7 @@ class Display
 		int display_y_size();
 		int image_x_size();
 		int image_y_size();
-		void configure(int type, int interface_index, int x_size, int y_size, bool flip, bool invert, bool rotate);
+		void configure(int type, int interface_index, int x_size, int y_size, bool flip, bool invert, bool rotate, bool blinvert);
 		void erase();
 		void brightness(int);
 		void add_text_page(const std::string& name, int lifetime, std::string_view contents);

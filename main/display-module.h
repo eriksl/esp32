@@ -9,7 +9,7 @@ class DisplayModule
 		explicit DisplayModule() = delete;
 		explicit DisplayModule(DisplayModule&) = delete;
 		explicit DisplayModule(DisplayModule&&) = delete;
-		explicit DisplayModule(Config&, Log&, Util&, LedPWM&, int x_size, int y_size, bool flip, bool invert, bool rotate);
+		explicit DisplayModule(Config&, Log&, Util&, LedPWM&, int x_size, int y_size, bool flip, bool invert, bool rotate, bool blinvert);
 		DisplayModule& operator =(const DisplayModule&) = delete;
 
 		Config& config;
@@ -17,7 +17,7 @@ class DisplayModule
 		Util& util;
 		LedPWM& ledpwm;
 		int x_size, y_size;
-		bool flip, invert, rotate;
+		bool flip, invert, rotate, blinvert;
 
 		virtual std::string _name() = 0;
 		virtual std::string _interface() = 0;

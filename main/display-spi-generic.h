@@ -7,7 +7,7 @@ class DisplayModuleGenericSPI final : public DisplayModuleSPI
 		explicit DisplayModuleGenericSPI() = delete;
 		explicit DisplayModuleGenericSPI(DisplayModuleGenericSPI &) = delete;
 		explicit DisplayModuleGenericSPI(DisplayModuleGenericSPI &&) = delete;
-		explicit DisplayModuleGenericSPI(Config&, Log&, Util &, SPI&, LedPWM&, int module, int x_size, int y_size, bool flip, bool invert, bool rotate);
+		explicit DisplayModuleGenericSPI(Config&, Log&, Util &, SPI&, LedPWM&, int module, int x_size, int y_size, bool flip, bool invert, bool rotate, bool blinvert);
 		DisplayModuleGenericSPI& operator =(const DisplayModuleGenericSPI &) = delete;
 
 		static constexpr const Display::module_id_t type = Display::module_id_t::generic_spi;

@@ -140,7 +140,7 @@ const Command::cli_command_t Command::cli_commands[] =
 	},
 
 	{ "display-configure", "dc", "configure display", Command::display_configure,
-		{	7,
+		{	8,
 			{
 				cli_parameter_unsigned_int, 0, 0, 1, 1, "display type", { .unsigned_int = { 0, 2 }},
 				cli_parameter_unsigned_int, 0, 0, 1, 1, "interface", { .unsigned_int = { 0, 1 }},
@@ -149,6 +149,7 @@ const Command::cli_command_t Command::cli_commands[] =
 				cli_parameter_unsigned_int, 0, 0, 1, 1, "flip", { .unsigned_int = { 0, 1 }},
 				cli_parameter_unsigned_int, 0, 0, 1, 1, "invert", { .unsigned_int = { 0, 1 }},
 				cli_parameter_unsigned_int, 0, 0, 1, 1, "rotate", { .unsigned_int = { 0, 1 }},
+				cli_parameter_unsigned_int, 0, 0, 1, 1, "blinvert", { .unsigned_int = { 0, 1 }},
 			}
 		}
 	},
@@ -1192,7 +1193,7 @@ void Command::display_configure(cli_command_call_t *call)
 {
 	auto& instance = Command::get();
 	int type, interface_index, x_size, y_size;
-	bool flip, invert, rotate;
+	bool flip, invert, rotate, blinvert;
 
 	try
 	{
@@ -1228,9 +1229,14 @@ void Command::display_configure(cli_command_call_t *call)
 		else
 			rotate = false;
 
+		if(call->parameter_count > 7)
+			blinvert = call->parameters[7].unsigned_int != 0;
+		else
+			blinvert = false;
+
 		try
 		{
-			instance.display.configure(type, interface_index, x_size, y_size, flip, invert, rotate);
+			instance.display.configure(type, interface_index, x_size, y_size, flip, invert, rotate, blinvert);
 		}
 		catch(const transient_exception &e)
 		{
