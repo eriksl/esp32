@@ -9,6 +9,7 @@ idf_component_register(
 		"display-spi.cpp"
 		"display-spi-generic.cpp"
 		"display-ra8875.cpp"
+		"display-lt7381.cpp"
 		"fs.cpp"
         "i2c.cpp"
 		"io.cpp"

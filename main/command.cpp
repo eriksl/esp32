@@ -142,7 +142,7 @@ const Command::cli_command_t Command::cli_commands[] =
 	{ "display-configure", "dc", "configure display", Command::display_configure,
 		{	8,
 			{
-				cli_parameter_unsigned_int, 0, 0, 1, 1, "display type", { .unsigned_int = { 0, 2 }},
+				cli_parameter_unsigned_int, 0, 0, 1, 1, "display type", { .unsigned_int = { 0, 3 }},
 				cli_parameter_unsigned_int, 0, 0, 1, 1, "interface", { .unsigned_int = { 0, 1 }},
 				cli_parameter_unsigned_int, 0, 0, 1, 1, "x-size", { .unsigned_int = { 16, 1024 }},
 				cli_parameter_unsigned_int, 0, 0, 1, 1, "y-size", { .unsigned_int = { 16, 1024 }},

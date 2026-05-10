@@ -31,6 +31,7 @@ class Display
 			none = 0,
 			generic_spi = 1,
 			ra8875 = 2,
+			lt7381 = 3,
 		};
 
 		enum class colour_t

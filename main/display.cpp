@@ -3,6 +3,7 @@
 #include "display-spi.h"
 #include "display-spi-generic.h"
 #include "display-ra8875.h"
+#include "display-lt7381.h"
 #include "png.h"
 
 #include "crypt.h"
@@ -120,6 +121,18 @@ Display::Display(Config &config_in, Log &log_in, Util& util_in, SPI& spi_in, Led
 		catch(transient_exception &e)
 		{
 			this->log << std::format("Display: init DisplayModuleRA8875: {}", e.what());
+		}
+	}
+
+	if(!(this->module) && (type == magic_enum::enum_integer(DisplayModuleLT7381::type)))
+	{
+		try
+		{
+			this->module = std::make_unique<DisplayModuleLT7381>(this->config, this->log, this->util, this->spi, this->ledpwm, interface, x_size, y_size, flip, invert, rotate, blinvert);
+		}
+		catch(transient_exception &e)
+		{
+			this->log << std::format("Display: init DisplayModuleLT7381: {}", e.what());
 		}
 	}
 
