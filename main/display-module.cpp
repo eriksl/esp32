@@ -78,10 +78,16 @@ void DisplayModule::plot(int length, const Display::rgb_t* pixels)
 
 void DisplayModule::set_active_layer(int layer)
 {
+	if((layer != 0) && (layer != 1))
+		throw(hard_exception("DisplayModule::set_active_layer: invalid argument"));
+
 	this->_set_active_layer(layer);
 }
 
 void DisplayModule::show_layer(int layer)
 {
+	if((layer != 0) && (layer != 1))
+		throw(hard_exception("DisplayModule::show_layer: invalid argument"));
+
 	this->_show_layer(layer);
 }
