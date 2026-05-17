@@ -153,6 +153,7 @@ namespace SENSORS
 
 			enum class model_t : unsigned char
 			{
+				none,
 				generic75,
 				tmp75,
 				lm75,
@@ -233,7 +234,7 @@ namespace SENSORS
 			};
 
 			static constexpr const std::array<int,1> addresses {0x48};
-			static std::string basic_name() { return("compat75"); };
+			static std::string basic_name() { return("generic75"); };
 			static bool probe(I2c &, int module, int bus, int address, bool);
 
 			void _poll() override;

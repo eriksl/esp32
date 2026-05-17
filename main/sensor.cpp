@@ -504,9 +504,12 @@ SensorGeneric75::SensorGeneric75(Log &log_in, I2C::Device *device_in) : SensorI2
 	static const constexpr unsigned int config_value_tmp75 = enum_integer(tmp75_conf_t::res_12 | tmp75_conf_t::no_shutdown);
 	static const constexpr unsigned int config_value_lm75 = enum_integer(lm75_conf_t::no_shutdown);
 
-	this->model = model_t::generic75;
+	this->model = model_t::none;
 
-	if(this->model == model_t::generic75)
+	if(this->device->restricted())
+		this->model = model_t::generic75;
+
+	if(this->model == model_t::none)
 	{
 		try // tmp75
 		{
@@ -543,7 +546,7 @@ SensorGeneric75::SensorGeneric75(Log &log_in, I2C::Device *device_in) : SensorI2
 		}
 	}
 
-	if(this->model == model_t::generic75)
+	if(this->model == model_t::none)
 	{
 		try // lm75(b)
 		{
@@ -580,6 +583,7 @@ SensorGeneric75::SensorGeneric75(Log &log_in, I2C::Device *device_in) : SensorI2
 		}
 
 		case(model_t::lm75):
+		case(model_t::generic75):
 		{
 			config_value = config_value_lm75;
 

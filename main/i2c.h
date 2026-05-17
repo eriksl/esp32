@@ -178,6 +178,7 @@ namespace I2C
 		public:
 
 			std::string info();
+			bool restricted();
 			void data(int &module, int &bus, int &address, std::string &name);
 			std::string data();
 			void send(const data_t &);

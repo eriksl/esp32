@@ -786,6 +786,11 @@ std::string Device::info()
 	return(std::format("\n-   device: address {:#04x}, name: \"{}\"", this->address, this->name));
 }
 
+bool Device::restricted()
+{
+	return(this->bus_ref.module().restricted());
+}
+
 void Device::data(int &module_in, int &bus_in, int &address_in, std::string &name_in)
 {
 	address_in = this->address;
