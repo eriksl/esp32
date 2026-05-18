@@ -715,9 +715,13 @@ int Bus::index()
 Device* Bus::new_device(int address, std::string_view device_name)
 {
 	Device *device;
+	const auto parent_devices = this->module_ref.buses().at(0)->devices;
 
 	if(this->devices.find(address) != this->devices.end())
-		throw(transient_exception("I2c::module::new_device: address in use"));
+		throw(transient_exception("I2c::module::new_device: address in use on this bus"));
+
+	if(parent_devices.find(address) != parent_devices.end())
+		throw(transient_exception("I2c::module::new_device: address in use on parent bus"));
 
 	device = new Device(this->log, *this, address, device_name);
 
